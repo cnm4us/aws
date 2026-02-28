@@ -194,8 +194,11 @@ export type VisualizerStyle =
   | 'wave_fill'
   | 'center_wave'
   | 'spectrum_bars'
+  | 'dot_spectrum'
   | 'mirror_bars'
   | 'stacked_bands'
+  | 'ring_wave'
+  | 'pulse_orb'
   | 'radial_bars'
 export type VisualizerScale = 'linear' | 'log'
 export type VisualizerGradientMode = 'vertical' | 'horizontal'
@@ -212,6 +215,10 @@ export type VisualizerPresetInstanceSnapshot = {
   barCount: number
   spectrumMode: VisualizerSpectrumMode
   bandMode: VisualizerBandMode
+  voiceLowHz: number
+  voiceHighHz: number
+  amplitudeGainPct: number
+  baselineLiftPct: number
   gradientEnabled: boolean
   gradientStart: string
   gradientEnd: string
@@ -230,6 +237,10 @@ export type VisualizerPresetSnapshot = {
   barCount: number
   spectrumMode: VisualizerSpectrumMode
   bandMode: VisualizerBandMode
+  voiceLowHz: number
+  voiceHighHz: number
+  amplitudeGainPct: number
+  baselineLiftPct: number
   gradientEnabled: boolean
   gradientStart: string
   gradientEnd: string
@@ -294,6 +305,10 @@ export const DEFAULT_VISUALIZER_PRESET_SNAPSHOT: VisualizerPresetSnapshot = {
   barCount: 48,
   spectrumMode: 'full',
   bandMode: 'full',
+  voiceLowHz: 80,
+  voiceHighHz: 4000,
+  amplitudeGainPct: 100,
+  baselineLiftPct: 0,
   gradientEnabled: false,
   gradientStart: '#d4af37',
   gradientEnd: '#f7d774',
@@ -311,6 +326,10 @@ export const DEFAULT_VISUALIZER_PRESET_SNAPSHOT: VisualizerPresetSnapshot = {
       barCount: 48,
       spectrumMode: 'full',
       bandMode: 'full',
+      voiceLowHz: 80,
+      voiceHighHz: 4000,
+      amplitudeGainPct: 100,
+      baselineLiftPct: 0,
       gradientEnabled: false,
       gradientStart: '#d4af37',
       gradientEnd: '#f7d774',
@@ -598,6 +617,18 @@ export function cloneTimeline(timeline: Timeline): Timeline {
                 String(snapBase.bandMode || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.bandMode).trim().toLowerCase() === 'band_4'
                   ? (String(snapBase.bandMode || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.bandMode).trim().toLowerCase() as any)
                   : 'full',
+              voiceLowHz: Number.isFinite(Number(snapBase.voiceLowHz))
+                ? Math.max(20, Math.min(12000, Math.round(Number(snapBase.voiceLowHz))))
+                : DEFAULT_VISUALIZER_PRESET_SNAPSHOT.voiceLowHz,
+              voiceHighHz: Number.isFinite(Number(snapBase.voiceHighHz))
+                ? Math.max(100, Math.min(20000, Math.round(Number(snapBase.voiceHighHz))))
+                : DEFAULT_VISUALIZER_PRESET_SNAPSHOT.voiceHighHz,
+              amplitudeGainPct: Number.isFinite(Number(snapBase.amplitudeGainPct))
+                ? Math.max(0, Math.min(400, Math.round(Number(snapBase.amplitudeGainPct))))
+                : DEFAULT_VISUALIZER_PRESET_SNAPSHOT.amplitudeGainPct,
+              baselineLiftPct: Number.isFinite(Number(snapBase.baselineLiftPct))
+                ? Math.max(-100, Math.min(100, Math.round(Number(snapBase.baselineLiftPct))))
+                : DEFAULT_VISUALIZER_PRESET_SNAPSHOT.baselineLiftPct,
               gradientEnabled: snapBase.gradientEnabled === true,
               gradientStart: String(snapBase.gradientStart || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.gradientStart),
               gradientEnd: String(snapBase.gradientEnd || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.gradientEnd),
@@ -611,6 +642,9 @@ export function cloneTimeline(timeline: Timeline): Timeline {
                 ? Number(snapBase.clipHeightPct)
                 : DEFAULT_VISUALIZER_PRESET_SNAPSHOT.clipHeightPct,
             }
+            if (snapshot.voiceHighHz <= snapshot.voiceLowHz) {
+              snapshot.voiceHighHz = Math.min(20000, snapshot.voiceLowHz + 10)
+            }
             const instancesRaw = Array.isArray((snapBase as any).instances) ? ((snapBase as any).instances as any[]) : []
             const normalizedInstances = instancesRaw
               .slice(0, 8)
@@ -620,8 +654,11 @@ export function cloneTimeline(timeline: Timeline): Timeline {
                   styleRaw === 'wave_fill' ||
                   styleRaw === 'center_wave' ||
                   styleRaw === 'spectrum_bars' ||
+                  styleRaw === 'dot_spectrum' ||
                   styleRaw === 'mirror_bars' ||
                   styleRaw === 'stacked_bands' ||
+                  styleRaw === 'ring_wave' ||
+                  styleRaw === 'pulse_orb' ||
                   styleRaw === 'radial_bars'
                     ? (styleRaw as any)
                     : 'wave_line'
@@ -632,6 +669,19 @@ export function cloneTimeline(timeline: Timeline): Timeline {
                 const bandRaw = String(inst?.bandMode || snapshot.bandMode || 'full').trim().toLowerCase()
                 const bandMode =
                   bandRaw === 'band_1' || bandRaw === 'band_2' || bandRaw === 'band_3' || bandRaw === 'band_4' ? (bandRaw as any) : 'full'
+                const voiceLowHz = Number.isFinite(Number(inst?.voiceLowHz))
+                  ? Math.max(20, Math.min(12000, Math.round(Number(inst?.voiceLowHz))))
+                  : snapshot.voiceLowHz
+                const voiceHighHzRaw = Number.isFinite(Number(inst?.voiceHighHz))
+                  ? Math.max(100, Math.min(20000, Math.round(Number(inst?.voiceHighHz))))
+                  : snapshot.voiceHighHz
+                const voiceHighHz = voiceHighHzRaw <= voiceLowHz ? Math.min(20000, voiceLowHz + 10) : voiceHighHzRaw
+                const amplitudeGainPct = Number.isFinite(Number(inst?.amplitudeGainPct))
+                  ? Math.max(0, Math.min(400, Math.round(Number(inst?.amplitudeGainPct))))
+                  : snapshot.amplitudeGainPct
+                const baselineLiftPct = Number.isFinite(Number(inst?.baselineLiftPct))
+                  ? Math.max(-100, Math.min(100, Math.round(Number(inst?.baselineLiftPct))))
+                  : snapshot.baselineLiftPct
                 const gradientModeRaw = String(inst?.gradientMode || snapshot.gradientMode).trim().toLowerCase()
                 const gradientMode = gradientModeRaw === 'horizontal' ? 'horizontal' : 'vertical'
                 return {
@@ -645,6 +695,10 @@ export function cloneTimeline(timeline: Timeline): Timeline {
                     : snapshot.barCount,
                   spectrumMode,
                   bandMode,
+                  voiceLowHz,
+                  voiceHighHz,
+                  amplitudeGainPct,
+                  baselineLiftPct,
                   gradientEnabled: inst?.gradientEnabled === true,
                   gradientStart: String(inst?.gradientStart || snapshot.gradientStart),
                   gradientEnd: String(inst?.gradientEnd || snapshot.gradientEnd),
@@ -664,6 +718,10 @@ export function cloneTimeline(timeline: Timeline): Timeline {
                       barCount: snapshot.barCount,
                       spectrumMode: snapshot.spectrumMode,
                       bandMode: snapshot.bandMode || 'full',
+                      voiceLowHz: snapshot.voiceLowHz,
+                      voiceHighHz: snapshot.voiceHighHz,
+                      amplitudeGainPct: snapshot.amplitudeGainPct,
+                      baselineLiftPct: snapshot.baselineLiftPct,
                       gradientEnabled: snapshot.gradientEnabled,
                       gradientStart: snapshot.gradientStart,
                       gradientEnd: snapshot.gradientEnd,

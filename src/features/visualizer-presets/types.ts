@@ -3,8 +3,11 @@ export type VisualizerStyle =
   | 'wave_fill'
   | 'center_wave'
   | 'spectrum_bars'
+  | 'dot_spectrum'
   | 'mirror_bars'
   | 'stacked_bands'
+  | 'ring_wave'
+  | 'pulse_orb'
   | 'radial_bars'
 export type VisualizerScale = 'linear' | 'log'
 export type VisualizerGradientMode = 'vertical' | 'horizontal'
@@ -21,6 +24,10 @@ export type VisualizerPresetInstanceDto = {
   barCount: number
   spectrumMode: VisualizerSpectrumMode
   bandMode: VisualizerBandMode
+  voiceLowHz: number
+  voiceHighHz: number
+  amplitudeGainPct: number
+  baselineLiftPct: number
   gradientEnabled: boolean
   gradientStart: string
   gradientEnd: string
@@ -64,6 +71,10 @@ export type VisualizerPresetDto = {
   barCount: number
   spectrumMode: VisualizerSpectrumMode
   bandMode: VisualizerBandMode
+  voiceLowHz: number
+  voiceHighHz: number
+  amplitudeGainPct: number
+  baselineLiftPct: number
   gradientEnabled: boolean
   gradientStart: string
   gradientEnd: string

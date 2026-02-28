@@ -298,6 +298,10 @@ export type CreateVideoVisualizerPresetSnapshotV1 = {
   barCount: number
   spectrumMode: 'full' | 'voice'
   bandMode?: 'full' | 'band_1' | 'band_2' | 'band_3' | 'band_4'
+  voiceLowHz?: number
+  voiceHighHz?: number
+  amplitudeGainPct?: number
+  baselineLiftPct?: number
   gradientEnabled: boolean
   gradientStart: string
   gradientEnd: string
@@ -314,6 +318,10 @@ export type CreateVideoVisualizerPresetSnapshotV1 = {
     barCount: number
     spectrumMode: 'full' | 'voice'
     bandMode?: 'full' | 'band_1' | 'band_2' | 'band_3' | 'band_4'
+    voiceLowHz?: number
+    voiceHighHz?: number
+    amplitudeGainPct?: number
+    baselineLiftPct?: number
     gradientEnabled: boolean
     gradientStart: string
     gradientEnd: string

@@ -8,8 +8,11 @@ type VisualizerStyle =
   | 'wave_fill'
   | 'center_wave'
   | 'spectrum_bars'
+  | 'dot_spectrum'
   | 'mirror_bars'
   | 'stacked_bands'
+  | 'ring_wave'
+  | 'pulse_orb'
   | 'radial_bars'
 type VisualizerScale = 'linear' | 'log'
 type VisualizerGradientMode = 'vertical' | 'horizontal'
@@ -24,6 +27,10 @@ type VisualizerPresetInstance = {
   barCount: number
   spectrumMode: VisualizerSpectrumMode
   bandMode: VisualizerBandMode
+  voiceLowHz: number
+  voiceHighHz: number
+  amplitudeGainPct: number
+  baselineLiftPct: number
   gradientEnabled: boolean
   gradientStart: string
   gradientEnd: string
@@ -65,6 +72,10 @@ const DEFAULT_INSTANCE: VisualizerPresetInstance = {
   barCount: 48,
   spectrumMode: 'full',
   bandMode: 'full',
+  voiceLowHz: 80,
+  voiceHighHz: 4000,
+  amplitudeGainPct: 100,
+  baselineLiftPct: 0,
   gradientEnabled: false,
   gradientStart: '#d4af37',
   gradientEnd: '#f7d774',
@@ -209,17 +220,47 @@ function parseBarCount(value: any): number {
   return Math.round(Math.min(Math.max(n, 12), 128))
 }
 
+function parseVoiceLowHz(value: any): number {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return DEFAULT_INSTANCE.voiceLowHz
+  return Math.round(Math.min(Math.max(n, 20), 12000))
+}
+
+function parseVoiceHighHz(value: any): number {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return DEFAULT_INSTANCE.voiceHighHz
+  return Math.round(Math.min(Math.max(n, 100), 20000))
+}
+
+function parseAmplitudeGainPct(value: any): number {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return DEFAULT_INSTANCE.amplitudeGainPct
+  return Math.round(Math.min(Math.max(n, 0), 400))
+}
+
+function parseBaselineLiftPct(value: any): number {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return DEFAULT_INSTANCE.baselineLiftPct
+  return Math.round(Math.min(Math.max(n, -100), 100))
+}
+
 function getSpectrumRange(
   binsLength: number,
   spectrumMode: VisualizerSpectrumMode,
-  bandMode: VisualizerBandMode
+  bandMode: VisualizerBandMode,
+  voiceLowHz: number,
+  voiceHighHz: number,
+  sampleRate: number
 ): { start: number; end: number } {
   const maxIdx = Math.max(1, binsLength - 1)
   let baseStart = 0
   let baseEnd = maxIdx
   if (spectrumMode === 'voice') {
-    const lowIdx = Math.round(0.12 * maxIdx)
-    const highIdx = Math.round(0.68 * maxIdx)
+    const nyquist = sampleRate > 0 ? sampleRate / 2 : 22050
+    const lowHz = parseVoiceLowHz(voiceLowHz)
+    const highHz = Math.max(lowHz + 10, parseVoiceHighHz(voiceHighHz))
+    const lowIdx = Math.round((Math.max(0, lowHz) / nyquist) * maxIdx)
+    const highIdx = Math.round((Math.max(lowHz + 10, highHz) / nyquist) * maxIdx)
     baseStart = Math.max(0, Math.min(maxIdx, lowIdx))
     baseEnd = Math.max(baseStart + 1, Math.min(maxIdx, highIdx))
   }
@@ -241,8 +282,11 @@ function normalizeInstance(raw: any, fallback: VisualizerPresetInstance, idx: nu
     styleRaw === 'wave_fill' ||
     styleRaw === 'center_wave' ||
     styleRaw === 'spectrum_bars' ||
+    styleRaw === 'dot_spectrum' ||
     styleRaw === 'mirror_bars' ||
     styleRaw === 'stacked_bands' ||
+    styleRaw === 'ring_wave' ||
+    styleRaw === 'pulse_orb' ||
     styleRaw === 'radial_bars'
       ? (styleRaw as any)
       : 'wave_line'
@@ -254,6 +298,11 @@ function normalizeInstance(raw: any, fallback: VisualizerPresetInstance, idx: nu
     bandModeRaw === 'band_1' || bandModeRaw === 'band_2' || bandModeRaw === 'band_3' || bandModeRaw === 'band_4'
       ? (bandModeRaw as VisualizerBandMode)
       : 'full'
+  const voiceLowHz = parseVoiceLowHz(raw?.voiceLowHz ?? fallback.voiceLowHz)
+  const voiceHighCandidate = parseVoiceHighHz(raw?.voiceHighHz ?? fallback.voiceHighHz)
+  const voiceHighHz = Math.max(voiceLowHz + 10, voiceHighCandidate)
+  const amplitudeGainPct = parseAmplitudeGainPct(raw?.amplitudeGainPct ?? fallback.amplitudeGainPct)
+  const baselineLiftPct = parseBaselineLiftPct(raw?.baselineLiftPct ?? fallback.baselineLiftPct)
   const gradientMode: VisualizerGradientMode =
     String(raw?.gradientMode || fallback.gradientMode).trim().toLowerCase() === 'horizontal' ? 'horizontal' : 'vertical'
   return {
@@ -265,6 +314,10 @@ function normalizeInstance(raw: any, fallback: VisualizerPresetInstance, idx: nu
     barCount: parseBarCount(raw?.barCount),
     spectrumMode,
     bandMode,
+    voiceLowHz,
+    voiceHighHz,
+    amplitudeGainPct,
+    baselineLiftPct,
     gradientEnabled: raw?.gradientEnabled == null ? Boolean(fallback.gradientEnabled) : raw?.gradientEnabled === true,
     gradientStart: String(raw?.gradientStart || fallback.gradientStart || '#d4af37'),
     gradientEnd: String(raw?.gradientEnd || fallback.gradientEnd || '#f7d774'),
@@ -373,27 +426,57 @@ function VisualizerPreview({
         analyser.getByteTimeDomainData(timeDataRef.current)
         analyser.getByteFrequencyData(freqDataRef.current)
       }
+      const smoothedBins = (() => {
+        const bins = freqDataRef.current
+        if (!bins || bins.length < 2) return null
+        const out = new Float32Array(bins.length)
+        const radius = 2
+        for (let i = 0; i < bins.length; i++) {
+          let sum = 0
+          let count = 0
+          for (let d = -radius; d <= radius; d++) {
+            const j = i + d
+            if (j < 0 || j >= bins.length) continue
+            sum += bins[j]
+            count++
+          }
+          out[i] = count > 0 ? sum / count : bins[i]
+        }
+        return out
+      })()
 
       const getSpectrumValue = (
         tNorm: number,
         scale: VisualizerScale,
         spectrumMode: VisualizerSpectrumMode,
-        bandMode: VisualizerBandMode
+        bandMode: VisualizerBandMode,
+        voiceLowHz: number,
+        voiceHighHz: number,
+        amplitudeGainPct: number,
+        baselineLiftPct: number
       ) => {
-        const bins = freqDataRef.current
+        const bins = smoothedBins || freqDataRef.current
+        const gain = Math.max(0, Math.min(4, Number(amplitudeGainPct) / 100))
+        const lift = Math.max(-1, Math.min(1, Number(baselineLiftPct) / 100))
+        const shapeAmplitude = (rawValue: number) => {
+          const shifted = rawValue * gain + lift
+          return Math.max(0, Math.min(1, shifted))
+        }
         if (!bins || bins.length < 2) {
           const base0 = scale === 'log' ? Math.pow(Math.max(0, Math.min(1, tNorm)), 2) : Math.max(0, Math.min(1, tNorm))
-          const { start, end } = getSpectrumRange(512, spectrumMode, bandMode)
+          const { start, end } = getSpectrumRange(512, spectrumMode, bandMode, voiceLowHz, voiceHighHz, 44100)
           const bandNorm = start / 511 + base0 * Math.max(0.0001, (end - start) / 511)
           const base = bandNorm
-          return 0.2 + 0.8 * Math.abs(Math.sin(t * 2 + base * Math.PI * 3))
+          const simulated = 0.2 + 0.8 * Math.abs(Math.sin(t * 2 + base * Math.PI * 3))
+          return shapeAmplitude(simulated)
         }
         const clamped = Math.max(0, Math.min(1, tNorm))
         const scaled = scale === 'log' ? Math.pow(clamped, 2) : clamped
-        const { start, end } = getSpectrumRange(bins.length, spectrumMode, bandMode)
+        const sampleRate = audioCtxRef.current?.sampleRate || 44100
+        const { start, end } = getSpectrumRange(bins.length, spectrumMode, bandMode, voiceLowHz, voiceHighHz, sampleRate)
         const idx = Math.max(start, Math.min(end, Math.round(start + scaled * (end - start))))
         const v = bins[idx] / 255
-        return Math.max(0, Math.min(1, v))
+        return shapeAmplitude(v)
       }
 
       const getWaveValue = (tNorm: number, scale: VisualizerScale) => {
@@ -443,7 +526,16 @@ function VisualizerPreview({
           ctx.beginPath()
           for (let i = 0; i < bars; i++) {
             const tt = bars <= 1 ? 0 : i / bars
-            const v = getSpectrumValue(tt, inst.scale, inst.spectrumMode, inst.bandMode)
+            const v = getSpectrumValue(
+              tt,
+              inst.scale,
+              inst.spectrumMode,
+              inst.bandMode,
+              inst.voiceLowHz,
+              inst.voiceHighHz,
+              inst.amplitudeGainPct,
+              inst.baselineLiftPct
+            )
             const len = inner + v * maxLen
             const ang = tt * Math.PI * 2 - Math.PI / 2
             const x0 = cx + Math.cos(ang) * inner
@@ -460,11 +552,45 @@ function VisualizerPreview({
           const barW = Math.max(2, (w - gap * (bars - 1)) / bars)
           for (let i = 0; i < bars; i++) {
             const tt = bars <= 1 ? 0 : i / (bars - 1)
-            const v = getSpectrumValue(tt, inst.scale, inst.spectrumMode, inst.bandMode)
+            const v = getSpectrumValue(
+              tt,
+              inst.scale,
+              inst.spectrumMode,
+              inst.bandMode,
+              inst.voiceLowHz,
+              inst.voiceHighHz,
+              inst.amplitudeGainPct,
+              inst.baselineLiftPct
+            )
             const bh = Math.round(v * h)
             if (bh <= 0) continue
             const x = i * (barW + gap)
             ctx.fillRect(x, h - bh, barW, bh)
+          }
+        } else if (inst.style === 'dot_spectrum') {
+          const bars = parseBarCount(inst.barCount)
+          const gap = 2
+          const barW = Math.max(2, (w - gap * (bars - 1)) / bars)
+          const dotR = Math.max(1.5, Math.min(4, barW * 0.38))
+          for (let i = 0; i < bars; i++) {
+            const tt = bars <= 1 ? 0 : i / (bars - 1)
+            const v = getSpectrumValue(
+              tt,
+              inst.scale,
+              inst.spectrumMode,
+              inst.bandMode,
+              inst.voiceLowHz,
+              inst.voiceHighHz,
+              inst.amplitudeGainPct,
+              inst.baselineLiftPct
+            )
+            const bh = Math.round(v * h)
+            if (bh <= 0) continue
+            const x = i * (barW + gap) + barW / 2
+            const y = h - bh
+            ctx.beginPath()
+            ctx.arc(x, y, dotR, 0, Math.PI * 2)
+            ctx.fill()
           }
         } else if (inst.style === 'mirror_bars') {
           const bars = parseBarCount(inst.barCount)
@@ -473,7 +599,16 @@ function VisualizerPreview({
           const centerY = h / 2
           for (let i = 0; i < bars; i++) {
             const tt = bars <= 1 ? 0 : i / (bars - 1)
-            const v = getSpectrumValue(tt, inst.scale, inst.spectrumMode, inst.bandMode)
+            const v = getSpectrumValue(
+              tt,
+              inst.scale,
+              inst.spectrumMode,
+              inst.bandMode,
+              inst.voiceLowHz,
+              inst.voiceHighHz,
+              inst.amplitudeGainPct,
+              inst.baselineLiftPct
+            )
             const hh = Math.round(v * h * 0.48)
             if (hh <= 0) continue
             const x = i * (barW + gap)
@@ -492,13 +627,105 @@ function VisualizerPreview({
             const yBottom = yTop + laneH
             for (let i = 0; i < bars; i++) {
               const tt = bars <= 1 ? 0 : i / (bars - 1)
-              const v = getSpectrumValue(tt, inst.scale, inst.spectrumMode, bands[lane])
+              const v = getSpectrumValue(
+                tt,
+                inst.scale,
+                inst.spectrumMode,
+                bands[lane],
+                inst.voiceLowHz,
+                inst.voiceHighHz,
+                inst.amplitudeGainPct,
+                inst.baselineLiftPct
+              )
               const bh = Math.round(v * laneH)
               if (bh <= 0) continue
               const x = i * (barW + gap)
               ctx.fillRect(x, yBottom - bh, barW, bh)
             }
           }
+        } else if (inst.style === 'ring_wave') {
+          const points = Math.max(64, Math.min(360, parseBarCount(inst.barCount) * 2))
+          const cx = w / 2
+          const cy = h / 2
+          const minDim = Math.min(w, h)
+          const baseR = Math.max(10, minDim * 0.22)
+          const ampR = Math.max(4, minDim * 0.18)
+          const values = new Array(points + 1).fill(0).map((_, i) => {
+            const tt = points <= 1 ? 0 : i / points
+            return getSpectrumValue(
+              tt,
+              inst.scale,
+              inst.spectrumMode,
+              inst.bandMode,
+              inst.voiceLowHz,
+              inst.voiceHighHz,
+              inst.amplitudeGainPct,
+              inst.baselineLiftPct
+            )
+          })
+          if (inst.bandMode !== 'full') {
+            const blurred = values.map((_, i) => {
+              let sum = 0
+              let count = 0
+              const radius = 6
+              for (let d = -radius; d <= radius; d++) {
+                const j = (i + d + values.length) % values.length
+                sum += values[j]
+                count++
+              }
+              return count > 0 ? sum / count : values[i]
+            })
+            const mean = values.reduce((a, b) => a + b, 0) / Math.max(1, values.length)
+            for (let i = 0; i < values.length; i++) {
+              const mixed = values[i] * 0.7 + blurred[i] * 0.3
+              values[i] = Math.max(mixed, mean * 0.35)
+            }
+          }
+          ctx.lineWidth = 2
+          ctx.beginPath()
+          for (let i = 0; i <= points; i++) {
+            const tt = points <= 1 ? 0 : i / points
+            const bin = values[i] || 0
+            const rr = baseR + bin * ampR
+            const ang = tt * Math.PI * 2 - Math.PI / 2
+            const x = cx + Math.cos(ang) * rr
+            const y = cy + Math.sin(ang) * rr
+            if (i === 0) ctx.moveTo(x, y)
+            else ctx.lineTo(x, y)
+          }
+          ctx.closePath()
+          ctx.stroke()
+        } else if (inst.style === 'pulse_orb') {
+          let sum = 0
+          const samples = 48
+          for (let i = 0; i < samples; i++) {
+            const tt = samples <= 1 ? 0 : i / (samples - 1)
+            sum += getSpectrumValue(
+              tt,
+              inst.scale,
+              inst.spectrumMode,
+              inst.bandMode,
+              inst.voiceLowHz,
+              inst.voiceHighHz,
+              inst.amplitudeGainPct,
+              inst.baselineLiftPct
+            )
+          }
+          const a = Math.max(0, Math.min(1, sum / samples))
+          const cx = w / 2
+          const cy = h / 2
+          const minDim = Math.min(w, h)
+          const baseR = Math.max(8, minDim * 0.11)
+          const pulse = Math.max(0, Math.min(1, a))
+          const orbR = baseR + pulse * minDim * 0.14
+          ctx.beginPath()
+          ctx.arc(cx, cy, orbR, 0, Math.PI * 2)
+          ctx.fill()
+          ctx.globalAlpha = Math.max(0.15, Math.min(0.85, instOpacity * 0.65))
+          ctx.lineWidth = Math.max(1.5, minDim * 0.012)
+          ctx.beginPath()
+          ctx.arc(cx, cy, orbR + minDim * 0.05, 0, Math.PI * 2)
+          ctx.stroke()
         } else {
           const points = 180
           const center = h / 2
@@ -592,6 +819,7 @@ export default function VisualizerPresetsPage() {
   const [previewAudioId, setPreviewAudioId] = React.useState<number | null>(null)
   const [previewPlaying, setPreviewPlaying] = React.useState(false)
   const [previewAudioEl, setPreviewAudioEl] = React.useState<HTMLAudioElement | null>(null)
+  const [collapsedInstanceIds, setCollapsedInstanceIds] = React.useState<Record<string, boolean>>({})
 
   const sharedCardListStyle = React.useMemo(
     () =>
@@ -654,6 +882,20 @@ export default function VisualizerPresetsPage() {
     }
     void run()
   }, [routeCtx.action])
+
+  React.useEffect(() => {
+    if (routeCtx.action === 'list') return
+    setCollapsedInstanceIds((prev) => {
+      const next: Record<string, boolean> = {}
+      const instances = normalizeInstances(draft.instances)
+      for (const inst of instances) {
+        const id = String(inst.id || '')
+        if (!id) continue
+        next[id] = Object.prototype.hasOwnProperty.call(prev, id) ? Boolean(prev[id]) : true
+      }
+      return next
+    })
+  }, [draft.instances, routeCtx.action])
 
   React.useEffect(() => {
     if (routeCtx.action === 'list') return
@@ -754,6 +996,7 @@ export default function VisualizerPresetsPage() {
       if (list.length >= 8) return prev
       const last = list[list.length - 1] || DEFAULT_INSTANCE
       const nextInst = normalizeInstance({ ...last, id: `instance_${list.length + 1}` }, last, list.length)
+      setCollapsedInstanceIds((prevState) => ({ ...prevState, [nextInst.id]: false }))
       return { ...prev, instances: [...list, nextInst] }
     })
   }, [])
@@ -763,7 +1006,15 @@ export default function VisualizerPresetsPage() {
       const list = normalizeInstances(prev.instances)
       if (list.length <= 1) return prev
       if (idx < 0 || idx >= list.length) return prev
+      const removedId = String(list[idx]?.id || '')
       const next = list.filter((_, i) => i !== idx).map((inst, i) => normalizeInstance({ ...inst, id: `instance_${i + 1}` }, inst, i))
+      if (removedId) {
+        setCollapsedInstanceIds((prevState) => {
+          const out = { ...prevState }
+          delete out[removedId]
+          return out
+        })
+      }
       return { ...prev, instances: next }
     })
   }, [])
@@ -789,6 +1040,10 @@ export default function VisualizerPresetsPage() {
         barCount: primary.barCount,
         spectrumMode: primary.spectrumMode,
         bandMode: primary.bandMode,
+        voiceLowHz: primary.voiceLowHz,
+        voiceHighHz: primary.voiceHighHz,
+        amplitudeGainPct: primary.amplitudeGainPct,
+        baselineLiftPct: primary.baselineLiftPct,
         gradientEnabled: primary.gradientEnabled,
         gradientStart: primary.gradientStart,
         gradientEnd: primary.gradientEnd,
@@ -969,27 +1224,38 @@ export default function VisualizerPresetsPage() {
                     background: 'rgba(0,0,0,0.28)',
                   }}
                 >
+                  {(() => {
+                    const isCollapsed = collapsedInstanceIds[String(inst.id)] === true
+                    return (
+                      <>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
                     <div style={{ color: '#fff', fontSize: 13, fontWeight: 900 }}>Instance #{idx + 1}</div>
-                    <button
-                      type="button"
-                      onClick={() => removeInstance(idx)}
-                      disabled={arr.length <= 1}
-                      style={{
-                        padding: '6px 10px',
-                        borderRadius: 10,
-                        border: '1px solid rgba(255,155,155,0.40)',
-                        background: 'rgba(128,0,0,1)',
-                        color: '#fff',
-                        fontWeight: 800,
-                        cursor: arr.length <= 1 ? 'default' : 'pointer',
-                        opacity: arr.length <= 1 ? 0.55 : 1,
-                      }}
-                    >
-                      -
-                    </button>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setCollapsedInstanceIds((prevState) => ({
+                            ...prevState,
+                            [String(inst.id)]: !isCollapsed,
+                          }))
+                        }
+                        style={{
+                          padding: '6px 10px',
+                          borderRadius: 10,
+                          border: '1px solid rgba(255,255,255,0.18)',
+                          background: 'rgba(255,255,255,0.06)',
+                          color: '#fff',
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {isCollapsed ? 'Open' : 'Close'}
+                      </button>
+                    </div>
                   </div>
 
+                  {!isCollapsed ? (
+                    <>
                   <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))' }}>
                     <label style={{ display: 'grid', gap: 6 }}>
                       <div style={{ color: '#bbb', fontSize: 13 }}>Style</div>
@@ -1002,8 +1268,11 @@ export default function VisualizerPresetsPage() {
                         <option value="wave_fill">Wave Fill</option>
                         <option value="center_wave">Center Wave</option>
                         <option value="spectrum_bars">Spectrum Bars</option>
+                        <option value="dot_spectrum">Dot Spectrum</option>
                         <option value="mirror_bars">Mirror Bars</option>
                         <option value="stacked_bands">Stacked Bands</option>
+                        <option value="ring_wave">Ring Wave</option>
+                        <option value="pulse_orb">Pulse Orb</option>
                         <option value="radial_bars">Radial Bars</option>
                       </select>
                     </label>
@@ -1042,6 +1311,67 @@ export default function VisualizerPresetsPage() {
                         <option value="band_3">Band 3</option>
                         <option value="band_4">Band 4</option>
                       </select>
+                    </label>
+                  </div>
+
+                  <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))' }}>
+                    <label style={{ display: 'grid', gap: 6 }}>
+                      <div style={{ color: '#bbb', fontSize: 13 }}>Voice Low (Hz)</div>
+                      <input
+                        type="number"
+                        min={20}
+                        max={12000}
+                        step={10}
+                        value={inst.voiceLowHz}
+                        onChange={(e) => {
+                          const low = parseVoiceLowHz(e.target.value)
+                          const high = Math.max(low + 10, parseVoiceHighHz(inst.voiceHighHz))
+                          updateInstance(idx, { voiceLowHz: low, voiceHighHz: high })
+                        }}
+                        disabled={inst.spectrumMode !== 'voice'}
+                        style={{ ...MODAL_INPUT_STYLE, opacity: inst.spectrumMode !== 'voice' ? 0.55 : 1 }}
+                      />
+                    </label>
+                    <label style={{ display: 'grid', gap: 6 }}>
+                      <div style={{ color: '#bbb', fontSize: 13 }}>Voice High (Hz)</div>
+                      <input
+                        type="number"
+                        min={100}
+                        max={20000}
+                        step={10}
+                        value={inst.voiceHighHz}
+                        onChange={(e) => {
+                          const high = parseVoiceHighHz(e.target.value)
+                          const low = parseVoiceLowHz(inst.voiceLowHz)
+                          updateInstance(idx, { voiceLowHz: low, voiceHighHz: Math.max(low + 10, high) })
+                        }}
+                        disabled={inst.spectrumMode !== 'voice'}
+                        style={{ ...MODAL_INPUT_STYLE, opacity: inst.spectrumMode !== 'voice' ? 0.55 : 1 }}
+                      />
+                    </label>
+                    <label style={{ display: 'grid', gap: 6 }}>
+                      <div style={{ color: '#bbb', fontSize: 13 }}>Gain (%)</div>
+                      <input
+                        type="number"
+                        min={0}
+                        max={400}
+                        step={5}
+                        value={inst.amplitudeGainPct}
+                        onChange={(e) => updateInstance(idx, { amplitudeGainPct: parseAmplitudeGainPct(e.target.value) })}
+                        style={MODAL_INPUT_STYLE}
+                      />
+                    </label>
+                    <label style={{ display: 'grid', gap: 6 }}>
+                      <div style={{ color: '#bbb', fontSize: 13 }}>Lift (%)</div>
+                      <input
+                        type="number"
+                        min={-100}
+                        max={100}
+                        step={1}
+                        value={inst.baselineLiftPct}
+                        onChange={(e) => updateInstance(idx, { baselineLiftPct: parseBaselineLiftPct(e.target.value) })}
+                        style={MODAL_INPUT_STYLE}
+                      />
                     </label>
                   </div>
 
@@ -1129,6 +1459,30 @@ export default function VisualizerPresetsPage() {
                       ) : null}
                     </label>
                   </div>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <button
+                      type="button"
+                      onClick={() => removeInstance(idx)}
+                      disabled={arr.length <= 1}
+                      style={{
+                        padding: '6px 10px',
+                        borderRadius: 10,
+                        border: '1px solid rgba(255,155,155,0.40)',
+                        background: 'rgba(128,0,0,1)',
+                        color: '#fff',
+                        fontWeight: 800,
+                        cursor: arr.length <= 1 ? 'default' : 'pointer',
+                        opacity: arr.length <= 1 ? 0.55 : 1,
+                      }}
+                    >
+                      -
+                    </button>
+                  </div>
+                    </>
+                  ) : null}
+                      </>
+                    )
+                  })()}
                 </div>
               ))}
             </div>

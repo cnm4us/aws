@@ -191,14 +191,17 @@ function normalizeNarrationVisualizerConfig(raw: any): {
     'wave_fill',
     'center_wave',
     'spectrum_bars',
+    'dot_spectrum',
     'mirror_bars',
     'stacked_bands',
+    'ring_wave',
+    'pulse_orb',
     'radial_bars',
   ])
   const mappedStyle =
-    styleRaw === 'radial_bars' || styleRaw === 'mirror_bars' || styleRaw === 'stacked_bands'
+    styleRaw === 'radial_bars' || styleRaw === 'mirror_bars' || styleRaw === 'stacked_bands' || styleRaw === 'dot_spectrum'
       ? 'spectrum_bars'
-      : styleRaw === 'center_wave'
+      : styleRaw === 'center_wave' || styleRaw === 'ring_wave' || styleRaw === 'pulse_orb'
         ? 'wave_line'
         : styleRaw
   const style = styleAllowed.has(styleRaw) ? (mappedStyle as any) : 'wave_line'

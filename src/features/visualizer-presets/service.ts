@@ -17,8 +17,11 @@ const STYLES: readonly VisualizerStyle[] = [
   'wave_fill',
   'center_wave',
   'spectrum_bars',
+  'dot_spectrum',
   'mirror_bars',
   'stacked_bands',
+  'ring_wave',
+  'pulse_orb',
   'radial_bars',
 ]
 const SCALES: readonly VisualizerScale[] = ['linear', 'log']
@@ -36,6 +39,10 @@ const DEFAULTS = {
   barCount: 48,
   spectrumMode: 'full' as VisualizerSpectrumMode,
   bandMode: 'full' as VisualizerBandMode,
+  voiceLowHz: 80,
+  voiceHighHz: 4000,
+  amplitudeGainPct: 100,
+  baselineLiftPct: 0,
   gradientEnabled: false,
   gradientStart: '#d4af37',
   gradientEnd: '#f7d774',
@@ -103,6 +110,40 @@ function normalizeBarCount(raw: any): number {
   return Math.round(Math.min(Math.max(n, 12), 128))
 }
 
+function normalizeVoiceLowHz(raw: any): number {
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return DEFAULTS.voiceLowHz
+  return Math.round(Math.min(Math.max(n, 20), 12000))
+}
+
+function normalizeVoiceHighHz(raw: any): number {
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return DEFAULTS.voiceHighHz
+  return Math.round(Math.min(Math.max(n, 100), 20000))
+}
+
+function normalizeAmplitudeGainPct(raw: any): number {
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return DEFAULTS.amplitudeGainPct
+  return Math.round(Math.min(Math.max(n, 0), 400))
+}
+
+function normalizeBaselineLiftPct(raw: any): number {
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return DEFAULTS.baselineLiftPct
+  return Math.round(Math.min(Math.max(n, -100), 100))
+}
+
+function normalizeVoiceRange(lowRaw: any, highRaw: any): { voiceLowHz: number; voiceHighHz: number } {
+  let voiceLowHz = normalizeVoiceLowHz(lowRaw)
+  let voiceHighHz = normalizeVoiceHighHz(highRaw)
+  if (voiceLowHz >= voiceHighHz) {
+    if (voiceLowHz >= 19990) voiceLowHz = 19990
+    voiceHighHz = Math.min(20000, voiceLowHz + 10)
+  }
+  return { voiceLowHz, voiceHighHz }
+}
+
 function normalizeInstance(raw: any, fallback?: Partial<VisualizerPresetInstanceDto>, idx = 0): VisualizerPresetInstanceDto {
   const seed = fallback || {}
   const idRaw = String(raw?.id ?? seed.id ?? '').trim()
@@ -132,6 +173,9 @@ function normalizeInstance(raw: any, fallback?: Partial<VisualizerPresetInstance
   const gradientEnd = normalizeHexColor(raw?.gradientEnd ?? seed.gradientEnd, DEFAULTS.gradientEnd)
   const opacity = normalizeOpacity(raw?.opacity ?? seed.opacity)
   const barCount = normalizeBarCount(raw?.barCount ?? seed.barCount)
+  const { voiceLowHz, voiceHighHz } = normalizeVoiceRange(raw?.voiceLowHz ?? seed.voiceLowHz, raw?.voiceHighHz ?? seed.voiceHighHz)
+  const amplitudeGainPct = normalizeAmplitudeGainPct(raw?.amplitudeGainPct ?? seed.amplitudeGainPct)
+  const baselineLiftPct = normalizeBaselineLiftPct(raw?.baselineLiftPct ?? seed.baselineLiftPct)
 
   return {
     id,
@@ -142,6 +186,10 @@ function normalizeInstance(raw: any, fallback?: Partial<VisualizerPresetInstance
     barCount,
     spectrumMode,
     bandMode,
+    voiceLowHz,
+    voiceHighHz,
+    amplitudeGainPct,
+    baselineLiftPct,
     gradientEnabled,
     gradientStart,
     gradientEnd,
@@ -189,6 +237,10 @@ function legacyStyleFromRow(row: VisualizerPresetRow): Partial<VisualizerPresetI
       ? (String((row as any).spectrum_mode || '').trim().toLowerCase() as VisualizerSpectrumMode)
       : DEFAULTS.spectrumMode,
     bandMode: DEFAULTS.bandMode,
+    voiceLowHz: DEFAULTS.voiceLowHz,
+    voiceHighHz: DEFAULTS.voiceHighHz,
+    amplitudeGainPct: DEFAULTS.amplitudeGainPct,
+    baselineLiftPct: DEFAULTS.baselineLiftPct,
     gradientEnabled: Number((row as any).gradient_enabled) === 1,
     gradientStart: normalizeHexColor((row as any).gradient_start, normalizeHexColor((row as any).fg_color, DEFAULTS.fgColor)),
     gradientEnd: normalizeHexColor((row as any).gradient_end, DEFAULTS.gradientEnd),
@@ -257,6 +309,10 @@ function mapRow(row: VisualizerPresetRow): VisualizerPresetDto {
     barCount: primary.barCount,
     spectrumMode: primary.spectrumMode,
     bandMode: primary.bandMode,
+    voiceLowHz: primary.voiceLowHz,
+    voiceHighHz: primary.voiceHighHz,
+    amplitudeGainPct: primary.amplitudeGainPct,
+    baselineLiftPct: primary.baselineLiftPct,
     gradientEnabled: primary.gradientEnabled,
     gradientStart: primary.gradientStart,
     gradientEnd: primary.gradientEnd,
@@ -301,6 +357,10 @@ export async function createForUser(input: {
   barCount?: any
   spectrumMode?: any
   bandMode?: any
+  voiceLowHz?: any
+  voiceHighHz?: any
+  amplitudeGainPct?: any
+  baselineLiftPct?: any
   gradientEnabled?: any
   gradientStart?: any
   gradientEnd?: any
@@ -324,6 +384,9 @@ export async function createForUser(input: {
   const bandMode: VisualizerBandMode = isEnumValue(bandModeRaw, BAND_MODES)
     ? (bandModeRaw as VisualizerBandMode)
     : DEFAULTS.bandMode
+  const { voiceLowHz, voiceHighHz } = normalizeVoiceRange(input.voiceLowHz, input.voiceHighHz)
+  const amplitudeGainPct = normalizeAmplitudeGainPct(input.amplitudeGainPct)
+  const baselineLiftPct = normalizeBaselineLiftPct(input.baselineLiftPct)
   const gradientModeRaw = String(input.gradientMode ?? DEFAULTS.gradientMode).trim().toLowerCase()
   const gradientMode: VisualizerGradientMode = isEnumValue(gradientModeRaw, GRADIENT_MODES) ? (gradientModeRaw as VisualizerGradientMode) : DEFAULTS.gradientMode
   const clipModeRaw = String(input.clipMode ?? DEFAULTS.clipMode).trim().toLowerCase()
@@ -347,6 +410,10 @@ export async function createForUser(input: {
     barCount,
     spectrumMode,
     bandMode,
+    voiceLowHz,
+    voiceHighHz,
+    amplitudeGainPct,
+    baselineLiftPct,
     gradientEnabled,
     gradientStart,
     gradientEnd,
@@ -388,13 +455,17 @@ export async function updateForUser(
     bgColor?: any
     opacity?: any
     scale?: any
-    barCount?: any
-    spectrumMode?: any
-    bandMode?: any
-    gradientEnabled?: any
-    gradientStart?: any
-    gradientEnd?: any
-    gradientMode?: any
+  barCount?: any
+  spectrumMode?: any
+  bandMode?: any
+  voiceLowHz?: any
+  voiceHighHz?: any
+  amplitudeGainPct?: any
+  baselineLiftPct?: any
+  gradientEnabled?: any
+  gradientStart?: any
+  gradientEnd?: any
+  gradientMode?: any
     clipMode?: any
     clipInsetPct?: any
     clipHeightPct?: any
@@ -428,6 +499,17 @@ export async function updateForUser(
     const bandRaw = String(input.bandMode ?? '').trim().toLowerCase()
     patch.bandMode = isEnumValue(bandRaw, BAND_MODES) ? bandRaw : DEFAULTS.bandMode
   }
+  if (input.voiceLowHz !== undefined) patch.voiceLowHz = normalizeVoiceLowHz(input.voiceLowHz)
+  if (input.voiceHighHz !== undefined) patch.voiceHighHz = normalizeVoiceHighHz(input.voiceHighHz)
+  if (patch.voiceLowHz !== undefined || patch.voiceHighHz !== undefined) {
+    const currentLow = patch.voiceLowHz ?? mappedCurrent.voiceLowHz ?? DEFAULTS.voiceLowHz
+    const currentHigh = patch.voiceHighHz ?? mappedCurrent.voiceHighHz ?? DEFAULTS.voiceHighHz
+    const normalizedRange = normalizeVoiceRange(currentLow, currentHigh)
+    patch.voiceLowHz = normalizedRange.voiceLowHz
+    patch.voiceHighHz = normalizedRange.voiceHighHz
+  }
+  if (input.amplitudeGainPct !== undefined) patch.amplitudeGainPct = normalizeAmplitudeGainPct(input.amplitudeGainPct)
+  if (input.baselineLiftPct !== undefined) patch.baselineLiftPct = normalizeBaselineLiftPct(input.baselineLiftPct)
   if (input.barCount !== undefined) patch.barCount = normalizeBarCount(input.barCount)
   if (input.gradientEnabled !== undefined) patch.gradientEnabled = input.gradientEnabled === true
   if (input.gradientStart !== undefined) patch.gradientStart = normalizeHexColor(input.gradientStart, DEFAULTS.gradientStart)
@@ -451,6 +533,10 @@ export async function updateForUser(
     input.barCount !== undefined ||
     input.spectrumMode !== undefined ||
     input.bandMode !== undefined ||
+    input.voiceLowHz !== undefined ||
+    input.voiceHighHz !== undefined ||
+    input.amplitudeGainPct !== undefined ||
+    input.baselineLiftPct !== undefined ||
     input.gradientEnabled !== undefined ||
     input.gradientStart !== undefined ||
     input.gradientEnd !== undefined ||
@@ -468,6 +554,10 @@ export async function updateForUser(
     patch.barCount = primary.barCount
     patch.spectrumMode = primary.spectrumMode
     patch.bandMode = primary.bandMode
+    patch.voiceLowHz = primary.voiceLowHz
+    patch.voiceHighHz = primary.voiceHighHz
+    patch.amplitudeGainPct = primary.amplitudeGainPct
+    patch.baselineLiftPct = primary.baselineLiftPct
     patch.gradientEnabled = primary.gradientEnabled
     patch.gradientStart = primary.gradientStart
     patch.gradientEnd = primary.gradientEnd
@@ -486,6 +576,10 @@ export async function updateForUser(
         barCount: patch.barCount ?? current[0].barCount,
         spectrumMode: patch.spectrumMode ?? current[0].spectrumMode,
         bandMode: patch.bandMode ?? current[0].bandMode,
+        voiceLowHz: patch.voiceLowHz ?? current[0].voiceLowHz,
+        voiceHighHz: patch.voiceHighHz ?? current[0].voiceHighHz,
+        amplitudeGainPct: patch.amplitudeGainPct ?? current[0].amplitudeGainPct,
+        baselineLiftPct: patch.baselineLiftPct ?? current[0].baselineLiftPct,
         gradientEnabled: patch.gradientEnabled ?? current[0].gradientEnabled,
         gradientStart: patch.gradientStart ?? current[0].gradientStart,
         gradientEnd: patch.gradientEnd ?? current[0].gradientEnd,
@@ -504,6 +598,10 @@ export async function updateForUser(
     patch.barCount = primaryNext.barCount
     patch.spectrumMode = primaryNext.spectrumMode
     patch.bandMode = primaryNext.bandMode
+    patch.voiceLowHz = primaryNext.voiceLowHz
+    patch.voiceHighHz = primaryNext.voiceHighHz
+    patch.amplitudeGainPct = primaryNext.amplitudeGainPct
+    patch.baselineLiftPct = primaryNext.baselineLiftPct
     patch.gradientEnabled = primaryNext.gradientEnabled
     patch.gradientStart = primaryNext.gradientStart
     patch.gradientEnd = primaryNext.gradientEnd

@@ -514,7 +514,7 @@ export async function ensureSchema(db: DB) {
               owner_user_id BIGINT UNSIGNED NOT NULL,
               name VARCHAR(120) NOT NULL,
               description TEXT NULL,
-              style ENUM('wave_line','wave_fill','center_wave','spectrum_bars','mirror_bars','stacked_bands','radial_bars') NOT NULL DEFAULT 'wave_line',
+              style ENUM('wave_line','wave_fill','center_wave','spectrum_bars','dot_spectrum','mirror_bars','stacked_bands','ring_wave','pulse_orb','radial_bars') NOT NULL DEFAULT 'wave_line',
               fg_color VARCHAR(32) NOT NULL DEFAULT '#d4af37',
               bg_color VARCHAR(32) NOT NULL DEFAULT 'transparent',
               opacity DECIMAL(4,2) NOT NULL DEFAULT 1.00,
@@ -536,11 +536,11 @@ export async function ensureSchema(db: DB) {
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
           `);
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_visualizer_archived ON visualizer_presets (archived_at, id)`); } catch {}
-          await db.query(`ALTER TABLE visualizer_presets ADD COLUMN IF NOT EXISTS style ENUM('wave_line','wave_fill','center_wave','spectrum_bars','mirror_bars','stacked_bands','radial_bars') NOT NULL DEFAULT 'wave_line'`);
+          await db.query(`ALTER TABLE visualizer_presets ADD COLUMN IF NOT EXISTS style ENUM('wave_line','wave_fill','center_wave','spectrum_bars','dot_spectrum','mirror_bars','stacked_bands','ring_wave','pulse_orb','radial_bars') NOT NULL DEFAULT 'wave_line'`);
           try {
             await db.query(
               `ALTER TABLE visualizer_presets
-                 MODIFY COLUMN style ENUM('wave_line','wave_fill','center_wave','spectrum_bars','mirror_bars','stacked_bands','radial_bars')
+                 MODIFY COLUMN style ENUM('wave_line','wave_fill','center_wave','spectrum_bars','dot_spectrum','mirror_bars','stacked_bands','ring_wave','pulse_orb','radial_bars')
                  NOT NULL DEFAULT 'wave_line'`
             )
           } catch {}
