@@ -43,6 +43,10 @@ const DEFAULTS = {
   voiceHighHz: 4000,
   amplitudeGainPct: 100,
   baselineLiftPct: 0,
+  waveVerticalGainPct: 100,
+  waveSmoothingPct: 0,
+  waveNoiseGatePct: 0,
+  waveTemporalSmoothPct: 0,
   gradientEnabled: false,
   gradientStart: '#d4af37',
   gradientEnd: '#f7d774',
@@ -113,7 +117,7 @@ function normalizeBarCount(raw: any): number {
 function normalizeVoiceLowHz(raw: any): number {
   const n = Number(raw)
   if (!Number.isFinite(n)) return DEFAULTS.voiceLowHz
-  return Math.round(Math.min(Math.max(n, 20), 12000))
+  return Math.round(Math.min(Math.max(n, 20), 19990))
 }
 
 function normalizeVoiceHighHz(raw: any): number {
@@ -132,6 +136,30 @@ function normalizeBaselineLiftPct(raw: any): number {
   const n = Number(raw)
   if (!Number.isFinite(n)) return DEFAULTS.baselineLiftPct
   return Math.round(Math.min(Math.max(n, -100), 100))
+}
+
+function normalizeWaveVerticalGainPct(raw: any): number {
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return DEFAULTS.waveVerticalGainPct
+  return Math.round(Math.min(Math.max(n, 25), 400))
+}
+
+function normalizeWaveSmoothingPct(raw: any): number {
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return DEFAULTS.waveSmoothingPct
+  return Math.round(Math.min(Math.max(n, 0), 95))
+}
+
+function normalizeWaveNoiseGatePct(raw: any): number {
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return DEFAULTS.waveNoiseGatePct
+  return Math.round(Math.min(Math.max(n, 0), 30))
+}
+
+function normalizeWaveTemporalSmoothPct(raw: any): number {
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return DEFAULTS.waveTemporalSmoothPct
+  return Math.round(Math.min(Math.max(n, 0), 98))
 }
 
 function normalizeVoiceRange(lowRaw: any, highRaw: any): { voiceLowHz: number; voiceHighHz: number } {
@@ -176,6 +204,10 @@ function normalizeInstance(raw: any, fallback?: Partial<VisualizerPresetInstance
   const { voiceLowHz, voiceHighHz } = normalizeVoiceRange(raw?.voiceLowHz ?? seed.voiceLowHz, raw?.voiceHighHz ?? seed.voiceHighHz)
   const amplitudeGainPct = normalizeAmplitudeGainPct(raw?.amplitudeGainPct ?? seed.amplitudeGainPct)
   const baselineLiftPct = normalizeBaselineLiftPct(raw?.baselineLiftPct ?? seed.baselineLiftPct)
+  const waveVerticalGainPct = normalizeWaveVerticalGainPct(raw?.waveVerticalGainPct ?? seed.waveVerticalGainPct)
+  const waveSmoothingPct = normalizeWaveSmoothingPct(raw?.waveSmoothingPct ?? seed.waveSmoothingPct)
+  const waveNoiseGatePct = normalizeWaveNoiseGatePct(raw?.waveNoiseGatePct ?? seed.waveNoiseGatePct)
+  const waveTemporalSmoothPct = normalizeWaveTemporalSmoothPct(raw?.waveTemporalSmoothPct ?? seed.waveTemporalSmoothPct)
 
   return {
     id,
@@ -190,6 +222,10 @@ function normalizeInstance(raw: any, fallback?: Partial<VisualizerPresetInstance
     voiceHighHz,
     amplitudeGainPct,
     baselineLiftPct,
+    waveVerticalGainPct,
+    waveSmoothingPct,
+    waveNoiseGatePct,
+    waveTemporalSmoothPct,
     gradientEnabled,
     gradientStart,
     gradientEnd,
@@ -241,6 +277,10 @@ function legacyStyleFromRow(row: VisualizerPresetRow): Partial<VisualizerPresetI
     voiceHighHz: DEFAULTS.voiceHighHz,
     amplitudeGainPct: DEFAULTS.amplitudeGainPct,
     baselineLiftPct: DEFAULTS.baselineLiftPct,
+    waveVerticalGainPct: DEFAULTS.waveVerticalGainPct,
+    waveSmoothingPct: DEFAULTS.waveSmoothingPct,
+    waveNoiseGatePct: DEFAULTS.waveNoiseGatePct,
+    waveTemporalSmoothPct: DEFAULTS.waveTemporalSmoothPct,
     gradientEnabled: Number((row as any).gradient_enabled) === 1,
     gradientStart: normalizeHexColor((row as any).gradient_start, normalizeHexColor((row as any).fg_color, DEFAULTS.fgColor)),
     gradientEnd: normalizeHexColor((row as any).gradient_end, DEFAULTS.gradientEnd),
@@ -313,6 +353,10 @@ function mapRow(row: VisualizerPresetRow): VisualizerPresetDto {
     voiceHighHz: primary.voiceHighHz,
     amplitudeGainPct: primary.amplitudeGainPct,
     baselineLiftPct: primary.baselineLiftPct,
+    waveVerticalGainPct: primary.waveVerticalGainPct,
+    waveSmoothingPct: primary.waveSmoothingPct,
+    waveNoiseGatePct: primary.waveNoiseGatePct,
+    waveTemporalSmoothPct: primary.waveTemporalSmoothPct,
     gradientEnabled: primary.gradientEnabled,
     gradientStart: primary.gradientStart,
     gradientEnd: primary.gradientEnd,
@@ -361,6 +405,10 @@ export async function createForUser(input: {
   voiceHighHz?: any
   amplitudeGainPct?: any
   baselineLiftPct?: any
+  waveVerticalGainPct?: any
+  waveSmoothingPct?: any
+  waveNoiseGatePct?: any
+  waveTemporalSmoothPct?: any
   gradientEnabled?: any
   gradientStart?: any
   gradientEnd?: any
@@ -387,6 +435,10 @@ export async function createForUser(input: {
   const { voiceLowHz, voiceHighHz } = normalizeVoiceRange(input.voiceLowHz, input.voiceHighHz)
   const amplitudeGainPct = normalizeAmplitudeGainPct(input.amplitudeGainPct)
   const baselineLiftPct = normalizeBaselineLiftPct(input.baselineLiftPct)
+  const waveVerticalGainPct = normalizeWaveVerticalGainPct(input.waveVerticalGainPct)
+  const waveSmoothingPct = normalizeWaveSmoothingPct(input.waveSmoothingPct)
+  const waveNoiseGatePct = normalizeWaveNoiseGatePct(input.waveNoiseGatePct)
+  const waveTemporalSmoothPct = normalizeWaveTemporalSmoothPct(input.waveTemporalSmoothPct)
   const gradientModeRaw = String(input.gradientMode ?? DEFAULTS.gradientMode).trim().toLowerCase()
   const gradientMode: VisualizerGradientMode = isEnumValue(gradientModeRaw, GRADIENT_MODES) ? (gradientModeRaw as VisualizerGradientMode) : DEFAULTS.gradientMode
   const clipModeRaw = String(input.clipMode ?? DEFAULTS.clipMode).trim().toLowerCase()
@@ -414,6 +466,10 @@ export async function createForUser(input: {
     voiceHighHz,
     amplitudeGainPct,
     baselineLiftPct,
+    waveVerticalGainPct,
+    waveSmoothingPct,
+    waveNoiseGatePct,
+    waveTemporalSmoothPct,
     gradientEnabled,
     gradientStart,
     gradientEnd,
@@ -462,6 +518,10 @@ export async function updateForUser(
   voiceHighHz?: any
   amplitudeGainPct?: any
   baselineLiftPct?: any
+  waveVerticalGainPct?: any
+  waveSmoothingPct?: any
+  waveNoiseGatePct?: any
+  waveTemporalSmoothPct?: any
   gradientEnabled?: any
   gradientStart?: any
   gradientEnd?: any
@@ -510,6 +570,10 @@ export async function updateForUser(
   }
   if (input.amplitudeGainPct !== undefined) patch.amplitudeGainPct = normalizeAmplitudeGainPct(input.amplitudeGainPct)
   if (input.baselineLiftPct !== undefined) patch.baselineLiftPct = normalizeBaselineLiftPct(input.baselineLiftPct)
+  if (input.waveVerticalGainPct !== undefined) patch.waveVerticalGainPct = normalizeWaveVerticalGainPct(input.waveVerticalGainPct)
+  if (input.waveSmoothingPct !== undefined) patch.waveSmoothingPct = normalizeWaveSmoothingPct(input.waveSmoothingPct)
+  if (input.waveNoiseGatePct !== undefined) patch.waveNoiseGatePct = normalizeWaveNoiseGatePct(input.waveNoiseGatePct)
+  if (input.waveTemporalSmoothPct !== undefined) patch.waveTemporalSmoothPct = normalizeWaveTemporalSmoothPct(input.waveTemporalSmoothPct)
   if (input.barCount !== undefined) patch.barCount = normalizeBarCount(input.barCount)
   if (input.gradientEnabled !== undefined) patch.gradientEnabled = input.gradientEnabled === true
   if (input.gradientStart !== undefined) patch.gradientStart = normalizeHexColor(input.gradientStart, DEFAULTS.gradientStart)
@@ -537,6 +601,10 @@ export async function updateForUser(
     input.voiceHighHz !== undefined ||
     input.amplitudeGainPct !== undefined ||
     input.baselineLiftPct !== undefined ||
+    input.waveVerticalGainPct !== undefined ||
+    input.waveSmoothingPct !== undefined ||
+    input.waveNoiseGatePct !== undefined ||
+    input.waveTemporalSmoothPct !== undefined ||
     input.gradientEnabled !== undefined ||
     input.gradientStart !== undefined ||
     input.gradientEnd !== undefined ||
@@ -558,6 +626,10 @@ export async function updateForUser(
     patch.voiceHighHz = primary.voiceHighHz
     patch.amplitudeGainPct = primary.amplitudeGainPct
     patch.baselineLiftPct = primary.baselineLiftPct
+    patch.waveVerticalGainPct = primary.waveVerticalGainPct
+    patch.waveSmoothingPct = primary.waveSmoothingPct
+    patch.waveNoiseGatePct = primary.waveNoiseGatePct
+    patch.waveTemporalSmoothPct = primary.waveTemporalSmoothPct
     patch.gradientEnabled = primary.gradientEnabled
     patch.gradientStart = primary.gradientStart
     patch.gradientEnd = primary.gradientEnd
@@ -580,6 +652,10 @@ export async function updateForUser(
         voiceHighHz: patch.voiceHighHz ?? current[0].voiceHighHz,
         amplitudeGainPct: patch.amplitudeGainPct ?? current[0].amplitudeGainPct,
         baselineLiftPct: patch.baselineLiftPct ?? current[0].baselineLiftPct,
+        waveVerticalGainPct: patch.waveVerticalGainPct ?? current[0].waveVerticalGainPct,
+        waveSmoothingPct: patch.waveSmoothingPct ?? current[0].waveSmoothingPct,
+        waveNoiseGatePct: patch.waveNoiseGatePct ?? current[0].waveNoiseGatePct,
+        waveTemporalSmoothPct: patch.waveTemporalSmoothPct ?? current[0].waveTemporalSmoothPct,
         gradientEnabled: patch.gradientEnabled ?? current[0].gradientEnabled,
         gradientStart: patch.gradientStart ?? current[0].gradientStart,
         gradientEnd: patch.gradientEnd ?? current[0].gradientEnd,
@@ -602,6 +678,10 @@ export async function updateForUser(
     patch.voiceHighHz = primaryNext.voiceHighHz
     patch.amplitudeGainPct = primaryNext.amplitudeGainPct
     patch.baselineLiftPct = primaryNext.baselineLiftPct
+    patch.waveVerticalGainPct = primaryNext.waveVerticalGainPct
+    patch.waveSmoothingPct = primaryNext.waveSmoothingPct
+    patch.waveNoiseGatePct = primaryNext.waveNoiseGatePct
+    patch.waveTemporalSmoothPct = primaryNext.waveTemporalSmoothPct
     patch.gradientEnabled = primaryNext.gradientEnabled
     patch.gradientStart = primaryNext.gradientStart
     patch.gradientEnd = primaryNext.gradientEnd

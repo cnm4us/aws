@@ -28,6 +28,10 @@ export type VisualizerPresetInstanceDto = {
   voiceHighHz: number
   amplitudeGainPct: number
   baselineLiftPct: number
+  waveVerticalGainPct: number
+  waveSmoothingPct: number
+  waveNoiseGatePct: number
+  waveTemporalSmoothPct: number
   gradientEnabled: boolean
   gradientStart: string
   gradientEnd: string
@@ -75,6 +79,10 @@ export type VisualizerPresetDto = {
   voiceHighHz: number
   amplitudeGainPct: number
   baselineLiftPct: number
+  waveVerticalGainPct: number
+  waveSmoothingPct: number
+  waveNoiseGatePct: number
+  waveTemporalSmoothPct: number
   gradientEnabled: boolean
   gradientStart: string
   gradientEnd: string

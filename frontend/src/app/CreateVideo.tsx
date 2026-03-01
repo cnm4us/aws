@@ -138,7 +138,7 @@ const saveNarrationVisualizerDefaults = (cfg: NarrationVisualizerConfig) => {
 const clampVoiceLowHz = (raw: any): number => {
   const n = Number(raw)
   if (!Number.isFinite(n)) return 80
-  return Math.round(Math.max(20, Math.min(12000, n)))
+  return Math.round(Math.max(20, Math.min(19990, n)))
 }
 
 const clampVoiceHighHz = (raw: any): number => {
@@ -167,6 +167,30 @@ const clampBaselineLiftPct = (raw: any): number => {
   const n = Number(raw)
   if (!Number.isFinite(n)) return 0
   return Math.round(Math.max(-100, Math.min(100, n)))
+}
+
+const clampWaveVerticalGainPct = (raw: any): number => {
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return 100
+  return Math.round(Math.max(25, Math.min(400, n)))
+}
+
+const clampWaveSmoothingPct = (raw: any): number => {
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return 0
+  return Math.round(Math.max(0, Math.min(95, n)))
+}
+
+const clampWaveNoiseGatePct = (raw: any): number => {
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return 0
+  return Math.round(Math.max(0, Math.min(30, n)))
+}
+
+const clampWaveTemporalSmoothPct = (raw: any): number => {
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return 0
+  return Math.round(Math.max(0, Math.min(98, n)))
 }
 
 const applySpectrumShaping = (raw: number, amplitudeGainPct: number, baselineLiftPct: number): number => {
@@ -202,6 +226,10 @@ const normalizeVisualizerPresetSnapshot = (raw: any): VisualizerPresetSnapshot =
   const voiceRange = normalizeVoiceHzRange((snap as any).voiceLowHz ?? (base as any).voiceLowHz, (snap as any).voiceHighHz ?? (base as any).voiceHighHz)
   const amplitudeGainPct = clampAmplitudeGainPct((snap as any).amplitudeGainPct ?? (base as any).amplitudeGainPct)
   const baselineLiftPct = clampBaselineLiftPct((snap as any).baselineLiftPct ?? (base as any).baselineLiftPct)
+  const waveVerticalGainPct = clampWaveVerticalGainPct((snap as any).waveVerticalGainPct ?? (base as any).waveVerticalGainPct)
+  const waveSmoothingPct = clampWaveSmoothingPct((snap as any).waveSmoothingPct ?? (base as any).waveSmoothingPct)
+  const waveNoiseGatePct = clampWaveNoiseGatePct((snap as any).waveNoiseGatePct ?? (base as any).waveNoiseGatePct)
+  const waveTemporalSmoothPct = clampWaveTemporalSmoothPct((snap as any).waveTemporalSmoothPct ?? (base as any).waveTemporalSmoothPct)
   const gradientModeRaw = String(snap.gradientMode || base.gradientMode).trim().toLowerCase()
   const gradientMode: VisualizerPresetSnapshot['gradientMode'] = gradientModeRaw === 'horizontal' ? 'horizontal' : 'vertical'
   const clipModeRaw = String(snap.clipMode || base.clipMode).trim().toLowerCase()
@@ -224,6 +252,10 @@ const normalizeVisualizerPresetSnapshot = (raw: any): VisualizerPresetSnapshot =
     voiceHighHz: voiceRange.high,
     amplitudeGainPct,
     baselineLiftPct,
+    waveVerticalGainPct,
+    waveSmoothingPct,
+    waveNoiseGatePct,
+    waveTemporalSmoothPct,
     gradientEnabled: Boolean(snap.gradientEnabled),
     gradientStart: String(snap.gradientStart || base.gradientStart),
     gradientEnd: String(snap.gradientEnd || base.gradientEnd),
@@ -262,6 +294,10 @@ const normalizeVisualizerPresetSnapshot = (raw: any): VisualizerPresetSnapshot =
       )
       const amplitudeGainPctI = clampAmplitudeGainPct((inst as any)?.amplitudeGainPct ?? (normalized as any).amplitudeGainPct)
       const baselineLiftPctI = clampBaselineLiftPct((inst as any)?.baselineLiftPct ?? (normalized as any).baselineLiftPct)
+      const waveVerticalGainPctI = clampWaveVerticalGainPct((inst as any)?.waveVerticalGainPct ?? (normalized as any).waveVerticalGainPct)
+      const waveSmoothingPctI = clampWaveSmoothingPct((inst as any)?.waveSmoothingPct ?? (normalized as any).waveSmoothingPct)
+      const waveNoiseGatePctI = clampWaveNoiseGatePct((inst as any)?.waveNoiseGatePct ?? (normalized as any).waveNoiseGatePct)
+      const waveTemporalSmoothPctI = clampWaveTemporalSmoothPct((inst as any)?.waveTemporalSmoothPct ?? (normalized as any).waveTemporalSmoothPct)
       const gradientModeRawI = String(inst?.gradientMode || normalized.gradientMode).trim().toLowerCase()
       const gradientModeI: VisualizerPresetSnapshot['gradientMode'] = gradientModeRawI === 'horizontal' ? 'horizontal' : 'vertical'
       const barCountRawI = Number(inst?.barCount)
@@ -278,6 +314,10 @@ const normalizeVisualizerPresetSnapshot = (raw: any): VisualizerPresetSnapshot =
         voiceHighHz: voiceRangeI.high,
         amplitudeGainPct: amplitudeGainPctI,
         baselineLiftPct: baselineLiftPctI,
+        waveVerticalGainPct: waveVerticalGainPctI,
+        waveSmoothingPct: waveSmoothingPctI,
+        waveNoiseGatePct: waveNoiseGatePctI,
+        waveTemporalSmoothPct: waveTemporalSmoothPctI,
         gradientEnabled: inst?.gradientEnabled === true,
         gradientStart: String(inst?.gradientStart || normalized.gradientStart),
         gradientEnd: String(inst?.gradientEnd || normalized.gradientEnd),
@@ -301,6 +341,10 @@ const normalizeVisualizerPresetSnapshot = (raw: any): VisualizerPresetSnapshot =
             voiceHighHz: (normalized as any).voiceHighHz,
             amplitudeGainPct: (normalized as any).amplitudeGainPct,
             baselineLiftPct: (normalized as any).baselineLiftPct,
+            waveVerticalGainPct: (normalized as any).waveVerticalGainPct,
+            waveSmoothingPct: (normalized as any).waveSmoothingPct,
+            waveNoiseGatePct: (normalized as any).waveNoiseGatePct,
+            waveTemporalSmoothPct: (normalized as any).waveTemporalSmoothPct,
             gradientEnabled: normalized.gradientEnabled,
             gradientStart: normalized.gradientStart,
             gradientEnd: normalized.gradientEnd,
@@ -332,6 +376,10 @@ const narrationVisualizerToPresetSnapshot = (cfg: NarrationVisualizerConfig): Vi
     voiceHighHz: (base as any).voiceHighHz,
     amplitudeGainPct: (base as any).amplitudeGainPct,
     baselineLiftPct: (base as any).baselineLiftPct,
+    waveVerticalGainPct: (base as any).waveVerticalGainPct,
+    waveSmoothingPct: (base as any).waveSmoothingPct,
+    waveNoiseGatePct: (base as any).waveNoiseGatePct,
+    waveTemporalSmoothPct: (base as any).waveTemporalSmoothPct,
     gradientEnabled: Boolean(cfg.gradientEnabled),
     gradientStart: cfg.gradientStart || cfg.fgColor || base.gradientStart,
     gradientEnd: cfg.gradientEnd || base.gradientEnd,
@@ -353,6 +401,10 @@ const narrationVisualizerToPresetSnapshot = (cfg: NarrationVisualizerConfig): Vi
         voiceHighHz: (base as any).voiceHighHz,
         amplitudeGainPct: (base as any).amplitudeGainPct,
         baselineLiftPct: (base as any).baselineLiftPct,
+        waveVerticalGainPct: (base as any).waveVerticalGainPct,
+        waveSmoothingPct: (base as any).waveSmoothingPct,
+        waveNoiseGatePct: (base as any).waveNoiseGatePct,
+        waveTemporalSmoothPct: (base as any).waveTemporalSmoothPct,
         gradientEnabled: Boolean(cfg.gradientEnabled),
         gradientStart: cfg.gradientStart || cfg.fgColor || base.gradientStart,
         gradientEnd: cfg.gradientEnd || base.gradientEnd,
@@ -381,6 +433,10 @@ const visualizerPresetSnapshotsEqual = (aRaw: any, bRaw: any): boolean => {
     Number((a as any).voiceHighHz || 0) === Number((b as any).voiceHighHz || 0) &&
     Number((a as any).amplitudeGainPct || 0) === Number((b as any).amplitudeGainPct || 0) &&
     Number((a as any).baselineLiftPct || 0) === Number((b as any).baselineLiftPct || 0) &&
+    Number((a as any).waveVerticalGainPct || 0) === Number((b as any).waveVerticalGainPct || 0) &&
+    Number((a as any).waveSmoothingPct || 0) === Number((b as any).waveSmoothingPct || 0) &&
+    Number((a as any).waveNoiseGatePct || 0) === Number((b as any).waveNoiseGatePct || 0) &&
+    Number((a as any).waveTemporalSmoothPct || 0) === Number((b as any).waveTemporalSmoothPct || 0) &&
     Boolean(a.gradientEnabled) === Boolean(b.gradientEnabled) &&
     String(a.gradientStart || '') === String(b.gradientStart || '') &&
     String(a.gradientEnd || '') === String(b.gradientEnd || '') &&
@@ -861,6 +917,7 @@ export default function CreateVideo() {
   const narrationVizAnalyserRef = useRef<AnalyserNode | null>(null)
   const narrationVizTimeRef = useRef<Uint8Array | null>(null)
   const narrationVizFreqRef = useRef<Uint8Array | null>(null)
+  const narrationVizWaveTemporalByInstanceRef = useRef<Record<string, Float32Array>>({})
   const iconScratchRef = useRef<HTMLCanvasElement | null>(null)
   const audioPreviewRef = useRef<HTMLAudioElement | null>(null)
   const [audioPreviewPlayingId, setAudioPreviewPlayingId] = useState<number | null>(null)
@@ -5368,6 +5425,10 @@ export default function CreateVideo() {
               voiceHighHz: (viz as any).voiceHighHz,
               amplitudeGainPct: (viz as any).amplitudeGainPct,
               baselineLiftPct: (viz as any).baselineLiftPct,
+              waveVerticalGainPct: (viz as any).waveVerticalGainPct,
+              waveSmoothingPct: (viz as any).waveSmoothingPct,
+              waveNoiseGatePct: (viz as any).waveNoiseGatePct,
+              waveTemporalSmoothPct: (viz as any).waveTemporalSmoothPct,
               gradientEnabled: (viz as any).gradientEnabled,
               gradientStart: (viz as any).gradientStart,
               gradientEnd: (viz as any).gradientEnd,
@@ -5406,6 +5467,10 @@ export default function CreateVideo() {
         const instVoiceRange = normalizeVoiceHzRange((inst as any).voiceLowHz ?? (viz as any).voiceLowHz, (inst as any).voiceHighHz ?? (viz as any).voiceHighHz)
         const instAmplitudeGainPct = clampAmplitudeGainPct((inst as any).amplitudeGainPct ?? (viz as any).amplitudeGainPct)
         const instBaselineLiftPct = clampBaselineLiftPct((inst as any).baselineLiftPct ?? (viz as any).baselineLiftPct)
+        const instWaveVerticalGainPct = clampWaveVerticalGainPct((inst as any).waveVerticalGainPct ?? (viz as any).waveVerticalGainPct)
+        const instWaveSmoothingPct = clampWaveSmoothingPct((inst as any).waveSmoothingPct ?? (viz as any).waveSmoothingPct)
+        const instWaveNoiseGatePct = clampWaveNoiseGatePct((inst as any).waveNoiseGatePct ?? (viz as any).waveNoiseGatePct)
+        const instWaveTemporalSmoothPct = clampWaveTemporalSmoothPct((inst as any).waveTemporalSmoothPct ?? (viz as any).waveTemporalSmoothPct)
         const instOpacity = Number.isFinite(Number((inst as any).opacity))
           ? Math.max(0, Math.min(1, Number((inst as any).opacity)))
           : Number.isFinite(viz.opacity)
@@ -5449,14 +5514,16 @@ export default function CreateVideo() {
         ) => {
           const sampleRate = narrationVizAudioCtxRef.current?.sampleRate || 44100
           const nyquist = sampleRate > 0 ? sampleRate / 2 : 22050
-          let start = 0
-          let end = Math.max(1, maxIdx)
-          if (spectrum === 'voice') {
-            const lowIdx = Math.round((Math.max(0, voiceLowHz) / nyquist) * maxIdx)
-            const highIdx = Math.round((Math.max(voiceLowHz + 10, voiceHighHz) / nyquist) * maxIdx)
-            start = Math.max(0, Math.min(maxIdx, lowIdx))
-            end = Math.max(start + 1, Math.min(maxIdx, highIdx))
-          }
+          const defaultLow = spectrum === 'voice' ? 80 : 20
+          const defaultHigh = spectrum === 'voice' ? 4000 : 20000
+          const range = normalizeVoiceHzRange(
+            Number.isFinite(Number(voiceLowHz)) ? voiceLowHz : defaultLow,
+            Number.isFinite(Number(voiceHighHz)) ? voiceHighHz : defaultHigh
+          )
+          const lowIdx = Math.round((Math.max(0, range.low) / nyquist) * maxIdx)
+          const highIdx = Math.round((Math.max(range.low + 10, range.high) / nyquist) * maxIdx)
+          let start = Math.max(0, Math.min(maxIdx, lowIdx))
+          let end = Math.max(start + 1, Math.min(maxIdx, highIdx))
           if (band !== 'full') {
             const bandIndex = band === 'band_1' ? 0 : band === 'band_2' ? 1 : band === 'band_3' ? 2 : 3
             const span = Math.max(1, end - start + 1)
@@ -5600,37 +5667,93 @@ export default function CreateVideo() {
             }
           }
         } else {
-          if (useEnvelope) {
-            for (let i = 0; i < data.length; i++) {
-              const t = data.length <= 1 ? 0 : i / (data.length - 1)
-              const phase = envTime * 16
-              const wave =
-                0.5 +
-                0.5 *
-                  (Math.sin(t * Math.PI * 2 + phase) * 0.7 +
-                    Math.sin(t * Math.PI * 6 - phase * 0.9) * 0.25 +
-                    Math.sin(t * Math.PI * 12 + phase * 0.35) * 0.15)
-              data[i] = Math.round((0.5 + (wave - 0.5) * Math.max(0.15, amp)) * 255)
-            }
-          } else if (analyser) {
-            analyser.getByteTimeDomainData(data)
-          }
-          if (instStyle === 'center_wave') {
-            const centerY = drawH / 2
-            ctx.lineWidth = 2
-            const drawWave = (sign: 1 | -1) => {
-              ctx.beginPath()
+          const isWaveStyle = instStyle === 'wave_line' || instStyle === 'wave_fill' || instStyle === 'center_wave'
+          if (isWaveStyle) {
+            if (useEnvelope) {
               for (let i = 0; i < data.length; i++) {
-                const v = (data[i] - 128) / 128
-                const y = centerY + sign * v * drawH * 0.4
+                const t = data.length <= 1 ? 0 : i / (data.length - 1)
+                const phase = envTime * 16
+                const wave =
+                  0.5 +
+                  0.5 *
+                    (Math.sin(t * Math.PI * 2 + phase) * 0.7 +
+                      Math.sin(t * Math.PI * 6 - phase * 0.9) * 0.25 +
+                      Math.sin(t * Math.PI * 12 + phase * 0.35) * 0.15)
+                data[i] = Math.round((0.5 + (wave - 0.5) * Math.max(0.15, amp)) * 255)
+              }
+            } else if (analyser) {
+              analyser.getByteTimeDomainData(data)
+            }
+            const gate = Math.max(0, Math.min(0.3, instWaveNoiseGatePct / 100))
+            const gain = Math.max(0.25, Math.min(4, instWaveVerticalGainPct / 100))
+            const smooth = Math.max(0, Math.min(0.95, instWaveSmoothingPct / 100))
+            const temporal = Math.max(0, Math.min(0.98, instWaveTemporalSmoothPct / 100))
+            const alpha = 1 - smooth
+            const temporalAlpha = 1 - temporal
+            const shapeSample = (raw: number, temporalPrev: number, prev: number): { next: number; shaped: number; temporalNext: number } => {
+              const temporalNext = temporalPrev + temporalAlpha * (raw - temporalPrev)
+              const abs = Math.abs(temporalNext)
+              const gated = abs <= gate ? 0 : Math.sign(temporalNext) * ((abs - gate) / Math.max(1e-6, 1 - gate))
+              const amplified = Math.max(-1, Math.min(1, gated * gain))
+              const next = prev + alpha * (amplified - prev)
+              return { next, shaped: next, temporalNext }
+            }
+
+            if (instStyle === 'center_wave') {
+              const centerY = drawH / 2
+              ctx.lineWidth = 2
+              const drawWave = (sign: 1 | -1) => {
+                const temporalKey = `${String((viz as any).id || 'visualizer')}::${String((inst as any).id || 'instance_1')}::center::${String(sign)}`
+                let temporalTrack = narrationVizWaveTemporalByInstanceRef.current[temporalKey]
+                if (!temporalTrack || temporalTrack.length !== data.length) {
+                  temporalTrack = new Float32Array(data.length)
+                  narrationVizWaveTemporalByInstanceRef.current[temporalKey] = temporalTrack
+                }
+                ctx.beginPath()
+                let prev = 0
+                for (let i = 0; i < data.length; i++) {
+                  const raw = (data[i] - 128) / 128
+                  const shaped = shapeSample(raw, temporalTrack[i] || 0, prev)
+                  temporalTrack[i] = shaped.temporalNext
+                  prev = shaped.next
+                  const y = centerY + sign * shaped.shaped * drawH * 0.4
+                  const x = (i / (data.length - 1)) * drawW
+                  if (i === 0) ctx.moveTo(x, y)
+                  else ctx.lineTo(x, y)
+                }
+                ctx.stroke()
+              }
+              drawWave(1)
+              drawWave(-1)
+            } else {
+              const temporalKey = `${String((viz as any).id || 'visualizer')}::${String((inst as any).id || 'instance_1')}::main`
+              let temporalTrack = narrationVizWaveTemporalByInstanceRef.current[temporalKey]
+              if (!temporalTrack || temporalTrack.length !== data.length) {
+                temporalTrack = new Float32Array(data.length)
+                narrationVizWaveTemporalByInstanceRef.current[temporalKey] = temporalTrack
+              }
+              ctx.lineWidth = 2
+              ctx.beginPath()
+              let prev = 0
+              for (let i = 0; i < data.length; i++) {
+                const raw = (data[i] - 128) / 128
+                const shaped = shapeSample(raw, temporalTrack[i] || 0, prev)
+                temporalTrack[i] = shaped.temporalNext
+                prev = shaped.next
+                const y = drawH / 2 + shaped.shaped * drawH * 0.35
                 const x = (i / (data.length - 1)) * drawW
                 if (i === 0) ctx.moveTo(x, y)
                 else ctx.lineTo(x, y)
               }
-              ctx.stroke()
+              if (instStyle === 'wave_fill') {
+                ctx.lineTo(drawW, drawH / 2)
+                ctx.lineTo(0, drawH / 2)
+                ctx.closePath()
+                ctx.fill()
+              } else {
+                ctx.stroke()
+              }
             }
-            drawWave(1)
-            drawWave(-1)
           } else if (instStyle === 'ring_wave') {
             const maxIdx = Math.max(1, freq.length - 1)
             const ringRange = getRangeForBand(maxIdx, instSpectrum as any, instBand, instVoiceRange.low, instVoiceRange.high)
@@ -5757,6 +5880,21 @@ export default function CreateVideo() {
             ctx.arc(cx, cy, orbR + minDim * 0.05, 0, Math.PI * 2)
             ctx.stroke()
           } else {
+            if (useEnvelope) {
+              for (let i = 0; i < data.length; i++) {
+                const t = data.length <= 1 ? 0 : i / (data.length - 1)
+                const phase = envTime * 16
+                const wave =
+                  0.5 +
+                  0.5 *
+                    (Math.sin(t * Math.PI * 2 + phase) * 0.7 +
+                      Math.sin(t * Math.PI * 6 - phase * 0.9) * 0.25 +
+                      Math.sin(t * Math.PI * 12 + phase * 0.35) * 0.15)
+                data[i] = Math.round((0.5 + (wave - 0.5) * Math.max(0.15, amp)) * 255)
+              }
+            } else if (analyser) {
+              analyser.getByteTimeDomainData(data)
+            }
             ctx.lineWidth = 2
             ctx.beginPath()
             for (let i = 0; i < data.length; i++) {

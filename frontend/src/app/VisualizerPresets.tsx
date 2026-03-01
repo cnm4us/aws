@@ -31,6 +31,10 @@ type VisualizerPresetInstance = {
   voiceHighHz: number
   amplitudeGainPct: number
   baselineLiftPct: number
+  waveVerticalGainPct: number
+  waveSmoothingPct: number
+  waveNoiseGatePct: number
+  waveTemporalSmoothPct: number
   gradientEnabled: boolean
   gradientStart: string
   gradientEnd: string
@@ -76,6 +80,10 @@ const DEFAULT_INSTANCE: VisualizerPresetInstance = {
   voiceHighHz: 4000,
   amplitudeGainPct: 100,
   baselineLiftPct: 0,
+  waveVerticalGainPct: 100,
+  waveSmoothingPct: 0,
+  waveNoiseGatePct: 0,
+  waveTemporalSmoothPct: 0,
   gradientEnabled: false,
   gradientStart: '#d4af37',
   gradientEnd: '#f7d774',
@@ -223,7 +231,7 @@ function parseBarCount(value: any): number {
 function parseVoiceLowHz(value: any): number {
   const n = Number(value)
   if (!Number.isFinite(n)) return DEFAULT_INSTANCE.voiceLowHz
-  return Math.round(Math.min(Math.max(n, 20), 12000))
+  return Math.round(Math.min(Math.max(n, 20), 19990))
 }
 
 function parseVoiceHighHz(value: any): number {
@@ -244,6 +252,49 @@ function parseBaselineLiftPct(value: any): number {
   return Math.round(Math.min(Math.max(n, -100), 100))
 }
 
+function parseWaveVerticalGainPct(value: any): number {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return DEFAULT_INSTANCE.waveVerticalGainPct
+  return Math.round(Math.min(Math.max(n, 25), 400))
+}
+
+function parseWaveSmoothingPct(value: any): number {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return DEFAULT_INSTANCE.waveSmoothingPct
+  return Math.round(Math.min(Math.max(n, 0), 95))
+}
+
+function parseWaveNoiseGatePct(value: any): number {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return DEFAULT_INSTANCE.waveNoiseGatePct
+  return Math.round(Math.min(Math.max(n, 0), 30))
+}
+
+function parseWaveTemporalSmoothPct(value: any): number {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return DEFAULT_INSTANCE.waveTemporalSmoothPct
+  return Math.round(Math.min(Math.max(n, 0), 98))
+}
+
+function getSpectrumPresetRangeHz(spectrumMode: VisualizerSpectrumMode): { startHz: number; endHz: number } {
+  if (spectrumMode === 'voice') return { startHz: 80, endHz: 4000 }
+  return { startHz: 20, endHz: 20000 }
+}
+
+function getBandPresetRangeHz(
+  spectrumMode: VisualizerSpectrumMode,
+  bandMode: VisualizerBandMode
+): { startHz: number; endHz: number } {
+  const base = getSpectrumPresetRangeHz(spectrumMode)
+  if (bandMode === 'full') return base
+  const idx = bandMode === 'band_1' ? 0 : bandMode === 'band_2' ? 1 : bandMode === 'band_3' ? 2 : 3
+  const span = Math.max(1, base.endHz - base.startHz)
+  const step = span / 4
+  const startHz = Math.round(base.startHz + step * idx)
+  const endHz = Math.round(base.startHz + step * (idx + 1))
+  return { startHz, endHz: Math.max(startHz + 10, endHz) }
+}
+
 function getSpectrumRange(
   binsLength: number,
   spectrumMode: VisualizerSpectrumMode,
@@ -253,17 +304,14 @@ function getSpectrumRange(
   sampleRate: number
 ): { start: number; end: number } {
   const maxIdx = Math.max(1, binsLength - 1)
-  let baseStart = 0
-  let baseEnd = maxIdx
-  if (spectrumMode === 'voice') {
-    const nyquist = sampleRate > 0 ? sampleRate / 2 : 22050
-    const lowHz = parseVoiceLowHz(voiceLowHz)
-    const highHz = Math.max(lowHz + 10, parseVoiceHighHz(voiceHighHz))
-    const lowIdx = Math.round((Math.max(0, lowHz) / nyquist) * maxIdx)
-    const highIdx = Math.round((Math.max(lowHz + 10, highHz) / nyquist) * maxIdx)
-    baseStart = Math.max(0, Math.min(maxIdx, lowIdx))
-    baseEnd = Math.max(baseStart + 1, Math.min(maxIdx, highIdx))
-  }
+  const preset = getSpectrumPresetRangeHz(spectrumMode)
+  const nyquist = sampleRate > 0 ? sampleRate / 2 : 22050
+  const lowHz = parseVoiceLowHz(Number.isFinite(Number(voiceLowHz)) ? voiceLowHz : preset.startHz)
+  const highHz = Math.max(lowHz + 10, parseVoiceHighHz(Number.isFinite(Number(voiceHighHz)) ? voiceHighHz : preset.endHz))
+  const lowIdx = Math.round((Math.max(0, lowHz) / nyquist) * maxIdx)
+  const highIdx = Math.round((Math.max(lowHz + 10, highHz) / nyquist) * maxIdx)
+  let baseStart = Math.max(0, Math.min(maxIdx, lowIdx))
+  let baseEnd = Math.max(baseStart + 1, Math.min(maxIdx, highIdx))
   if (bandMode === 'full') return { start: baseStart, end: baseEnd }
   const bandIndex = bandMode === 'band_1' ? 0 : bandMode === 'band_2' ? 1 : bandMode === 'band_3' ? 2 : 3
   const span = Math.max(1, baseEnd - baseStart + 1)
@@ -303,6 +351,10 @@ function normalizeInstance(raw: any, fallback: VisualizerPresetInstance, idx: nu
   const voiceHighHz = Math.max(voiceLowHz + 10, voiceHighCandidate)
   const amplitudeGainPct = parseAmplitudeGainPct(raw?.amplitudeGainPct ?? fallback.amplitudeGainPct)
   const baselineLiftPct = parseBaselineLiftPct(raw?.baselineLiftPct ?? fallback.baselineLiftPct)
+  const waveVerticalGainPct = parseWaveVerticalGainPct(raw?.waveVerticalGainPct ?? fallback.waveVerticalGainPct)
+  const waveSmoothingPct = parseWaveSmoothingPct(raw?.waveSmoothingPct ?? fallback.waveSmoothingPct)
+  const waveNoiseGatePct = parseWaveNoiseGatePct(raw?.waveNoiseGatePct ?? fallback.waveNoiseGatePct)
+  const waveTemporalSmoothPct = parseWaveTemporalSmoothPct(raw?.waveTemporalSmoothPct ?? fallback.waveTemporalSmoothPct)
   const gradientMode: VisualizerGradientMode =
     String(raw?.gradientMode || fallback.gradientMode).trim().toLowerCase() === 'horizontal' ? 'horizontal' : 'vertical'
   return {
@@ -318,6 +370,10 @@ function normalizeInstance(raw: any, fallback: VisualizerPresetInstance, idx: nu
     voiceHighHz,
     amplitudeGainPct,
     baselineLiftPct,
+    waveVerticalGainPct,
+    waveSmoothingPct,
+    waveNoiseGatePct,
+    waveTemporalSmoothPct,
     gradientEnabled: raw?.gradientEnabled == null ? Boolean(fallback.gradientEnabled) : raw?.gradientEnabled === true,
     gradientStart: String(raw?.gradientStart || fallback.gradientStart || '#d4af37'),
     gradientEnd: String(raw?.gradientEnd || fallback.gradientEnd || '#f7d774'),
@@ -362,6 +418,7 @@ function VisualizerPreview({
   const analyserRef = React.useRef<AnalyserNode | null>(null)
   const timeDataRef = React.useRef<Uint8Array | null>(null)
   const freqDataRef = React.useRef<Uint8Array | null>(null)
+  const waveTemporalRef = React.useRef<Record<string, Float32Array>>({})
 
   React.useEffect(() => {
     if (!audioEl) return
@@ -479,7 +536,7 @@ function VisualizerPreview({
         return shapeAmplitude(v)
       }
 
-      const getWaveValue = (tNorm: number, scale: VisualizerScale) => {
+      const getLegacyWaveValue = (tNorm: number, scale: VisualizerScale) => {
         const samples = timeDataRef.current
         if (!samples || samples.length < 2) {
           const base = scale === 'log' ? Math.pow(Math.max(0, Math.min(1, tNorm)), 2) : Math.max(0, Math.min(1, tNorm))
@@ -489,6 +546,29 @@ function VisualizerPreview({
         }
         const idx = Math.max(0, Math.min(samples.length - 1, Math.round(Math.max(0, Math.min(1, tNorm)) * (samples.length - 1))))
         return (samples[idx] - 128) / 128
+      }
+
+      const shapeWaveSample = (
+        raw: number,
+        waveVerticalGainPct: number,
+        waveSmoothingPct: number,
+        waveNoiseGatePct: number,
+        waveTemporalSmoothPct: number,
+        temporalPrev: number,
+        prev: number
+      ): { next: number; shaped: number; temporalNext: number } => {
+        const gate = Math.max(0, Math.min(0.3, Number(waveNoiseGatePct || 0) / 100))
+        const gain = Math.max(0.25, Math.min(4, Number(waveVerticalGainPct || 100) / 100))
+        const smooth = Math.max(0, Math.min(0.95, Number(waveSmoothingPct || 0) / 100))
+        const temporal = Math.max(0, Math.min(0.98, Number(waveTemporalSmoothPct || 0) / 100))
+        const temporalAlpha = 1 - temporal
+        const temporalNext = temporalPrev + temporalAlpha * (raw - temporalPrev)
+        const absTemporal = Math.abs(temporalNext)
+        const gated = absTemporal <= gate ? 0 : Math.sign(temporalNext) * ((absTemporal - gate) / Math.max(1e-6, 1 - gate))
+        const amplified = Math.max(-1, Math.min(1, gated * gain))
+        const alpha = 1 - smooth
+        const next = prev + alpha * (amplified - prev)
+        return { next, shaped: next, temporalNext }
       }
 
       if (config.bgColor && config.bgColor !== 'transparent') {
@@ -721,7 +801,8 @@ function VisualizerPreview({
           ctx.beginPath()
           ctx.arc(cx, cy, orbR, 0, Math.PI * 2)
           ctx.fill()
-          ctx.globalAlpha = Math.max(0.15, Math.min(0.85, instOpacity * 0.65))
+          const pulseOpacity = Number.isFinite(inst.opacity) ? Math.max(0, Math.min(1, inst.opacity)) : 1
+          ctx.globalAlpha = Math.max(0.15, Math.min(0.85, pulseOpacity * 0.65))
           ctx.lineWidth = Math.max(1.5, minDim * 0.012)
           ctx.beginPath()
           ctx.arc(cx, cy, orbR + minDim * 0.05, 0, Math.PI * 2)
@@ -733,10 +814,34 @@ function VisualizerPreview({
           if (inst.style === 'center_wave') {
             ctx.lineWidth = 2
             const drawWave = (sign: 1 | -1) => {
+              const temporalKey = `${String(inst.id || 'instance_1')}::center::${String(sign)}`
+              let temporalTrack = waveTemporalRef.current[temporalKey]
+              if (!temporalTrack || temporalTrack.length !== points) {
+                temporalTrack = new Float32Array(points)
+                waveTemporalRef.current[temporalKey] = temporalTrack
+              }
+              let wavePrev = 0
               ctx.beginPath()
               for (let i = 0; i < points; i++) {
                 const tt = points <= 1 ? 0 : i / (points - 1)
-                const y = center + sign * amp * getWaveValue(tt, inst.scale)
+                const raw = getLegacyWaveValue(tt, inst.scale)
+                const temporalPrev = temporalTrack[i] || 0
+                const wave = shapeWaveSample(
+                  raw,
+                  inst.waveVerticalGainPct,
+                  inst.waveSmoothingPct,
+                  inst.waveNoiseGatePct,
+                  inst.waveTemporalSmoothPct,
+                  temporalPrev,
+                  wavePrev
+                )
+                temporalTrack[i] = wave.temporalNext
+                wavePrev = wave.next
+                const y =
+                  center +
+                  sign *
+                    amp *
+                    wave.shaped
                 const x = tt * w
                 if (i === 0) ctx.moveTo(x, y)
                 else ctx.lineTo(x, y)
@@ -748,9 +853,32 @@ function VisualizerPreview({
           } else {
             ctx.lineWidth = 2
             ctx.beginPath()
+            const temporalKey = `${String(inst.id || 'instance_1')}::main`
+            let temporalTrack = waveTemporalRef.current[temporalKey]
+            if (!temporalTrack || temporalTrack.length !== points) {
+              temporalTrack = new Float32Array(points)
+              waveTemporalRef.current[temporalKey] = temporalTrack
+            }
+            let wavePrev = 0
             for (let i = 0; i < points; i++) {
               const tt = points <= 1 ? 0 : i / (points - 1)
-              const y = center + amp * getWaveValue(tt, inst.scale)
+              const raw = getLegacyWaveValue(tt, inst.scale)
+              const temporalPrev = temporalTrack[i] || 0
+              const wave = shapeWaveSample(
+                raw,
+                inst.waveVerticalGainPct,
+                inst.waveSmoothingPct,
+                inst.waveNoiseGatePct,
+                inst.waveTemporalSmoothPct,
+                temporalPrev,
+                wavePrev
+              )
+              temporalTrack[i] = wave.temporalNext
+              wavePrev = wave.next
+              const y =
+                center +
+                amp *
+                  wave.shaped
               const x = tt * w
               if (i === 0) ctx.moveTo(x, y)
               else ctx.lineTo(x, y)
@@ -1044,6 +1172,10 @@ export default function VisualizerPresetsPage() {
         voiceHighHz: primary.voiceHighHz,
         amplitudeGainPct: primary.amplitudeGainPct,
         baselineLiftPct: primary.baselineLiftPct,
+        waveVerticalGainPct: primary.waveVerticalGainPct,
+        waveSmoothingPct: primary.waveSmoothingPct,
+        waveNoiseGatePct: primary.waveNoiseGatePct,
+        waveTemporalSmoothPct: primary.waveTemporalSmoothPct,
         gradientEnabled: primary.gradientEnabled,
         gradientStart: primary.gradientStart,
         gradientEnd: primary.gradientEnd,
@@ -1291,7 +1423,15 @@ export default function VisualizerPresetsPage() {
                       <div style={{ color: '#bbb', fontSize: 13 }}>Spectrum</div>
                       <select
                         value={inst.spectrumMode}
-                        onChange={(e) => updateInstance(idx, { spectrumMode: e.target.value as VisualizerSpectrumMode })}
+                        onChange={(e) => {
+                          const nextSpectrum = e.target.value as VisualizerSpectrumMode
+                          const hz = getBandPresetRangeHz(nextSpectrum, inst.bandMode)
+                          updateInstance(idx, {
+                            spectrumMode: nextSpectrum,
+                            voiceLowHz: hz.startHz,
+                            voiceHighHz: hz.endHz,
+                          })
+                        }}
                         style={MODAL_INPUT_STYLE}
                       >
                         <option value="full">Full</option>
@@ -1302,7 +1442,15 @@ export default function VisualizerPresetsPage() {
                       <div style={{ color: '#bbb', fontSize: 13 }}>Band</div>
                       <select
                         value={inst.bandMode}
-                        onChange={(e) => updateInstance(idx, { bandMode: e.target.value as VisualizerBandMode })}
+                        onChange={(e) => {
+                          const nextBand = e.target.value as VisualizerBandMode
+                          const hz = getBandPresetRangeHz(inst.spectrumMode, nextBand)
+                          updateInstance(idx, {
+                            bandMode: nextBand,
+                            voiceLowHz: hz.startHz,
+                            voiceHighHz: hz.endHz,
+                          })
+                        }}
                         style={MODAL_INPUT_STYLE}
                       >
                         <option value="full">Full</option>
@@ -1316,37 +1464,55 @@ export default function VisualizerPresetsPage() {
 
                   <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))' }}>
                     <label style={{ display: 'grid', gap: 6 }}>
-                      <div style={{ color: '#bbb', fontSize: 13 }}>Voice Low (Hz)</div>
+                      <div style={{ color: '#bbb', fontSize: 13 }}>Start (Hz)</div>
                       <input
                         type="number"
                         min={20}
-                        max={12000}
+                        max={19990}
                         step={10}
                         value={inst.voiceLowHz}
+                        onKeyDown={(e) => {
+                          if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
+                          if (!(e.shiftKey || e.ctrlKey || e.metaKey)) return
+                          e.preventDefault()
+                          const baseStep = e.ctrlKey || e.metaKey ? 1000 : e.shiftKey ? 100 : 10
+                          const dir = e.key === 'ArrowUp' ? 1 : -1
+                          const low = parseVoiceLowHz(Number(inst.voiceLowHz) + dir * baseStep)
+                          const high = Math.max(low + 10, parseVoiceHighHz(inst.voiceHighHz))
+                          updateInstance(idx, { voiceLowHz: low, voiceHighHz: high })
+                        }}
                         onChange={(e) => {
                           const low = parseVoiceLowHz(e.target.value)
                           const high = Math.max(low + 10, parseVoiceHighHz(inst.voiceHighHz))
                           updateInstance(idx, { voiceLowHz: low, voiceHighHz: high })
                         }}
-                        disabled={inst.spectrumMode !== 'voice'}
-                        style={{ ...MODAL_INPUT_STYLE, opacity: inst.spectrumMode !== 'voice' ? 0.55 : 1 }}
+                        style={MODAL_INPUT_STYLE}
                       />
                     </label>
                     <label style={{ display: 'grid', gap: 6 }}>
-                      <div style={{ color: '#bbb', fontSize: 13 }}>Voice High (Hz)</div>
+                      <div style={{ color: '#bbb', fontSize: 13 }}>End (Hz)</div>
                       <input
                         type="number"
                         min={100}
                         max={20000}
                         step={10}
                         value={inst.voiceHighHz}
+                        onKeyDown={(e) => {
+                          if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
+                          if (!(e.shiftKey || e.ctrlKey || e.metaKey)) return
+                          e.preventDefault()
+                          const baseStep = e.ctrlKey || e.metaKey ? 1000 : e.shiftKey ? 100 : 10
+                          const dir = e.key === 'ArrowUp' ? 1 : -1
+                          const high = parseVoiceHighHz(Number(inst.voiceHighHz) + dir * baseStep)
+                          const low = parseVoiceLowHz(inst.voiceLowHz)
+                          updateInstance(idx, { voiceLowHz: low, voiceHighHz: Math.max(low + 10, high) })
+                        }}
                         onChange={(e) => {
                           const high = parseVoiceHighHz(e.target.value)
                           const low = parseVoiceLowHz(inst.voiceLowHz)
                           updateInstance(idx, { voiceLowHz: low, voiceHighHz: Math.max(low + 10, high) })
                         }}
-                        disabled={inst.spectrumMode !== 'voice'}
-                        style={{ ...MODAL_INPUT_STYLE, opacity: inst.spectrumMode !== 'voice' ? 0.55 : 1 }}
+                        style={MODAL_INPUT_STYLE}
                       />
                     </label>
                     <label style={{ display: 'grid', gap: 6 }}>
@@ -1370,6 +1536,57 @@ export default function VisualizerPresetsPage() {
                         step={1}
                         value={inst.baselineLiftPct}
                         onChange={(e) => updateInstance(idx, { baselineLiftPct: parseBaselineLiftPct(e.target.value) })}
+                        style={MODAL_INPUT_STYLE}
+                      />
+                    </label>
+                  </div>
+
+                  <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))' }}>
+                    <label style={{ display: 'grid', gap: 6 }}>
+                      <div style={{ color: '#bbb', fontSize: 13 }}>Wave Gain (%)</div>
+                      <input
+                        type="number"
+                        min={25}
+                        max={400}
+                        step={5}
+                        value={inst.waveVerticalGainPct}
+                        onChange={(e) => updateInstance(idx, { waveVerticalGainPct: parseWaveVerticalGainPct(e.target.value) })}
+                        style={MODAL_INPUT_STYLE}
+                      />
+                    </label>
+                    <label style={{ display: 'grid', gap: 6 }}>
+                      <div style={{ color: '#bbb', fontSize: 13 }}>Wave Smooth (%)</div>
+                      <input
+                        type="number"
+                        min={0}
+                        max={95}
+                        step={1}
+                        value={inst.waveSmoothingPct}
+                        onChange={(e) => updateInstance(idx, { waveSmoothingPct: parseWaveSmoothingPct(e.target.value) })}
+                        style={MODAL_INPUT_STYLE}
+                      />
+                    </label>
+                    <label style={{ display: 'grid', gap: 6 }}>
+                      <div style={{ color: '#bbb', fontSize: 13 }}>Wave Gate (%)</div>
+                      <input
+                        type="number"
+                        min={0}
+                        max={30}
+                        step={1}
+                        value={inst.waveNoiseGatePct}
+                        onChange={(e) => updateInstance(idx, { waveNoiseGatePct: parseWaveNoiseGatePct(e.target.value) })}
+                        style={MODAL_INPUT_STYLE}
+                      />
+                    </label>
+                    <label style={{ display: 'grid', gap: 6 }}>
+                      <div style={{ color: '#bbb', fontSize: 13 }}>Wave Tempo (%)</div>
+                      <input
+                        type="number"
+                        min={0}
+                        max={98}
+                        step={1}
+                        value={inst.waveTemporalSmoothPct}
+                        onChange={(e) => updateInstance(idx, { waveTemporalSmoothPct: parseWaveTemporalSmoothPct(e.target.value) })}
                         style={MODAL_INPUT_STYLE}
                       />
                     </label>

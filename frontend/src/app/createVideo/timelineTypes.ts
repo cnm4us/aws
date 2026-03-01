@@ -219,6 +219,10 @@ export type VisualizerPresetInstanceSnapshot = {
   voiceHighHz: number
   amplitudeGainPct: number
   baselineLiftPct: number
+  waveVerticalGainPct: number
+  waveSmoothingPct: number
+  waveNoiseGatePct: number
+  waveTemporalSmoothPct: number
   gradientEnabled: boolean
   gradientStart: string
   gradientEnd: string
@@ -241,6 +245,10 @@ export type VisualizerPresetSnapshot = {
   voiceHighHz: number
   amplitudeGainPct: number
   baselineLiftPct: number
+  waveVerticalGainPct: number
+  waveSmoothingPct: number
+  waveNoiseGatePct: number
+  waveTemporalSmoothPct: number
   gradientEnabled: boolean
   gradientStart: string
   gradientEnd: string
@@ -309,6 +317,10 @@ export const DEFAULT_VISUALIZER_PRESET_SNAPSHOT: VisualizerPresetSnapshot = {
   voiceHighHz: 4000,
   amplitudeGainPct: 100,
   baselineLiftPct: 0,
+  waveVerticalGainPct: 100,
+  waveSmoothingPct: 0,
+  waveNoiseGatePct: 0,
+  waveTemporalSmoothPct: 0,
   gradientEnabled: false,
   gradientStart: '#d4af37',
   gradientEnd: '#f7d774',
@@ -330,6 +342,10 @@ export const DEFAULT_VISUALIZER_PRESET_SNAPSHOT: VisualizerPresetSnapshot = {
       voiceHighHz: 4000,
       amplitudeGainPct: 100,
       baselineLiftPct: 0,
+      waveVerticalGainPct: 100,
+      waveSmoothingPct: 0,
+      waveNoiseGatePct: 0,
+      waveTemporalSmoothPct: 0,
       gradientEnabled: false,
       gradientStart: '#d4af37',
       gradientEnd: '#f7d774',
@@ -618,7 +634,7 @@ export function cloneTimeline(timeline: Timeline): Timeline {
                   ? (String(snapBase.bandMode || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.bandMode).trim().toLowerCase() as any)
                   : 'full',
               voiceLowHz: Number.isFinite(Number(snapBase.voiceLowHz))
-                ? Math.max(20, Math.min(12000, Math.round(Number(snapBase.voiceLowHz))))
+                ? Math.max(20, Math.min(19990, Math.round(Number(snapBase.voiceLowHz))))
                 : DEFAULT_VISUALIZER_PRESET_SNAPSHOT.voiceLowHz,
               voiceHighHz: Number.isFinite(Number(snapBase.voiceHighHz))
                 ? Math.max(100, Math.min(20000, Math.round(Number(snapBase.voiceHighHz))))
@@ -629,6 +645,18 @@ export function cloneTimeline(timeline: Timeline): Timeline {
               baselineLiftPct: Number.isFinite(Number(snapBase.baselineLiftPct))
                 ? Math.max(-100, Math.min(100, Math.round(Number(snapBase.baselineLiftPct))))
                 : DEFAULT_VISUALIZER_PRESET_SNAPSHOT.baselineLiftPct,
+              waveVerticalGainPct: Number.isFinite(Number(snapBase.waveVerticalGainPct))
+                ? Math.max(25, Math.min(400, Math.round(Number(snapBase.waveVerticalGainPct))))
+                : DEFAULT_VISUALIZER_PRESET_SNAPSHOT.waveVerticalGainPct,
+              waveSmoothingPct: Number.isFinite(Number(snapBase.waveSmoothingPct))
+                ? Math.max(0, Math.min(95, Math.round(Number(snapBase.waveSmoothingPct))))
+                : DEFAULT_VISUALIZER_PRESET_SNAPSHOT.waveSmoothingPct,
+              waveNoiseGatePct: Number.isFinite(Number(snapBase.waveNoiseGatePct))
+                ? Math.max(0, Math.min(30, Math.round(Number(snapBase.waveNoiseGatePct))))
+                : DEFAULT_VISUALIZER_PRESET_SNAPSHOT.waveNoiseGatePct,
+              waveTemporalSmoothPct: Number.isFinite(Number(snapBase.waveTemporalSmoothPct))
+                ? Math.max(0, Math.min(98, Math.round(Number(snapBase.waveTemporalSmoothPct))))
+                : DEFAULT_VISUALIZER_PRESET_SNAPSHOT.waveTemporalSmoothPct,
               gradientEnabled: snapBase.gradientEnabled === true,
               gradientStart: String(snapBase.gradientStart || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.gradientStart),
               gradientEnd: String(snapBase.gradientEnd || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.gradientEnd),
@@ -670,7 +698,7 @@ export function cloneTimeline(timeline: Timeline): Timeline {
                 const bandMode =
                   bandRaw === 'band_1' || bandRaw === 'band_2' || bandRaw === 'band_3' || bandRaw === 'band_4' ? (bandRaw as any) : 'full'
                 const voiceLowHz = Number.isFinite(Number(inst?.voiceLowHz))
-                  ? Math.max(20, Math.min(12000, Math.round(Number(inst?.voiceLowHz))))
+                  ? Math.max(20, Math.min(19990, Math.round(Number(inst?.voiceLowHz))))
                   : snapshot.voiceLowHz
                 const voiceHighHzRaw = Number.isFinite(Number(inst?.voiceHighHz))
                   ? Math.max(100, Math.min(20000, Math.round(Number(inst?.voiceHighHz))))
@@ -682,6 +710,18 @@ export function cloneTimeline(timeline: Timeline): Timeline {
                 const baselineLiftPct = Number.isFinite(Number(inst?.baselineLiftPct))
                   ? Math.max(-100, Math.min(100, Math.round(Number(inst?.baselineLiftPct))))
                   : snapshot.baselineLiftPct
+                const waveVerticalGainPct = Number.isFinite(Number(inst?.waveVerticalGainPct))
+                  ? Math.max(25, Math.min(400, Math.round(Number(inst?.waveVerticalGainPct))))
+                  : snapshot.waveVerticalGainPct
+                const waveSmoothingPct = Number.isFinite(Number(inst?.waveSmoothingPct))
+                  ? Math.max(0, Math.min(95, Math.round(Number(inst?.waveSmoothingPct))))
+                  : snapshot.waveSmoothingPct
+                const waveNoiseGatePct = Number.isFinite(Number(inst?.waveNoiseGatePct))
+                  ? Math.max(0, Math.min(30, Math.round(Number(inst?.waveNoiseGatePct))))
+                  : snapshot.waveNoiseGatePct
+                const waveTemporalSmoothPct = Number.isFinite(Number(inst?.waveTemporalSmoothPct))
+                  ? Math.max(0, Math.min(98, Math.round(Number(inst?.waveTemporalSmoothPct))))
+                  : snapshot.waveTemporalSmoothPct
                 const gradientModeRaw = String(inst?.gradientMode || snapshot.gradientMode).trim().toLowerCase()
                 const gradientMode = gradientModeRaw === 'horizontal' ? 'horizontal' : 'vertical'
                 return {
@@ -699,6 +739,10 @@ export function cloneTimeline(timeline: Timeline): Timeline {
                   voiceHighHz,
                   amplitudeGainPct,
                   baselineLiftPct,
+                  waveVerticalGainPct,
+                  waveSmoothingPct,
+                  waveNoiseGatePct,
+                  waveTemporalSmoothPct,
                   gradientEnabled: inst?.gradientEnabled === true,
                   gradientStart: String(inst?.gradientStart || snapshot.gradientStart),
                   gradientEnd: String(inst?.gradientEnd || snapshot.gradientEnd),
@@ -722,6 +766,10 @@ export function cloneTimeline(timeline: Timeline): Timeline {
                       voiceHighHz: snapshot.voiceHighHz,
                       amplitudeGainPct: snapshot.amplitudeGainPct,
                       baselineLiftPct: snapshot.baselineLiftPct,
+                      waveVerticalGainPct: snapshot.waveVerticalGainPct,
+                      waveSmoothingPct: snapshot.waveSmoothingPct,
+                      waveNoiseGatePct: snapshot.waveNoiseGatePct,
+                      waveTemporalSmoothPct: snapshot.waveTemporalSmoothPct,
                       gradientEnabled: snapshot.gradientEnabled,
                       gradientStart: snapshot.gradientStart,
                       gradientEnd: snapshot.gradientEnd,

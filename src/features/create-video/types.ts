@@ -302,6 +302,10 @@ export type CreateVideoVisualizerPresetSnapshotV1 = {
   voiceHighHz?: number
   amplitudeGainPct?: number
   baselineLiftPct?: number
+  waveVerticalGainPct?: number
+  waveSmoothingPct?: number
+  waveNoiseGatePct?: number
+  waveTemporalSmoothPct?: number
   gradientEnabled: boolean
   gradientStart: string
   gradientEnd: string
@@ -322,6 +326,10 @@ export type CreateVideoVisualizerPresetSnapshotV1 = {
     voiceHighHz?: number
     amplitudeGainPct?: number
     baselineLiftPct?: number
+    waveVerticalGainPct?: number
+    waveSmoothingPct?: number
+    waveNoiseGatePct?: number
+    waveTemporalSmoothPct?: number
     gradientEnabled: boolean
     gradientStart: string
     gradientEnd: string
