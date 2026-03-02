@@ -69,6 +69,27 @@ type RouteContext = {
 
 type Mode = 'manage' | 'pick'
 
+type RangePresetKey =
+  | 'full_spectrum'
+  | 'sub_bass'
+  | 'bass'
+  | 'low_mids'
+  | 'mids'
+  | 'upper_mids'
+  | 'presence'
+  | 'air'
+  | 'brilliance'
+  | 'voice_male_core'
+  | 'voice_female_core'
+  | 'speech_intelligibility'
+  | 'kick_low_percussion'
+  | 'snare_attack'
+  | 'hihat_cymbals'
+  | 'piano_low'
+  | 'piano_mid'
+  | 'piano_high'
+  | 'custom'
+
 const DEFAULT_INSTANCE: VisualizerPresetInstance = {
   id: 'instance_1',
   style: 'wave_line',
@@ -100,6 +121,27 @@ const DEFAULT_PRESET: Omit<VisualizerPreset, 'id' | 'createdAt' | 'updatedAt' | 
   bgColor: 'transparent',
   instances: [DEFAULT_INSTANCE],
 }
+
+const RANGE_PRESETS: Array<{ key: Exclude<RangePresetKey, 'custom'>; label: string; startHz: number; endHz: number }> = [
+  { key: 'full_spectrum', label: 'Full Spectrum (20-20000 Hz)', startHz: 20, endHz: 20000 },
+  { key: 'sub_bass', label: 'Sub Bass (20-60 Hz)', startHz: 20, endHz: 60 },
+  { key: 'bass', label: 'Bass (60-160 Hz)', startHz: 60, endHz: 160 },
+  { key: 'low_mids', label: 'Low Mids (160-400 Hz)', startHz: 160, endHz: 400 },
+  { key: 'mids', label: 'Mids (400-1200 Hz)', startHz: 400, endHz: 1200 },
+  { key: 'upper_mids', label: 'Upper Mids (1200-3000 Hz)', startHz: 1200, endHz: 3000 },
+  { key: 'presence', label: 'Presence (3000-6000 Hz)', startHz: 3000, endHz: 6000 },
+  { key: 'air', label: 'Air (6000-12000 Hz)', startHz: 6000, endHz: 12000 },
+  { key: 'brilliance', label: 'Brilliance (12000-18000 Hz)', startHz: 12000, endHz: 18000 },
+  { key: 'voice_male_core', label: 'Voice (Male Core, 85-220 Hz)', startHz: 85, endHz: 220 },
+  { key: 'voice_female_core', label: 'Voice (Female Core, 165-380 Hz)', startHz: 165, endHz: 380 },
+  { key: 'speech_intelligibility', label: 'Speech Intelligibility (1000-4000 Hz)', startHz: 1000, endHz: 4000 },
+  { key: 'kick_low_percussion', label: 'Kick / Low Percussion (40-120 Hz)', startHz: 40, endHz: 120 },
+  { key: 'snare_attack', label: 'Snare / Attack (150-3000 Hz)', startHz: 150, endHz: 3000 },
+  { key: 'hihat_cymbals', label: 'Hi-Hat / Cymbals (5000-14000 Hz)', startHz: 5000, endHz: 14000 },
+  { key: 'piano_low', label: 'Piano Low (27-250 Hz)', startHz: 27, endHz: 250 },
+  { key: 'piano_mid', label: 'Piano Mid (250-2000 Hz)', startHz: 250, endHz: 2000 },
+  { key: 'piano_high', label: 'Piano High (2000-4200 Hz)', startHz: 2000, endHz: 4200 },
+]
 
 const nebulaShellBaseStyle: React.CSSProperties = {
   minHeight: '100vh',
@@ -297,18 +339,11 @@ function getSpectrumPresetRangeHz(spectrumMode: VisualizerSpectrumMode): { start
   return { startHz: 20, endHz: 20000 }
 }
 
-function getBandPresetRangeHz(
-  spectrumMode: VisualizerSpectrumMode,
-  bandMode: VisualizerBandMode
-): { startHz: number; endHz: number } {
-  const base = getSpectrumPresetRangeHz(spectrumMode)
-  if (bandMode === 'full') return base
-  const idx = bandMode === 'band_1' ? 0 : bandMode === 'band_2' ? 1 : bandMode === 'band_3' ? 2 : 3
-  const span = Math.max(1, base.endHz - base.startHz)
-  const step = span / 4
-  const startHz = Math.round(base.startHz + step * idx)
-  const endHz = Math.round(base.startHz + step * (idx + 1))
-  return { startHz, endHz: Math.max(startHz + 10, endHz) }
+function findRangePreset(lowHzRaw: any, highHzRaw: any): RangePresetKey {
+  const lowHz = parseVoiceLowHz(lowHzRaw)
+  const highHz = Math.max(lowHz + 10, parseVoiceHighHz(highHzRaw))
+  const exact = RANGE_PRESETS.find((p) => p.startHz === lowHz && p.endHz === highHz)
+  return exact ? exact.key : 'custom'
 }
 
 function getSpectrumRange(
@@ -1368,6 +1403,14 @@ export default function VisualizerPresetsPage() {
                 >
                   {(() => {
                     const isCollapsed = collapsedInstanceIds[String(inst.id)] === true
+                    const showBandAndHzControls =
+                      inst.style === 'spectrum_bars' ||
+                      inst.style === 'dot_spectrum' ||
+                      inst.style === 'mirror_bars' ||
+                      inst.style === 'radial_bars' ||
+                      inst.style === 'pulse_orb' ||
+                      inst.style === 'stacked_bands'
+                    const rangePresetKey = findRangePreset(inst.voiceLowHz, inst.voiceHighHz)
                     return (
                       <>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
@@ -1398,7 +1441,7 @@ export default function VisualizerPresetsPage() {
 
                   {!isCollapsed ? (
                     <>
-                  <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))' }}>
+                  <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))' }}>
                     <label style={{ display: 'grid', gap: 6 }}>
                       <div style={{ color: '#bbb', fontSize: 13 }}>Style</div>
                       <select
@@ -1429,102 +1472,96 @@ export default function VisualizerPresetsPage() {
                         <option value="log">Log</option>
                       </select>
                     </label>
-                    <label style={{ display: 'grid', gap: 6 }}>
-                      <div style={{ color: '#bbb', fontSize: 13 }}>Spectrum</div>
-                      <select
-                        value={inst.spectrumMode}
-                        onChange={(e) => {
-                          const nextSpectrum = e.target.value as VisualizerSpectrumMode
-                          const hz = getBandPresetRangeHz(nextSpectrum, inst.bandMode)
-                          updateInstance(idx, {
-                            spectrumMode: nextSpectrum,
-                            voiceLowHz: hz.startHz,
-                            voiceHighHz: hz.endHz,
-                          })
-                        }}
-                        style={MODAL_INPUT_STYLE}
-                      >
-                        <option value="full">Full</option>
-                        <option value="voice">Voice</option>
-                      </select>
-                    </label>
-                    <label style={{ display: 'grid', gap: 6 }}>
-                      <div style={{ color: '#bbb', fontSize: 13 }}>Band</div>
-                      <select
-                        value={inst.bandMode}
-                        onChange={(e) => {
-                          const nextBand = e.target.value as VisualizerBandMode
-                          const hz = getBandPresetRangeHz(inst.spectrumMode, nextBand)
-                          updateInstance(idx, {
-                            bandMode: nextBand,
-                            voiceLowHz: hz.startHz,
-                            voiceHighHz: hz.endHz,
-                          })
-                        }}
-                        style={MODAL_INPUT_STYLE}
-                      >
-                        <option value="full">Full</option>
-                        <option value="band_1">Band 1</option>
-                        <option value="band_2">Band 2</option>
-                        <option value="band_3">Band 3</option>
-                        <option value="band_4">Band 4</option>
-                      </select>
-                    </label>
                   </div>
 
+                  {showBandAndHzControls ? (
+                    <div style={{ display: 'grid', gap: 10 }}>
+                      <label style={{ display: 'grid', gap: 6 }}>
+                        <div style={{ color: '#bbb', fontSize: 13 }}>Range Preset</div>
+                        <select
+                          value={rangePresetKey}
+                          onChange={(e) => {
+                            const next = e.target.value as RangePresetKey
+                            if (next === 'custom') return
+                            const preset = RANGE_PRESETS.find((p) => p.key === next)
+                            if (!preset) return
+                            updateInstance(idx, {
+                              spectrumMode: 'full',
+                              bandMode: 'full',
+                              voiceLowHz: preset.startHz,
+                              voiceHighHz: preset.endHz,
+                            })
+                          }}
+                          style={MODAL_INPUT_STYLE}
+                        >
+                          {RANGE_PRESETS.map((preset) => (
+                            <option key={preset.key} value={preset.key}>
+                              {preset.label}
+                            </option>
+                          ))}
+                          <option value="custom">Custom</option>
+                        </select>
+                      </label>
+                    </div>
+                  ) : null}
+
                   <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))' }}>
-                    <label style={{ display: 'grid', gap: 6 }}>
-                      <div style={{ color: '#bbb', fontSize: 13 }}>Start (Hz)</div>
-                      <input
-                        type="number"
-                        min={20}
-                        max={19990}
-                        step={10}
-                        value={inst.voiceLowHz}
-                        onKeyDown={(e) => {
-                          if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
-                          if (!(e.shiftKey || e.ctrlKey || e.metaKey)) return
-                          e.preventDefault()
-                          const baseStep = e.ctrlKey || e.metaKey ? 1000 : e.shiftKey ? 100 : 10
-                          const dir = e.key === 'ArrowUp' ? 1 : -1
-                          const low = parseVoiceLowHz(Number(inst.voiceLowHz) + dir * baseStep)
-                          const high = Math.max(low + 10, parseVoiceHighHz(inst.voiceHighHz))
-                          updateInstance(idx, { voiceLowHz: low, voiceHighHz: high })
-                        }}
-                        onChange={(e) => {
-                          const low = parseVoiceLowHz(e.target.value)
-                          const high = Math.max(low + 10, parseVoiceHighHz(inst.voiceHighHz))
-                          updateInstance(idx, { voiceLowHz: low, voiceHighHz: high })
-                        }}
-                        style={MODAL_INPUT_STYLE}
-                      />
-                    </label>
-                    <label style={{ display: 'grid', gap: 6 }}>
-                      <div style={{ color: '#bbb', fontSize: 13 }}>End (Hz)</div>
-                      <input
-                        type="number"
-                        min={100}
-                        max={20000}
-                        step={10}
-                        value={inst.voiceHighHz}
-                        onKeyDown={(e) => {
-                          if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
-                          if (!(e.shiftKey || e.ctrlKey || e.metaKey)) return
-                          e.preventDefault()
-                          const baseStep = e.ctrlKey || e.metaKey ? 1000 : e.shiftKey ? 100 : 10
-                          const dir = e.key === 'ArrowUp' ? 1 : -1
-                          const high = parseVoiceHighHz(Number(inst.voiceHighHz) + dir * baseStep)
-                          const low = parseVoiceLowHz(inst.voiceLowHz)
-                          updateInstance(idx, { voiceLowHz: low, voiceHighHz: Math.max(low + 10, high) })
-                        }}
-                        onChange={(e) => {
-                          const high = parseVoiceHighHz(e.target.value)
-                          const low = parseVoiceLowHz(inst.voiceLowHz)
-                          updateInstance(idx, { voiceLowHz: low, voiceHighHz: Math.max(low + 10, high) })
-                        }}
-                        style={MODAL_INPUT_STYLE}
-                      />
-                    </label>
+                    {showBandAndHzControls ? (
+                      <label style={{ display: 'grid', gap: 6 }}>
+                        <div style={{ color: '#bbb', fontSize: 13 }}>Start (Hz)</div>
+                        <input
+                          type="number"
+                          min={20}
+                          max={19990}
+                          step={10}
+                          value={inst.voiceLowHz}
+                          onKeyDown={(e) => {
+                            if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
+                            if (!(e.shiftKey || e.ctrlKey || e.metaKey)) return
+                            e.preventDefault()
+                            const baseStep = e.ctrlKey || e.metaKey ? 1000 : e.shiftKey ? 100 : 10
+                            const dir = e.key === 'ArrowUp' ? 1 : -1
+                            const low = parseVoiceLowHz(Number(inst.voiceLowHz) + dir * baseStep)
+                            const high = Math.max(low + 10, parseVoiceHighHz(inst.voiceHighHz))
+                            updateInstance(idx, { voiceLowHz: low, voiceHighHz: high })
+                          }}
+                          onChange={(e) => {
+                            const low = parseVoiceLowHz(e.target.value)
+                            const high = Math.max(low + 10, parseVoiceHighHz(inst.voiceHighHz))
+                            updateInstance(idx, { voiceLowHz: low, voiceHighHz: high })
+                          }}
+                          style={MODAL_INPUT_STYLE}
+                        />
+                      </label>
+                    ) : null}
+                    {showBandAndHzControls ? (
+                      <label style={{ display: 'grid', gap: 6 }}>
+                        <div style={{ color: '#bbb', fontSize: 13 }}>End (Hz)</div>
+                        <input
+                          type="number"
+                          min={100}
+                          max={20000}
+                          step={10}
+                          value={inst.voiceHighHz}
+                          onKeyDown={(e) => {
+                            if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
+                            if (!(e.shiftKey || e.ctrlKey || e.metaKey)) return
+                            e.preventDefault()
+                            const baseStep = e.ctrlKey || e.metaKey ? 1000 : e.shiftKey ? 100 : 10
+                            const dir = e.key === 'ArrowUp' ? 1 : -1
+                            const high = parseVoiceHighHz(Number(inst.voiceHighHz) + dir * baseStep)
+                            const low = parseVoiceLowHz(inst.voiceLowHz)
+                            updateInstance(idx, { voiceLowHz: low, voiceHighHz: Math.max(low + 10, high) })
+                          }}
+                          onChange={(e) => {
+                            const high = parseVoiceHighHz(e.target.value)
+                            const low = parseVoiceLowHz(inst.voiceLowHz)
+                            updateInstance(idx, { voiceLowHz: low, voiceHighHz: Math.max(low + 10, high) })
+                          }}
+                          style={MODAL_INPUT_STYLE}
+                        />
+                      </label>
+                    ) : null}
                     <label style={{ display: 'grid', gap: 6 }}>
                       <div style={{ color: '#bbb', fontSize: 13 }}>Gain (%)</div>
                       <input
