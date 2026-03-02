@@ -1424,7 +1424,7 @@ export default function VisualizerPresetsPage() {
             </div>
 
             <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))' }}>
-              <label style={{ display: 'grid', gap: 6 }}>
+              <div style={{ display: 'grid', gap: 6 }}>
                 <div style={{ color: '#bbb', fontSize: 13 }}>Background</div>
                 <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
                   <input
@@ -1442,7 +1442,7 @@ export default function VisualizerPresetsPage() {
                     Transparent
                   </label>
                 </div>
-              </label>
+              </div>
             </div>
 
             <div style={{ display: 'grid', gap: 10 }}>
