@@ -1896,9 +1896,9 @@ export default function VisualizerPresetsPage() {
                         style={{ height: 40, borderRadius: 10, border: '1px solid rgba(255,255,255,0.2)', background: 'transparent' }}
                       />
                     </label>
-                    <label style={{ display: 'grid', gap: 6 }}>
+                    <div style={{ display: 'grid', gap: 6 }}>
                       <div style={{ color: '#bbb', fontSize: 13 }}>Gradient</div>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#bbb', fontSize: 13 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#bbb', fontSize: 13 }}>
                         <input
                           type="checkbox"
                           checked={inst.gradientEnabled}
@@ -1911,7 +1911,7 @@ export default function VisualizerPresetsPage() {
                           }
                         />
                         Enable gradient
-                      </label>
+                      </div>
                       {inst.gradientEnabled ? (
                         <div style={{ display: 'grid', gap: 8 }}>
                           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
@@ -1938,7 +1938,7 @@ export default function VisualizerPresetsPage() {
                           </select>
                         </div>
                       ) : null}
-                    </label>
+                    </div>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                     <button
@@ -1956,7 +1956,7 @@ export default function VisualizerPresetsPage() {
                         opacity: arr.length <= 1 ? 0.55 : 1,
                       }}
                     >
-                      -
+                      Delete
                     </button>
                   </div>
                     </>
