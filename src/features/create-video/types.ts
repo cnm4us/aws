@@ -306,6 +306,8 @@ export type CreateVideoVisualizerPresetSnapshotV1 = {
   waveSmoothingPct?: number
   waveNoiseGatePct?: number
   waveTemporalSmoothPct?: number
+  ringBaseRadiusPct?: number
+  ringDepthPct?: number
   gradientEnabled: boolean
   gradientStart: string
   gradientEnd: string
@@ -330,6 +332,8 @@ export type CreateVideoVisualizerPresetSnapshotV1 = {
     waveSmoothingPct?: number
     waveNoiseGatePct?: number
     waveTemporalSmoothPct?: number
+    ringBaseRadiusPct?: number
+    ringDepthPct?: number
     gradientEnabled: boolean
     gradientStart: string
     gradientEnd: string

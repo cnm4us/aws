@@ -223,6 +223,8 @@ export type VisualizerPresetInstanceSnapshot = {
   waveSmoothingPct: number
   waveNoiseGatePct: number
   waveTemporalSmoothPct: number
+  ringBaseRadiusPct: number
+  ringDepthPct: number
   gradientEnabled: boolean
   gradientStart: string
   gradientEnd: string
@@ -249,6 +251,8 @@ export type VisualizerPresetSnapshot = {
   waveSmoothingPct: number
   waveNoiseGatePct: number
   waveTemporalSmoothPct: number
+  ringBaseRadiusPct: number
+  ringDepthPct: number
   gradientEnabled: boolean
   gradientStart: string
   gradientEnd: string
@@ -321,6 +325,8 @@ export const DEFAULT_VISUALIZER_PRESET_SNAPSHOT: VisualizerPresetSnapshot = {
   waveSmoothingPct: 0,
   waveNoiseGatePct: 0,
   waveTemporalSmoothPct: 0,
+  ringBaseRadiusPct: 22,
+  ringDepthPct: 18,
   gradientEnabled: false,
   gradientStart: '#d4af37',
   gradientEnd: '#f7d774',
@@ -346,6 +352,8 @@ export const DEFAULT_VISUALIZER_PRESET_SNAPSHOT: VisualizerPresetSnapshot = {
       waveSmoothingPct: 0,
       waveNoiseGatePct: 0,
       waveTemporalSmoothPct: 0,
+      ringBaseRadiusPct: 22,
+      ringDepthPct: 18,
       gradientEnabled: false,
       gradientStart: '#d4af37',
       gradientEnd: '#f7d774',
@@ -657,6 +665,12 @@ export function cloneTimeline(timeline: Timeline): Timeline {
               waveTemporalSmoothPct: Number.isFinite(Number(snapBase.waveTemporalSmoothPct))
                 ? Math.max(0, Math.min(98, Math.round(Number(snapBase.waveTemporalSmoothPct))))
                 : DEFAULT_VISUALIZER_PRESET_SNAPSHOT.waveTemporalSmoothPct,
+              ringBaseRadiusPct: Number.isFinite(Number(snapBase.ringBaseRadiusPct))
+                ? Math.max(5, Math.min(90, Math.round(Number(snapBase.ringBaseRadiusPct))))
+                : DEFAULT_VISUALIZER_PRESET_SNAPSHOT.ringBaseRadiusPct,
+              ringDepthPct: Number.isFinite(Number(snapBase.ringDepthPct))
+                ? Math.max(1, Math.min(60, Math.round(Number(snapBase.ringDepthPct))))
+                : DEFAULT_VISUALIZER_PRESET_SNAPSHOT.ringDepthPct,
               gradientEnabled: snapBase.gradientEnabled === true,
               gradientStart: String(snapBase.gradientStart || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.gradientStart),
               gradientEnd: String(snapBase.gradientEnd || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.gradientEnd),
@@ -722,6 +736,12 @@ export function cloneTimeline(timeline: Timeline): Timeline {
                 const waveTemporalSmoothPct = Number.isFinite(Number(inst?.waveTemporalSmoothPct))
                   ? Math.max(0, Math.min(98, Math.round(Number(inst?.waveTemporalSmoothPct))))
                   : snapshot.waveTemporalSmoothPct
+                const ringBaseRadiusPct = Number.isFinite(Number(inst?.ringBaseRadiusPct))
+                  ? Math.max(5, Math.min(90, Math.round(Number(inst?.ringBaseRadiusPct))))
+                  : snapshot.ringBaseRadiusPct
+                const ringDepthPct = Number.isFinite(Number(inst?.ringDepthPct))
+                  ? Math.max(1, Math.min(60, Math.round(Number(inst?.ringDepthPct))))
+                  : snapshot.ringDepthPct
                 const gradientModeRaw = String(inst?.gradientMode || snapshot.gradientMode).trim().toLowerCase()
                 const gradientMode = gradientModeRaw === 'horizontal' ? 'horizontal' : 'vertical'
                 return {
@@ -743,6 +763,8 @@ export function cloneTimeline(timeline: Timeline): Timeline {
                   waveSmoothingPct,
                   waveNoiseGatePct,
                   waveTemporalSmoothPct,
+                  ringBaseRadiusPct,
+                  ringDepthPct,
                   gradientEnabled: inst?.gradientEnabled === true,
                   gradientStart: String(inst?.gradientStart || snapshot.gradientStart),
                   gradientEnd: String(inst?.gradientEnd || snapshot.gradientEnd),
@@ -770,6 +792,8 @@ export function cloneTimeline(timeline: Timeline): Timeline {
                       waveSmoothingPct: snapshot.waveSmoothingPct,
                       waveNoiseGatePct: snapshot.waveNoiseGatePct,
                       waveTemporalSmoothPct: snapshot.waveTemporalSmoothPct,
+                      ringBaseRadiusPct: snapshot.ringBaseRadiusPct,
+                      ringDepthPct: snapshot.ringDepthPct,
                       gradientEnabled: snapshot.gradientEnabled,
                       gradientStart: snapshot.gradientStart,
                       gradientEnd: snapshot.gradientEnd,

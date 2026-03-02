@@ -35,6 +35,8 @@ type VisualizerPresetInstance = {
   waveSmoothingPct: number
   waveNoiseGatePct: number
   waveTemporalSmoothPct: number
+  ringBaseRadiusPct: number
+  ringDepthPct: number
   gradientEnabled: boolean
   gradientStart: string
   gradientEnd: string
@@ -84,6 +86,8 @@ const DEFAULT_INSTANCE: VisualizerPresetInstance = {
   waveSmoothingPct: 0,
   waveNoiseGatePct: 0,
   waveTemporalSmoothPct: 0,
+  ringBaseRadiusPct: 22,
+  ringDepthPct: 18,
   gradientEnabled: false,
   gradientStart: '#d4af37',
   gradientEnd: '#f7d774',
@@ -276,6 +280,18 @@ function parseWaveTemporalSmoothPct(value: any): number {
   return Math.round(Math.min(Math.max(n, 0), 98))
 }
 
+function parseRingBaseRadiusPct(value: any): number {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return DEFAULT_INSTANCE.ringBaseRadiusPct
+  return Math.round(Math.min(Math.max(n, 5), 90))
+}
+
+function parseRingDepthPct(value: any): number {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return DEFAULT_INSTANCE.ringDepthPct
+  return Math.round(Math.min(Math.max(n, 1), 60))
+}
+
 function getSpectrumPresetRangeHz(spectrumMode: VisualizerSpectrumMode): { startHz: number; endHz: number } {
   if (spectrumMode === 'voice') return { startHz: 80, endHz: 4000 }
   return { startHz: 20, endHz: 20000 }
@@ -355,6 +371,8 @@ function normalizeInstance(raw: any, fallback: VisualizerPresetInstance, idx: nu
   const waveSmoothingPct = parseWaveSmoothingPct(raw?.waveSmoothingPct ?? fallback.waveSmoothingPct)
   const waveNoiseGatePct = parseWaveNoiseGatePct(raw?.waveNoiseGatePct ?? fallback.waveNoiseGatePct)
   const waveTemporalSmoothPct = parseWaveTemporalSmoothPct(raw?.waveTemporalSmoothPct ?? fallback.waveTemporalSmoothPct)
+  const ringBaseRadiusPct = parseRingBaseRadiusPct(raw?.ringBaseRadiusPct ?? fallback.ringBaseRadiusPct)
+  const ringDepthPct = parseRingDepthPct(raw?.ringDepthPct ?? fallback.ringDepthPct)
   const gradientMode: VisualizerGradientMode =
     String(raw?.gradientMode || fallback.gradientMode).trim().toLowerCase() === 'horizontal' ? 'horizontal' : 'vertical'
   return {
@@ -374,6 +392,8 @@ function normalizeInstance(raw: any, fallback: VisualizerPresetInstance, idx: nu
     waveSmoothingPct,
     waveNoiseGatePct,
     waveTemporalSmoothPct,
+    ringBaseRadiusPct,
+    ringDepthPct,
     gradientEnabled: raw?.gradientEnabled == null ? Boolean(fallback.gradientEnabled) : raw?.gradientEnabled === true,
     gradientStart: String(raw?.gradientStart || fallback.gradientStart || '#d4af37'),
     gradientEnd: String(raw?.gradientEnd || fallback.gradientEnd || '#f7d774'),
@@ -728,45 +748,33 @@ function VisualizerPreview({
           const cx = w / 2
           const cy = h / 2
           const minDim = Math.min(w, h)
-          const baseR = Math.max(10, minDim * 0.22)
-          const ampR = Math.max(4, minDim * 0.18)
-          const values = new Array(points + 1).fill(0).map((_, i) => {
-            const tt = points <= 1 ? 0 : i / points
-            return getSpectrumValue(
-              tt,
-              inst.scale,
-              inst.spectrumMode,
-              inst.bandMode,
-              inst.voiceLowHz,
-              inst.voiceHighHz,
-              inst.amplitudeGainPct,
-              inst.baselineLiftPct
-            )
-          })
-          if (inst.bandMode !== 'full') {
-            const blurred = values.map((_, i) => {
-              let sum = 0
-              let count = 0
-              const radius = 6
-              for (let d = -radius; d <= radius; d++) {
-                const j = (i + d + values.length) % values.length
-                sum += values[j]
-                count++
-              }
-              return count > 0 ? sum / count : values[i]
-            })
-            const mean = values.reduce((a, b) => a + b, 0) / Math.max(1, values.length)
-            for (let i = 0; i < values.length; i++) {
-              const mixed = values[i] * 0.7 + blurred[i] * 0.3
-              values[i] = Math.max(mixed, mean * 0.35)
-            }
+          const baseR = Math.max(6, minDim * (Math.max(5, Math.min(90, Number(inst.ringBaseRadiusPct || 22))) / 100))
+          const ampR = Math.max(2, minDim * (Math.max(1, Math.min(60, Number(inst.ringDepthPct || 18))) / 100))
+          const temporalKey = `${String(inst.id || 'instance_1')}::ring`
+          let temporalTrack = waveTemporalRef.current[temporalKey]
+          if (!temporalTrack || temporalTrack.length !== points) {
+            temporalTrack = new Float32Array(points)
+            waveTemporalRef.current[temporalKey] = temporalTrack
           }
           ctx.lineWidth = 2
           ctx.beginPath()
-          for (let i = 0; i <= points; i++) {
+          let wavePrev = 0
+          for (let i = 0; i < points; i++) {
             const tt = points <= 1 ? 0 : i / points
-            const bin = values[i] || 0
-            const rr = baseR + bin * ampR
+            const raw = getLegacyWaveValue(tt, inst.scale)
+            const temporalPrev = temporalTrack[i] || 0
+            const wave = shapeWaveSample(
+              raw,
+              inst.waveVerticalGainPct,
+              inst.waveSmoothingPct,
+              inst.waveNoiseGatePct,
+              inst.waveTemporalSmoothPct,
+              temporalPrev,
+              wavePrev
+            )
+            temporalTrack[i] = wave.temporalNext
+            wavePrev = wave.next
+            const rr = Math.max(4, baseR + wave.shaped * ampR)
             const ang = tt * Math.PI * 2 - Math.PI / 2
             const x = cx + Math.cos(ang) * rr
             const y = cy + Math.sin(ang) * rr
@@ -1176,6 +1184,8 @@ export default function VisualizerPresetsPage() {
         waveSmoothingPct: primary.waveSmoothingPct,
         waveNoiseGatePct: primary.waveNoiseGatePct,
         waveTemporalSmoothPct: primary.waveTemporalSmoothPct,
+        ringBaseRadiusPct: primary.ringBaseRadiusPct,
+        ringDepthPct: primary.ringDepthPct,
         gradientEnabled: primary.gradientEnabled,
         gradientStart: primary.gradientStart,
         gradientEnd: primary.gradientEnd,
@@ -1587,6 +1597,30 @@ export default function VisualizerPresetsPage() {
                         step={1}
                         value={inst.waveTemporalSmoothPct}
                         onChange={(e) => updateInstance(idx, { waveTemporalSmoothPct: parseWaveTemporalSmoothPct(e.target.value) })}
+                        style={MODAL_INPUT_STYLE}
+                      />
+                    </label>
+                    <label style={{ display: 'grid', gap: 6 }}>
+                      <div style={{ color: '#bbb', fontSize: 13 }}>Ring Radius (%)</div>
+                      <input
+                        type="number"
+                        min={5}
+                        max={90}
+                        step={1}
+                        value={inst.ringBaseRadiusPct}
+                        onChange={(e) => updateInstance(idx, { ringBaseRadiusPct: parseRingBaseRadiusPct(e.target.value) })}
+                        style={MODAL_INPUT_STYLE}
+                      />
+                    </label>
+                    <label style={{ display: 'grid', gap: 6 }}>
+                      <div style={{ color: '#bbb', fontSize: 13 }}>Ring Depth (%)</div>
+                      <input
+                        type="number"
+                        min={1}
+                        max={60}
+                        step={1}
+                        value={inst.ringDepthPct}
+                        onChange={(e) => updateInstance(idx, { ringDepthPct: parseRingDepthPct(e.target.value) })}
                         style={MODAL_INPUT_STYLE}
                       />
                     </label>

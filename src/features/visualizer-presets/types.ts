@@ -32,6 +32,8 @@ export type VisualizerPresetInstanceDto = {
   waveSmoothingPct: number
   waveNoiseGatePct: number
   waveTemporalSmoothPct: number
+  ringBaseRadiusPct: number
+  ringDepthPct: number
   gradientEnabled: boolean
   gradientStart: string
   gradientEnd: string
@@ -83,6 +85,8 @@ export type VisualizerPresetDto = {
   waveSmoothingPct: number
   waveNoiseGatePct: number
   waveTemporalSmoothPct: number
+  ringBaseRadiusPct: number
+  ringDepthPct: number
   gradientEnabled: boolean
   gradientStart: string
   gradientEnd: string

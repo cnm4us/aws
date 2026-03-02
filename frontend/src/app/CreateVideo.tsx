@@ -193,6 +193,18 @@ const clampWaveTemporalSmoothPct = (raw: any): number => {
   return Math.round(Math.max(0, Math.min(98, n)))
 }
 
+const clampRingBaseRadiusPct = (raw: any): number => {
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return 22
+  return Math.round(Math.max(5, Math.min(90, n)))
+}
+
+const clampRingDepthPct = (raw: any): number => {
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return 18
+  return Math.round(Math.max(1, Math.min(60, n)))
+}
+
 const applySpectrumShaping = (raw: number, amplitudeGainPct: number, baselineLiftPct: number): number => {
   const gain = Math.max(0, Math.min(4, Number(amplitudeGainPct) / 100))
   const lift = Math.max(-1, Math.min(1, Number(baselineLiftPct) / 100))
@@ -230,6 +242,8 @@ const normalizeVisualizerPresetSnapshot = (raw: any): VisualizerPresetSnapshot =
   const waveSmoothingPct = clampWaveSmoothingPct((snap as any).waveSmoothingPct ?? (base as any).waveSmoothingPct)
   const waveNoiseGatePct = clampWaveNoiseGatePct((snap as any).waveNoiseGatePct ?? (base as any).waveNoiseGatePct)
   const waveTemporalSmoothPct = clampWaveTemporalSmoothPct((snap as any).waveTemporalSmoothPct ?? (base as any).waveTemporalSmoothPct)
+  const ringBaseRadiusPct = clampRingBaseRadiusPct((snap as any).ringBaseRadiusPct ?? (base as any).ringBaseRadiusPct)
+  const ringDepthPct = clampRingDepthPct((snap as any).ringDepthPct ?? (base as any).ringDepthPct)
   const gradientModeRaw = String(snap.gradientMode || base.gradientMode).trim().toLowerCase()
   const gradientMode: VisualizerPresetSnapshot['gradientMode'] = gradientModeRaw === 'horizontal' ? 'horizontal' : 'vertical'
   const clipModeRaw = String(snap.clipMode || base.clipMode).trim().toLowerCase()
@@ -256,6 +270,8 @@ const normalizeVisualizerPresetSnapshot = (raw: any): VisualizerPresetSnapshot =
     waveSmoothingPct,
     waveNoiseGatePct,
     waveTemporalSmoothPct,
+    ringBaseRadiusPct,
+    ringDepthPct,
     gradientEnabled: Boolean(snap.gradientEnabled),
     gradientStart: String(snap.gradientStart || base.gradientStart),
     gradientEnd: String(snap.gradientEnd || base.gradientEnd),
@@ -298,6 +314,8 @@ const normalizeVisualizerPresetSnapshot = (raw: any): VisualizerPresetSnapshot =
       const waveSmoothingPctI = clampWaveSmoothingPct((inst as any)?.waveSmoothingPct ?? (normalized as any).waveSmoothingPct)
       const waveNoiseGatePctI = clampWaveNoiseGatePct((inst as any)?.waveNoiseGatePct ?? (normalized as any).waveNoiseGatePct)
       const waveTemporalSmoothPctI = clampWaveTemporalSmoothPct((inst as any)?.waveTemporalSmoothPct ?? (normalized as any).waveTemporalSmoothPct)
+      const ringBaseRadiusPctI = clampRingBaseRadiusPct((inst as any)?.ringBaseRadiusPct ?? (normalized as any).ringBaseRadiusPct)
+      const ringDepthPctI = clampRingDepthPct((inst as any)?.ringDepthPct ?? (normalized as any).ringDepthPct)
       const gradientModeRawI = String(inst?.gradientMode || normalized.gradientMode).trim().toLowerCase()
       const gradientModeI: VisualizerPresetSnapshot['gradientMode'] = gradientModeRawI === 'horizontal' ? 'horizontal' : 'vertical'
       const barCountRawI = Number(inst?.barCount)
@@ -318,6 +336,8 @@ const normalizeVisualizerPresetSnapshot = (raw: any): VisualizerPresetSnapshot =
         waveSmoothingPct: waveSmoothingPctI,
         waveNoiseGatePct: waveNoiseGatePctI,
         waveTemporalSmoothPct: waveTemporalSmoothPctI,
+        ringBaseRadiusPct: ringBaseRadiusPctI,
+        ringDepthPct: ringDepthPctI,
         gradientEnabled: inst?.gradientEnabled === true,
         gradientStart: String(inst?.gradientStart || normalized.gradientStart),
         gradientEnd: String(inst?.gradientEnd || normalized.gradientEnd),
@@ -345,6 +365,8 @@ const normalizeVisualizerPresetSnapshot = (raw: any): VisualizerPresetSnapshot =
             waveSmoothingPct: (normalized as any).waveSmoothingPct,
             waveNoiseGatePct: (normalized as any).waveNoiseGatePct,
             waveTemporalSmoothPct: (normalized as any).waveTemporalSmoothPct,
+            ringBaseRadiusPct: (normalized as any).ringBaseRadiusPct,
+            ringDepthPct: (normalized as any).ringDepthPct,
             gradientEnabled: normalized.gradientEnabled,
             gradientStart: normalized.gradientStart,
             gradientEnd: normalized.gradientEnd,
@@ -380,6 +402,8 @@ const narrationVisualizerToPresetSnapshot = (cfg: NarrationVisualizerConfig): Vi
     waveSmoothingPct: (base as any).waveSmoothingPct,
     waveNoiseGatePct: (base as any).waveNoiseGatePct,
     waveTemporalSmoothPct: (base as any).waveTemporalSmoothPct,
+    ringBaseRadiusPct: (base as any).ringBaseRadiusPct,
+    ringDepthPct: (base as any).ringDepthPct,
     gradientEnabled: Boolean(cfg.gradientEnabled),
     gradientStart: cfg.gradientStart || cfg.fgColor || base.gradientStart,
     gradientEnd: cfg.gradientEnd || base.gradientEnd,
@@ -405,6 +429,8 @@ const narrationVisualizerToPresetSnapshot = (cfg: NarrationVisualizerConfig): Vi
         waveSmoothingPct: (base as any).waveSmoothingPct,
         waveNoiseGatePct: (base as any).waveNoiseGatePct,
         waveTemporalSmoothPct: (base as any).waveTemporalSmoothPct,
+        ringBaseRadiusPct: (base as any).ringBaseRadiusPct,
+        ringDepthPct: (base as any).ringDepthPct,
         gradientEnabled: Boolean(cfg.gradientEnabled),
         gradientStart: cfg.gradientStart || cfg.fgColor || base.gradientStart,
         gradientEnd: cfg.gradientEnd || base.gradientEnd,
@@ -437,6 +463,8 @@ const visualizerPresetSnapshotsEqual = (aRaw: any, bRaw: any): boolean => {
     Number((a as any).waveSmoothingPct || 0) === Number((b as any).waveSmoothingPct || 0) &&
     Number((a as any).waveNoiseGatePct || 0) === Number((b as any).waveNoiseGatePct || 0) &&
     Number((a as any).waveTemporalSmoothPct || 0) === Number((b as any).waveTemporalSmoothPct || 0) &&
+    Number((a as any).ringBaseRadiusPct || 0) === Number((b as any).ringBaseRadiusPct || 0) &&
+    Number((a as any).ringDepthPct || 0) === Number((b as any).ringDepthPct || 0) &&
     Boolean(a.gradientEnabled) === Boolean(b.gradientEnabled) &&
     String(a.gradientStart || '') === String(b.gradientStart || '') &&
     String(a.gradientEnd || '') === String(b.gradientEnd || '') &&
@@ -5429,6 +5457,8 @@ export default function CreateVideo() {
               waveSmoothingPct: (viz as any).waveSmoothingPct,
               waveNoiseGatePct: (viz as any).waveNoiseGatePct,
               waveTemporalSmoothPct: (viz as any).waveTemporalSmoothPct,
+              ringBaseRadiusPct: (viz as any).ringBaseRadiusPct,
+              ringDepthPct: (viz as any).ringDepthPct,
               gradientEnabled: (viz as any).gradientEnabled,
               gradientStart: (viz as any).gradientStart,
               gradientEnd: (viz as any).gradientEnd,
@@ -5471,6 +5501,8 @@ export default function CreateVideo() {
         const instWaveSmoothingPct = clampWaveSmoothingPct((inst as any).waveSmoothingPct ?? (viz as any).waveSmoothingPct)
         const instWaveNoiseGatePct = clampWaveNoiseGatePct((inst as any).waveNoiseGatePct ?? (viz as any).waveNoiseGatePct)
         const instWaveTemporalSmoothPct = clampWaveTemporalSmoothPct((inst as any).waveTemporalSmoothPct ?? (viz as any).waveTemporalSmoothPct)
+        const instRingBaseRadiusPct = clampRingBaseRadiusPct((inst as any).ringBaseRadiusPct ?? (viz as any).ringBaseRadiusPct)
+        const instRingDepthPct = clampRingDepthPct((inst as any).ringDepthPct ?? (viz as any).ringDepthPct)
         const instOpacity = Number.isFinite(Number((inst as any).opacity))
           ? Math.max(0, Math.min(1, Number((inst as any).opacity)))
           : Number.isFinite(viz.opacity)
@@ -5755,72 +5787,59 @@ export default function CreateVideo() {
               }
             }
           } else if (instStyle === 'ring_wave') {
-            const maxIdx = Math.max(1, freq.length - 1)
-            const ringRange = getRangeForBand(maxIdx, instSpectrum as any, instBand, instVoiceRange.low, instVoiceRange.high)
             if (useEnvelope) {
-              for (let i = 0; i < freq.length; i++) {
-                const t = freq.length <= 1 ? 0 : i / (freq.length - 1)
-                const phase = envTime * 18
-                const wobble = 0.25 + 0.75 * Math.abs(Math.sin(t * Math.PI * 6 + phase))
-                freq[i] = Math.round(amp * wobble * 255)
+              for (let i = 0; i < data.length; i++) {
+                const t = data.length <= 1 ? 0 : i / (data.length - 1)
+                const phase = envTime * 16
+                const wave =
+                  0.5 +
+                  0.5 *
+                    (Math.sin(t * Math.PI * 2 + phase) * 0.7 +
+                      Math.sin(t * Math.PI * 6 - phase * 0.9) * 0.25 +
+                      Math.sin(t * Math.PI * 12 + phase * 0.35) * 0.15)
+                data[i] = Math.round((0.5 + (wave - 0.5) * Math.max(0.15, amp)) * 255)
               }
             } else if (analyser) {
-              analyser.getByteFrequencyData(freq)
+              analyser.getByteTimeDomainData(data)
             }
-            const smoothedFreq = (() => {
-              const out = new Float32Array(freq.length)
-              const radius = 2
-              for (let i = 0; i < freq.length; i++) {
-                let sum = 0
-                let count = 0
-                for (let d = -radius; d <= radius; d++) {
-                  const j = i + d
-                  if (j < 0 || j >= freq.length) continue
-                  sum += freq[j]
-                  count++
-                }
-                out[i] = count > 0 ? sum / count : freq[i]
-              }
-              return out
-            })()
+            const gate = Math.max(0, Math.min(0.3, instWaveNoiseGatePct / 100))
+            const gain = Math.max(0.25, Math.min(4, instWaveVerticalGainPct / 100))
+            const smooth = Math.max(0, Math.min(0.95, instWaveSmoothingPct / 100))
+            const temporal = Math.max(0, Math.min(0.98, instWaveTemporalSmoothPct / 100))
+            const alpha = 1 - smooth
+            const temporalAlpha = 1 - temporal
+            const shapeSample = (raw: number, temporalPrev: number, prev: number): { next: number; shaped: number; temporalNext: number } => {
+              const temporalNext = temporalPrev + temporalAlpha * (raw - temporalPrev)
+              const abs = Math.abs(temporalNext)
+              const gated = abs <= gate ? 0 : Math.sign(temporalNext) * ((abs - gate) / Math.max(1e-6, 1 - gate))
+              const amplified = Math.max(-1, Math.min(1, gated * gain))
+              const next = prev + alpha * (amplified - prev)
+              return { next, shaped: next, temporalNext }
+            }
             const points = Math.max(64, Math.min(360, instBars * 2))
             const cx = drawW / 2
             const cy = drawH / 2
             const minDim = Math.min(drawW, drawH)
-            const baseR = Math.max(10, minDim * 0.22)
-            const ampR = Math.max(4, minDim * 0.18)
-            const values = new Array(points + 1).fill(0).map((_, i) => {
-              const tt = points <= 1 ? 0 : i / points
-              const base = instScale === 'log' ? Math.pow(tt, 2) : tt
-              const idx = Math.round(ringRange.start + base * (ringRange.end - ringRange.start))
-              const ii = Math.max(0, Math.min(smoothedFreq.length - 1, idx))
-              const raw = Math.max(0, Math.min(1, smoothedFreq[ii] / 255))
-              return applySpectrumShaping(raw, instAmplitudeGainPct, instBaselineLiftPct)
-            })
-            if (instBand !== 'full') {
-              const blurred = values.map((_, i) => {
-                let sum = 0
-                let count = 0
-                const radius = 6
-                for (let d = -radius; d <= radius; d++) {
-                  const j = (i + d + values.length) % values.length
-                  sum += values[j]
-                  count++
-                }
-                return count > 0 ? sum / count : values[i]
-              })
-              const mean = values.reduce((a, b) => a + b, 0) / Math.max(1, values.length)
-              for (let i = 0; i < values.length; i++) {
-                const mixed = values[i] * 0.7 + blurred[i] * 0.3
-                values[i] = Math.max(mixed, mean * 0.35)
-              }
+            const baseR = Math.max(6, minDim * (instRingBaseRadiusPct / 100))
+            const ampR = Math.max(2, minDim * (instRingDepthPct / 100))
+            const temporalKey = `${String((viz as any).id || 'visualizer')}::${String((inst as any).id || 'instance_1')}::ring`
+            let temporalTrack = narrationVizWaveTemporalByInstanceRef.current[temporalKey]
+            if (!temporalTrack || temporalTrack.length !== points) {
+              temporalTrack = new Float32Array(points)
+              narrationVizWaveTemporalByInstanceRef.current[temporalKey] = temporalTrack
             }
             ctx.lineWidth = 2
             ctx.beginPath()
-            for (let i = 0; i <= points; i++) {
+            let wavePrev = 0
+            for (let i = 0; i < points; i++) {
               const tt = points <= 1 ? 0 : i / points
-              const v = values[i] || 0
-              const rr = baseR + v * ampR
+              const scaled = instScale === 'log' ? Math.pow(tt, 2) : tt
+              const sampleIdx = Math.max(0, Math.min(data.length - 1, Math.round(scaled * (data.length - 1))))
+              const raw = (data[sampleIdx] - 128) / 128
+              const wave = shapeSample(raw, temporalTrack[i] || 0, wavePrev)
+              temporalTrack[i] = wave.temporalNext
+              wavePrev = wave.next
+              const rr = Math.max(4, baseR + wave.shaped * ampR)
               const ang = tt * Math.PI * 2 - Math.PI / 2
               const x = cx + Math.cos(ang) * rr
               const y = cy + Math.sin(ang) * rr

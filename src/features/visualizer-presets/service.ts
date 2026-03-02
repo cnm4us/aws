@@ -47,6 +47,8 @@ const DEFAULTS = {
   waveSmoothingPct: 0,
   waveNoiseGatePct: 0,
   waveTemporalSmoothPct: 0,
+  ringBaseRadiusPct: 22,
+  ringDepthPct: 18,
   gradientEnabled: false,
   gradientStart: '#d4af37',
   gradientEnd: '#f7d774',
@@ -162,6 +164,18 @@ function normalizeWaveTemporalSmoothPct(raw: any): number {
   return Math.round(Math.min(Math.max(n, 0), 98))
 }
 
+function normalizeRingBaseRadiusPct(raw: any): number {
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return DEFAULTS.ringBaseRadiusPct
+  return Math.round(Math.min(Math.max(n, 5), 90))
+}
+
+function normalizeRingDepthPct(raw: any): number {
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return DEFAULTS.ringDepthPct
+  return Math.round(Math.min(Math.max(n, 1), 60))
+}
+
 function normalizeVoiceRange(lowRaw: any, highRaw: any): { voiceLowHz: number; voiceHighHz: number } {
   let voiceLowHz = normalizeVoiceLowHz(lowRaw)
   let voiceHighHz = normalizeVoiceHighHz(highRaw)
@@ -208,6 +222,8 @@ function normalizeInstance(raw: any, fallback?: Partial<VisualizerPresetInstance
   const waveSmoothingPct = normalizeWaveSmoothingPct(raw?.waveSmoothingPct ?? seed.waveSmoothingPct)
   const waveNoiseGatePct = normalizeWaveNoiseGatePct(raw?.waveNoiseGatePct ?? seed.waveNoiseGatePct)
   const waveTemporalSmoothPct = normalizeWaveTemporalSmoothPct(raw?.waveTemporalSmoothPct ?? seed.waveTemporalSmoothPct)
+  const ringBaseRadiusPct = normalizeRingBaseRadiusPct(raw?.ringBaseRadiusPct ?? seed.ringBaseRadiusPct)
+  const ringDepthPct = normalizeRingDepthPct(raw?.ringDepthPct ?? seed.ringDepthPct)
 
   return {
     id,
@@ -226,6 +242,8 @@ function normalizeInstance(raw: any, fallback?: Partial<VisualizerPresetInstance
     waveSmoothingPct,
     waveNoiseGatePct,
     waveTemporalSmoothPct,
+    ringBaseRadiusPct,
+    ringDepthPct,
     gradientEnabled,
     gradientStart,
     gradientEnd,
@@ -281,6 +299,8 @@ function legacyStyleFromRow(row: VisualizerPresetRow): Partial<VisualizerPresetI
     waveSmoothingPct: DEFAULTS.waveSmoothingPct,
     waveNoiseGatePct: DEFAULTS.waveNoiseGatePct,
     waveTemporalSmoothPct: DEFAULTS.waveTemporalSmoothPct,
+    ringBaseRadiusPct: DEFAULTS.ringBaseRadiusPct,
+    ringDepthPct: DEFAULTS.ringDepthPct,
     gradientEnabled: Number((row as any).gradient_enabled) === 1,
     gradientStart: normalizeHexColor((row as any).gradient_start, normalizeHexColor((row as any).fg_color, DEFAULTS.fgColor)),
     gradientEnd: normalizeHexColor((row as any).gradient_end, DEFAULTS.gradientEnd),
@@ -357,6 +377,8 @@ function mapRow(row: VisualizerPresetRow): VisualizerPresetDto {
     waveSmoothingPct: primary.waveSmoothingPct,
     waveNoiseGatePct: primary.waveNoiseGatePct,
     waveTemporalSmoothPct: primary.waveTemporalSmoothPct,
+    ringBaseRadiusPct: primary.ringBaseRadiusPct,
+    ringDepthPct: primary.ringDepthPct,
     gradientEnabled: primary.gradientEnabled,
     gradientStart: primary.gradientStart,
     gradientEnd: primary.gradientEnd,
@@ -409,6 +431,8 @@ export async function createForUser(input: {
   waveSmoothingPct?: any
   waveNoiseGatePct?: any
   waveTemporalSmoothPct?: any
+  ringBaseRadiusPct?: any
+  ringDepthPct?: any
   gradientEnabled?: any
   gradientStart?: any
   gradientEnd?: any
@@ -439,6 +463,8 @@ export async function createForUser(input: {
   const waveSmoothingPct = normalizeWaveSmoothingPct(input.waveSmoothingPct)
   const waveNoiseGatePct = normalizeWaveNoiseGatePct(input.waveNoiseGatePct)
   const waveTemporalSmoothPct = normalizeWaveTemporalSmoothPct(input.waveTemporalSmoothPct)
+  const ringBaseRadiusPct = normalizeRingBaseRadiusPct(input.ringBaseRadiusPct)
+  const ringDepthPct = normalizeRingDepthPct(input.ringDepthPct)
   const gradientModeRaw = String(input.gradientMode ?? DEFAULTS.gradientMode).trim().toLowerCase()
   const gradientMode: VisualizerGradientMode = isEnumValue(gradientModeRaw, GRADIENT_MODES) ? (gradientModeRaw as VisualizerGradientMode) : DEFAULTS.gradientMode
   const clipModeRaw = String(input.clipMode ?? DEFAULTS.clipMode).trim().toLowerCase()
@@ -470,6 +496,8 @@ export async function createForUser(input: {
     waveSmoothingPct,
     waveNoiseGatePct,
     waveTemporalSmoothPct,
+    ringBaseRadiusPct,
+    ringDepthPct,
     gradientEnabled,
     gradientStart,
     gradientEnd,
@@ -522,6 +550,8 @@ export async function updateForUser(
   waveSmoothingPct?: any
   waveNoiseGatePct?: any
   waveTemporalSmoothPct?: any
+  ringBaseRadiusPct?: any
+  ringDepthPct?: any
   gradientEnabled?: any
   gradientStart?: any
   gradientEnd?: any
@@ -574,6 +604,8 @@ export async function updateForUser(
   if (input.waveSmoothingPct !== undefined) patch.waveSmoothingPct = normalizeWaveSmoothingPct(input.waveSmoothingPct)
   if (input.waveNoiseGatePct !== undefined) patch.waveNoiseGatePct = normalizeWaveNoiseGatePct(input.waveNoiseGatePct)
   if (input.waveTemporalSmoothPct !== undefined) patch.waveTemporalSmoothPct = normalizeWaveTemporalSmoothPct(input.waveTemporalSmoothPct)
+  if (input.ringBaseRadiusPct !== undefined) patch.ringBaseRadiusPct = normalizeRingBaseRadiusPct(input.ringBaseRadiusPct)
+  if (input.ringDepthPct !== undefined) patch.ringDepthPct = normalizeRingDepthPct(input.ringDepthPct)
   if (input.barCount !== undefined) patch.barCount = normalizeBarCount(input.barCount)
   if (input.gradientEnabled !== undefined) patch.gradientEnabled = input.gradientEnabled === true
   if (input.gradientStart !== undefined) patch.gradientStart = normalizeHexColor(input.gradientStart, DEFAULTS.gradientStart)
@@ -605,6 +637,8 @@ export async function updateForUser(
     input.waveSmoothingPct !== undefined ||
     input.waveNoiseGatePct !== undefined ||
     input.waveTemporalSmoothPct !== undefined ||
+    input.ringBaseRadiusPct !== undefined ||
+    input.ringDepthPct !== undefined ||
     input.gradientEnabled !== undefined ||
     input.gradientStart !== undefined ||
     input.gradientEnd !== undefined ||
@@ -630,6 +664,8 @@ export async function updateForUser(
     patch.waveSmoothingPct = primary.waveSmoothingPct
     patch.waveNoiseGatePct = primary.waveNoiseGatePct
     patch.waveTemporalSmoothPct = primary.waveTemporalSmoothPct
+    patch.ringBaseRadiusPct = primary.ringBaseRadiusPct
+    patch.ringDepthPct = primary.ringDepthPct
     patch.gradientEnabled = primary.gradientEnabled
     patch.gradientStart = primary.gradientStart
     patch.gradientEnd = primary.gradientEnd
@@ -656,6 +692,8 @@ export async function updateForUser(
         waveSmoothingPct: patch.waveSmoothingPct ?? current[0].waveSmoothingPct,
         waveNoiseGatePct: patch.waveNoiseGatePct ?? current[0].waveNoiseGatePct,
         waveTemporalSmoothPct: patch.waveTemporalSmoothPct ?? current[0].waveTemporalSmoothPct,
+        ringBaseRadiusPct: patch.ringBaseRadiusPct ?? current[0].ringBaseRadiusPct,
+        ringDepthPct: patch.ringDepthPct ?? current[0].ringDepthPct,
         gradientEnabled: patch.gradientEnabled ?? current[0].gradientEnabled,
         gradientStart: patch.gradientStart ?? current[0].gradientStart,
         gradientEnd: patch.gradientEnd ?? current[0].gradientEnd,
@@ -682,6 +720,8 @@ export async function updateForUser(
     patch.waveSmoothingPct = primaryNext.waveSmoothingPct
     patch.waveNoiseGatePct = primaryNext.waveNoiseGatePct
     patch.waveTemporalSmoothPct = primaryNext.waveTemporalSmoothPct
+    patch.ringBaseRadiusPct = primaryNext.ringBaseRadiusPct
+    patch.ringDepthPct = primaryNext.ringDepthPct
     patch.gradientEnabled = primaryNext.gradientEnabled
     patch.gradientStart = primaryNext.gradientStart
     patch.gradientEnd = primaryNext.gradientEnd
