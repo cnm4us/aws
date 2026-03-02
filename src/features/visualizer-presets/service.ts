@@ -1,6 +1,7 @@
 import { DomainError, ForbiddenError, NotFoundError } from '../../core/errors'
 import * as repo from './repo'
 import type {
+  VisualizerBarTopShape,
   VisualizerBandMode,
   VisualizerClipMode,
   VisualizerGradientMode,
@@ -29,6 +30,7 @@ const GRADIENT_MODES: readonly VisualizerGradientMode[] = ['vertical', 'horizont
 const CLIP_MODES: readonly VisualizerClipMode[] = ['none', 'rect']
 const SPECTRUM_MODES: readonly VisualizerSpectrumMode[] = ['full', 'voice']
 const BAND_MODES: readonly VisualizerBandMode[] = ['full', 'band_1', 'band_2', 'band_3', 'band_4']
+const BAR_TOP_SHAPES: readonly VisualizerBarTopShape[] = ['stepped', 'smooth']
 
 const DEFAULTS = {
   style: 'wave_line' as VisualizerStyle,
@@ -54,6 +56,7 @@ const DEFAULTS = {
   orbRadiusPct: 11,
   orbBandCount: 1,
   orbBandSpacingPct: 5,
+  barTopShape: 'stepped' as VisualizerBarTopShape,
   gradientEnabled: false,
   gradientStart: '#d4af37',
   gradientEnd: '#f7d774',
@@ -211,6 +214,11 @@ function normalizeOrbBandSpacingPct(raw: any): number {
   return Math.round(Math.min(Math.max(n, 1), 20))
 }
 
+function normalizeBarTopShape(raw: any): VisualizerBarTopShape {
+  const value = String(raw ?? DEFAULTS.barTopShape).trim().toLowerCase()
+  return isEnumValue(value, BAR_TOP_SHAPES) ? (value as VisualizerBarTopShape) : DEFAULTS.barTopShape
+}
+
 function normalizeVoiceRange(lowRaw: any, highRaw: any): { voiceLowHz: number; voiceHighHz: number } {
   let voiceLowHz = normalizeVoiceLowHz(lowRaw)
   let voiceHighHz = normalizeVoiceHighHz(highRaw)
@@ -264,6 +272,7 @@ function normalizeInstance(raw: any, fallback?: Partial<VisualizerPresetInstance
   const orbRadiusPct = normalizeOrbRadiusPct(raw?.orbRadiusPct ?? seed.orbRadiusPct)
   const orbBandCount = normalizeOrbBandCount(raw?.orbBandCount ?? seed.orbBandCount)
   const orbBandSpacingPct = normalizeOrbBandSpacingPct(raw?.orbBandSpacingPct ?? seed.orbBandSpacingPct)
+  const barTopShape = normalizeBarTopShape(raw?.barTopShape ?? seed.barTopShape)
 
   return {
     id,
@@ -289,6 +298,7 @@ function normalizeInstance(raw: any, fallback?: Partial<VisualizerPresetInstance
     orbRadiusPct,
     orbBandCount,
     orbBandSpacingPct,
+    barTopShape,
     gradientEnabled,
     gradientStart,
     gradientEnd,
@@ -351,6 +361,7 @@ function legacyStyleFromRow(row: VisualizerPresetRow): Partial<VisualizerPresetI
     orbRadiusPct: DEFAULTS.orbRadiusPct,
     orbBandCount: DEFAULTS.orbBandCount,
     orbBandSpacingPct: DEFAULTS.orbBandSpacingPct,
+    barTopShape: DEFAULTS.barTopShape,
     gradientEnabled: Number((row as any).gradient_enabled) === 1,
     gradientStart: normalizeHexColor((row as any).gradient_start, normalizeHexColor((row as any).fg_color, DEFAULTS.fgColor)),
     gradientEnd: normalizeHexColor((row as any).gradient_end, DEFAULTS.gradientEnd),
@@ -434,6 +445,7 @@ function mapRow(row: VisualizerPresetRow): VisualizerPresetDto {
     orbRadiusPct: primary.orbRadiusPct,
     orbBandCount: primary.orbBandCount,
     orbBandSpacingPct: primary.orbBandSpacingPct,
+    barTopShape: primary.barTopShape,
     gradientEnabled: primary.gradientEnabled,
     gradientStart: primary.gradientStart,
     gradientEnd: primary.gradientEnd,
@@ -493,6 +505,7 @@ export async function createForUser(input: {
   orbRadiusPct?: any
   orbBandCount?: any
   orbBandSpacingPct?: any
+  barTopShape?: any
   gradientEnabled?: any
   gradientStart?: any
   gradientEnd?: any
@@ -530,6 +543,7 @@ export async function createForUser(input: {
   const orbRadiusPct = normalizeOrbRadiusPct(input.orbRadiusPct)
   const orbBandCount = normalizeOrbBandCount(input.orbBandCount)
   const orbBandSpacingPct = normalizeOrbBandSpacingPct(input.orbBandSpacingPct)
+  const barTopShape = normalizeBarTopShape(input.barTopShape)
   const gradientModeRaw = String(input.gradientMode ?? DEFAULTS.gradientMode).trim().toLowerCase()
   const gradientMode: VisualizerGradientMode = isEnumValue(gradientModeRaw, GRADIENT_MODES) ? (gradientModeRaw as VisualizerGradientMode) : DEFAULTS.gradientMode
   const clipModeRaw = String(input.clipMode ?? DEFAULTS.clipMode).trim().toLowerCase()
@@ -568,6 +582,7 @@ export async function createForUser(input: {
     orbRadiusPct,
     orbBandCount,
     orbBandSpacingPct,
+    barTopShape,
     gradientEnabled,
     gradientStart,
     gradientEnd,
@@ -627,6 +642,7 @@ export async function updateForUser(
   orbRadiusPct?: any
   orbBandCount?: any
   orbBandSpacingPct?: any
+  barTopShape?: any
   gradientEnabled?: any
   gradientStart?: any
   gradientEnd?: any
@@ -686,6 +702,7 @@ export async function updateForUser(
   if (input.orbRadiusPct !== undefined) patch.orbRadiusPct = normalizeOrbRadiusPct(input.orbRadiusPct)
   if (input.orbBandCount !== undefined) patch.orbBandCount = normalizeOrbBandCount(input.orbBandCount)
   if (input.orbBandSpacingPct !== undefined) patch.orbBandSpacingPct = normalizeOrbBandSpacingPct(input.orbBandSpacingPct)
+  if (input.barTopShape !== undefined) patch.barTopShape = normalizeBarTopShape(input.barTopShape)
   if (input.barCount !== undefined) patch.barCount = normalizeBarCount(input.barCount)
   if (input.gradientEnabled !== undefined) patch.gradientEnabled = input.gradientEnabled === true
   if (input.gradientStart !== undefined) patch.gradientStart = normalizeHexColor(input.gradientStart, DEFAULTS.gradientStart)
@@ -724,6 +741,7 @@ export async function updateForUser(
     input.orbRadiusPct !== undefined ||
     input.orbBandCount !== undefined ||
     input.orbBandSpacingPct !== undefined ||
+    input.barTopShape !== undefined ||
     input.gradientEnabled !== undefined ||
     input.gradientStart !== undefined ||
     input.gradientEnd !== undefined ||
@@ -756,6 +774,7 @@ export async function updateForUser(
     patch.orbRadiusPct = primary.orbRadiusPct
     patch.orbBandCount = primary.orbBandCount
     patch.orbBandSpacingPct = primary.orbBandSpacingPct
+    patch.barTopShape = primary.barTopShape
     patch.gradientEnabled = primary.gradientEnabled
     patch.gradientStart = primary.gradientStart
     patch.gradientEnd = primary.gradientEnd
@@ -789,6 +808,7 @@ export async function updateForUser(
         orbRadiusPct: patch.orbRadiusPct ?? current[0].orbRadiusPct,
         orbBandCount: patch.orbBandCount ?? current[0].orbBandCount,
         orbBandSpacingPct: patch.orbBandSpacingPct ?? current[0].orbBandSpacingPct,
+        barTopShape: patch.barTopShape ?? current[0].barTopShape,
         gradientEnabled: patch.gradientEnabled ?? current[0].gradientEnabled,
         gradientStart: patch.gradientStart ?? current[0].gradientStart,
         gradientEnd: patch.gradientEnd ?? current[0].gradientEnd,
@@ -822,6 +842,7 @@ export async function updateForUser(
     patch.orbRadiusPct = primaryNext.orbRadiusPct
     patch.orbBandCount = primaryNext.orbBandCount
     patch.orbBandSpacingPct = primaryNext.orbBandSpacingPct
+    patch.barTopShape = primaryNext.barTopShape
     patch.gradientEnabled = primaryNext.gradientEnabled
     patch.gradientStart = primaryNext.gradientStart
     patch.gradientEnd = primaryNext.gradientEnd

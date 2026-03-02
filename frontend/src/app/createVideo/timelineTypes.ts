@@ -205,6 +205,7 @@ export type VisualizerGradientMode = 'vertical' | 'horizontal'
 export type VisualizerClipMode = 'none' | 'rect'
 export type VisualizerSpectrumMode = 'full' | 'voice'
 export type VisualizerBandMode = 'full' | 'band_1' | 'band_2' | 'band_3' | 'band_4'
+export type VisualizerBarTopShape = 'stepped' | 'smooth'
 
 export type VisualizerPresetInstanceSnapshot = {
   id: string
@@ -230,6 +231,7 @@ export type VisualizerPresetInstanceSnapshot = {
   orbRadiusPct: number
   orbBandCount: number
   orbBandSpacingPct: number
+  barTopShape: VisualizerBarTopShape
   gradientEnabled: boolean
   gradientStart: string
   gradientEnd: string
@@ -263,6 +265,7 @@ export type VisualizerPresetSnapshot = {
   orbRadiusPct: number
   orbBandCount: number
   orbBandSpacingPct: number
+  barTopShape: VisualizerBarTopShape
   gradientEnabled: boolean
   gradientStart: string
   gradientEnd: string
@@ -342,6 +345,7 @@ export const DEFAULT_VISUALIZER_PRESET_SNAPSHOT: VisualizerPresetSnapshot = {
   orbRadiusPct: 11,
   orbBandCount: 1,
   orbBandSpacingPct: 5,
+  barTopShape: 'stepped',
   gradientEnabled: false,
   gradientStart: '#d4af37',
   gradientEnd: '#f7d774',
@@ -374,6 +378,7 @@ export const DEFAULT_VISUALIZER_PRESET_SNAPSHOT: VisualizerPresetSnapshot = {
       orbRadiusPct: 11,
       orbBandCount: 1,
       orbBandSpacingPct: 5,
+      barTopShape: 'stepped',
       gradientEnabled: false,
       gradientStart: '#d4af37',
       gradientEnd: '#f7d774',
@@ -706,6 +711,10 @@ export function cloneTimeline(timeline: Timeline): Timeline {
               orbBandSpacingPct: Number.isFinite(Number(snapBase.orbBandSpacingPct))
                 ? Math.max(1, Math.min(20, Math.round(Number(snapBase.orbBandSpacingPct))))
                 : DEFAULT_VISUALIZER_PRESET_SNAPSHOT.orbBandSpacingPct,
+              barTopShape:
+                String(snapBase.barTopShape || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.barTopShape).trim().toLowerCase() === 'smooth'
+                  ? 'smooth'
+                  : 'stepped',
               gradientEnabled: snapBase.gradientEnabled === true,
               gradientStart: String(snapBase.gradientStart || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.gradientStart),
               gradientEnd: String(snapBase.gradientEnd || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.gradientEnd),
@@ -792,6 +801,10 @@ export function cloneTimeline(timeline: Timeline): Timeline {
                 const orbBandSpacingPct = Number.isFinite(Number(inst?.orbBandSpacingPct))
                   ? Math.max(1, Math.min(20, Math.round(Number(inst?.orbBandSpacingPct))))
                   : snapshot.orbBandSpacingPct
+                const barTopShape =
+                  String(inst?.barTopShape || snapshot.barTopShape || 'stepped').trim().toLowerCase() === 'smooth'
+                    ? 'smooth'
+                    : 'stepped'
                 const gradientModeRaw = String(inst?.gradientMode || snapshot.gradientMode).trim().toLowerCase()
                 const gradientMode = gradientModeRaw === 'horizontal' ? 'horizontal' : 'vertical'
                 return {
@@ -820,6 +833,7 @@ export function cloneTimeline(timeline: Timeline): Timeline {
                   orbRadiusPct,
                   orbBandCount,
                   orbBandSpacingPct,
+                  barTopShape,
                   gradientEnabled: inst?.gradientEnabled === true,
                   gradientStart: String(inst?.gradientStart || snapshot.gradientStart),
                   gradientEnd: String(inst?.gradientEnd || snapshot.gradientEnd),
@@ -854,6 +868,7 @@ export function cloneTimeline(timeline: Timeline): Timeline {
                       orbRadiusPct: snapshot.orbRadiusPct,
                       orbBandCount: snapshot.orbBandCount,
                       orbBandSpacingPct: snapshot.orbBandSpacingPct,
+                      barTopShape: snapshot.barTopShape,
                       gradientEnabled: snapshot.gradientEnabled,
                       gradientStart: snapshot.gradientStart,
                       gradientEnd: snapshot.gradientEnd,

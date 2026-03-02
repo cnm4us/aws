@@ -261,6 +261,7 @@ const normalizeVisualizerPresetSnapshot = (raw: any): VisualizerPresetSnapshot =
   const orbRadiusPct = Math.max(5, Math.min(40, Math.round(Number((snap as any).orbRadiusPct ?? (base as any).orbRadiusPct ?? 11))))
   const orbBandCount = Math.max(1, Math.min(8, Math.round(Number((snap as any).orbBandCount ?? (base as any).orbBandCount ?? 1))))
   const orbBandSpacingPct = Math.max(1, Math.min(20, Math.round(Number((snap as any).orbBandSpacingPct ?? (base as any).orbBandSpacingPct ?? 5))))
+  const barTopShape: any = String((snap as any).barTopShape || (base as any).barTopShape || 'stepped').trim().toLowerCase() === 'smooth' ? 'smooth' : 'stepped'
   const gradientModeRaw = String(snap.gradientMode || base.gradientMode).trim().toLowerCase()
   const gradientMode: VisualizerPresetSnapshot['gradientMode'] = gradientModeRaw === 'horizontal' ? 'horizontal' : 'vertical'
   const clipModeRaw = String(snap.clipMode || base.clipMode).trim().toLowerCase()
@@ -294,6 +295,7 @@ const normalizeVisualizerPresetSnapshot = (raw: any): VisualizerPresetSnapshot =
     orbRadiusPct,
     orbBandCount,
     orbBandSpacingPct,
+    barTopShape,
     gradientEnabled: Boolean(snap.gradientEnabled),
     gradientStart: String(snap.gradientStart || base.gradientStart),
     gradientEnd: String(snap.gradientEnd || base.gradientEnd),
@@ -343,6 +345,7 @@ const normalizeVisualizerPresetSnapshot = (raw: any): VisualizerPresetSnapshot =
       const orbRadiusPctI = Math.max(5, Math.min(40, Math.round(Number((inst as any)?.orbRadiusPct ?? (normalized as any).orbRadiusPct ?? 11))))
       const orbBandCountI = Math.max(1, Math.min(8, Math.round(Number((inst as any)?.orbBandCount ?? (normalized as any).orbBandCount ?? 1))))
       const orbBandSpacingPctI = Math.max(1, Math.min(20, Math.round(Number((inst as any)?.orbBandSpacingPct ?? (normalized as any).orbBandSpacingPct ?? 5))))
+      const barTopShapeI: any = String((inst as any)?.barTopShape || (normalized as any).barTopShape || 'stepped').trim().toLowerCase() === 'smooth' ? 'smooth' : 'stepped'
       const gradientModeRawI = String(inst?.gradientMode || normalized.gradientMode).trim().toLowerCase()
       const gradientModeI: VisualizerPresetSnapshot['gradientMode'] = gradientModeRawI === 'horizontal' ? 'horizontal' : 'vertical'
       const barCountRawI = Number(inst?.barCount)
@@ -370,6 +373,7 @@ const normalizeVisualizerPresetSnapshot = (raw: any): VisualizerPresetSnapshot =
         orbRadiusPct: orbRadiusPctI,
         orbBandCount: orbBandCountI,
         orbBandSpacingPct: orbBandSpacingPctI,
+        barTopShape: barTopShapeI,
         gradientEnabled: inst?.gradientEnabled === true,
         gradientStart: String(inst?.gradientStart || normalized.gradientStart),
         gradientEnd: String(inst?.gradientEnd || normalized.gradientEnd),
@@ -404,6 +408,7 @@ const normalizeVisualizerPresetSnapshot = (raw: any): VisualizerPresetSnapshot =
             orbRadiusPct: (normalized as any).orbRadiusPct,
             orbBandCount: (normalized as any).orbBandCount,
             orbBandSpacingPct: (normalized as any).orbBandSpacingPct,
+            barTopShape: (normalized as any).barTopShape,
             gradientEnabled: normalized.gradientEnabled,
             gradientStart: normalized.gradientStart,
             gradientEnd: normalized.gradientEnd,
@@ -446,6 +451,7 @@ const narrationVisualizerToPresetSnapshot = (cfg: NarrationVisualizerConfig): Vi
     orbRadiusPct: (base as any).orbRadiusPct,
     orbBandCount: (base as any).orbBandCount,
     orbBandSpacingPct: (base as any).orbBandSpacingPct,
+    barTopShape: (base as any).barTopShape,
     gradientEnabled: Boolean(cfg.gradientEnabled),
     gradientStart: cfg.gradientStart || cfg.fgColor || base.gradientStart,
     gradientEnd: cfg.gradientEnd || base.gradientEnd,
@@ -478,6 +484,7 @@ const narrationVisualizerToPresetSnapshot = (cfg: NarrationVisualizerConfig): Vi
         orbRadiusPct: (base as any).orbRadiusPct,
         orbBandCount: (base as any).orbBandCount,
         orbBandSpacingPct: (base as any).orbBandSpacingPct,
+        barTopShape: (base as any).barTopShape,
         gradientEnabled: Boolean(cfg.gradientEnabled),
         gradientStart: cfg.gradientStart || cfg.fgColor || base.gradientStart,
         gradientEnd: cfg.gradientEnd || base.gradientEnd,
@@ -517,6 +524,7 @@ const visualizerPresetSnapshotsEqual = (aRaw: any, bRaw: any): boolean => {
     Number((a as any).orbRadiusPct || 0) === Number((b as any).orbRadiusPct || 0) &&
     Number((a as any).orbBandCount || 0) === Number((b as any).orbBandCount || 0) &&
     Number((a as any).orbBandSpacingPct || 0) === Number((b as any).orbBandSpacingPct || 0) &&
+    String((a as any).barTopShape || '') === String((b as any).barTopShape || '') &&
     Boolean(a.gradientEnabled) === Boolean(b.gradientEnabled) &&
     String(a.gradientStart || '') === String(b.gradientStart || '') &&
     String(a.gradientEnd || '') === String(b.gradientEnd || '') &&
@@ -5516,6 +5524,7 @@ export default function CreateVideo() {
               orbRadiusPct: (viz as any).orbRadiusPct,
               orbBandCount: (viz as any).orbBandCount,
               orbBandSpacingPct: (viz as any).orbBandSpacingPct,
+              barTopShape: (viz as any).barTopShape,
               gradientEnabled: (viz as any).gradientEnabled,
               gradientStart: (viz as any).gradientStart,
               gradientEnd: (viz as any).gradientEnd,
@@ -5565,6 +5574,7 @@ export default function CreateVideo() {
         const instOrbRadiusPct = Math.max(5, Math.min(40, Math.round(Number((inst as any).orbRadiusPct ?? (viz as any).orbRadiusPct ?? 11))))
         const instOrbBandCount = Math.max(1, Math.min(8, Math.round(Number((inst as any).orbBandCount ?? (viz as any).orbBandCount ?? 1))))
         const instOrbBandSpacingPct = Math.max(1, Math.min(20, Math.round(Number((inst as any).orbBandSpacingPct ?? (viz as any).orbBandSpacingPct ?? 5))))
+        const instBarTopShape: any = String((inst as any).barTopShape || (viz as any).barTopShape || 'stepped').trim().toLowerCase() === 'smooth' ? 'smooth' : 'stepped'
         const instOpacity = Number.isFinite(Number((inst as any).opacity))
           ? Math.max(0, Math.min(1, Number((inst as any).opacity)))
           : Number.isFinite(viz.opacity)
@@ -5628,6 +5638,62 @@ export default function CreateVideo() {
             end = Math.max(start + 1, Math.min(maxIdx, bEnd))
           }
           return { start, end }
+        }
+        const drawSmoothTopFill = (heightsRaw: number[], baselineY: number, barW: number, gap: number) => {
+          if (!heightsRaw.length) return
+          const heights = heightsRaw.map((_, i) => {
+            const a = heightsRaw[Math.max(0, i - 1)] || 0
+            const b = heightsRaw[i] || 0
+            const c = heightsRaw[Math.min(heightsRaw.length - 1, i + 1)] || 0
+            return (a + b * 2 + c) / 4
+          })
+          const centers = heights.map((_, i) => i * (barW + gap) + barW / 2)
+          ctx.beginPath()
+          ctx.moveTo(centers[0], baselineY)
+          ctx.lineTo(centers[0], baselineY - heights[0])
+          for (let i = 1; i < centers.length; i++) {
+            const prevX = centers[i - 1]
+            const prevY = baselineY - heights[i - 1]
+            const curX = centers[i]
+            const curY = baselineY - heights[i]
+            const midX = (prevX + curX) / 2
+            const midY = (prevY + curY) / 2
+            ctx.quadraticCurveTo(prevX, prevY, midX, midY)
+            if (i === centers.length - 1) ctx.quadraticCurveTo(curX, curY, curX, curY)
+          }
+          ctx.lineTo(centers[centers.length - 1], baselineY)
+          ctx.closePath()
+          ctx.fill()
+        }
+        const drawSmoothMirrorFill = (halfHeightsRaw: number[], centerY: number, barW: number, gap: number) => {
+          if (!halfHeightsRaw.length) return
+          const halfHeights = halfHeightsRaw.map((_, i) => {
+            const a = halfHeightsRaw[Math.max(0, i - 1)] || 0
+            const b = halfHeightsRaw[i] || 0
+            const c = halfHeightsRaw[Math.min(halfHeightsRaw.length - 1, i + 1)] || 0
+            return (a + b * 2 + c) / 4
+          })
+          const centers = halfHeights.map((_, i) => i * (barW + gap) + barW / 2)
+          ctx.beginPath()
+          ctx.moveTo(centers[0], centerY + halfHeights[0])
+          ctx.lineTo(centers[0], centerY - halfHeights[0])
+          for (let i = 1; i < centers.length; i++) {
+            const prevX = centers[i - 1]
+            const prevY = centerY - halfHeights[i - 1]
+            const curX = centers[i]
+            const curY = centerY - halfHeights[i]
+            const midX = (prevX + curX) / 2
+            const midY = (prevY + curY) / 2
+            ctx.quadraticCurveTo(prevX, prevY, midX, midY)
+            if (i === centers.length - 1) ctx.quadraticCurveTo(curX, curY, curX, curY)
+          }
+          for (let i = centers.length - 1; i >= 0; i--) {
+            const x = centers[i]
+            const y = centerY + halfHeights[i]
+            ctx.lineTo(x, y)
+          }
+          ctx.closePath()
+          ctx.fill()
         }
 
         if (isBarStyle) {
@@ -5703,14 +5769,18 @@ export default function CreateVideo() {
           } else if (instStyle === 'spectrum_bars') {
             const gap = 2
             const barW = Math.max(2, (drawW - gap * (instBars - 1)) / instBars)
+            const heights: number[] = []
             for (let i = 0; i < instBars; i++) {
               const t = instBars <= 1 ? 0 : i / (instBars - 1)
               const v = sampleNormalized(rangeStart, rangeEnd, t, instScale as any)
               const bh = Math.round(v * drawH)
+              heights.push(Math.max(0, bh))
+              if (instBarTopShape === 'smooth') continue
               if (bh <= 0) continue
               const x = i * (barW + gap)
               ctx.fillRect(x, drawH - bh, barW, bh)
             }
+            if (instBarTopShape === 'smooth') drawSmoothTopFill(heights, drawH, barW, gap)
           } else if (instStyle === 'dot_spectrum') {
             const gap = 2
             const barW = Math.max(2, (drawW - gap * (instBars - 1)) / instBars)
@@ -5730,14 +5800,18 @@ export default function CreateVideo() {
             const gap = 2
             const barW = Math.max(2, (drawW - gap * (instBars - 1)) / instBars)
             const centerY = drawH / 2
+            const halfHeights: number[] = []
             for (let i = 0; i < instBars; i++) {
               const t = instBars <= 1 ? 0 : i / (instBars - 1)
               const v = sampleNormalized(rangeStart, rangeEnd, t, instScale as any)
               const hh = Math.round(v * drawH * 0.48)
+              halfHeights.push(Math.max(0, hh))
+              if (instBarTopShape === 'smooth') continue
               if (hh <= 0) continue
               const x = i * (barW + gap)
               ctx.fillRect(x, centerY - hh, barW, hh * 2)
             }
+            if (instBarTopShape === 'smooth') drawSmoothMirrorFill(halfHeights, centerY, barW, gap)
           } else {
             const laneBands: Array<'band_1' | 'band_2' | 'band_3' | 'band_4'> = ['band_1', 'band_2', 'band_3', 'band_4']
             const lanes = laneBands.length
@@ -5750,14 +5824,18 @@ export default function CreateVideo() {
               const laneRange = getRangeForBand(maxIdx, instSpectrum as any, laneBands[lane], instVoiceRange.low, instVoiceRange.high)
               const yTop = lane * (laneH + laneGap)
               const yBottom = yTop + laneH
+              const heights: number[] = []
               for (let i = 0; i < bars; i++) {
                 const t = bars <= 1 ? 0 : i / (bars - 1)
                 const v = sampleNormalized(laneRange.start, laneRange.end, t, instScale as any)
                 const bh = Math.round(v * laneH)
+                heights.push(Math.max(0, bh))
+                if (instBarTopShape === 'smooth') continue
                 if (bh <= 0) continue
                 const x = i * (barW + gap)
                 ctx.fillRect(x, yBottom - bh, barW, bh)
               }
+              if (instBarTopShape === 'smooth') drawSmoothTopFill(heights, yBottom, barW, gap)
             }
           }
         } else {

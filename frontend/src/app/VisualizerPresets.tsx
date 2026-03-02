@@ -18,6 +18,7 @@ type VisualizerScale = 'linear' | 'log'
 type VisualizerGradientMode = 'vertical' | 'horizontal'
 type VisualizerSpectrumMode = 'full' | 'voice'
 type VisualizerBandMode = 'full' | 'band_1' | 'band_2' | 'band_3' | 'band_4'
+type VisualizerBarTopShape = 'stepped' | 'smooth'
 type VisualizerPresetInstance = {
   id: string
   style: VisualizerStyle
@@ -42,6 +43,7 @@ type VisualizerPresetInstance = {
   orbRadiusPct: number
   orbBandCount: number
   orbBandSpacingPct: number
+  barTopShape: VisualizerBarTopShape
   gradientEnabled: boolean
   gradientStart: string
   gradientEnd: string
@@ -119,6 +121,7 @@ const DEFAULT_INSTANCE: VisualizerPresetInstance = {
   orbRadiusPct: 11,
   orbBandCount: 1,
   orbBandSpacingPct: 5,
+  barTopShape: 'stepped',
   gradientEnabled: false,
   gradientStart: '#d4af37',
   gradientEnd: '#f7d774',
@@ -374,6 +377,10 @@ function parseOrbBandSpacingPct(value: any): number {
   return Math.round(Math.min(Math.max(n, 1), 20))
 }
 
+function parseBarTopShape(value: any): VisualizerBarTopShape {
+  return String(value || '').trim().toLowerCase() === 'smooth' ? 'smooth' : 'stepped'
+}
+
 function getSpectrumPresetRangeHz(spectrumMode: VisualizerSpectrumMode): { startHz: number; endHz: number } {
   if (spectrumMode === 'voice') return { startHz: 80, endHz: 4000 }
   return { startHz: 20, endHz: 20000 }
@@ -453,6 +460,7 @@ function normalizeInstance(raw: any, fallback: VisualizerPresetInstance, idx: nu
   const orbRadiusPct = parseOrbRadiusPct(raw?.orbRadiusPct ?? fallback.orbRadiusPct)
   const orbBandCount = parseOrbBandCount(raw?.orbBandCount ?? fallback.orbBandCount)
   const orbBandSpacingPct = parseOrbBandSpacingPct(raw?.orbBandSpacingPct ?? fallback.orbBandSpacingPct)
+  const barTopShape = parseBarTopShape(raw?.barTopShape ?? fallback.barTopShape)
   const gradientMode: VisualizerGradientMode =
     String(raw?.gradientMode || fallback.gradientMode).trim().toLowerCase() === 'horizontal' ? 'horizontal' : 'vertical'
   return {
@@ -479,6 +487,7 @@ function normalizeInstance(raw: any, fallback: VisualizerPresetInstance, idx: nu
     orbRadiusPct,
     orbBandCount,
     orbBandSpacingPct,
+    barTopShape,
     gradientEnabled: raw?.gradientEnabled == null ? Boolean(fallback.gradientEnabled) : raw?.gradientEnabled === true,
     gradientStart: String(raw?.gradientStart || fallback.gradientStart || '#d4af37'),
     gradientEnd: String(raw?.gradientEnd || fallback.gradientEnd || '#f7d774'),
@@ -699,6 +708,63 @@ function VisualizerPreview({
         ctx.strokeStyle = grad || fg
         ctx.fillStyle = grad || fg
         const waveLineWidthPx = Math.max(1, Math.min(12, Number(inst.waveLineWidthPx || 2)))
+        const barTopShape: VisualizerBarTopShape = parseBarTopShape((inst as any).barTopShape)
+        const drawSmoothTopFill = (heightsRaw: number[], baselineY: number, barW: number, gap: number) => {
+          if (!heightsRaw.length) return
+          const heights = heightsRaw.map((_, i) => {
+            const a = heightsRaw[Math.max(0, i - 1)] || 0
+            const b = heightsRaw[i] || 0
+            const c = heightsRaw[Math.min(heightsRaw.length - 1, i + 1)] || 0
+            return (a + b * 2 + c) / 4
+          })
+          const centers = heights.map((_, i) => i * (barW + gap) + barW / 2)
+          ctx.beginPath()
+          ctx.moveTo(centers[0], baselineY)
+          ctx.lineTo(centers[0], baselineY - heights[0])
+          for (let i = 1; i < centers.length; i++) {
+            const prevX = centers[i - 1]
+            const prevY = baselineY - heights[i - 1]
+            const curX = centers[i]
+            const curY = baselineY - heights[i]
+            const midX = (prevX + curX) / 2
+            const midY = (prevY + curY) / 2
+            ctx.quadraticCurveTo(prevX, prevY, midX, midY)
+            if (i === centers.length - 1) ctx.quadraticCurveTo(curX, curY, curX, curY)
+          }
+          ctx.lineTo(centers[centers.length - 1], baselineY)
+          ctx.closePath()
+          ctx.fill()
+        }
+        const drawSmoothMirrorFill = (halfHeightsRaw: number[], centerY: number, barW: number, gap: number) => {
+          if (!halfHeightsRaw.length) return
+          const halfHeights = halfHeightsRaw.map((_, i) => {
+            const a = halfHeightsRaw[Math.max(0, i - 1)] || 0
+            const b = halfHeightsRaw[i] || 0
+            const c = halfHeightsRaw[Math.min(halfHeightsRaw.length - 1, i + 1)] || 0
+            return (a + b * 2 + c) / 4
+          })
+          const centers = halfHeights.map((_, i) => i * (barW + gap) + barW / 2)
+          ctx.beginPath()
+          ctx.moveTo(centers[0], centerY + halfHeights[0])
+          ctx.lineTo(centers[0], centerY - halfHeights[0])
+          for (let i = 1; i < centers.length; i++) {
+            const prevX = centers[i - 1]
+            const prevY = centerY - halfHeights[i - 1]
+            const curX = centers[i]
+            const curY = centerY - halfHeights[i]
+            const midX = (prevX + curX) / 2
+            const midY = (prevY + curY) / 2
+            ctx.quadraticCurveTo(prevX, prevY, midX, midY)
+            if (i === centers.length - 1) ctx.quadraticCurveTo(curX, curY, curX, curY)
+          }
+          for (let i = centers.length - 1; i >= 0; i--) {
+            const x = centers[i]
+            const y = centerY + halfHeights[i]
+            ctx.lineTo(x, y)
+          }
+          ctx.closePath()
+          ctx.fill()
+        }
 
         if (inst.style === 'radial_bars') {
           const bars = parseBarCount(inst.barCount)
@@ -736,6 +802,7 @@ function VisualizerPreview({
           const bars = parseBarCount(inst.barCount)
           const gap = 2
           const barW = Math.max(2, (w - gap * (bars - 1)) / bars)
+          const heights: number[] = []
           for (let i = 0; i < bars; i++) {
             const tt = bars <= 1 ? 0 : i / (bars - 1)
             const v = getSpectrumValue(
@@ -749,10 +816,13 @@ function VisualizerPreview({
               inst.baselineLiftPct
             )
             const bh = Math.round(v * h)
+            heights.push(Math.max(0, bh))
+            if (barTopShape === 'smooth') continue
             if (bh <= 0) continue
             const x = i * (barW + gap)
             ctx.fillRect(x, h - bh, barW, bh)
           }
+          if (barTopShape === 'smooth') drawSmoothTopFill(heights, h, barW, gap)
         } else if (inst.style === 'dot_spectrum') {
           const bars = parseBarCount(inst.barCount)
           const gap = 2
@@ -783,6 +853,7 @@ function VisualizerPreview({
           const gap = 2
           const barW = Math.max(2, (w - gap * (bars - 1)) / bars)
           const centerY = h / 2
+          const halfHeights: number[] = []
           for (let i = 0; i < bars; i++) {
             const tt = bars <= 1 ? 0 : i / (bars - 1)
             const v = getSpectrumValue(
@@ -796,10 +867,13 @@ function VisualizerPreview({
               inst.baselineLiftPct
             )
             const hh = Math.round(v * h * 0.48)
+            halfHeights.push(Math.max(0, hh))
+            if (barTopShape === 'smooth') continue
             if (hh <= 0) continue
             const x = i * (barW + gap)
             ctx.fillRect(x, centerY - hh, barW, hh * 2)
           }
+          if (barTopShape === 'smooth') drawSmoothMirrorFill(halfHeights, centerY, barW, gap)
         } else if (inst.style === 'stacked_bands') {
           const bands: VisualizerBandMode[] = ['band_1', 'band_2', 'band_3', 'band_4']
           const lanes = bands.length
@@ -811,6 +885,7 @@ function VisualizerPreview({
           for (let lane = 0; lane < lanes; lane++) {
             const yTop = lane * (laneH + laneGap)
             const yBottom = yTop + laneH
+            const heights: number[] = []
             for (let i = 0; i < bars; i++) {
               const tt = bars <= 1 ? 0 : i / (bars - 1)
               const v = getSpectrumValue(
@@ -824,10 +899,13 @@ function VisualizerPreview({
                 inst.baselineLiftPct
               )
               const bh = Math.round(v * laneH)
+              heights.push(Math.max(0, bh))
+              if (barTopShape === 'smooth') continue
               if (bh <= 0) continue
               const x = i * (barW + gap)
               ctx.fillRect(x, yBottom - bh, barW, bh)
             }
+            if (barTopShape === 'smooth') drawSmoothTopFill(heights, yBottom, barW, gap)
           }
         } else if (inst.style === 'ring_wave') {
           const points = Math.max(64, Math.min(360, parseBarCount(inst.barCount) * 2))
@@ -1298,6 +1376,7 @@ export default function VisualizerPresetsPage() {
         orbRadiusPct: primary.orbRadiusPct,
         orbBandCount: primary.orbBandCount,
         orbBandSpacingPct: primary.orbBandSpacingPct,
+        barTopShape: primary.barTopShape,
         gradientEnabled: primary.gradientEnabled,
         gradientStart: primary.gradientStart,
         gradientEnd: primary.gradientEnd,
@@ -1513,6 +1592,10 @@ export default function VisualizerPresetsPage() {
                       inst.style === 'stacked_bands' ||
                       inst.style === 'radial_bars' ||
                       inst.style === 'ring_wave'
+                    const showBarTopShapeControl =
+                      inst.style === 'spectrum_bars' ||
+                      inst.style === 'mirror_bars' ||
+                      inst.style === 'stacked_bands'
                     const rangePresetKey = findRangePreset(inst.voiceLowHz, inst.voiceHighHz)
                     return (
                       <>
@@ -1867,6 +1950,22 @@ export default function VisualizerPresetsPage() {
                           onChange={(e) => updateInstance(idx, { barCount: parseBarCount(e.target.value) })}
                         />
                         <div style={{ color: '#bbb', fontSize: 12 }}>{inst.barCount}</div>
+                      </label>
+                    </div>
+                  ) : null}
+
+                  {showBarTopShapeControl ? (
+                    <div style={{ display: 'grid', gap: 10 }}>
+                      <label style={{ display: 'grid', gap: 6 }}>
+                        <div style={{ color: '#bbb', fontSize: 13 }}>Top Shape</div>
+                        <select
+                          value={inst.barTopShape}
+                          onChange={(e) => updateInstance(idx, { barTopShape: parseBarTopShape(e.target.value) })}
+                          style={MODAL_INPUT_STYLE}
+                        >
+                          <option value="stepped">Stepped</option>
+                          <option value="smooth">Smooth</option>
+                        </select>
                       </label>
                     </div>
                   ) : null}
