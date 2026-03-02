@@ -49,6 +49,9 @@ const DEFAULTS = {
   waveTemporalSmoothPct: 0,
   ringBaseRadiusPct: 22,
   ringDepthPct: 18,
+  orbRadiusPct: 11,
+  orbBandCount: 1,
+  orbBandSpacingPct: 5,
   gradientEnabled: false,
   gradientStart: '#d4af37',
   gradientEnd: '#f7d774',
@@ -125,7 +128,7 @@ function normalizeVoiceLowHz(raw: any): number {
 function normalizeVoiceHighHz(raw: any): number {
   const n = Number(raw)
   if (!Number.isFinite(n)) return DEFAULTS.voiceHighHz
-  return Math.round(Math.min(Math.max(n, 100), 20000))
+  return Math.round(Math.min(Math.max(n, 20), 20000))
 }
 
 function normalizeAmplitudeGainPct(raw: any): number {
@@ -176,6 +179,24 @@ function normalizeRingDepthPct(raw: any): number {
   return Math.round(Math.min(Math.max(n, 1), 60))
 }
 
+function normalizeOrbRadiusPct(raw: any): number {
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return DEFAULTS.orbRadiusPct
+  return Math.round(Math.min(Math.max(n, 5), 40))
+}
+
+function normalizeOrbBandCount(raw: any): number {
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return DEFAULTS.orbBandCount
+  return Math.round(Math.min(Math.max(n, 1), 8))
+}
+
+function normalizeOrbBandSpacingPct(raw: any): number {
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return DEFAULTS.orbBandSpacingPct
+  return Math.round(Math.min(Math.max(n, 1), 20))
+}
+
 function normalizeVoiceRange(lowRaw: any, highRaw: any): { voiceLowHz: number; voiceHighHz: number } {
   let voiceLowHz = normalizeVoiceLowHz(lowRaw)
   let voiceHighHz = normalizeVoiceHighHz(highRaw)
@@ -224,6 +245,9 @@ function normalizeInstance(raw: any, fallback?: Partial<VisualizerPresetInstance
   const waveTemporalSmoothPct = normalizeWaveTemporalSmoothPct(raw?.waveTemporalSmoothPct ?? seed.waveTemporalSmoothPct)
   const ringBaseRadiusPct = normalizeRingBaseRadiusPct(raw?.ringBaseRadiusPct ?? seed.ringBaseRadiusPct)
   const ringDepthPct = normalizeRingDepthPct(raw?.ringDepthPct ?? seed.ringDepthPct)
+  const orbRadiusPct = normalizeOrbRadiusPct(raw?.orbRadiusPct ?? seed.orbRadiusPct)
+  const orbBandCount = normalizeOrbBandCount(raw?.orbBandCount ?? seed.orbBandCount)
+  const orbBandSpacingPct = normalizeOrbBandSpacingPct(raw?.orbBandSpacingPct ?? seed.orbBandSpacingPct)
 
   return {
     id,
@@ -244,6 +268,9 @@ function normalizeInstance(raw: any, fallback?: Partial<VisualizerPresetInstance
     waveTemporalSmoothPct,
     ringBaseRadiusPct,
     ringDepthPct,
+    orbRadiusPct,
+    orbBandCount,
+    orbBandSpacingPct,
     gradientEnabled,
     gradientStart,
     gradientEnd,
@@ -301,6 +328,9 @@ function legacyStyleFromRow(row: VisualizerPresetRow): Partial<VisualizerPresetI
     waveTemporalSmoothPct: DEFAULTS.waveTemporalSmoothPct,
     ringBaseRadiusPct: DEFAULTS.ringBaseRadiusPct,
     ringDepthPct: DEFAULTS.ringDepthPct,
+    orbRadiusPct: DEFAULTS.orbRadiusPct,
+    orbBandCount: DEFAULTS.orbBandCount,
+    orbBandSpacingPct: DEFAULTS.orbBandSpacingPct,
     gradientEnabled: Number((row as any).gradient_enabled) === 1,
     gradientStart: normalizeHexColor((row as any).gradient_start, normalizeHexColor((row as any).fg_color, DEFAULTS.fgColor)),
     gradientEnd: normalizeHexColor((row as any).gradient_end, DEFAULTS.gradientEnd),
@@ -379,6 +409,9 @@ function mapRow(row: VisualizerPresetRow): VisualizerPresetDto {
     waveTemporalSmoothPct: primary.waveTemporalSmoothPct,
     ringBaseRadiusPct: primary.ringBaseRadiusPct,
     ringDepthPct: primary.ringDepthPct,
+    orbRadiusPct: primary.orbRadiusPct,
+    orbBandCount: primary.orbBandCount,
+    orbBandSpacingPct: primary.orbBandSpacingPct,
     gradientEnabled: primary.gradientEnabled,
     gradientStart: primary.gradientStart,
     gradientEnd: primary.gradientEnd,
@@ -433,6 +466,9 @@ export async function createForUser(input: {
   waveTemporalSmoothPct?: any
   ringBaseRadiusPct?: any
   ringDepthPct?: any
+  orbRadiusPct?: any
+  orbBandCount?: any
+  orbBandSpacingPct?: any
   gradientEnabled?: any
   gradientStart?: any
   gradientEnd?: any
@@ -465,6 +501,9 @@ export async function createForUser(input: {
   const waveTemporalSmoothPct = normalizeWaveTemporalSmoothPct(input.waveTemporalSmoothPct)
   const ringBaseRadiusPct = normalizeRingBaseRadiusPct(input.ringBaseRadiusPct)
   const ringDepthPct = normalizeRingDepthPct(input.ringDepthPct)
+  const orbRadiusPct = normalizeOrbRadiusPct(input.orbRadiusPct)
+  const orbBandCount = normalizeOrbBandCount(input.orbBandCount)
+  const orbBandSpacingPct = normalizeOrbBandSpacingPct(input.orbBandSpacingPct)
   const gradientModeRaw = String(input.gradientMode ?? DEFAULTS.gradientMode).trim().toLowerCase()
   const gradientMode: VisualizerGradientMode = isEnumValue(gradientModeRaw, GRADIENT_MODES) ? (gradientModeRaw as VisualizerGradientMode) : DEFAULTS.gradientMode
   const clipModeRaw = String(input.clipMode ?? DEFAULTS.clipMode).trim().toLowerCase()
@@ -498,6 +537,9 @@ export async function createForUser(input: {
     waveTemporalSmoothPct,
     ringBaseRadiusPct,
     ringDepthPct,
+    orbRadiusPct,
+    orbBandCount,
+    orbBandSpacingPct,
     gradientEnabled,
     gradientStart,
     gradientEnd,
@@ -552,6 +594,9 @@ export async function updateForUser(
   waveTemporalSmoothPct?: any
   ringBaseRadiusPct?: any
   ringDepthPct?: any
+  orbRadiusPct?: any
+  orbBandCount?: any
+  orbBandSpacingPct?: any
   gradientEnabled?: any
   gradientStart?: any
   gradientEnd?: any
@@ -606,6 +651,9 @@ export async function updateForUser(
   if (input.waveTemporalSmoothPct !== undefined) patch.waveTemporalSmoothPct = normalizeWaveTemporalSmoothPct(input.waveTemporalSmoothPct)
   if (input.ringBaseRadiusPct !== undefined) patch.ringBaseRadiusPct = normalizeRingBaseRadiusPct(input.ringBaseRadiusPct)
   if (input.ringDepthPct !== undefined) patch.ringDepthPct = normalizeRingDepthPct(input.ringDepthPct)
+  if (input.orbRadiusPct !== undefined) patch.orbRadiusPct = normalizeOrbRadiusPct(input.orbRadiusPct)
+  if (input.orbBandCount !== undefined) patch.orbBandCount = normalizeOrbBandCount(input.orbBandCount)
+  if (input.orbBandSpacingPct !== undefined) patch.orbBandSpacingPct = normalizeOrbBandSpacingPct(input.orbBandSpacingPct)
   if (input.barCount !== undefined) patch.barCount = normalizeBarCount(input.barCount)
   if (input.gradientEnabled !== undefined) patch.gradientEnabled = input.gradientEnabled === true
   if (input.gradientStart !== undefined) patch.gradientStart = normalizeHexColor(input.gradientStart, DEFAULTS.gradientStart)
@@ -639,6 +687,9 @@ export async function updateForUser(
     input.waveTemporalSmoothPct !== undefined ||
     input.ringBaseRadiusPct !== undefined ||
     input.ringDepthPct !== undefined ||
+    input.orbRadiusPct !== undefined ||
+    input.orbBandCount !== undefined ||
+    input.orbBandSpacingPct !== undefined ||
     input.gradientEnabled !== undefined ||
     input.gradientStart !== undefined ||
     input.gradientEnd !== undefined ||
@@ -666,6 +717,9 @@ export async function updateForUser(
     patch.waveTemporalSmoothPct = primary.waveTemporalSmoothPct
     patch.ringBaseRadiusPct = primary.ringBaseRadiusPct
     patch.ringDepthPct = primary.ringDepthPct
+    patch.orbRadiusPct = primary.orbRadiusPct
+    patch.orbBandCount = primary.orbBandCount
+    patch.orbBandSpacingPct = primary.orbBandSpacingPct
     patch.gradientEnabled = primary.gradientEnabled
     patch.gradientStart = primary.gradientStart
     patch.gradientEnd = primary.gradientEnd
@@ -694,6 +748,9 @@ export async function updateForUser(
         waveTemporalSmoothPct: patch.waveTemporalSmoothPct ?? current[0].waveTemporalSmoothPct,
         ringBaseRadiusPct: patch.ringBaseRadiusPct ?? current[0].ringBaseRadiusPct,
         ringDepthPct: patch.ringDepthPct ?? current[0].ringDepthPct,
+        orbRadiusPct: patch.orbRadiusPct ?? current[0].orbRadiusPct,
+        orbBandCount: patch.orbBandCount ?? current[0].orbBandCount,
+        orbBandSpacingPct: patch.orbBandSpacingPct ?? current[0].orbBandSpacingPct,
         gradientEnabled: patch.gradientEnabled ?? current[0].gradientEnabled,
         gradientStart: patch.gradientStart ?? current[0].gradientStart,
         gradientEnd: patch.gradientEnd ?? current[0].gradientEnd,
@@ -722,6 +779,9 @@ export async function updateForUser(
     patch.waveTemporalSmoothPct = primaryNext.waveTemporalSmoothPct
     patch.ringBaseRadiusPct = primaryNext.ringBaseRadiusPct
     patch.ringDepthPct = primaryNext.ringDepthPct
+    patch.orbRadiusPct = primaryNext.orbRadiusPct
+    patch.orbBandCount = primaryNext.orbBandCount
+    patch.orbBandSpacingPct = primaryNext.orbBandSpacingPct
     patch.gradientEnabled = primaryNext.gradientEnabled
     patch.gradientStart = primaryNext.gradientStart
     patch.gradientEnd = primaryNext.gradientEnd

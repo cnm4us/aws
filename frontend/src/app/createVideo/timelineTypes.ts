@@ -225,6 +225,9 @@ export type VisualizerPresetInstanceSnapshot = {
   waveTemporalSmoothPct: number
   ringBaseRadiusPct: number
   ringDepthPct: number
+  orbRadiusPct: number
+  orbBandCount: number
+  orbBandSpacingPct: number
   gradientEnabled: boolean
   gradientStart: string
   gradientEnd: string
@@ -253,6 +256,9 @@ export type VisualizerPresetSnapshot = {
   waveTemporalSmoothPct: number
   ringBaseRadiusPct: number
   ringDepthPct: number
+  orbRadiusPct: number
+  orbBandCount: number
+  orbBandSpacingPct: number
   gradientEnabled: boolean
   gradientStart: string
   gradientEnd: string
@@ -327,6 +333,9 @@ export const DEFAULT_VISUALIZER_PRESET_SNAPSHOT: VisualizerPresetSnapshot = {
   waveTemporalSmoothPct: 0,
   ringBaseRadiusPct: 22,
   ringDepthPct: 18,
+  orbRadiusPct: 11,
+  orbBandCount: 1,
+  orbBandSpacingPct: 5,
   gradientEnabled: false,
   gradientStart: '#d4af37',
   gradientEnd: '#f7d774',
@@ -354,6 +363,9 @@ export const DEFAULT_VISUALIZER_PRESET_SNAPSHOT: VisualizerPresetSnapshot = {
       waveTemporalSmoothPct: 0,
       ringBaseRadiusPct: 22,
       ringDepthPct: 18,
+      orbRadiusPct: 11,
+      orbBandCount: 1,
+      orbBandSpacingPct: 5,
       gradientEnabled: false,
       gradientStart: '#d4af37',
       gradientEnd: '#f7d774',
@@ -645,7 +657,7 @@ export function cloneTimeline(timeline: Timeline): Timeline {
                 ? Math.max(20, Math.min(19990, Math.round(Number(snapBase.voiceLowHz))))
                 : DEFAULT_VISUALIZER_PRESET_SNAPSHOT.voiceLowHz,
               voiceHighHz: Number.isFinite(Number(snapBase.voiceHighHz))
-                ? Math.max(100, Math.min(20000, Math.round(Number(snapBase.voiceHighHz))))
+                ? Math.max(20, Math.min(20000, Math.round(Number(snapBase.voiceHighHz))))
                 : DEFAULT_VISUALIZER_PRESET_SNAPSHOT.voiceHighHz,
               amplitudeGainPct: Number.isFinite(Number(snapBase.amplitudeGainPct))
                 ? Math.max(0, Math.min(400, Math.round(Number(snapBase.amplitudeGainPct))))
@@ -671,6 +683,15 @@ export function cloneTimeline(timeline: Timeline): Timeline {
               ringDepthPct: Number.isFinite(Number(snapBase.ringDepthPct))
                 ? Math.max(1, Math.min(60, Math.round(Number(snapBase.ringDepthPct))))
                 : DEFAULT_VISUALIZER_PRESET_SNAPSHOT.ringDepthPct,
+              orbRadiusPct: Number.isFinite(Number(snapBase.orbRadiusPct))
+                ? Math.max(5, Math.min(40, Math.round(Number(snapBase.orbRadiusPct))))
+                : DEFAULT_VISUALIZER_PRESET_SNAPSHOT.orbRadiusPct,
+              orbBandCount: Number.isFinite(Number(snapBase.orbBandCount))
+                ? Math.max(1, Math.min(8, Math.round(Number(snapBase.orbBandCount))))
+                : DEFAULT_VISUALIZER_PRESET_SNAPSHOT.orbBandCount,
+              orbBandSpacingPct: Number.isFinite(Number(snapBase.orbBandSpacingPct))
+                ? Math.max(1, Math.min(20, Math.round(Number(snapBase.orbBandSpacingPct))))
+                : DEFAULT_VISUALIZER_PRESET_SNAPSHOT.orbBandSpacingPct,
               gradientEnabled: snapBase.gradientEnabled === true,
               gradientStart: String(snapBase.gradientStart || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.gradientStart),
               gradientEnd: String(snapBase.gradientEnd || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.gradientEnd),
@@ -715,7 +736,7 @@ export function cloneTimeline(timeline: Timeline): Timeline {
                   ? Math.max(20, Math.min(19990, Math.round(Number(inst?.voiceLowHz))))
                   : snapshot.voiceLowHz
                 const voiceHighHzRaw = Number.isFinite(Number(inst?.voiceHighHz))
-                  ? Math.max(100, Math.min(20000, Math.round(Number(inst?.voiceHighHz))))
+                  ? Math.max(20, Math.min(20000, Math.round(Number(inst?.voiceHighHz))))
                   : snapshot.voiceHighHz
                 const voiceHighHz = voiceHighHzRaw <= voiceLowHz ? Math.min(20000, voiceLowHz + 10) : voiceHighHzRaw
                 const amplitudeGainPct = Number.isFinite(Number(inst?.amplitudeGainPct))
@@ -742,6 +763,15 @@ export function cloneTimeline(timeline: Timeline): Timeline {
                 const ringDepthPct = Number.isFinite(Number(inst?.ringDepthPct))
                   ? Math.max(1, Math.min(60, Math.round(Number(inst?.ringDepthPct))))
                   : snapshot.ringDepthPct
+                const orbRadiusPct = Number.isFinite(Number(inst?.orbRadiusPct))
+                  ? Math.max(5, Math.min(40, Math.round(Number(inst?.orbRadiusPct))))
+                  : snapshot.orbRadiusPct
+                const orbBandCount = Number.isFinite(Number(inst?.orbBandCount))
+                  ? Math.max(1, Math.min(8, Math.round(Number(inst?.orbBandCount))))
+                  : snapshot.orbBandCount
+                const orbBandSpacingPct = Number.isFinite(Number(inst?.orbBandSpacingPct))
+                  ? Math.max(1, Math.min(20, Math.round(Number(inst?.orbBandSpacingPct))))
+                  : snapshot.orbBandSpacingPct
                 const gradientModeRaw = String(inst?.gradientMode || snapshot.gradientMode).trim().toLowerCase()
                 const gradientMode = gradientModeRaw === 'horizontal' ? 'horizontal' : 'vertical'
                 return {
@@ -765,6 +795,9 @@ export function cloneTimeline(timeline: Timeline): Timeline {
                   waveTemporalSmoothPct,
                   ringBaseRadiusPct,
                   ringDepthPct,
+                  orbRadiusPct,
+                  orbBandCount,
+                  orbBandSpacingPct,
                   gradientEnabled: inst?.gradientEnabled === true,
                   gradientStart: String(inst?.gradientStart || snapshot.gradientStart),
                   gradientEnd: String(inst?.gradientEnd || snapshot.gradientEnd),
@@ -794,6 +827,9 @@ export function cloneTimeline(timeline: Timeline): Timeline {
                       waveTemporalSmoothPct: snapshot.waveTemporalSmoothPct,
                       ringBaseRadiusPct: snapshot.ringBaseRadiusPct,
                       ringDepthPct: snapshot.ringDepthPct,
+                      orbRadiusPct: snapshot.orbRadiusPct,
+                      orbBandCount: snapshot.orbBandCount,
+                      orbBandSpacingPct: snapshot.orbBandSpacingPct,
                       gradientEnabled: snapshot.gradientEnabled,
                       gradientStart: snapshot.gradientStart,
                       gradientEnd: snapshot.gradientEnd,

@@ -37,6 +37,9 @@ type VisualizerPresetInstance = {
   waveTemporalSmoothPct: number
   ringBaseRadiusPct: number
   ringDepthPct: number
+  orbRadiusPct: number
+  orbBandCount: number
+  orbBandSpacingPct: number
   gradientEnabled: boolean
   gradientStart: string
   gradientEnd: string
@@ -109,6 +112,9 @@ const DEFAULT_INSTANCE: VisualizerPresetInstance = {
   waveTemporalSmoothPct: 0,
   ringBaseRadiusPct: 22,
   ringDepthPct: 18,
+  orbRadiusPct: 11,
+  orbBandCount: 1,
+  orbBandSpacingPct: 5,
   gradientEnabled: false,
   gradientStart: '#d4af37',
   gradientEnd: '#f7d774',
@@ -283,7 +289,7 @@ function parseVoiceLowHz(value: any): number {
 function parseVoiceHighHz(value: any): number {
   const n = Number(value)
   if (!Number.isFinite(n)) return DEFAULT_INSTANCE.voiceHighHz
-  return Math.round(Math.min(Math.max(n, 100), 20000))
+  return Math.round(Math.min(Math.max(n, 20), 20000))
 }
 
 function parseAmplitudeGainPct(value: any): number {
@@ -332,6 +338,24 @@ function parseRingDepthPct(value: any): number {
   const n = Number(value)
   if (!Number.isFinite(n)) return DEFAULT_INSTANCE.ringDepthPct
   return Math.round(Math.min(Math.max(n, 1), 60))
+}
+
+function parseOrbRadiusPct(value: any): number {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return DEFAULT_INSTANCE.orbRadiusPct
+  return Math.round(Math.min(Math.max(n, 5), 40))
+}
+
+function parseOrbBandCount(value: any): number {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return DEFAULT_INSTANCE.orbBandCount
+  return Math.round(Math.min(Math.max(n, 1), 8))
+}
+
+function parseOrbBandSpacingPct(value: any): number {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return DEFAULT_INSTANCE.orbBandSpacingPct
+  return Math.round(Math.min(Math.max(n, 1), 20))
 }
 
 function getSpectrumPresetRangeHz(spectrumMode: VisualizerSpectrumMode): { startHz: number; endHz: number } {
@@ -408,6 +432,9 @@ function normalizeInstance(raw: any, fallback: VisualizerPresetInstance, idx: nu
   const waveTemporalSmoothPct = parseWaveTemporalSmoothPct(raw?.waveTemporalSmoothPct ?? fallback.waveTemporalSmoothPct)
   const ringBaseRadiusPct = parseRingBaseRadiusPct(raw?.ringBaseRadiusPct ?? fallback.ringBaseRadiusPct)
   const ringDepthPct = parseRingDepthPct(raw?.ringDepthPct ?? fallback.ringDepthPct)
+  const orbRadiusPct = parseOrbRadiusPct(raw?.orbRadiusPct ?? fallback.orbRadiusPct)
+  const orbBandCount = parseOrbBandCount(raw?.orbBandCount ?? fallback.orbBandCount)
+  const orbBandSpacingPct = parseOrbBandSpacingPct(raw?.orbBandSpacingPct ?? fallback.orbBandSpacingPct)
   const gradientMode: VisualizerGradientMode =
     String(raw?.gradientMode || fallback.gradientMode).trim().toLowerCase() === 'horizontal' ? 'horizontal' : 'vertical'
   return {
@@ -429,6 +456,9 @@ function normalizeInstance(raw: any, fallback: VisualizerPresetInstance, idx: nu
     waveTemporalSmoothPct,
     ringBaseRadiusPct,
     ringDepthPct,
+    orbRadiusPct,
+    orbBandCount,
+    orbBandSpacingPct,
     gradientEnabled: raw?.gradientEnabled == null ? Boolean(fallback.gradientEnabled) : raw?.gradientEnabled === true,
     gradientStart: String(raw?.gradientStart || fallback.gradientStart || '#d4af37'),
     gradientEnd: String(raw?.gradientEnd || fallback.gradientEnd || '#f7d774'),
@@ -819,37 +849,53 @@ function VisualizerPreview({
           ctx.closePath()
           ctx.stroke()
         } else if (inst.style === 'pulse_orb') {
-          let sum = 0
-          const samples = 48
+          const samples = 72
+          const values: number[] = []
           for (let i = 0; i < samples; i++) {
             const tt = samples <= 1 ? 0 : i / (samples - 1)
-            sum += getSpectrumValue(
-              tt,
-              inst.scale,
-              inst.spectrumMode,
-              inst.bandMode,
-              inst.voiceLowHz,
-              inst.voiceHighHz,
-              inst.amplitudeGainPct,
-              inst.baselineLiftPct
+            values.push(
+              getSpectrumValue(
+                tt,
+                inst.scale,
+                inst.spectrumMode,
+                inst.bandMode,
+                inst.voiceLowHz,
+                inst.voiceHighHz,
+                inst.amplitudeGainPct,
+                inst.baselineLiftPct
+              )
             )
           }
-          const a = Math.max(0, Math.min(1, sum / samples))
+          const mean = values.length ? values.reduce((acc, v) => acc + v, 0) / values.length : 0
+          const norm = Math.max(0, Math.min(1, (samples - 12) / (128 - 12)))
+          const topFraction = 0.35 - 0.25 * norm
+          const topCount = Math.max(1, Math.round(samples * topFraction))
+          const topValues = values.slice().sort((a, b) => b - a).slice(0, topCount)
+          const topMean = topValues.length ? topValues.reduce((acc, v) => acc + v, 0) / topValues.length : mean
+          const blend = 0.2 + 0.7 * norm
+          const a = Math.max(0, Math.min(1, mean * (1 - blend) + topMean * blend))
           const cx = w / 2
           const cy = h / 2
           const minDim = Math.min(w, h)
-          const baseR = Math.max(8, minDim * 0.11)
+          const orbRadiusPct = Math.max(5, Math.min(40, Number(inst.orbRadiusPct || 11)))
+          const orbBandCount = Math.max(1, Math.min(8, Number(inst.orbBandCount || 1)))
+          const orbBandSpacingPct = Math.max(1, Math.min(20, Number(inst.orbBandSpacingPct || 5)))
+          const baseR = Math.max(6, minDim * (orbRadiusPct / 100))
           const pulse = Math.max(0, Math.min(1, a))
           const orbR = baseR + pulse * minDim * 0.14
           ctx.beginPath()
           ctx.arc(cx, cy, orbR, 0, Math.PI * 2)
           ctx.fill()
           const pulseOpacity = Number.isFinite(inst.opacity) ? Math.max(0, Math.min(1, inst.opacity)) : 1
-          ctx.globalAlpha = Math.max(0.15, Math.min(0.85, pulseOpacity * 0.65))
+          const spacingPx = Math.max(1, minDim * (orbBandSpacingPct / 100))
           ctx.lineWidth = Math.max(1.5, minDim * 0.012)
-          ctx.beginPath()
-          ctx.arc(cx, cy, orbR + minDim * 0.05, 0, Math.PI * 2)
-          ctx.stroke()
+          for (let band = 1; band <= orbBandCount; band++) {
+            const falloff = 1 - (band - 1) / Math.max(1, orbBandCount)
+            ctx.globalAlpha = Math.max(0.08, Math.min(0.9, pulseOpacity * 0.65 * falloff))
+            ctx.beginPath()
+            ctx.arc(cx, cy, orbR + spacingPx * band, 0, Math.PI * 2)
+            ctx.stroke()
+          }
         } else {
           const points = 180
           const center = h / 2
@@ -1221,6 +1267,9 @@ export default function VisualizerPresetsPage() {
         waveTemporalSmoothPct: primary.waveTemporalSmoothPct,
         ringBaseRadiusPct: primary.ringBaseRadiusPct,
         ringDepthPct: primary.ringDepthPct,
+        orbRadiusPct: primary.orbRadiusPct,
+        orbBandCount: primary.orbBandCount,
+        orbBandSpacingPct: primary.orbBandSpacingPct,
         gradientEnabled: primary.gradientEnabled,
         gradientStart: primary.gradientStart,
         gradientEnd: primary.gradientEnd,
@@ -1410,6 +1459,27 @@ export default function VisualizerPresetsPage() {
                       inst.style === 'radial_bars' ||
                       inst.style === 'pulse_orb' ||
                       inst.style === 'stacked_bands'
+                    const showGainLiftControls =
+                      inst.style === 'spectrum_bars' ||
+                      inst.style === 'dot_spectrum' ||
+                      inst.style === 'mirror_bars' ||
+                      inst.style === 'radial_bars' ||
+                      inst.style === 'pulse_orb' ||
+                      inst.style === 'stacked_bands'
+                    const showWaveControls =
+                      inst.style === 'wave_line' ||
+                      inst.style === 'wave_fill' ||
+                      inst.style === 'center_wave' ||
+                      inst.style === 'ring_wave'
+                    const showRingControls = inst.style === 'ring_wave'
+                    const showOrbControls = inst.style === 'pulse_orb'
+                    const showBarsControl =
+                      inst.style === 'spectrum_bars' ||
+                      inst.style === 'dot_spectrum' ||
+                      inst.style === 'mirror_bars' ||
+                      inst.style === 'stacked_bands' ||
+                      inst.style === 'radial_bars' ||
+                      inst.style === 'ring_wave'
                     const rangePresetKey = findRangePreset(inst.voiceLowHz, inst.voiceHighHz)
                     return (
                       <>
@@ -1539,7 +1609,7 @@ export default function VisualizerPresetsPage() {
                         <div style={{ color: '#bbb', fontSize: 13 }}>End (Hz)</div>
                         <input
                           type="number"
-                          min={100}
+                          min={20}
                           max={20000}
                           step={10}
                           value={inst.voiceHighHz}
@@ -1562,121 +1632,181 @@ export default function VisualizerPresetsPage() {
                         />
                       </label>
                     ) : null}
-                    <label style={{ display: 'grid', gap: 6 }}>
-                      <div style={{ color: '#bbb', fontSize: 13 }}>Gain (%)</div>
-                      <input
-                        type="number"
-                        min={0}
-                        max={400}
-                        step={5}
-                        value={inst.amplitudeGainPct}
-                        onChange={(e) => updateInstance(idx, { amplitudeGainPct: parseAmplitudeGainPct(e.target.value) })}
-                        style={MODAL_INPUT_STYLE}
-                      />
-                    </label>
-                    <label style={{ display: 'grid', gap: 6 }}>
-                      <div style={{ color: '#bbb', fontSize: 13 }}>Lift (%)</div>
-                      <input
-                        type="number"
-                        min={-100}
-                        max={100}
-                        step={1}
-                        value={inst.baselineLiftPct}
-                        onChange={(e) => updateInstance(idx, { baselineLiftPct: parseBaselineLiftPct(e.target.value) })}
-                        style={MODAL_INPUT_STYLE}
-                      />
-                    </label>
+                    {showGainLiftControls ? (
+                      <label style={{ display: 'grid', gap: 6 }}>
+                        <div style={{ color: '#bbb', fontSize: 13 }}>Gain (%)</div>
+                        <input
+                          type="number"
+                          min={0}
+                          max={400}
+                          step={5}
+                          value={inst.amplitudeGainPct}
+                          onChange={(e) => updateInstance(idx, { amplitudeGainPct: parseAmplitudeGainPct(e.target.value) })}
+                          style={MODAL_INPUT_STYLE}
+                        />
+                      </label>
+                    ) : null}
+                    {showGainLiftControls ? (
+                      <label style={{ display: 'grid', gap: 6 }}>
+                        <div style={{ color: '#bbb', fontSize: 13 }}>Lift (%)</div>
+                        <input
+                          type="number"
+                          min={-100}
+                          max={100}
+                          step={1}
+                          value={inst.baselineLiftPct}
+                          onChange={(e) => updateInstance(idx, { baselineLiftPct: parseBaselineLiftPct(e.target.value) })}
+                          style={MODAL_INPUT_STYLE}
+                        />
+                      </label>
+                    ) : null}
                   </div>
 
                   <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))' }}>
-                    <label style={{ display: 'grid', gap: 6 }}>
-                      <div style={{ color: '#bbb', fontSize: 13 }}>Wave Gain (%)</div>
-                      <input
-                        type="number"
-                        min={25}
-                        max={400}
-                        step={5}
-                        value={inst.waveVerticalGainPct}
-                        onChange={(e) => updateInstance(idx, { waveVerticalGainPct: parseWaveVerticalGainPct(e.target.value) })}
-                        style={MODAL_INPUT_STYLE}
-                      />
-                    </label>
-                    <label style={{ display: 'grid', gap: 6 }}>
-                      <div style={{ color: '#bbb', fontSize: 13 }}>Wave Smooth (%)</div>
-                      <input
-                        type="number"
-                        min={0}
-                        max={95}
-                        step={1}
-                        value={inst.waveSmoothingPct}
-                        onChange={(e) => updateInstance(idx, { waveSmoothingPct: parseWaveSmoothingPct(e.target.value) })}
-                        style={MODAL_INPUT_STYLE}
-                      />
-                    </label>
-                    <label style={{ display: 'grid', gap: 6 }}>
-                      <div style={{ color: '#bbb', fontSize: 13 }}>Wave Gate (%)</div>
-                      <input
-                        type="number"
-                        min={0}
-                        max={30}
-                        step={1}
-                        value={inst.waveNoiseGatePct}
-                        onChange={(e) => updateInstance(idx, { waveNoiseGatePct: parseWaveNoiseGatePct(e.target.value) })}
-                        style={MODAL_INPUT_STYLE}
-                      />
-                    </label>
-                    <label style={{ display: 'grid', gap: 6 }}>
-                      <div style={{ color: '#bbb', fontSize: 13 }}>Wave Tempo (%)</div>
-                      <input
-                        type="number"
-                        min={0}
-                        max={98}
-                        step={1}
-                        value={inst.waveTemporalSmoothPct}
-                        onChange={(e) => updateInstance(idx, { waveTemporalSmoothPct: parseWaveTemporalSmoothPct(e.target.value) })}
-                        style={MODAL_INPUT_STYLE}
-                      />
-                    </label>
-                    <label style={{ display: 'grid', gap: 6 }}>
-                      <div style={{ color: '#bbb', fontSize: 13 }}>Ring Radius (%)</div>
-                      <input
-                        type="number"
-                        min={5}
-                        max={90}
-                        step={1}
-                        value={inst.ringBaseRadiusPct}
-                        onChange={(e) => updateInstance(idx, { ringBaseRadiusPct: parseRingBaseRadiusPct(e.target.value) })}
-                        style={MODAL_INPUT_STYLE}
-                      />
-                    </label>
-                    <label style={{ display: 'grid', gap: 6 }}>
-                      <div style={{ color: '#bbb', fontSize: 13 }}>Ring Depth (%)</div>
-                      <input
-                        type="number"
-                        min={1}
-                        max={60}
-                        step={1}
-                        value={inst.ringDepthPct}
-                        onChange={(e) => updateInstance(idx, { ringDepthPct: parseRingDepthPct(e.target.value) })}
-                        style={MODAL_INPUT_STYLE}
-                      />
-                    </label>
+                    {showWaveControls ? (
+                      <label style={{ display: 'grid', gap: 6 }}>
+                        <div style={{ color: '#bbb', fontSize: 13 }}>Wave Gain (%)</div>
+                        <input
+                          type="number"
+                          min={25}
+                          max={400}
+                          step={5}
+                          value={inst.waveVerticalGainPct}
+                          onChange={(e) => updateInstance(idx, { waveVerticalGainPct: parseWaveVerticalGainPct(e.target.value) })}
+                          style={MODAL_INPUT_STYLE}
+                        />
+                      </label>
+                    ) : null}
+                    {showWaveControls ? (
+                      <label style={{ display: 'grid', gap: 6 }}>
+                        <div style={{ color: '#bbb', fontSize: 13 }}>Wave Smooth (%)</div>
+                        <input
+                          type="number"
+                          min={0}
+                          max={95}
+                          step={1}
+                          value={inst.waveSmoothingPct}
+                          onChange={(e) => updateInstance(idx, { waveSmoothingPct: parseWaveSmoothingPct(e.target.value) })}
+                          style={MODAL_INPUT_STYLE}
+                        />
+                      </label>
+                    ) : null}
+                    {showWaveControls ? (
+                      <label style={{ display: 'grid', gap: 6 }}>
+                        <div style={{ color: '#bbb', fontSize: 13 }}>Wave Gate (%)</div>
+                        <input
+                          type="number"
+                          min={0}
+                          max={30}
+                          step={1}
+                          value={inst.waveNoiseGatePct}
+                          onChange={(e) => updateInstance(idx, { waveNoiseGatePct: parseWaveNoiseGatePct(e.target.value) })}
+                          style={MODAL_INPUT_STYLE}
+                        />
+                      </label>
+                    ) : null}
+                    {showWaveControls ? (
+                      <label style={{ display: 'grid', gap: 6 }}>
+                        <div style={{ color: '#bbb', fontSize: 13 }}>Wave Tempo (%)</div>
+                        <input
+                          type="number"
+                          min={0}
+                          max={98}
+                          step={1}
+                          value={inst.waveTemporalSmoothPct}
+                          onChange={(e) => updateInstance(idx, { waveTemporalSmoothPct: parseWaveTemporalSmoothPct(e.target.value) })}
+                          style={MODAL_INPUT_STYLE}
+                        />
+                      </label>
+                    ) : null}
+                    {showRingControls ? (
+                      <label style={{ display: 'grid', gap: 6 }}>
+                        <div style={{ color: '#bbb', fontSize: 13 }}>Ring Radius (%)</div>
+                        <input
+                          type="number"
+                          min={5}
+                          max={90}
+                          step={1}
+                          value={inst.ringBaseRadiusPct}
+                          onChange={(e) => updateInstance(idx, { ringBaseRadiusPct: parseRingBaseRadiusPct(e.target.value) })}
+                          style={MODAL_INPUT_STYLE}
+                        />
+                      </label>
+                    ) : null}
+                    {showRingControls ? (
+                      <label style={{ display: 'grid', gap: 6 }}>
+                        <div style={{ color: '#bbb', fontSize: 13 }}>Ring Depth (%)</div>
+                        <input
+                          type="number"
+                          min={1}
+                          max={60}
+                          step={1}
+                          value={inst.ringDepthPct}
+                          onChange={(e) => updateInstance(idx, { ringDepthPct: parseRingDepthPct(e.target.value) })}
+                          style={MODAL_INPUT_STYLE}
+                        />
+                      </label>
+                    ) : null}
+                    {showOrbControls ? (
+                      <label style={{ display: 'grid', gap: 6 }}>
+                        <div style={{ color: '#bbb', fontSize: 13 }}>Orb Radius (%)</div>
+                        <input
+                          type="number"
+                          min={5}
+                          max={40}
+                          step={1}
+                          value={inst.orbRadiusPct}
+                          onChange={(e) => updateInstance(idx, { orbRadiusPct: parseOrbRadiusPct(e.target.value) })}
+                          style={MODAL_INPUT_STYLE}
+                        />
+                      </label>
+                    ) : null}
+                    {showOrbControls ? (
+                      <label style={{ display: 'grid', gap: 6 }}>
+                        <div style={{ color: '#bbb', fontSize: 13 }}>Orb Bands</div>
+                        <input
+                          type="number"
+                          min={1}
+                          max={8}
+                          step={1}
+                          value={inst.orbBandCount}
+                          onChange={(e) => updateInstance(idx, { orbBandCount: parseOrbBandCount(e.target.value) })}
+                          style={MODAL_INPUT_STYLE}
+                        />
+                      </label>
+                    ) : null}
+                    {showOrbControls ? (
+                      <label style={{ display: 'grid', gap: 6 }}>
+                        <div style={{ color: '#bbb', fontSize: 13 }}>Orb Band Spacing (%)</div>
+                        <input
+                          type="number"
+                          min={1}
+                          max={20}
+                          step={1}
+                          value={inst.orbBandSpacingPct}
+                          onChange={(e) => updateInstance(idx, { orbBandSpacingPct: parseOrbBandSpacingPct(e.target.value) })}
+                          style={MODAL_INPUT_STYLE}
+                        />
+                      </label>
+                    ) : null}
                   </div>
 
-                  <div style={{ display: 'grid', gap: 10 }}>
-                    <label style={{ display: 'grid', gap: 6 }}>
-                      <div style={{ color: '#bbb', fontSize: 13 }}>Bars</div>
-                      <input
-                        type="range"
-                        min={12}
-                        max={128}
-                        step={4}
-                        value={inst.barCount}
-                        onChange={(e) => updateInstance(idx, { barCount: parseBarCount(e.target.value) })}
-                      />
-                      <div style={{ color: '#bbb', fontSize: 12 }}>{inst.barCount}</div>
-                    </label>
-                  </div>
+                  {showBarsControl ? (
+                    <div style={{ display: 'grid', gap: 10 }}>
+                      <label style={{ display: 'grid', gap: 6 }}>
+                        <div style={{ color: '#bbb', fontSize: 13 }}>Bars</div>
+                        <input
+                          type="range"
+                          min={12}
+                          max={128}
+                          step={4}
+                          value={inst.barCount}
+                          onChange={(e) => updateInstance(idx, { barCount: parseBarCount(e.target.value) })}
+                        />
+                        <div style={{ color: '#bbb', fontSize: 12 }}>{inst.barCount}</div>
+                      </label>
+                    </div>
+                  ) : null}
 
                   <div style={{ display: 'grid', gap: 10 }}>
                     <label style={{ display: 'grid', gap: 6 }}>

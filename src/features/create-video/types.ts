@@ -308,6 +308,9 @@ export type CreateVideoVisualizerPresetSnapshotV1 = {
   waveTemporalSmoothPct?: number
   ringBaseRadiusPct?: number
   ringDepthPct?: number
+  orbRadiusPct?: number
+  orbBandCount?: number
+  orbBandSpacingPct?: number
   gradientEnabled: boolean
   gradientStart: string
   gradientEnd: string
@@ -334,6 +337,9 @@ export type CreateVideoVisualizerPresetSnapshotV1 = {
     waveTemporalSmoothPct?: number
     ringBaseRadiusPct?: number
     ringDepthPct?: number
+    orbRadiusPct?: number
+    orbBandCount?: number
+    orbBandSpacingPct?: number
     gradientEnabled: boolean
     gradientStart: string
     gradientEnd: string

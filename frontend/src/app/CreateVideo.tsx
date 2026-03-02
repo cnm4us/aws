@@ -144,7 +144,7 @@ const clampVoiceLowHz = (raw: any): number => {
 const clampVoiceHighHz = (raw: any): number => {
   const n = Number(raw)
   if (!Number.isFinite(n)) return 4000
-  return Math.round(Math.max(100, Math.min(20000, n)))
+  return Math.round(Math.max(20, Math.min(20000, n)))
 }
 
 const normalizeVoiceHzRange = (lowRaw: any, highRaw: any): { low: number; high: number } => {
@@ -244,6 +244,9 @@ const normalizeVisualizerPresetSnapshot = (raw: any): VisualizerPresetSnapshot =
   const waveTemporalSmoothPct = clampWaveTemporalSmoothPct((snap as any).waveTemporalSmoothPct ?? (base as any).waveTemporalSmoothPct)
   const ringBaseRadiusPct = clampRingBaseRadiusPct((snap as any).ringBaseRadiusPct ?? (base as any).ringBaseRadiusPct)
   const ringDepthPct = clampRingDepthPct((snap as any).ringDepthPct ?? (base as any).ringDepthPct)
+  const orbRadiusPct = Math.max(5, Math.min(40, Math.round(Number((snap as any).orbRadiusPct ?? (base as any).orbRadiusPct ?? 11))))
+  const orbBandCount = Math.max(1, Math.min(8, Math.round(Number((snap as any).orbBandCount ?? (base as any).orbBandCount ?? 1))))
+  const orbBandSpacingPct = Math.max(1, Math.min(20, Math.round(Number((snap as any).orbBandSpacingPct ?? (base as any).orbBandSpacingPct ?? 5))))
   const gradientModeRaw = String(snap.gradientMode || base.gradientMode).trim().toLowerCase()
   const gradientMode: VisualizerPresetSnapshot['gradientMode'] = gradientModeRaw === 'horizontal' ? 'horizontal' : 'vertical'
   const clipModeRaw = String(snap.clipMode || base.clipMode).trim().toLowerCase()
@@ -272,6 +275,9 @@ const normalizeVisualizerPresetSnapshot = (raw: any): VisualizerPresetSnapshot =
     waveTemporalSmoothPct,
     ringBaseRadiusPct,
     ringDepthPct,
+    orbRadiusPct,
+    orbBandCount,
+    orbBandSpacingPct,
     gradientEnabled: Boolean(snap.gradientEnabled),
     gradientStart: String(snap.gradientStart || base.gradientStart),
     gradientEnd: String(snap.gradientEnd || base.gradientEnd),
@@ -316,6 +322,9 @@ const normalizeVisualizerPresetSnapshot = (raw: any): VisualizerPresetSnapshot =
       const waveTemporalSmoothPctI = clampWaveTemporalSmoothPct((inst as any)?.waveTemporalSmoothPct ?? (normalized as any).waveTemporalSmoothPct)
       const ringBaseRadiusPctI = clampRingBaseRadiusPct((inst as any)?.ringBaseRadiusPct ?? (normalized as any).ringBaseRadiusPct)
       const ringDepthPctI = clampRingDepthPct((inst as any)?.ringDepthPct ?? (normalized as any).ringDepthPct)
+      const orbRadiusPctI = Math.max(5, Math.min(40, Math.round(Number((inst as any)?.orbRadiusPct ?? (normalized as any).orbRadiusPct ?? 11))))
+      const orbBandCountI = Math.max(1, Math.min(8, Math.round(Number((inst as any)?.orbBandCount ?? (normalized as any).orbBandCount ?? 1))))
+      const orbBandSpacingPctI = Math.max(1, Math.min(20, Math.round(Number((inst as any)?.orbBandSpacingPct ?? (normalized as any).orbBandSpacingPct ?? 5))))
       const gradientModeRawI = String(inst?.gradientMode || normalized.gradientMode).trim().toLowerCase()
       const gradientModeI: VisualizerPresetSnapshot['gradientMode'] = gradientModeRawI === 'horizontal' ? 'horizontal' : 'vertical'
       const barCountRawI = Number(inst?.barCount)
@@ -338,6 +347,9 @@ const normalizeVisualizerPresetSnapshot = (raw: any): VisualizerPresetSnapshot =
         waveTemporalSmoothPct: waveTemporalSmoothPctI,
         ringBaseRadiusPct: ringBaseRadiusPctI,
         ringDepthPct: ringDepthPctI,
+        orbRadiusPct: orbRadiusPctI,
+        orbBandCount: orbBandCountI,
+        orbBandSpacingPct: orbBandSpacingPctI,
         gradientEnabled: inst?.gradientEnabled === true,
         gradientStart: String(inst?.gradientStart || normalized.gradientStart),
         gradientEnd: String(inst?.gradientEnd || normalized.gradientEnd),
@@ -367,6 +379,9 @@ const normalizeVisualizerPresetSnapshot = (raw: any): VisualizerPresetSnapshot =
             waveTemporalSmoothPct: (normalized as any).waveTemporalSmoothPct,
             ringBaseRadiusPct: (normalized as any).ringBaseRadiusPct,
             ringDepthPct: (normalized as any).ringDepthPct,
+            orbRadiusPct: (normalized as any).orbRadiusPct,
+            orbBandCount: (normalized as any).orbBandCount,
+            orbBandSpacingPct: (normalized as any).orbBandSpacingPct,
             gradientEnabled: normalized.gradientEnabled,
             gradientStart: normalized.gradientStart,
             gradientEnd: normalized.gradientEnd,
@@ -404,6 +419,9 @@ const narrationVisualizerToPresetSnapshot = (cfg: NarrationVisualizerConfig): Vi
     waveTemporalSmoothPct: (base as any).waveTemporalSmoothPct,
     ringBaseRadiusPct: (base as any).ringBaseRadiusPct,
     ringDepthPct: (base as any).ringDepthPct,
+    orbRadiusPct: (base as any).orbRadiusPct,
+    orbBandCount: (base as any).orbBandCount,
+    orbBandSpacingPct: (base as any).orbBandSpacingPct,
     gradientEnabled: Boolean(cfg.gradientEnabled),
     gradientStart: cfg.gradientStart || cfg.fgColor || base.gradientStart,
     gradientEnd: cfg.gradientEnd || base.gradientEnd,
@@ -431,6 +449,9 @@ const narrationVisualizerToPresetSnapshot = (cfg: NarrationVisualizerConfig): Vi
         waveTemporalSmoothPct: (base as any).waveTemporalSmoothPct,
         ringBaseRadiusPct: (base as any).ringBaseRadiusPct,
         ringDepthPct: (base as any).ringDepthPct,
+        orbRadiusPct: (base as any).orbRadiusPct,
+        orbBandCount: (base as any).orbBandCount,
+        orbBandSpacingPct: (base as any).orbBandSpacingPct,
         gradientEnabled: Boolean(cfg.gradientEnabled),
         gradientStart: cfg.gradientStart || cfg.fgColor || base.gradientStart,
         gradientEnd: cfg.gradientEnd || base.gradientEnd,
@@ -465,6 +486,9 @@ const visualizerPresetSnapshotsEqual = (aRaw: any, bRaw: any): boolean => {
     Number((a as any).waveTemporalSmoothPct || 0) === Number((b as any).waveTemporalSmoothPct || 0) &&
     Number((a as any).ringBaseRadiusPct || 0) === Number((b as any).ringBaseRadiusPct || 0) &&
     Number((a as any).ringDepthPct || 0) === Number((b as any).ringDepthPct || 0) &&
+    Number((a as any).orbRadiusPct || 0) === Number((b as any).orbRadiusPct || 0) &&
+    Number((a as any).orbBandCount || 0) === Number((b as any).orbBandCount || 0) &&
+    Number((a as any).orbBandSpacingPct || 0) === Number((b as any).orbBandSpacingPct || 0) &&
     Boolean(a.gradientEnabled) === Boolean(b.gradientEnabled) &&
     String(a.gradientStart || '') === String(b.gradientStart || '') &&
     String(a.gradientEnd || '') === String(b.gradientEnd || '') &&
@@ -5459,6 +5483,9 @@ export default function CreateVideo() {
               waveTemporalSmoothPct: (viz as any).waveTemporalSmoothPct,
               ringBaseRadiusPct: (viz as any).ringBaseRadiusPct,
               ringDepthPct: (viz as any).ringDepthPct,
+              orbRadiusPct: (viz as any).orbRadiusPct,
+              orbBandCount: (viz as any).orbBandCount,
+              orbBandSpacingPct: (viz as any).orbBandSpacingPct,
               gradientEnabled: (viz as any).gradientEnabled,
               gradientStart: (viz as any).gradientStart,
               gradientEnd: (viz as any).gradientEnd,
@@ -5503,6 +5530,9 @@ export default function CreateVideo() {
         const instWaveTemporalSmoothPct = clampWaveTemporalSmoothPct((inst as any).waveTemporalSmoothPct ?? (viz as any).waveTemporalSmoothPct)
         const instRingBaseRadiusPct = clampRingBaseRadiusPct((inst as any).ringBaseRadiusPct ?? (viz as any).ringBaseRadiusPct)
         const instRingDepthPct = clampRingDepthPct((inst as any).ringDepthPct ?? (viz as any).ringDepthPct)
+        const instOrbRadiusPct = Math.max(5, Math.min(40, Math.round(Number((inst as any).orbRadiusPct ?? (viz as any).orbRadiusPct ?? 11))))
+        const instOrbBandCount = Math.max(1, Math.min(8, Math.round(Number((inst as any).orbBandCount ?? (viz as any).orbBandCount ?? 1))))
+        const instOrbBandSpacingPct = Math.max(1, Math.min(20, Math.round(Number((inst as any).orbBandSpacingPct ?? (viz as any).orbBandSpacingPct ?? 5))))
         const instOpacity = Number.isFinite(Number((inst as any).opacity))
           ? Math.max(0, Math.min(1, Number((inst as any).opacity)))
           : Number.isFinite(viz.opacity)
@@ -5877,27 +5907,44 @@ export default function CreateVideo() {
               }
               return out
             })()
-            let sum = 0
-            let count = 0
-            for (let i = pulseRange.start; i <= pulseRange.end; i++) {
-              const raw = smoothedFreq[Math.max(0, Math.min(smoothedFreq.length - 1, i))] / 255
-              sum += applySpectrumShaping(raw, instAmplitudeGainPct, instBaselineLiftPct)
-              count++
+            const sampleNormalized = (tNorm: number) => {
+              const base = instScale === 'log' ? Math.pow(Math.max(0, Math.min(1, tNorm)), 2) : Math.max(0, Math.min(1, tNorm))
+              const idx = Math.round(pulseRange.start + base * (pulseRange.end - pulseRange.start))
+              const clampedIdx = Math.max(0, Math.min(smoothedFreq.length - 1, idx))
+              const raw = Math.max(0, Math.min(1, smoothedFreq[clampedIdx] / 255))
+              return applySpectrumShaping(raw, instAmplitudeGainPct, instBaselineLiftPct)
             }
-            const a = count > 0 ? Math.max(0, Math.min(1, sum / count)) : 0
+            const samples = 72
+            const values: number[] = []
+            for (let i = 0; i < samples; i++) {
+              const tt = samples <= 1 ? 0 : i / (samples - 1)
+              values.push(sampleNormalized(tt))
+            }
+            const mean = values.length ? values.reduce((acc, v) => acc + v, 0) / values.length : 0
+            const norm = Math.max(0, Math.min(1, (samples - 12) / (128 - 12)))
+            const topFraction = 0.35 - 0.25 * norm
+            const topCount = Math.max(1, Math.round(samples * topFraction))
+            const topValues = values.slice().sort((a, b) => b - a).slice(0, topCount)
+            const topMean = topValues.length ? topValues.reduce((acc, v) => acc + v, 0) / topValues.length : mean
+            const blend = 0.2 + 0.7 * norm
+            const a = Math.max(0, Math.min(1, mean * (1 - blend) + topMean * blend))
             const cx = drawW / 2
             const cy = drawH / 2
             const minDim = Math.min(drawW, drawH)
-            const baseR = Math.max(8, minDim * 0.11)
+            const baseR = Math.max(6, minDim * (instOrbRadiusPct / 100))
             const orbR = baseR + a * minDim * 0.14
             ctx.beginPath()
             ctx.arc(cx, cy, orbR, 0, Math.PI * 2)
             ctx.fill()
-            ctx.globalAlpha = Math.max(0.15, Math.min(0.85, instOpacity * 0.65))
             ctx.lineWidth = Math.max(1.5, minDim * 0.012)
-            ctx.beginPath()
-            ctx.arc(cx, cy, orbR + minDim * 0.05, 0, Math.PI * 2)
-            ctx.stroke()
+            const spacingPx = Math.max(1, minDim * (instOrbBandSpacingPct / 100))
+            for (let band = 1; band <= instOrbBandCount; band++) {
+              const falloff = 1 - (band - 1) / Math.max(1, instOrbBandCount)
+              ctx.globalAlpha = Math.max(0.08, Math.min(0.9, instOpacity * 0.65 * falloff))
+              ctx.beginPath()
+              ctx.arc(cx, cy, orbR + spacingPx * band, 0, Math.PI * 2)
+              ctx.stroke()
+            }
           } else {
             if (useEnvelope) {
               for (let i = 0; i < data.length; i++) {

@@ -34,6 +34,9 @@ export type VisualizerPresetInstanceDto = {
   waveTemporalSmoothPct: number
   ringBaseRadiusPct: number
   ringDepthPct: number
+  orbRadiusPct: number
+  orbBandCount: number
+  orbBandSpacingPct: number
   gradientEnabled: boolean
   gradientStart: string
   gradientEnd: string
@@ -87,6 +90,9 @@ export type VisualizerPresetDto = {
   waveTemporalSmoothPct: number
   ringBaseRadiusPct: number
   ringDepthPct: number
+  orbRadiusPct: number
+  orbBandCount: number
+  orbBandSpacingPct: number
   gradientEnabled: boolean
   gradientStart: string
   gradientEnd: string
