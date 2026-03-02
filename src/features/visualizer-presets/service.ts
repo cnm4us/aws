@@ -44,6 +44,8 @@ const DEFAULTS = {
   amplitudeGainPct: 100,
   baselineLiftPct: 0,
   waveVerticalGainPct: 100,
+  waveVerticalOffsetPct: 0,
+  waveLineWidthPx: 2,
   waveSmoothingPct: 0,
   waveNoiseGatePct: 0,
   waveTemporalSmoothPct: 0,
@@ -149,6 +151,18 @@ function normalizeWaveVerticalGainPct(raw: any): number {
   return Math.round(Math.min(Math.max(n, 25), 400))
 }
 
+function normalizeWaveVerticalOffsetPct(raw: any): number {
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return DEFAULTS.waveVerticalOffsetPct
+  return Math.round(Math.min(Math.max(n, -50), 50))
+}
+
+function normalizeWaveLineWidthPx(raw: any): number {
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return DEFAULTS.waveLineWidthPx
+  return Math.round(Math.min(Math.max(n, 1), 12))
+}
+
 function normalizeWaveSmoothingPct(raw: any): number {
   const n = Number(raw)
   if (!Number.isFinite(n)) return DEFAULTS.waveSmoothingPct
@@ -240,6 +254,8 @@ function normalizeInstance(raw: any, fallback?: Partial<VisualizerPresetInstance
   const amplitudeGainPct = normalizeAmplitudeGainPct(raw?.amplitudeGainPct ?? seed.amplitudeGainPct)
   const baselineLiftPct = normalizeBaselineLiftPct(raw?.baselineLiftPct ?? seed.baselineLiftPct)
   const waveVerticalGainPct = normalizeWaveVerticalGainPct(raw?.waveVerticalGainPct ?? seed.waveVerticalGainPct)
+  const waveVerticalOffsetPct = normalizeWaveVerticalOffsetPct(raw?.waveVerticalOffsetPct ?? seed.waveVerticalOffsetPct)
+  const waveLineWidthPx = normalizeWaveLineWidthPx(raw?.waveLineWidthPx ?? seed.waveLineWidthPx)
   const waveSmoothingPct = normalizeWaveSmoothingPct(raw?.waveSmoothingPct ?? seed.waveSmoothingPct)
   const waveNoiseGatePct = normalizeWaveNoiseGatePct(raw?.waveNoiseGatePct ?? seed.waveNoiseGatePct)
   const waveTemporalSmoothPct = normalizeWaveTemporalSmoothPct(raw?.waveTemporalSmoothPct ?? seed.waveTemporalSmoothPct)
@@ -263,6 +279,8 @@ function normalizeInstance(raw: any, fallback?: Partial<VisualizerPresetInstance
     amplitudeGainPct,
     baselineLiftPct,
     waveVerticalGainPct,
+    waveVerticalOffsetPct,
+    waveLineWidthPx,
     waveSmoothingPct,
     waveNoiseGatePct,
     waveTemporalSmoothPct,
@@ -323,6 +341,8 @@ function legacyStyleFromRow(row: VisualizerPresetRow): Partial<VisualizerPresetI
     amplitudeGainPct: DEFAULTS.amplitudeGainPct,
     baselineLiftPct: DEFAULTS.baselineLiftPct,
     waveVerticalGainPct: DEFAULTS.waveVerticalGainPct,
+    waveVerticalOffsetPct: DEFAULTS.waveVerticalOffsetPct,
+    waveLineWidthPx: DEFAULTS.waveLineWidthPx,
     waveSmoothingPct: DEFAULTS.waveSmoothingPct,
     waveNoiseGatePct: DEFAULTS.waveNoiseGatePct,
     waveTemporalSmoothPct: DEFAULTS.waveTemporalSmoothPct,
@@ -404,6 +424,8 @@ function mapRow(row: VisualizerPresetRow): VisualizerPresetDto {
     amplitudeGainPct: primary.amplitudeGainPct,
     baselineLiftPct: primary.baselineLiftPct,
     waveVerticalGainPct: primary.waveVerticalGainPct,
+    waveVerticalOffsetPct: primary.waveVerticalOffsetPct,
+    waveLineWidthPx: primary.waveLineWidthPx,
     waveSmoothingPct: primary.waveSmoothingPct,
     waveNoiseGatePct: primary.waveNoiseGatePct,
     waveTemporalSmoothPct: primary.waveTemporalSmoothPct,
@@ -461,6 +483,8 @@ export async function createForUser(input: {
   amplitudeGainPct?: any
   baselineLiftPct?: any
   waveVerticalGainPct?: any
+  waveVerticalOffsetPct?: any
+  waveLineWidthPx?: any
   waveSmoothingPct?: any
   waveNoiseGatePct?: any
   waveTemporalSmoothPct?: any
@@ -496,6 +520,8 @@ export async function createForUser(input: {
   const amplitudeGainPct = normalizeAmplitudeGainPct(input.amplitudeGainPct)
   const baselineLiftPct = normalizeBaselineLiftPct(input.baselineLiftPct)
   const waveVerticalGainPct = normalizeWaveVerticalGainPct(input.waveVerticalGainPct)
+  const waveVerticalOffsetPct = normalizeWaveVerticalOffsetPct(input.waveVerticalOffsetPct)
+  const waveLineWidthPx = normalizeWaveLineWidthPx(input.waveLineWidthPx)
   const waveSmoothingPct = normalizeWaveSmoothingPct(input.waveSmoothingPct)
   const waveNoiseGatePct = normalizeWaveNoiseGatePct(input.waveNoiseGatePct)
   const waveTemporalSmoothPct = normalizeWaveTemporalSmoothPct(input.waveTemporalSmoothPct)
@@ -532,6 +558,8 @@ export async function createForUser(input: {
     amplitudeGainPct,
     baselineLiftPct,
     waveVerticalGainPct,
+    waveVerticalOffsetPct,
+    waveLineWidthPx,
     waveSmoothingPct,
     waveNoiseGatePct,
     waveTemporalSmoothPct,
@@ -589,6 +617,8 @@ export async function updateForUser(
   amplitudeGainPct?: any
   baselineLiftPct?: any
   waveVerticalGainPct?: any
+  waveVerticalOffsetPct?: any
+  waveLineWidthPx?: any
   waveSmoothingPct?: any
   waveNoiseGatePct?: any
   waveTemporalSmoothPct?: any
@@ -646,6 +676,8 @@ export async function updateForUser(
   if (input.amplitudeGainPct !== undefined) patch.amplitudeGainPct = normalizeAmplitudeGainPct(input.amplitudeGainPct)
   if (input.baselineLiftPct !== undefined) patch.baselineLiftPct = normalizeBaselineLiftPct(input.baselineLiftPct)
   if (input.waveVerticalGainPct !== undefined) patch.waveVerticalGainPct = normalizeWaveVerticalGainPct(input.waveVerticalGainPct)
+  if (input.waveVerticalOffsetPct !== undefined) patch.waveVerticalOffsetPct = normalizeWaveVerticalOffsetPct(input.waveVerticalOffsetPct)
+  if (input.waveLineWidthPx !== undefined) patch.waveLineWidthPx = normalizeWaveLineWidthPx(input.waveLineWidthPx)
   if (input.waveSmoothingPct !== undefined) patch.waveSmoothingPct = normalizeWaveSmoothingPct(input.waveSmoothingPct)
   if (input.waveNoiseGatePct !== undefined) patch.waveNoiseGatePct = normalizeWaveNoiseGatePct(input.waveNoiseGatePct)
   if (input.waveTemporalSmoothPct !== undefined) patch.waveTemporalSmoothPct = normalizeWaveTemporalSmoothPct(input.waveTemporalSmoothPct)
@@ -682,6 +714,8 @@ export async function updateForUser(
     input.amplitudeGainPct !== undefined ||
     input.baselineLiftPct !== undefined ||
     input.waveVerticalGainPct !== undefined ||
+    input.waveVerticalOffsetPct !== undefined ||
+    input.waveLineWidthPx !== undefined ||
     input.waveSmoothingPct !== undefined ||
     input.waveNoiseGatePct !== undefined ||
     input.waveTemporalSmoothPct !== undefined ||
@@ -712,6 +746,8 @@ export async function updateForUser(
     patch.amplitudeGainPct = primary.amplitudeGainPct
     patch.baselineLiftPct = primary.baselineLiftPct
     patch.waveVerticalGainPct = primary.waveVerticalGainPct
+    patch.waveVerticalOffsetPct = primary.waveVerticalOffsetPct
+    patch.waveLineWidthPx = primary.waveLineWidthPx
     patch.waveSmoothingPct = primary.waveSmoothingPct
     patch.waveNoiseGatePct = primary.waveNoiseGatePct
     patch.waveTemporalSmoothPct = primary.waveTemporalSmoothPct
@@ -743,6 +779,8 @@ export async function updateForUser(
         amplitudeGainPct: patch.amplitudeGainPct ?? current[0].amplitudeGainPct,
         baselineLiftPct: patch.baselineLiftPct ?? current[0].baselineLiftPct,
         waveVerticalGainPct: patch.waveVerticalGainPct ?? current[0].waveVerticalGainPct,
+        waveVerticalOffsetPct: patch.waveVerticalOffsetPct ?? current[0].waveVerticalOffsetPct,
+        waveLineWidthPx: patch.waveLineWidthPx ?? current[0].waveLineWidthPx,
         waveSmoothingPct: patch.waveSmoothingPct ?? current[0].waveSmoothingPct,
         waveNoiseGatePct: patch.waveNoiseGatePct ?? current[0].waveNoiseGatePct,
         waveTemporalSmoothPct: patch.waveTemporalSmoothPct ?? current[0].waveTemporalSmoothPct,
@@ -774,6 +812,8 @@ export async function updateForUser(
     patch.amplitudeGainPct = primaryNext.amplitudeGainPct
     patch.baselineLiftPct = primaryNext.baselineLiftPct
     patch.waveVerticalGainPct = primaryNext.waveVerticalGainPct
+    patch.waveVerticalOffsetPct = primaryNext.waveVerticalOffsetPct
+    patch.waveLineWidthPx = primaryNext.waveLineWidthPx
     patch.waveSmoothingPct = primaryNext.waveSmoothingPct
     patch.waveNoiseGatePct = primaryNext.waveNoiseGatePct
     patch.waveTemporalSmoothPct = primaryNext.waveTemporalSmoothPct

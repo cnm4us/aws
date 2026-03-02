@@ -175,6 +175,18 @@ const clampWaveVerticalGainPct = (raw: any): number => {
   return Math.round(Math.max(25, Math.min(400, n)))
 }
 
+const clampWaveVerticalOffsetPct = (raw: any): number => {
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return 0
+  return Math.round(Math.max(-50, Math.min(50, n)))
+}
+
+const clampWaveLineWidthPx = (raw: any): number => {
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return 2
+  return Math.round(Math.max(1, Math.min(12, n)))
+}
+
 const clampWaveSmoothingPct = (raw: any): number => {
   const n = Number(raw)
   if (!Number.isFinite(n)) return 0
@@ -239,6 +251,8 @@ const normalizeVisualizerPresetSnapshot = (raw: any): VisualizerPresetSnapshot =
   const amplitudeGainPct = clampAmplitudeGainPct((snap as any).amplitudeGainPct ?? (base as any).amplitudeGainPct)
   const baselineLiftPct = clampBaselineLiftPct((snap as any).baselineLiftPct ?? (base as any).baselineLiftPct)
   const waveVerticalGainPct = clampWaveVerticalGainPct((snap as any).waveVerticalGainPct ?? (base as any).waveVerticalGainPct)
+  const waveVerticalOffsetPct = clampWaveVerticalOffsetPct((snap as any).waveVerticalOffsetPct ?? (base as any).waveVerticalOffsetPct)
+  const waveLineWidthPx = clampWaveLineWidthPx((snap as any).waveLineWidthPx ?? (base as any).waveLineWidthPx)
   const waveSmoothingPct = clampWaveSmoothingPct((snap as any).waveSmoothingPct ?? (base as any).waveSmoothingPct)
   const waveNoiseGatePct = clampWaveNoiseGatePct((snap as any).waveNoiseGatePct ?? (base as any).waveNoiseGatePct)
   const waveTemporalSmoothPct = clampWaveTemporalSmoothPct((snap as any).waveTemporalSmoothPct ?? (base as any).waveTemporalSmoothPct)
@@ -270,6 +284,8 @@ const normalizeVisualizerPresetSnapshot = (raw: any): VisualizerPresetSnapshot =
     amplitudeGainPct,
     baselineLiftPct,
     waveVerticalGainPct,
+    waveVerticalOffsetPct,
+    waveLineWidthPx,
     waveSmoothingPct,
     waveNoiseGatePct,
     waveTemporalSmoothPct,
@@ -317,6 +333,8 @@ const normalizeVisualizerPresetSnapshot = (raw: any): VisualizerPresetSnapshot =
       const amplitudeGainPctI = clampAmplitudeGainPct((inst as any)?.amplitudeGainPct ?? (normalized as any).amplitudeGainPct)
       const baselineLiftPctI = clampBaselineLiftPct((inst as any)?.baselineLiftPct ?? (normalized as any).baselineLiftPct)
       const waveVerticalGainPctI = clampWaveVerticalGainPct((inst as any)?.waveVerticalGainPct ?? (normalized as any).waveVerticalGainPct)
+      const waveVerticalOffsetPctI = clampWaveVerticalOffsetPct((inst as any)?.waveVerticalOffsetPct ?? (normalized as any).waveVerticalOffsetPct)
+      const waveLineWidthPxI = clampWaveLineWidthPx((inst as any)?.waveLineWidthPx ?? (normalized as any).waveLineWidthPx)
       const waveSmoothingPctI = clampWaveSmoothingPct((inst as any)?.waveSmoothingPct ?? (normalized as any).waveSmoothingPct)
       const waveNoiseGatePctI = clampWaveNoiseGatePct((inst as any)?.waveNoiseGatePct ?? (normalized as any).waveNoiseGatePct)
       const waveTemporalSmoothPctI = clampWaveTemporalSmoothPct((inst as any)?.waveTemporalSmoothPct ?? (normalized as any).waveTemporalSmoothPct)
@@ -342,6 +360,8 @@ const normalizeVisualizerPresetSnapshot = (raw: any): VisualizerPresetSnapshot =
         amplitudeGainPct: amplitudeGainPctI,
         baselineLiftPct: baselineLiftPctI,
         waveVerticalGainPct: waveVerticalGainPctI,
+        waveVerticalOffsetPct: waveVerticalOffsetPctI,
+        waveLineWidthPx: waveLineWidthPxI,
         waveSmoothingPct: waveSmoothingPctI,
         waveNoiseGatePct: waveNoiseGatePctI,
         waveTemporalSmoothPct: waveTemporalSmoothPctI,
@@ -374,6 +394,8 @@ const normalizeVisualizerPresetSnapshot = (raw: any): VisualizerPresetSnapshot =
             amplitudeGainPct: (normalized as any).amplitudeGainPct,
             baselineLiftPct: (normalized as any).baselineLiftPct,
             waveVerticalGainPct: (normalized as any).waveVerticalGainPct,
+            waveVerticalOffsetPct: (normalized as any).waveVerticalOffsetPct,
+            waveLineWidthPx: (normalized as any).waveLineWidthPx,
             waveSmoothingPct: (normalized as any).waveSmoothingPct,
             waveNoiseGatePct: (normalized as any).waveNoiseGatePct,
             waveTemporalSmoothPct: (normalized as any).waveTemporalSmoothPct,
@@ -414,6 +436,8 @@ const narrationVisualizerToPresetSnapshot = (cfg: NarrationVisualizerConfig): Vi
     amplitudeGainPct: (base as any).amplitudeGainPct,
     baselineLiftPct: (base as any).baselineLiftPct,
     waveVerticalGainPct: (base as any).waveVerticalGainPct,
+    waveVerticalOffsetPct: (base as any).waveVerticalOffsetPct,
+    waveLineWidthPx: (base as any).waveLineWidthPx,
     waveSmoothingPct: (base as any).waveSmoothingPct,
     waveNoiseGatePct: (base as any).waveNoiseGatePct,
     waveTemporalSmoothPct: (base as any).waveTemporalSmoothPct,
@@ -444,6 +468,8 @@ const narrationVisualizerToPresetSnapshot = (cfg: NarrationVisualizerConfig): Vi
         amplitudeGainPct: (base as any).amplitudeGainPct,
         baselineLiftPct: (base as any).baselineLiftPct,
         waveVerticalGainPct: (base as any).waveVerticalGainPct,
+        waveVerticalOffsetPct: (base as any).waveVerticalOffsetPct,
+        waveLineWidthPx: (base as any).waveLineWidthPx,
         waveSmoothingPct: (base as any).waveSmoothingPct,
         waveNoiseGatePct: (base as any).waveNoiseGatePct,
         waveTemporalSmoothPct: (base as any).waveTemporalSmoothPct,
@@ -481,6 +507,8 @@ const visualizerPresetSnapshotsEqual = (aRaw: any, bRaw: any): boolean => {
     Number((a as any).amplitudeGainPct || 0) === Number((b as any).amplitudeGainPct || 0) &&
     Number((a as any).baselineLiftPct || 0) === Number((b as any).baselineLiftPct || 0) &&
     Number((a as any).waveVerticalGainPct || 0) === Number((b as any).waveVerticalGainPct || 0) &&
+    Number((a as any).waveVerticalOffsetPct || 0) === Number((b as any).waveVerticalOffsetPct || 0) &&
+    Number((a as any).waveLineWidthPx || 0) === Number((b as any).waveLineWidthPx || 0) &&
     Number((a as any).waveSmoothingPct || 0) === Number((b as any).waveSmoothingPct || 0) &&
     Number((a as any).waveNoiseGatePct || 0) === Number((b as any).waveNoiseGatePct || 0) &&
     Number((a as any).waveTemporalSmoothPct || 0) === Number((b as any).waveTemporalSmoothPct || 0) &&
@@ -5478,6 +5506,8 @@ export default function CreateVideo() {
               amplitudeGainPct: (viz as any).amplitudeGainPct,
               baselineLiftPct: (viz as any).baselineLiftPct,
               waveVerticalGainPct: (viz as any).waveVerticalGainPct,
+              waveVerticalOffsetPct: (viz as any).waveVerticalOffsetPct,
+              waveLineWidthPx: (viz as any).waveLineWidthPx,
               waveSmoothingPct: (viz as any).waveSmoothingPct,
               waveNoiseGatePct: (viz as any).waveNoiseGatePct,
               waveTemporalSmoothPct: (viz as any).waveTemporalSmoothPct,
@@ -5525,6 +5555,8 @@ export default function CreateVideo() {
         const instAmplitudeGainPct = clampAmplitudeGainPct((inst as any).amplitudeGainPct ?? (viz as any).amplitudeGainPct)
         const instBaselineLiftPct = clampBaselineLiftPct((inst as any).baselineLiftPct ?? (viz as any).baselineLiftPct)
         const instWaveVerticalGainPct = clampWaveVerticalGainPct((inst as any).waveVerticalGainPct ?? (viz as any).waveVerticalGainPct)
+        const instWaveVerticalOffsetPct = clampWaveVerticalOffsetPct((inst as any).waveVerticalOffsetPct ?? (viz as any).waveVerticalOffsetPct)
+        const instWaveLineWidthPx = clampWaveLineWidthPx((inst as any).waveLineWidthPx ?? (viz as any).waveLineWidthPx)
         const instWaveSmoothingPct = clampWaveSmoothingPct((inst as any).waveSmoothingPct ?? (viz as any).waveSmoothingPct)
         const instWaveNoiseGatePct = clampWaveNoiseGatePct((inst as any).waveNoiseGatePct ?? (viz as any).waveNoiseGatePct)
         const instWaveTemporalSmoothPct = clampWaveTemporalSmoothPct((inst as any).waveTemporalSmoothPct ?? (viz as any).waveTemporalSmoothPct)
@@ -5749,6 +5781,7 @@ export default function CreateVideo() {
             const gate = Math.max(0, Math.min(0.3, instWaveNoiseGatePct / 100))
             const gain = Math.max(0.25, Math.min(4, instWaveVerticalGainPct / 100))
             const smooth = Math.max(0, Math.min(0.95, instWaveSmoothingPct / 100))
+            const waveOffsetPx = drawH * (instWaveVerticalOffsetPct / 100)
             const temporal = Math.max(0, Math.min(0.98, instWaveTemporalSmoothPct / 100))
             const alpha = 1 - smooth
             const temporalAlpha = 1 - temporal
@@ -5763,7 +5796,7 @@ export default function CreateVideo() {
 
             if (instStyle === 'center_wave') {
               const centerY = drawH / 2
-              ctx.lineWidth = 2
+              ctx.lineWidth = instWaveLineWidthPx
               const drawWave = (sign: 1 | -1) => {
                 const temporalKey = `${String((viz as any).id || 'visualizer')}::${String((inst as any).id || 'instance_1')}::center::${String(sign)}`
                 let temporalTrack = narrationVizWaveTemporalByInstanceRef.current[temporalKey]
@@ -5779,9 +5812,10 @@ export default function CreateVideo() {
                   temporalTrack[i] = shaped.temporalNext
                   prev = shaped.next
                   const y = centerY + sign * shaped.shaped * drawH * 0.4
+                  const yOffset = y + waveOffsetPx
                   const x = (i / (data.length - 1)) * drawW
-                  if (i === 0) ctx.moveTo(x, y)
-                  else ctx.lineTo(x, y)
+                  if (i === 0) ctx.moveTo(x, yOffset)
+                  else ctx.lineTo(x, yOffset)
                 }
                 ctx.stroke()
               }
@@ -5794,7 +5828,7 @@ export default function CreateVideo() {
                 temporalTrack = new Float32Array(data.length)
                 narrationVizWaveTemporalByInstanceRef.current[temporalKey] = temporalTrack
               }
-              ctx.lineWidth = 2
+              ctx.lineWidth = instWaveLineWidthPx
               ctx.beginPath()
               let prev = 0
               for (let i = 0; i < data.length; i++) {
@@ -5802,7 +5836,7 @@ export default function CreateVideo() {
                 const shaped = shapeSample(raw, temporalTrack[i] || 0, prev)
                 temporalTrack[i] = shaped.temporalNext
                 prev = shaped.next
-                const y = drawH / 2 + shaped.shaped * drawH * 0.35
+                const y = drawH / 2 + waveOffsetPx + shaped.shaped * drawH * 0.35
                 const x = (i / (data.length - 1)) * drawW
                 if (i === 0) ctx.moveTo(x, y)
                 else ctx.lineTo(x, y)
@@ -5812,6 +5846,7 @@ export default function CreateVideo() {
                 ctx.lineTo(0, drawH / 2)
                 ctx.closePath()
                 ctx.fill()
+                ctx.stroke()
               } else {
                 ctx.stroke()
               }
@@ -5858,7 +5893,7 @@ export default function CreateVideo() {
               temporalTrack = new Float32Array(points)
               narrationVizWaveTemporalByInstanceRef.current[temporalKey] = temporalTrack
             }
-            ctx.lineWidth = 2
+            ctx.lineWidth = instWaveLineWidthPx
             ctx.beginPath()
             let wavePrev = 0
             for (let i = 0; i < points; i++) {

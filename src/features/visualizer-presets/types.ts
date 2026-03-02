@@ -29,6 +29,8 @@ export type VisualizerPresetInstanceDto = {
   amplitudeGainPct: number
   baselineLiftPct: number
   waveVerticalGainPct: number
+  waveVerticalOffsetPct: number
+  waveLineWidthPx: number
   waveSmoothingPct: number
   waveNoiseGatePct: number
   waveTemporalSmoothPct: number
@@ -85,6 +87,8 @@ export type VisualizerPresetDto = {
   amplitudeGainPct: number
   baselineLiftPct: number
   waveVerticalGainPct: number
+  waveVerticalOffsetPct: number
+  waveLineWidthPx: number
   waveSmoothingPct: number
   waveNoiseGatePct: number
   waveTemporalSmoothPct: number

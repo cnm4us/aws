@@ -303,6 +303,8 @@ export type CreateVideoVisualizerPresetSnapshotV1 = {
   amplitudeGainPct?: number
   baselineLiftPct?: number
   waveVerticalGainPct?: number
+  waveVerticalOffsetPct?: number
+  waveLineWidthPx?: number
   waveSmoothingPct?: number
   waveNoiseGatePct?: number
   waveTemporalSmoothPct?: number
@@ -332,6 +334,8 @@ export type CreateVideoVisualizerPresetSnapshotV1 = {
     amplitudeGainPct?: number
     baselineLiftPct?: number
     waveVerticalGainPct?: number
+    waveVerticalOffsetPct?: number
+    waveLineWidthPx?: number
     waveSmoothingPct?: number
     waveNoiseGatePct?: number
     waveTemporalSmoothPct?: number

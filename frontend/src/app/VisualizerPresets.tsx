@@ -32,6 +32,8 @@ type VisualizerPresetInstance = {
   amplitudeGainPct: number
   baselineLiftPct: number
   waveVerticalGainPct: number
+  waveVerticalOffsetPct: number
+  waveLineWidthPx: number
   waveSmoothingPct: number
   waveNoiseGatePct: number
   waveTemporalSmoothPct: number
@@ -107,6 +109,8 @@ const DEFAULT_INSTANCE: VisualizerPresetInstance = {
   amplitudeGainPct: 100,
   baselineLiftPct: 0,
   waveVerticalGainPct: 100,
+  waveVerticalOffsetPct: 0,
+  waveLineWidthPx: 2,
   waveSmoothingPct: 0,
   waveNoiseGatePct: 0,
   waveTemporalSmoothPct: 0,
@@ -310,6 +314,18 @@ function parseWaveVerticalGainPct(value: any): number {
   return Math.round(Math.min(Math.max(n, 25), 400))
 }
 
+function parseWaveVerticalOffsetPct(value: any): number {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return DEFAULT_INSTANCE.waveVerticalOffsetPct
+  return Math.round(Math.min(Math.max(n, -50), 50))
+}
+
+function parseWaveLineWidthPx(value: any): number {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return DEFAULT_INSTANCE.waveLineWidthPx
+  return Math.round(Math.min(Math.max(n, 1), 12))
+}
+
 function parseWaveSmoothingPct(value: any): number {
   const n = Number(value)
   if (!Number.isFinite(n)) return DEFAULT_INSTANCE.waveSmoothingPct
@@ -427,6 +443,8 @@ function normalizeInstance(raw: any, fallback: VisualizerPresetInstance, idx: nu
   const amplitudeGainPct = parseAmplitudeGainPct(raw?.amplitudeGainPct ?? fallback.amplitudeGainPct)
   const baselineLiftPct = parseBaselineLiftPct(raw?.baselineLiftPct ?? fallback.baselineLiftPct)
   const waveVerticalGainPct = parseWaveVerticalGainPct(raw?.waveVerticalGainPct ?? fallback.waveVerticalGainPct)
+  const waveVerticalOffsetPct = parseWaveVerticalOffsetPct(raw?.waveVerticalOffsetPct ?? fallback.waveVerticalOffsetPct)
+  const waveLineWidthPx = parseWaveLineWidthPx(raw?.waveLineWidthPx ?? fallback.waveLineWidthPx)
   const waveSmoothingPct = parseWaveSmoothingPct(raw?.waveSmoothingPct ?? fallback.waveSmoothingPct)
   const waveNoiseGatePct = parseWaveNoiseGatePct(raw?.waveNoiseGatePct ?? fallback.waveNoiseGatePct)
   const waveTemporalSmoothPct = parseWaveTemporalSmoothPct(raw?.waveTemporalSmoothPct ?? fallback.waveTemporalSmoothPct)
@@ -451,6 +469,8 @@ function normalizeInstance(raw: any, fallback: VisualizerPresetInstance, idx: nu
     amplitudeGainPct,
     baselineLiftPct,
     waveVerticalGainPct,
+    waveVerticalOffsetPct,
+    waveLineWidthPx,
     waveSmoothingPct,
     waveNoiseGatePct,
     waveTemporalSmoothPct,
@@ -678,6 +698,7 @@ function VisualizerPreview({
         ctx.globalAlpha = Number.isFinite(inst.opacity) ? Math.max(0, Math.min(1, inst.opacity)) : 1
         ctx.strokeStyle = grad || fg
         ctx.fillStyle = grad || fg
+        const waveLineWidthPx = Math.max(1, Math.min(12, Number(inst.waveLineWidthPx || 2)))
 
         if (inst.style === 'radial_bars') {
           const bars = parseBarCount(inst.barCount)
@@ -821,7 +842,7 @@ function VisualizerPreview({
             temporalTrack = new Float32Array(points)
             waveTemporalRef.current[temporalKey] = temporalTrack
           }
-          ctx.lineWidth = 2
+          ctx.lineWidth = waveLineWidthPx
           ctx.beginPath()
           let wavePrev = 0
           for (let i = 0; i < points; i++) {
@@ -900,8 +921,9 @@ function VisualizerPreview({
           const points = 180
           const center = h / 2
           const amp = h * 0.35
+          const waveOffsetPx = h * (Math.max(-50, Math.min(50, Number(inst.waveVerticalOffsetPct || 0))) / 100)
           if (inst.style === 'center_wave') {
-            ctx.lineWidth = 2
+            ctx.lineWidth = waveLineWidthPx
             const drawWave = (sign: 1 | -1) => {
               const temporalKey = `${String(inst.id || 'instance_1')}::center::${String(sign)}`
               let temporalTrack = waveTemporalRef.current[temporalKey]
@@ -928,6 +950,7 @@ function VisualizerPreview({
                 wavePrev = wave.next
                 const y =
                   center +
+                  waveOffsetPx +
                   sign *
                     amp *
                     wave.shaped
@@ -940,7 +963,7 @@ function VisualizerPreview({
             drawWave(1)
             drawWave(-1)
           } else {
-            ctx.lineWidth = 2
+            ctx.lineWidth = waveLineWidthPx
             ctx.beginPath()
             const temporalKey = `${String(inst.id || 'instance_1')}::main`
             let temporalTrack = waveTemporalRef.current[temporalKey]
@@ -966,6 +989,7 @@ function VisualizerPreview({
               wavePrev = wave.next
               const y =
                 center +
+                waveOffsetPx +
                 amp *
                   wave.shaped
               const x = tt * w
@@ -977,6 +1001,7 @@ function VisualizerPreview({
               ctx.lineTo(0, center)
               ctx.closePath()
               ctx.fill()
+              ctx.stroke()
             } else {
               ctx.stroke()
             }
@@ -1262,6 +1287,8 @@ export default function VisualizerPresetsPage() {
         amplitudeGainPct: primary.amplitudeGainPct,
         baselineLiftPct: primary.baselineLiftPct,
         waveVerticalGainPct: primary.waveVerticalGainPct,
+        waveVerticalOffsetPct: primary.waveVerticalOffsetPct,
+        waveLineWidthPx: primary.waveLineWidthPx,
         waveSmoothingPct: primary.waveSmoothingPct,
         waveNoiseGatePct: primary.waveNoiseGatePct,
         waveTemporalSmoothPct: primary.waveTemporalSmoothPct,
@@ -1471,6 +1498,10 @@ export default function VisualizerPresetsPage() {
                       inst.style === 'wave_fill' ||
                       inst.style === 'center_wave' ||
                       inst.style === 'ring_wave'
+                    const showWaveOffsetControls =
+                      inst.style === 'wave_line' ||
+                      inst.style === 'wave_fill' ||
+                      inst.style === 'center_wave'
                     const showRingControls = inst.style === 'ring_wave'
                     const showOrbControls = inst.style === 'pulse_orb'
                     const showBarsControl =
@@ -1673,6 +1704,34 @@ export default function VisualizerPresetsPage() {
                           step={5}
                           value={inst.waveVerticalGainPct}
                           onChange={(e) => updateInstance(idx, { waveVerticalGainPct: parseWaveVerticalGainPct(e.target.value) })}
+                          style={MODAL_INPUT_STYLE}
+                        />
+                      </label>
+                    ) : null}
+                    {showWaveOffsetControls ? (
+                      <label style={{ display: 'grid', gap: 6 }}>
+                        <div style={{ color: '#bbb', fontSize: 13 }}>Vertical Offset (%)</div>
+                        <input
+                          type="number"
+                          min={-50}
+                          max={50}
+                          step={1}
+                          value={inst.waveVerticalOffsetPct}
+                          onChange={(e) => updateInstance(idx, { waveVerticalOffsetPct: parseWaveVerticalOffsetPct(e.target.value) })}
+                          style={MODAL_INPUT_STYLE}
+                        />
+                      </label>
+                    ) : null}
+                    {showWaveControls ? (
+                      <label style={{ display: 'grid', gap: 6 }}>
+                        <div style={{ color: '#bbb', fontSize: 13 }}>Line Thickness (px)</div>
+                        <input
+                          type="number"
+                          min={1}
+                          max={12}
+                          step={1}
+                          value={inst.waveLineWidthPx}
+                          onChange={(e) => updateInstance(idx, { waveLineWidthPx: parseWaveLineWidthPx(e.target.value) })}
                           style={MODAL_INPUT_STYLE}
                         />
                       </label>

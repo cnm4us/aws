@@ -220,6 +220,8 @@ export type VisualizerPresetInstanceSnapshot = {
   amplitudeGainPct: number
   baselineLiftPct: number
   waveVerticalGainPct: number
+  waveVerticalOffsetPct: number
+  waveLineWidthPx: number
   waveSmoothingPct: number
   waveNoiseGatePct: number
   waveTemporalSmoothPct: number
@@ -251,6 +253,8 @@ export type VisualizerPresetSnapshot = {
   amplitudeGainPct: number
   baselineLiftPct: number
   waveVerticalGainPct: number
+  waveVerticalOffsetPct: number
+  waveLineWidthPx: number
   waveSmoothingPct: number
   waveNoiseGatePct: number
   waveTemporalSmoothPct: number
@@ -328,6 +332,8 @@ export const DEFAULT_VISUALIZER_PRESET_SNAPSHOT: VisualizerPresetSnapshot = {
   amplitudeGainPct: 100,
   baselineLiftPct: 0,
   waveVerticalGainPct: 100,
+  waveVerticalOffsetPct: 0,
+  waveLineWidthPx: 2,
   waveSmoothingPct: 0,
   waveNoiseGatePct: 0,
   waveTemporalSmoothPct: 0,
@@ -358,6 +364,8 @@ export const DEFAULT_VISUALIZER_PRESET_SNAPSHOT: VisualizerPresetSnapshot = {
       amplitudeGainPct: 100,
       baselineLiftPct: 0,
       waveVerticalGainPct: 100,
+      waveVerticalOffsetPct: 0,
+      waveLineWidthPx: 2,
       waveSmoothingPct: 0,
       waveNoiseGatePct: 0,
       waveTemporalSmoothPct: 0,
@@ -668,6 +676,12 @@ export function cloneTimeline(timeline: Timeline): Timeline {
               waveVerticalGainPct: Number.isFinite(Number(snapBase.waveVerticalGainPct))
                 ? Math.max(25, Math.min(400, Math.round(Number(snapBase.waveVerticalGainPct))))
                 : DEFAULT_VISUALIZER_PRESET_SNAPSHOT.waveVerticalGainPct,
+              waveVerticalOffsetPct: Number.isFinite(Number(snapBase.waveVerticalOffsetPct))
+                ? Math.max(-50, Math.min(50, Math.round(Number(snapBase.waveVerticalOffsetPct))))
+                : DEFAULT_VISUALIZER_PRESET_SNAPSHOT.waveVerticalOffsetPct,
+              waveLineWidthPx: Number.isFinite(Number(snapBase.waveLineWidthPx))
+                ? Math.max(1, Math.min(12, Math.round(Number(snapBase.waveLineWidthPx))))
+                : DEFAULT_VISUALIZER_PRESET_SNAPSHOT.waveLineWidthPx,
               waveSmoothingPct: Number.isFinite(Number(snapBase.waveSmoothingPct))
                 ? Math.max(0, Math.min(95, Math.round(Number(snapBase.waveSmoothingPct))))
                 : DEFAULT_VISUALIZER_PRESET_SNAPSHOT.waveSmoothingPct,
@@ -748,6 +762,12 @@ export function cloneTimeline(timeline: Timeline): Timeline {
                 const waveVerticalGainPct = Number.isFinite(Number(inst?.waveVerticalGainPct))
                   ? Math.max(25, Math.min(400, Math.round(Number(inst?.waveVerticalGainPct))))
                   : snapshot.waveVerticalGainPct
+                const waveVerticalOffsetPct = Number.isFinite(Number(inst?.waveVerticalOffsetPct))
+                  ? Math.max(-50, Math.min(50, Math.round(Number(inst?.waveVerticalOffsetPct))))
+                  : snapshot.waveVerticalOffsetPct
+                const waveLineWidthPx = Number.isFinite(Number(inst?.waveLineWidthPx))
+                  ? Math.max(1, Math.min(12, Math.round(Number(inst?.waveLineWidthPx))))
+                  : snapshot.waveLineWidthPx
                 const waveSmoothingPct = Number.isFinite(Number(inst?.waveSmoothingPct))
                   ? Math.max(0, Math.min(95, Math.round(Number(inst?.waveSmoothingPct))))
                   : snapshot.waveSmoothingPct
@@ -790,6 +810,8 @@ export function cloneTimeline(timeline: Timeline): Timeline {
                   amplitudeGainPct,
                   baselineLiftPct,
                   waveVerticalGainPct,
+                  waveVerticalOffsetPct,
+                  waveLineWidthPx,
                   waveSmoothingPct,
                   waveNoiseGatePct,
                   waveTemporalSmoothPct,
@@ -822,6 +844,8 @@ export function cloneTimeline(timeline: Timeline): Timeline {
                       amplitudeGainPct: snapshot.amplitudeGainPct,
                       baselineLiftPct: snapshot.baselineLiftPct,
                       waveVerticalGainPct: snapshot.waveVerticalGainPct,
+                      waveVerticalOffsetPct: snapshot.waveVerticalOffsetPct,
+                      waveLineWidthPx: snapshot.waveLineWidthPx,
                       waveSmoothingPct: snapshot.waveSmoothingPct,
                       waveNoiseGatePct: snapshot.waveNoiseGatePct,
                       waveTemporalSmoothPct: snapshot.waveTemporalSmoothPct,
