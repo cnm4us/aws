@@ -5884,6 +5884,7 @@ export default function CreateVideo() {
             const points = Math.max(64, Math.min(360, instBars * 2))
             const cx = drawW / 2
             const cy = drawH / 2
+            const waveOffsetPxX = drawW * (instWaveVerticalOffsetPct / 100)
             const minDim = Math.min(drawW, drawH)
             const baseR = Math.max(6, minDim * (instRingBaseRadiusPct / 100))
             const ampR = Math.max(2, minDim * (instRingDepthPct / 100))
@@ -5906,7 +5907,7 @@ export default function CreateVideo() {
               wavePrev = wave.next
               const rr = Math.max(4, baseR + wave.shaped * ampR)
               const ang = tt * Math.PI * 2 - Math.PI / 2
-              const x = cx + Math.cos(ang) * rr
+              const x = cx + Math.cos(ang) * rr + waveOffsetPxX
               const y = cy + Math.sin(ang) * rr
               if (i === 0) ctx.moveTo(x, y)
               else ctx.lineTo(x, y)

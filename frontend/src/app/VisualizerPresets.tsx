@@ -833,6 +833,7 @@ function VisualizerPreview({
           const points = Math.max(64, Math.min(360, parseBarCount(inst.barCount) * 2))
           const cx = w / 2
           const cy = h / 2
+          const waveOffsetPxX = w * (Math.max(-50, Math.min(50, Number(inst.waveVerticalOffsetPct || 0))) / 100)
           const minDim = Math.min(w, h)
           const baseR = Math.max(6, minDim * (Math.max(5, Math.min(90, Number(inst.ringBaseRadiusPct || 22))) / 100))
           const ampR = Math.max(2, minDim * (Math.max(1, Math.min(60, Number(inst.ringDepthPct || 18))) / 100))
@@ -862,7 +863,7 @@ function VisualizerPreview({
             wavePrev = wave.next
             const rr = Math.max(4, baseR + wave.shaped * ampR)
             const ang = tt * Math.PI * 2 - Math.PI / 2
-            const x = cx + Math.cos(ang) * rr
+            const x = cx + Math.cos(ang) * rr + waveOffsetPxX
             const y = cy + Math.sin(ang) * rr
             if (i === 0) ctx.moveTo(x, y)
             else ctx.lineTo(x, y)
@@ -1501,7 +1502,8 @@ export default function VisualizerPresetsPage() {
                     const showWaveOffsetControls =
                       inst.style === 'wave_line' ||
                       inst.style === 'wave_fill' ||
-                      inst.style === 'center_wave'
+                      inst.style === 'center_wave' ||
+                      inst.style === 'ring_wave'
                     const showRingControls = inst.style === 'ring_wave'
                     const showOrbControls = inst.style === 'pulse_orb'
                     const showBarsControl =
@@ -1710,7 +1712,9 @@ export default function VisualizerPresetsPage() {
                     ) : null}
                     {showWaveOffsetControls ? (
                       <label style={{ display: 'grid', gap: 6 }}>
-                        <div style={{ color: '#bbb', fontSize: 13 }}>Vertical Offset (%)</div>
+                        <div style={{ color: '#bbb', fontSize: 13 }}>
+                          {inst.style === 'ring_wave' ? 'Horizontal Offset (%)' : 'Vertical Offset (%)'}
+                        </div>
                         <input
                           type="number"
                           min={-50}
