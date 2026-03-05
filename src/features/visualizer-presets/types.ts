@@ -14,7 +14,7 @@ export type VisualizerGradientMode = 'vertical' | 'horizontal'
 export type VisualizerClipMode = 'none' | 'rect'
 export type VisualizerSpectrumMode = 'full' | 'voice'
 export type VisualizerBandMode = 'full' | 'band_1' | 'band_2' | 'band_3' | 'band_4'
-export type VisualizerBarTopShape = 'stepped' | 'smooth'
+export type VisualizerBarTopShape = 'stepped' | 'smooth' | 'smooth_separated'
 
 export type VisualizerPresetInstanceDto = {
   id: string

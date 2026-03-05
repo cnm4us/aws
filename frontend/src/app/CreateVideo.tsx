@@ -261,7 +261,10 @@ const normalizeVisualizerPresetSnapshot = (raw: any): VisualizerPresetSnapshot =
   const orbRadiusPct = Math.max(5, Math.min(40, Math.round(Number((snap as any).orbRadiusPct ?? (base as any).orbRadiusPct ?? 11))))
   const orbBandCount = Math.max(1, Math.min(8, Math.round(Number((snap as any).orbBandCount ?? (base as any).orbBandCount ?? 1))))
   const orbBandSpacingPct = Math.max(1, Math.min(20, Math.round(Number((snap as any).orbBandSpacingPct ?? (base as any).orbBandSpacingPct ?? 5))))
-  const barTopShape: any = String((snap as any).barTopShape || (base as any).barTopShape || 'stepped').trim().toLowerCase() === 'smooth' ? 'smooth' : 'stepped'
+  const barTopShape: any = (() => {
+    const v = String((snap as any).barTopShape || (base as any).barTopShape || 'stepped').trim().toLowerCase()
+    return v === 'smooth' || v === 'smooth_separated' ? v : 'stepped'
+  })()
   const gradientModeRaw = String(snap.gradientMode || base.gradientMode).trim().toLowerCase()
   const gradientMode: VisualizerPresetSnapshot['gradientMode'] = gradientModeRaw === 'horizontal' ? 'horizontal' : 'vertical'
   const clipModeRaw = String(snap.clipMode || base.clipMode).trim().toLowerCase()
@@ -345,7 +348,10 @@ const normalizeVisualizerPresetSnapshot = (raw: any): VisualizerPresetSnapshot =
       const orbRadiusPctI = Math.max(5, Math.min(40, Math.round(Number((inst as any)?.orbRadiusPct ?? (normalized as any).orbRadiusPct ?? 11))))
       const orbBandCountI = Math.max(1, Math.min(8, Math.round(Number((inst as any)?.orbBandCount ?? (normalized as any).orbBandCount ?? 1))))
       const orbBandSpacingPctI = Math.max(1, Math.min(20, Math.round(Number((inst as any)?.orbBandSpacingPct ?? (normalized as any).orbBandSpacingPct ?? 5))))
-      const barTopShapeI: any = String((inst as any)?.barTopShape || (normalized as any).barTopShape || 'stepped').trim().toLowerCase() === 'smooth' ? 'smooth' : 'stepped'
+      const barTopShapeI: any = (() => {
+        const v = String((inst as any)?.barTopShape || (normalized as any).barTopShape || 'stepped').trim().toLowerCase()
+        return v === 'smooth' || v === 'smooth_separated' ? v : 'stepped'
+      })()
       const gradientModeRawI = String(inst?.gradientMode || normalized.gradientMode).trim().toLowerCase()
       const gradientModeI: VisualizerPresetSnapshot['gradientMode'] = gradientModeRawI === 'horizontal' ? 'horizontal' : 'vertical'
       const barCountRawI = Number(inst?.barCount)
@@ -5574,7 +5580,10 @@ export default function CreateVideo() {
         const instOrbRadiusPct = Math.max(5, Math.min(40, Math.round(Number((inst as any).orbRadiusPct ?? (viz as any).orbRadiusPct ?? 11))))
         const instOrbBandCount = Math.max(1, Math.min(8, Math.round(Number((inst as any).orbBandCount ?? (viz as any).orbBandCount ?? 1))))
         const instOrbBandSpacingPct = Math.max(1, Math.min(20, Math.round(Number((inst as any).orbBandSpacingPct ?? (viz as any).orbBandSpacingPct ?? 5))))
-        const instBarTopShape: any = String((inst as any).barTopShape || (viz as any).barTopShape || 'stepped').trim().toLowerCase() === 'smooth' ? 'smooth' : 'stepped'
+        const instBarTopShape: any = (() => {
+          const v = String((inst as any).barTopShape || (viz as any).barTopShape || 'stepped').trim().toLowerCase()
+          return v === 'smooth' || v === 'smooth_separated' ? v : 'stepped'
+        })()
         const instOpacity = Number.isFinite(Number((inst as any).opacity))
           ? Math.max(0, Math.min(1, Number((inst as any).opacity)))
           : Number.isFinite(viz.opacity)
@@ -5641,12 +5650,7 @@ export default function CreateVideo() {
         }
         const drawSmoothTopFill = (heightsRaw: number[], baselineY: number, barW: number, gap: number) => {
           if (!heightsRaw.length) return
-          const heights = heightsRaw.map((_, i) => {
-            const a = heightsRaw[Math.max(0, i - 1)] || 0
-            const b = heightsRaw[i] || 0
-            const c = heightsRaw[Math.min(heightsRaw.length - 1, i + 1)] || 0
-            return (a + b * 2 + c) / 4
-          })
+          const heights = smoothSeries(heightsRaw)
           const centers = heights.map((_, i) => i * (barW + gap) + barW / 2)
           ctx.beginPath()
           ctx.moveTo(centers[0], baselineY)
@@ -5667,12 +5671,7 @@ export default function CreateVideo() {
         }
         const drawSmoothMirrorFill = (halfHeightsRaw: number[], centerY: number, barW: number, gap: number) => {
           if (!halfHeightsRaw.length) return
-          const halfHeights = halfHeightsRaw.map((_, i) => {
-            const a = halfHeightsRaw[Math.max(0, i - 1)] || 0
-            const b = halfHeightsRaw[i] || 0
-            const c = halfHeightsRaw[Math.min(halfHeightsRaw.length - 1, i + 1)] || 0
-            return (a + b * 2 + c) / 4
-          })
+          const halfHeights = smoothSeries(halfHeightsRaw)
           const centers = halfHeights.map((_, i) => i * (barW + gap) + barW / 2)
           ctx.beginPath()
           ctx.moveTo(centers[0], centerY + halfHeights[0])
@@ -5694,6 +5693,16 @@ export default function CreateVideo() {
           }
           ctx.closePath()
           ctx.fill()
+        }
+        const isSmoothConnected = instBarTopShape === 'smooth'
+        const isSmoothSeparated = instBarTopShape === 'smooth_separated'
+        function smoothSeries(raw: number[]) {
+          return raw.map((_, i) => {
+            const a = raw[Math.max(0, i - 1)] || 0
+            const b = raw[i] || 0
+            const c = raw[Math.min(raw.length - 1, i + 1)] || 0
+            return (a + b * 2 + c) / 4
+          })
         }
 
         if (isBarStyle) {
@@ -5775,12 +5784,18 @@ export default function CreateVideo() {
               const v = sampleNormalized(rangeStart, rangeEnd, t, instScale as any)
               const bh = Math.round(v * drawH)
               heights.push(Math.max(0, bh))
-              if (instBarTopShape === 'smooth') continue
-              if (bh <= 0) continue
-              const x = i * (barW + gap)
-              ctx.fillRect(x, drawH - bh, barW, bh)
             }
-            if (instBarTopShape === 'smooth') drawSmoothTopFill(heights, drawH, barW, gap)
+            if (isSmoothConnected) {
+              drawSmoothTopFill(heights, drawH, barW, gap)
+            } else {
+              const renderHeights = isSmoothSeparated ? smoothSeries(heights) : heights
+              for (let i = 0; i < instBars; i++) {
+                const bh = Math.round(renderHeights[i] || 0)
+                if (bh <= 0) continue
+                const x = i * (barW + gap)
+                ctx.fillRect(x, drawH - bh, barW, bh)
+              }
+            }
           } else if (instStyle === 'dot_spectrum') {
             const gap = 2
             const barW = Math.max(2, (drawW - gap * (instBars - 1)) / instBars)
@@ -5806,12 +5821,18 @@ export default function CreateVideo() {
               const v = sampleNormalized(rangeStart, rangeEnd, t, instScale as any)
               const hh = Math.round(v * drawH * 0.48)
               halfHeights.push(Math.max(0, hh))
-              if (instBarTopShape === 'smooth') continue
-              if (hh <= 0) continue
-              const x = i * (barW + gap)
-              ctx.fillRect(x, centerY - hh, barW, hh * 2)
             }
-            if (instBarTopShape === 'smooth') drawSmoothMirrorFill(halfHeights, centerY, barW, gap)
+            if (isSmoothConnected) {
+              drawSmoothMirrorFill(halfHeights, centerY, barW, gap)
+            } else {
+              const renderHeights = isSmoothSeparated ? smoothSeries(halfHeights) : halfHeights
+              for (let i = 0; i < instBars; i++) {
+                const hh = Math.round(renderHeights[i] || 0)
+                if (hh <= 0) continue
+                const x = i * (barW + gap)
+                ctx.fillRect(x, centerY - hh, barW, hh * 2)
+              }
+            }
           } else {
             const laneBands: Array<'band_1' | 'band_2' | 'band_3' | 'band_4'> = ['band_1', 'band_2', 'band_3', 'band_4']
             const lanes = laneBands.length
@@ -5830,12 +5851,18 @@ export default function CreateVideo() {
                 const v = sampleNormalized(laneRange.start, laneRange.end, t, instScale as any)
                 const bh = Math.round(v * laneH)
                 heights.push(Math.max(0, bh))
-                if (instBarTopShape === 'smooth') continue
-                if (bh <= 0) continue
-                const x = i * (barW + gap)
-                ctx.fillRect(x, yBottom - bh, barW, bh)
               }
-              if (instBarTopShape === 'smooth') drawSmoothTopFill(heights, yBottom, barW, gap)
+              if (isSmoothConnected) {
+                drawSmoothTopFill(heights, yBottom, barW, gap)
+              } else {
+                const renderHeights = isSmoothSeparated ? smoothSeries(heights) : heights
+                for (let i = 0; i < bars; i++) {
+                  const bh = Math.round(renderHeights[i] || 0)
+                  if (bh <= 0) continue
+                  const x = i * (barW + gap)
+                  ctx.fillRect(x, yBottom - bh, barW, bh)
+                }
+              }
             }
           }
         } else {

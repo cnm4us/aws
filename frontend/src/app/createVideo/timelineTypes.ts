@@ -205,7 +205,7 @@ export type VisualizerGradientMode = 'vertical' | 'horizontal'
 export type VisualizerClipMode = 'none' | 'rect'
 export type VisualizerSpectrumMode = 'full' | 'voice'
 export type VisualizerBandMode = 'full' | 'band_1' | 'band_2' | 'band_3' | 'band_4'
-export type VisualizerBarTopShape = 'stepped' | 'smooth'
+export type VisualizerBarTopShape = 'stepped' | 'smooth' | 'smooth_separated'
 
 export type VisualizerPresetInstanceSnapshot = {
   id: string
@@ -711,10 +711,10 @@ export function cloneTimeline(timeline: Timeline): Timeline {
               orbBandSpacingPct: Number.isFinite(Number(snapBase.orbBandSpacingPct))
                 ? Math.max(1, Math.min(20, Math.round(Number(snapBase.orbBandSpacingPct))))
                 : DEFAULT_VISUALIZER_PRESET_SNAPSHOT.orbBandSpacingPct,
-              barTopShape:
-                String(snapBase.barTopShape || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.barTopShape).trim().toLowerCase() === 'smooth'
-                  ? 'smooth'
-                  : 'stepped',
+              barTopShape: (() => {
+                const v = String(snapBase.barTopShape || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.barTopShape || 'stepped').trim().toLowerCase()
+                return v === 'smooth' || v === 'smooth_separated' ? v : 'stepped'
+              })() as any,
               gradientEnabled: snapBase.gradientEnabled === true,
               gradientStart: String(snapBase.gradientStart || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.gradientStart),
               gradientEnd: String(snapBase.gradientEnd || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.gradientEnd),
@@ -801,10 +801,10 @@ export function cloneTimeline(timeline: Timeline): Timeline {
                 const orbBandSpacingPct = Number.isFinite(Number(inst?.orbBandSpacingPct))
                   ? Math.max(1, Math.min(20, Math.round(Number(inst?.orbBandSpacingPct))))
                   : snapshot.orbBandSpacingPct
-                const barTopShape =
-                  String(inst?.barTopShape || snapshot.barTopShape || 'stepped').trim().toLowerCase() === 'smooth'
-                    ? 'smooth'
-                    : 'stepped'
+                const barTopShape = (() => {
+                  const v = String(inst?.barTopShape || snapshot.barTopShape || 'stepped').trim().toLowerCase()
+                  return v === 'smooth' || v === 'smooth_separated' ? v : 'stepped'
+                })() as any
                 const gradientModeRaw = String(inst?.gradientMode || snapshot.gradientMode).trim().toLowerCase()
                 const gradientMode = gradientModeRaw === 'horizontal' ? 'horizontal' : 'vertical'
                 return {

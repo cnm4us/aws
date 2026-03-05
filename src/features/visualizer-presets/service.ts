@@ -30,7 +30,7 @@ const GRADIENT_MODES: readonly VisualizerGradientMode[] = ['vertical', 'horizont
 const CLIP_MODES: readonly VisualizerClipMode[] = ['none', 'rect']
 const SPECTRUM_MODES: readonly VisualizerSpectrumMode[] = ['full', 'voice']
 const BAND_MODES: readonly VisualizerBandMode[] = ['full', 'band_1', 'band_2', 'band_3', 'band_4']
-const BAR_TOP_SHAPES: readonly VisualizerBarTopShape[] = ['stepped', 'smooth']
+const BAR_TOP_SHAPES: readonly VisualizerBarTopShape[] = ['stepped', 'smooth', 'smooth_separated']
 
 const DEFAULTS = {
   style: 'wave_line' as VisualizerStyle,

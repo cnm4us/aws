@@ -18,7 +18,7 @@ type VisualizerScale = 'linear' | 'log'
 type VisualizerGradientMode = 'vertical' | 'horizontal'
 type VisualizerSpectrumMode = 'full' | 'voice'
 type VisualizerBandMode = 'full' | 'band_1' | 'band_2' | 'band_3' | 'band_4'
-type VisualizerBarTopShape = 'stepped' | 'smooth'
+type VisualizerBarTopShape = 'stepped' | 'smooth' | 'smooth_separated'
 type VisualizerPresetInstance = {
   id: string
   style: VisualizerStyle
@@ -378,7 +378,9 @@ function parseOrbBandSpacingPct(value: any): number {
 }
 
 function parseBarTopShape(value: any): VisualizerBarTopShape {
-  return String(value || '').trim().toLowerCase() === 'smooth' ? 'smooth' : 'stepped'
+  const v = String(value || '').trim().toLowerCase()
+  if (v === 'smooth' || v === 'smooth_separated') return v as VisualizerBarTopShape
+  return 'stepped'
 }
 
 function getSpectrumPresetRangeHz(spectrumMode: VisualizerSpectrumMode): { startHz: number; endHz: number } {
@@ -709,14 +711,18 @@ function VisualizerPreview({
         ctx.fillStyle = grad || fg
         const waveLineWidthPx = Math.max(1, Math.min(12, Number(inst.waveLineWidthPx || 2)))
         const barTopShape: VisualizerBarTopShape = parseBarTopShape((inst as any).barTopShape)
-        const drawSmoothTopFill = (heightsRaw: number[], baselineY: number, barW: number, gap: number) => {
-          if (!heightsRaw.length) return
-          const heights = heightsRaw.map((_, i) => {
-            const a = heightsRaw[Math.max(0, i - 1)] || 0
-            const b = heightsRaw[i] || 0
-            const c = heightsRaw[Math.min(heightsRaw.length - 1, i + 1)] || 0
+        const isSmoothConnected = barTopShape === 'smooth'
+        const isSmoothSeparated = barTopShape === 'smooth_separated'
+        const smoothSeries = (raw: number[]) =>
+          raw.map((_, i) => {
+            const a = raw[Math.max(0, i - 1)] || 0
+            const b = raw[i] || 0
+            const c = raw[Math.min(raw.length - 1, i + 1)] || 0
             return (a + b * 2 + c) / 4
           })
+        const drawSmoothTopFill = (heightsRaw: number[], baselineY: number, barW: number, gap: number) => {
+          if (!heightsRaw.length) return
+          const heights = smoothSeries(heightsRaw)
           const centers = heights.map((_, i) => i * (barW + gap) + barW / 2)
           ctx.beginPath()
           ctx.moveTo(centers[0], baselineY)
@@ -737,12 +743,7 @@ function VisualizerPreview({
         }
         const drawSmoothMirrorFill = (halfHeightsRaw: number[], centerY: number, barW: number, gap: number) => {
           if (!halfHeightsRaw.length) return
-          const halfHeights = halfHeightsRaw.map((_, i) => {
-            const a = halfHeightsRaw[Math.max(0, i - 1)] || 0
-            const b = halfHeightsRaw[i] || 0
-            const c = halfHeightsRaw[Math.min(halfHeightsRaw.length - 1, i + 1)] || 0
-            return (a + b * 2 + c) / 4
-          })
+          const halfHeights = smoothSeries(halfHeightsRaw)
           const centers = halfHeights.map((_, i) => i * (barW + gap) + barW / 2)
           ctx.beginPath()
           ctx.moveTo(centers[0], centerY + halfHeights[0])
@@ -817,12 +818,18 @@ function VisualizerPreview({
             )
             const bh = Math.round(v * h)
             heights.push(Math.max(0, bh))
-            if (barTopShape === 'smooth') continue
-            if (bh <= 0) continue
-            const x = i * (barW + gap)
-            ctx.fillRect(x, h - bh, barW, bh)
           }
-          if (barTopShape === 'smooth') drawSmoothTopFill(heights, h, barW, gap)
+          if (isSmoothConnected) {
+            drawSmoothTopFill(heights, h, barW, gap)
+          } else {
+            const renderHeights = isSmoothSeparated ? smoothSeries(heights) : heights
+            for (let i = 0; i < bars; i++) {
+              const bh = Math.round(renderHeights[i] || 0)
+              if (bh <= 0) continue
+              const x = i * (barW + gap)
+              ctx.fillRect(x, h - bh, barW, bh)
+            }
+          }
         } else if (inst.style === 'dot_spectrum') {
           const bars = parseBarCount(inst.barCount)
           const gap = 2
@@ -868,12 +875,18 @@ function VisualizerPreview({
             )
             const hh = Math.round(v * h * 0.48)
             halfHeights.push(Math.max(0, hh))
-            if (barTopShape === 'smooth') continue
-            if (hh <= 0) continue
-            const x = i * (barW + gap)
-            ctx.fillRect(x, centerY - hh, barW, hh * 2)
           }
-          if (barTopShape === 'smooth') drawSmoothMirrorFill(halfHeights, centerY, barW, gap)
+          if (isSmoothConnected) {
+            drawSmoothMirrorFill(halfHeights, centerY, barW, gap)
+          } else {
+            const renderHeights = isSmoothSeparated ? smoothSeries(halfHeights) : halfHeights
+            for (let i = 0; i < bars; i++) {
+              const hh = Math.round(renderHeights[i] || 0)
+              if (hh <= 0) continue
+              const x = i * (barW + gap)
+              ctx.fillRect(x, centerY - hh, barW, hh * 2)
+            }
+          }
         } else if (inst.style === 'stacked_bands') {
           const bands: VisualizerBandMode[] = ['band_1', 'band_2', 'band_3', 'band_4']
           const lanes = bands.length
@@ -900,12 +913,18 @@ function VisualizerPreview({
               )
               const bh = Math.round(v * laneH)
               heights.push(Math.max(0, bh))
-              if (barTopShape === 'smooth') continue
-              if (bh <= 0) continue
-              const x = i * (barW + gap)
-              ctx.fillRect(x, yBottom - bh, barW, bh)
             }
-            if (barTopShape === 'smooth') drawSmoothTopFill(heights, yBottom, barW, gap)
+            if (isSmoothConnected) {
+              drawSmoothTopFill(heights, yBottom, barW, gap)
+            } else {
+              const renderHeights = isSmoothSeparated ? smoothSeries(heights) : heights
+              for (let i = 0; i < bars; i++) {
+                const bh = Math.round(renderHeights[i] || 0)
+                if (bh <= 0) continue
+                const x = i * (barW + gap)
+                ctx.fillRect(x, yBottom - bh, barW, bh)
+              }
+            }
           }
         } else if (inst.style === 'ring_wave') {
           const points = Math.max(64, Math.min(360, parseBarCount(inst.barCount) * 2))
@@ -1964,7 +1983,8 @@ export default function VisualizerPresetsPage() {
                           style={MODAL_INPUT_STYLE}
                         >
                           <option value="stepped">Stepped</option>
-                          <option value="smooth">Smooth</option>
+                          <option value="smooth">Smooth Connected</option>
+                          <option value="smooth_separated">Smooth Separated</option>
                         </select>
                       </label>
                     </div>

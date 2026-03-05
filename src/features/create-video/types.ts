@@ -313,7 +313,7 @@ export type CreateVideoVisualizerPresetSnapshotV1 = {
   orbRadiusPct?: number
   orbBandCount?: number
   orbBandSpacingPct?: number
-  barTopShape?: 'stepped' | 'smooth'
+  barTopShape?: 'stepped' | 'smooth' | 'smooth_separated'
   gradientEnabled: boolean
   gradientStart: string
   gradientEnd: string
@@ -345,7 +345,7 @@ export type CreateVideoVisualizerPresetSnapshotV1 = {
     orbRadiusPct?: number
     orbBandCount?: number
     orbBandSpacingPct?: number
-    barTopShape?: 'stepped' | 'smooth'
+    barTopShape?: 'stepped' | 'smooth' | 'smooth_separated'
     gradientEnabled: boolean
     gradientStart: string
     gradientEnd: string
