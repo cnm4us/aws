@@ -422,6 +422,8 @@ function mapRow(row: VisualizerPresetRow): VisualizerPresetDto {
     id: Number(row.id),
     name: String(row.name || ''),
     description: row.description == null ? null : String(row.description),
+    sourceTemplateKey: row.source_template_key == null ? null : String(row.source_template_key),
+    isStarter: Number(row.is_starter) === 1,
     style: primary.style,
     fgColor: primary.fgColor,
     bgColor,
@@ -465,8 +467,111 @@ function ensureOwned(row: VisualizerPresetRow, userId: number) {
   if (Number(row.owner_user_id) !== Number(userId)) throw new ForbiddenError()
 }
 
+function getDefaultInstanceFallback(): Partial<VisualizerPresetInstanceDto> {
+  return {
+    id: 'instance_1',
+    style: DEFAULTS.style,
+    fgColor: DEFAULTS.fgColor,
+    opacity: DEFAULTS.opacity,
+    scale: DEFAULTS.scale,
+    barCount: DEFAULTS.barCount,
+    spectrumMode: DEFAULTS.spectrumMode,
+    bandMode: DEFAULTS.bandMode,
+    voiceLowHz: DEFAULTS.voiceLowHz,
+    voiceHighHz: DEFAULTS.voiceHighHz,
+    amplitudeGainPct: DEFAULTS.amplitudeGainPct,
+    baselineLiftPct: DEFAULTS.baselineLiftPct,
+    waveVerticalGainPct: DEFAULTS.waveVerticalGainPct,
+    waveVerticalOffsetPct: DEFAULTS.waveVerticalOffsetPct,
+    waveLineWidthPx: DEFAULTS.waveLineWidthPx,
+    waveSmoothingPct: DEFAULTS.waveSmoothingPct,
+    waveNoiseGatePct: DEFAULTS.waveNoiseGatePct,
+    waveTemporalSmoothPct: DEFAULTS.waveTemporalSmoothPct,
+    ringBaseRadiusPct: DEFAULTS.ringBaseRadiusPct,
+    ringDepthPct: DEFAULTS.ringDepthPct,
+    orbRadiusPct: DEFAULTS.orbRadiusPct,
+    orbBandCount: DEFAULTS.orbBandCount,
+    orbBandSpacingPct: DEFAULTS.orbBandSpacingPct,
+    barTopShape: DEFAULTS.barTopShape,
+    gradientEnabled: DEFAULTS.gradientEnabled,
+    gradientStart: DEFAULTS.gradientStart,
+    gradientEnd: DEFAULTS.gradientEnd,
+    gradientMode: DEFAULTS.gradientMode,
+  }
+}
+
+export async function ensureStarterVisualizerPresetsForUser(userId: number): Promise<void> {
+  if (!userId) return
+  const templates = await repo.listActiveTemplates(200)
+  if (!templates.length) return
+
+  const existing = await repo.listByOwner(userId, { includeArchived: true, limit: 500 })
+  const existingByTemplate = new Map<string, VisualizerPresetRow>()
+  for (const row of existing) {
+    const key = String((row as any).source_template_key || '').trim()
+    if (!key) continue
+    const prev = existingByTemplate.get(key)
+    if (!prev) {
+      existingByTemplate.set(key, row)
+      continue
+    }
+    if (prev.archived_at && !row.archived_at) existingByTemplate.set(key, row)
+  }
+
+  for (const tpl of templates) {
+    const templateKey = String((tpl as any).template_key || '').trim()
+    if (!templateKey) continue
+    const existingRow = existingByTemplate.get(templateKey)
+    if (existingRow) {
+      const needsUnarchive = Boolean(existingRow.archived_at)
+      const needsStarterFlag = Number((existingRow as any).is_starter) !== 1
+      if (needsUnarchive || needsStarterFlag) {
+        await repo.update(Number(existingRow.id), {
+          sourceTemplateKey: templateKey,
+          isStarter: true,
+          archivedAt: needsUnarchive ? null : undefined,
+        })
+      }
+      continue
+    }
+
+    const instances = normalizeInstances(parseInstancesJson((tpl as any).instances_json), getDefaultInstanceFallback())
+    const primary = instances[0]
+    try {
+      await repo.create({
+        ownerUserId: Number(userId),
+        name: String((tpl as any).name || 'Starter Preset'),
+        description: (tpl as any).description == null ? null : String((tpl as any).description),
+        sourceTemplateKey: templateKey,
+        isStarter: true,
+        style: primary.style,
+        fgColor: primary.fgColor,
+        bgColor: normalizeBgColor((tpl as any).bg_color),
+        opacity: primary.opacity,
+        scale: primary.scale,
+        barCount: primary.barCount,
+        spectrumMode: primary.spectrumMode,
+        gradientEnabled: primary.gradientEnabled,
+        gradientStart: primary.gradientStart,
+        gradientEnd: primary.gradientEnd,
+        gradientMode: primary.gradientMode,
+        clipMode: DEFAULTS.clipMode,
+        clipInsetPct: DEFAULTS.clipInsetPct,
+        clipHeightPct: DEFAULTS.clipHeightPct,
+        instancesJson: serializeInstances(instances),
+      })
+    } catch (err: any) {
+      const msg = String(err?.message || '').toLowerCase()
+      const code = String(err?.code || '')
+      if (code === 'ER_DUP_ENTRY' || msg.includes('duplicate')) continue
+      throw err
+    }
+  }
+}
+
 export async function listForUser(userId: number, params?: { includeArchived?: boolean; limit?: number }): Promise<VisualizerPresetDto[]> {
   if (!userId) throw new ForbiddenError()
+  await ensureStarterVisualizerPresetsForUser(userId)
   const rows = await repo.listByOwner(userId, params)
   return rows.map(mapRow)
 }
@@ -857,6 +962,46 @@ export async function archiveForUser(id: number, userId: number): Promise<{ ok: 
   const row = await repo.getById(id)
   if (!row) throw new NotFoundError('not_found')
   ensureOwned(row, userId)
+  if (Number((row as any).is_starter) === 1) {
+    throw new DomainError('cannot_delete_starter_preset', 'cannot_delete_starter_preset', 409)
+  }
   await repo.archive(id)
   return { ok: true }
+}
+
+export async function resetStarterForUser(id: number, userId: number): Promise<VisualizerPresetDto> {
+  const row = await repo.getById(id)
+  if (!row) throw new NotFoundError('not_found')
+  ensureOwned(row, userId)
+
+  const sourceTemplateKey = String((row as any).source_template_key || '').trim()
+  if (Number((row as any).is_starter) !== 1 || !sourceTemplateKey) {
+    throw new DomainError('not_starter_preset', 'not_starter_preset', 400)
+  }
+
+  const tpl = await repo.getTemplateByKey(sourceTemplateKey)
+  if (!tpl) throw new DomainError('starter_template_not_found', 'starter_template_not_found', 404)
+
+  const instances = normalizeInstances(parseInstancesJson((tpl as any).instances_json), getDefaultInstanceFallback())
+  const primary = instances[0]
+  const updated = await repo.update(id, {
+    name: String((tpl as any).name || row.name || 'Starter Preset'),
+    description: (tpl as any).description == null ? null : String((tpl as any).description),
+    sourceTemplateKey,
+    isStarter: true,
+    archivedAt: null,
+    style: primary.style,
+    fgColor: primary.fgColor,
+    bgColor: normalizeBgColor((tpl as any).bg_color),
+    opacity: primary.opacity,
+    scale: primary.scale,
+    barCount: primary.barCount,
+    spectrumMode: primary.spectrumMode,
+    gradientEnabled: primary.gradientEnabled,
+    gradientStart: primary.gradientStart,
+    gradientEnd: primary.gradientEnd,
+    gradientMode: primary.gradientMode,
+    instancesJson: serializeInstances(instances),
+  })
+  return mapRow(updated)
 }

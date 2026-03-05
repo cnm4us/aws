@@ -558,6 +558,237 @@ export async function ensureSchema(db: DB) {
           await db.query(`ALTER TABLE visualizer_presets ADD COLUMN IF NOT EXISTS clip_inset_pct TINYINT UNSIGNED NOT NULL DEFAULT 6`);
           await db.query(`ALTER TABLE visualizer_presets ADD COLUMN IF NOT EXISTS clip_height_pct TINYINT UNSIGNED NOT NULL DEFAULT 100`);
           await db.query(`ALTER TABLE visualizer_presets ADD COLUMN IF NOT EXISTS instances_json JSON NULL`);
+          await db.query(`ALTER TABLE visualizer_presets ADD COLUMN IF NOT EXISTS source_template_key VARCHAR(120) NULL`);
+          await db.query(`ALTER TABLE visualizer_presets ADD COLUMN IF NOT EXISTS is_starter TINYINT(1) NOT NULL DEFAULT 0`);
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_visualizer_source_template ON visualizer_presets (source_template_key)`); } catch {}
+          try {
+            await db.query(`ALTER TABLE visualizer_presets ADD UNIQUE KEY uniq_visualizer_owner_template (owner_user_id, source_template_key)`)
+          } catch {}
+
+          await db.query(`
+            CREATE TABLE IF NOT EXISTS visualizer_preset_templates (
+              id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+              template_key VARCHAR(120) NOT NULL,
+              name VARCHAR(120) NOT NULL,
+              description TEXT NULL,
+              bg_color VARCHAR(32) NOT NULL DEFAULT 'transparent',
+              instances_json JSON NOT NULL,
+              created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              archived_at TIMESTAMP NULL DEFAULT NULL,
+              UNIQUE KEY uniq_visualizer_template_key (template_key),
+              KEY idx_visualizer_template_archived (archived_at, id),
+              KEY idx_visualizer_template_key_archived (template_key, archived_at, id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+          `);
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_visualizer_templates_archived ON visualizer_preset_templates (archived_at, id)`); } catch {}
+          try {
+            const curatedOwnerUserId = 1
+            const curatedPresetIds = [3, 4, 5, 6, 7, 8, 9, 10, 11]
+            const starterTemplateKeys = curatedPresetIds.map((_, idx) => `starter_${String(idx + 1).padStart(2, '0')}`)
+            const starterTemplatePlaceholders = starterTemplateKeys.map(() => '?').join(', ')
+
+            const baseVisualizerInstance = {
+              id: 'instance_1',
+              style: 'wave_line',
+              fgColor: '#d4af37',
+              opacity: 1,
+              scale: 'linear',
+              barCount: 48,
+              spectrumMode: 'full',
+              bandMode: 'full',
+              voiceLowHz: 80,
+              voiceHighHz: 4000,
+              amplitudeGainPct: 100,
+              baselineLiftPct: 0,
+              waveVerticalGainPct: 100,
+              waveVerticalOffsetPct: 0,
+              waveLineWidthPx: 2,
+              waveSmoothingPct: 0,
+              waveNoiseGatePct: 0,
+              waveTemporalSmoothPct: 0,
+              ringBaseRadiusPct: 22,
+              ringDepthPct: 18,
+              orbRadiusPct: 11,
+              orbBandCount: 1,
+              orbBandSpacingPct: 5,
+              barTopShape: 'stepped',
+              gradientEnabled: false,
+              gradientStart: '#d4af37',
+              gradientEnd: '#f7d774',
+              gradientMode: 'vertical',
+            } as Record<string, any>
+            const makeInstance = (patch: Record<string, any>) => ({ ...baseVisualizerInstance, ...patch })
+            const instancesJsonFromPresetRow = (row: any): string => {
+              const raw = row?.instances_json
+              if (typeof raw === 'string' && raw.trim()) {
+                try {
+                  const parsed = JSON.parse(raw)
+                  if (Array.isArray(parsed) && parsed.length) return JSON.stringify(parsed)
+                } catch {}
+              } else if (Array.isArray(raw) && raw.length) {
+                return JSON.stringify(raw)
+              }
+              return JSON.stringify([
+                makeInstance({
+                  style: String(row?.style || 'wave_line'),
+                  fgColor: String(row?.fg_color || '#d4af37'),
+                  opacity: Number.isFinite(Number(row?.opacity)) ? Number(row.opacity) : 1,
+                  scale: String(row?.scale || 'linear'),
+                  barCount: Number.isFinite(Number(row?.bar_count)) ? Number(row.bar_count) : 48,
+                  spectrumMode: String(row?.spectrum_mode || 'full'),
+                  gradientEnabled: Number(row?.gradient_enabled) === 1,
+                  gradientStart: String(row?.gradient_start || row?.fg_color || '#d4af37'),
+                  gradientEnd: String(row?.gradient_end || '#f7d774'),
+                  gradientMode: String(row?.gradient_mode || 'vertical'),
+                }),
+              ])
+            }
+
+            const [curatedRows] = await db.query(
+              `SELECT id, name, description, bg_color, instances_json, style, fg_color, opacity, scale, bar_count, spectrum_mode, gradient_enabled, gradient_start, gradient_end, gradient_mode
+                 FROM visualizer_presets
+                WHERE owner_user_id = ?
+                  AND archived_at IS NULL
+                  AND id IN (${curatedPresetIds.map(() => '?').join(',')})
+                ORDER BY FIELD(id, ${curatedPresetIds.join(',')})`,
+              [curatedOwnerUserId, ...curatedPresetIds]
+            )
+
+            if (Array.isArray(curatedRows) && curatedRows.length === curatedPresetIds.length) {
+              const byId = new Map<number, any>((curatedRows as any[]).map((r: any) => [Number(r.id), r]))
+              for (let idx = 0; idx < curatedPresetIds.length; idx++) {
+                const presetId = curatedPresetIds[idx]
+                const row = byId.get(presetId)
+                if (!row) continue
+                await db.query(
+                  `INSERT INTO visualizer_preset_templates (template_key, name, description, bg_color, instances_json)
+                   VALUES (?, ?, ?, ?, ?)
+                   ON DUPLICATE KEY UPDATE
+                     name = VALUES(name),
+                     description = VALUES(description),
+                     bg_color = VALUES(bg_color),
+                     instances_json = VALUES(instances_json),
+                     archived_at = NULL`,
+                  [
+                    starterTemplateKeys[idx],
+                    String(row.name || `Starter Preset ${idx + 1}`),
+                    row.description == null ? null : String(row.description),
+                    String(row.bg_color || 'transparent'),
+                    instancesJsonFromPresetRow(row),
+                  ]
+                )
+              }
+            } else {
+              const starterTemplates: Array<{ key: string; name: string; description: string; bgColor: string; instances: any[] }> = [
+                {
+                  key: 'starter_01',
+                  name: 'Starter: Wave Line Gold',
+                  description: 'Clean line waveform with gold gradient.',
+                  bgColor: 'transparent',
+                  instances: [
+                    makeInstance({ style: 'wave_line', waveLineWidthPx: 3, waveSmoothingPct: 18, waveTemporalSmoothPct: 25, gradientEnabled: true }),
+                  ],
+                },
+                {
+                  key: 'starter_02',
+                  name: 'Starter: Wave Fill Blue',
+                  description: 'Filled waveform for stronger visual emphasis.',
+                  bgColor: 'transparent',
+                  instances: [
+                    makeInstance({ style: 'wave_fill', fgColor: '#66ccff', gradientEnabled: true, gradientStart: '#4ecbff', gradientEnd: '#7dd3fc', waveSmoothingPct: 14 }),
+                  ],
+                },
+                {
+                  key: 'starter_03',
+                  name: 'Starter: Center Voice',
+                  description: 'Centered voice-focused waveform.',
+                  bgColor: 'transparent',
+                  instances: [
+                    makeInstance({ style: 'center_wave', spectrumMode: 'voice', bandMode: 'band_3', voiceLowHz: 1000, voiceHighHz: 4000, fgColor: '#f8d34b' }),
+                  ],
+                },
+                {
+                  key: 'starter_04',
+                  name: 'Starter: Spectrum Bars',
+                  description: 'Classic bar spectrum with smooth top.',
+                  bgColor: 'transparent',
+                  instances: [
+                    makeInstance({ style: 'spectrum_bars', barCount: 64, barTopShape: 'smooth_separated', gradientEnabled: true }),
+                  ],
+                },
+                {
+                  key: 'starter_05',
+                  name: 'Starter: Mirror Bars Teal',
+                  description: 'Mirrored bars for symmetric energy.',
+                  bgColor: 'transparent',
+                  instances: [
+                    makeInstance({ style: 'mirror_bars', fgColor: '#2dd4bf', gradientEnabled: true, gradientStart: '#2dd4bf', gradientEnd: '#67e8f9', barCount: 56 }),
+                  ],
+                },
+                {
+                  key: 'starter_06',
+                  name: 'Starter: Stacked Bands',
+                  description: 'Layered multiband stack for richer motion.',
+                  bgColor: 'transparent',
+                  instances: [
+                    makeInstance({ style: 'stacked_bands', fgColor: '#facc15', barCount: 44, bandMode: 'band_1', voiceLowHz: 60, voiceHighHz: 160 }),
+                    makeInstance({ id: 'instance_2', style: 'stacked_bands', fgColor: '#38bdf8', barCount: 44, bandMode: 'band_2', voiceLowHz: 400, voiceHighHz: 1200, opacity: 0.85 }),
+                    makeInstance({ id: 'instance_3', style: 'stacked_bands', fgColor: '#f472b6', barCount: 44, bandMode: 'band_4', voiceLowHz: 3000, voiceHighHz: 6000, opacity: 0.8 }),
+                  ],
+                },
+                {
+                  key: 'starter_07',
+                  name: 'Starter: Radial Bars',
+                  description: 'Circular bar field for dynamic center focus.',
+                  bgColor: 'transparent',
+                  instances: [
+                    makeInstance({ style: 'radial_bars', barCount: 72, fgColor: '#fb7185', gradientEnabled: true, gradientStart: '#fb7185', gradientEnd: '#f59e0b' }),
+                  ],
+                },
+                {
+                  key: 'starter_08',
+                  name: 'Starter: Ring Wave',
+                  description: 'Circular waveform ring with depth control.',
+                  bgColor: 'transparent',
+                  instances: [
+                    makeInstance({ style: 'ring_wave', ringBaseRadiusPct: 26, ringDepthPct: 20, waveSmoothingPct: 22, waveTemporalSmoothPct: 30, fgColor: '#a78bfa' }),
+                  ],
+                },
+                {
+                  key: 'starter_09',
+                  name: 'Starter: Pulse Orb',
+                  description: 'Compact pulsing orb for ambient motion.',
+                  bgColor: 'transparent',
+                  instances: [
+                    makeInstance({ style: 'pulse_orb', orbRadiusPct: 12, orbBandCount: 3, orbBandSpacingPct: 4, fgColor: '#34d399', gradientEnabled: true, gradientStart: '#34d399', gradientEnd: '#22d3ee' }),
+                  ],
+                },
+              ]
+              for (const tpl of starterTemplates) {
+                await db.query(
+                  `INSERT INTO visualizer_preset_templates (template_key, name, description, bg_color, instances_json)
+                   VALUES (?, ?, ?, ?, ?)
+                   ON DUPLICATE KEY UPDATE updated_at = updated_at`,
+                  [tpl.key, tpl.name, tpl.description, tpl.bgColor, JSON.stringify(tpl.instances)]
+                )
+              }
+            }
+
+            await db.query(
+              `UPDATE visualizer_preset_templates
+                  SET archived_at = NULL
+                WHERE template_key IN (${starterTemplatePlaceholders})`,
+              starterTemplateKeys
+            )
+            await db.query(
+              `UPDATE visualizer_preset_templates
+                  SET archived_at = COALESCE(archived_at, CURRENT_TIMESTAMP)
+                WHERE template_key LIKE 'starter_%'
+                  AND template_key NOT IN (${starterTemplatePlaceholders})`,
+              starterTemplateKeys
+            )
+          } catch {}
 
 	        // --- Lower thirds (feature_10) ---
 	        await db.query(`

@@ -52,6 +52,8 @@ export type VisualizerPresetRow = {
   owner_user_id: number
   name: string
   description: string | null
+  source_template_key: string | null
+  is_starter: number
   style: VisualizerStyle
   fg_color: string
   bg_color: string | 'transparent'
@@ -76,6 +78,8 @@ export type VisualizerPresetDto = {
   id: number
   name: string
   description: string | null
+  sourceTemplateKey: string | null
+  isStarter: boolean
   style: VisualizerStyle
   fgColor: string
   bgColor: string | 'transparent'
@@ -111,4 +115,16 @@ export type VisualizerPresetDto = {
   createdAt: string
   updatedAt: string
   archivedAt: string | null
+}
+
+export type VisualizerPresetTemplateRow = {
+  id: number
+  template_key: string
+  name: string
+  description: string | null
+  bg_color: string | 'transparent'
+  instances_json: string | null
+  created_at: string
+  updated_at: string
+  archived_at: string | null
 }

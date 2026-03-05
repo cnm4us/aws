@@ -90,3 +90,12 @@ visualizerPresetsRouter.delete('/api/visualizer-presets/:id', requireAuth, async
     res.json(result)
   } catch (err: any) { next(err) }
 })
+
+visualizerPresetsRouter.post('/api/visualizer-presets/:id/reset', requireAuth, async (req, res, next) => {
+  try {
+    const id = Number(req.params.id)
+    if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'bad_id' })
+    const preset = await svc.resetStarterForUser(id, Number(req.user!.id))
+    res.json({ preset })
+  } catch (err: any) { next(err) }
+})

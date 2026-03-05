@@ -54,6 +54,8 @@ type VisualizerPreset = {
   id: number
   name: string
   description: string | null
+  sourceTemplateKey: string | null
+  isStarter: boolean
   bgColor: string | 'transparent'
   instances: VisualizerPresetInstance[]
   createdAt: string
@@ -131,6 +133,8 @@ const DEFAULT_INSTANCE: VisualizerPresetInstance = {
 const DEFAULT_PRESET: Omit<VisualizerPreset, 'id' | 'createdAt' | 'updatedAt' | 'archivedAt'> = {
   name: 'Visualizer Preset',
   description: null,
+  sourceTemplateKey: null,
+  isStarter: false,
   bgColor: 'transparent',
   instances: [DEFAULT_INSTANCE],
 }
@@ -513,6 +517,8 @@ function normalizePresetDraft(raw: any): Omit<VisualizerPreset, 'id' | 'createdA
   return {
     name: String(raw?.name || DEFAULT_PRESET.name),
     description: raw?.description == null ? null : String(raw.description),
+    sourceTemplateKey: raw?.sourceTemplateKey == null ? null : String(raw.sourceTemplateKey),
+    isStarter: raw?.isStarter === true || Number(raw?.is_starter) === 1,
     bgColor: raw?.bgColor === 'transparent' ? 'transparent' : String(raw?.bgColor || 'transparent'),
     instances,
   }
@@ -1160,6 +1166,7 @@ export default function VisualizerPresetsPage() {
   const [previewPlaying, setPreviewPlaying] = React.useState(false)
   const [previewAudioEl, setPreviewAudioEl] = React.useState<HTMLAudioElement | null>(null)
   const [collapsedInstanceIds, setCollapsedInstanceIds] = React.useState<Record<string, boolean>>({})
+  const [activePresetSection, setActivePresetSection] = React.useState<'starter' | 'mine'>('starter')
 
   const sharedCardListStyle = React.useMemo(
     () =>
@@ -1206,6 +1213,8 @@ export default function VisualizerPresetsPage() {
             id: Number(preset?.id || 0),
             name: String(preset?.name || normalized.name),
             description: preset?.description == null ? null : String(preset.description),
+            sourceTemplateKey: preset?.sourceTemplateKey == null ? null : String(preset.sourceTemplateKey),
+            isStarter: preset?.isStarter === true || Number(preset?.is_starter) === 1,
             bgColor: normalized.bgColor,
             instances: normalized.instances,
             createdAt: String(preset?.createdAt || ''),
@@ -1415,6 +1424,75 @@ export default function VisualizerPresetsPage() {
       setSaving(false)
     }
   }
+
+  const handleDeletePreset = React.useCallback(async (id: number) => {
+    const ok = window.confirm('Delete this preset? This cannot be undone.')
+    if (!ok) return
+    setFormError(null)
+    try {
+      const headers: Record<string, string> = {}
+      const csrf = getCsrfToken()
+      if (csrf) headers['x-csrf-token'] = csrf
+      const res = await fetch(`/api/visualizer-presets/${encodeURIComponent(String(id))}`, {
+        method: 'DELETE',
+        credentials: 'same-origin',
+        headers,
+      })
+      const j: any = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(String(j?.detail || j?.error || 'Failed to delete'))
+      setPresets((prev) => prev.filter((x) => Number((x as any)?.id || 0) !== id))
+    } catch (e: any) {
+      setFormError(e?.message || 'Failed to delete')
+    }
+  }, [])
+
+  const handleResetStarterPreset = React.useCallback(async (id: number) => {
+    const ok = window.confirm('Reset this starter preset to defaults?')
+    if (!ok) return
+    setFormError(null)
+    try {
+      const headers: Record<string, string> = {}
+      const csrf = getCsrfToken()
+      if (csrf) headers['x-csrf-token'] = csrf
+      const res = await fetch(`/api/visualizer-presets/${encodeURIComponent(String(id))}/reset`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers,
+      })
+      const json: any = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(String(json?.detail || json?.error || 'Failed to reset'))
+      const preset = json?.preset
+      if (!preset) return
+      const normalized = normalizePresetDraft(preset)
+      const nextPreset: VisualizerPreset = {
+        id: Number(preset?.id || id),
+        name: String(preset?.name || normalized.name),
+        description: preset?.description == null ? null : String(preset.description),
+        sourceTemplateKey: preset?.sourceTemplateKey == null ? null : String(preset.sourceTemplateKey),
+        isStarter: preset?.isStarter === true || Number(preset?.is_starter) === 1,
+        bgColor: normalized.bgColor,
+        instances: normalized.instances,
+        createdAt: String(preset?.createdAt || ''),
+        updatedAt: String(preset?.updatedAt || ''),
+        archivedAt: preset?.archivedAt == null ? null : String(preset.archivedAt),
+      }
+      setPresets((prev) => prev.map((p) => (Number(p.id) === Number(id) ? nextPreset : p)))
+    } catch (e: any) {
+      setFormError(e?.message || 'Failed to reset')
+    }
+  }, [])
+
+  const starterPresets = React.useMemo(() => presets.filter((p) => p.isStarter), [presets])
+  const myPresets = React.useMemo(() => presets.filter((p) => !p.isStarter), [presets])
+  const visiblePresets = activePresetSection === 'starter' ? starterPresets : myPresets
+
+  React.useEffect(() => {
+    if (activePresetSection === 'starter' && starterPresets.length === 0 && myPresets.length > 0) {
+      setActivePresetSection('mine')
+    } else if (activePresetSection === 'mine' && myPresets.length === 0 && starterPresets.length > 0) {
+      setActivePresetSection('starter')
+    }
+  }, [activePresetSection, starterPresets.length, myPresets.length])
 
   if (routeCtx.action !== 'list') {
     return (
@@ -2161,109 +2239,170 @@ export default function VisualizerPresetsPage() {
         {error ? <div style={{ color: '#ff9b9b', marginTop: 12 }}>{error}</div> : null}
         {formError ? <div style={{ color: '#ff9b9b', marginTop: 12 }}>{formError}</div> : null}
 
-        <div className="card-list" style={{ ...sharedCardListStyle, marginTop: 16 }}>
-          {presets.map((preset) => {
-            const id = Number(preset?.id || 0)
-            const name = String(preset?.name || `Preset ${id}`).trim()
-            const desc = String(preset?.description || '').trim()
-            return (
-              <div key={`viz-${id}`} className="card-item" style={{ display: 'grid', gap: 8 }}>
-                <div className="card-title">{name}</div>
-                {desc ? <div className="card-meta" style={{ lineHeight: 1.35 }}>{desc}</div> : null}
-                <div className="card-actions card-actions-spread" style={{ marginTop: 6 }}>
-                  {isPickMode ? (
-                    <div className="card-actions card-actions-right" style={{ width: '100%' }}>
-                      <button
-                        className="card-btn card-btn-open"
-                        type="button"
-                        onClick={() => {
-                          const href = buildReturnHref({ cvPickType: 'visualizer', cvPickPresetId: String(id) })
-                          if (href) window.location.href = href
-                        }}
-                      >
-                        Select
-                      </button>
+        <div style={{ marginTop: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            onClick={() => setActivePresetSection('starter')}
+            style={{
+              padding: '7px 12px',
+              borderRadius: 999,
+              border: activePresetSection === 'starter' ? '1px solid rgba(10,132,255,0.75)' : '1px solid rgba(255,255,255,0.2)',
+              background: activePresetSection === 'starter' ? 'rgba(10,132,255,0.24)' : 'rgba(255,255,255,0.06)',
+              color: '#fff',
+              fontSize: 12,
+              fontWeight: 900,
+              cursor: 'pointer',
+            }}
+          >
+            Starter Presets ({starterPresets.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setActivePresetSection('mine')}
+            style={{
+              padding: '7px 12px',
+              borderRadius: 999,
+              border: activePresetSection === 'mine' ? '1px solid rgba(10,132,255,0.75)' : '1px solid rgba(255,255,255,0.2)',
+              background: activePresetSection === 'mine' ? 'rgba(10,132,255,0.24)' : 'rgba(255,255,255,0.06)',
+              color: '#fff',
+              fontSize: 12,
+              fontWeight: 900,
+              cursor: 'pointer',
+            }}
+          >
+            My Presets ({myPresets.length})
+          </button>
+        </div>
+
+        <div className="card-list" style={{ ...sharedCardListStyle, marginTop: 12 }}>
+          {visiblePresets.length === 0 ? (
+            <div className="card-item" style={{ color: '#bbb' }}>
+              No presets yet.
+            </div>
+          ) : null}
+          {visiblePresets.map((preset) => {
+                const id = Number(preset?.id || 0)
+                const name = String(preset?.name || `Preset ${id}`).trim()
+                const desc = String(preset?.description || '').trim()
+                return (
+                  <div key={`viz-${activePresetSection}-${id}`} className="card-item" style={{ display: 'grid', gap: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <div className="card-title">{name}</div>
+                      {preset.isStarter ? (
+                        <span
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 900,
+                            padding: '2px 6px',
+                            borderRadius: 999,
+                            border: '1px solid rgba(255,255,255,0.28)',
+                            background: 'rgba(255,255,255,0.08)',
+                            color: '#fff',
+                          }}
+                        >
+                          Starter
+                        </span>
+                      ) : null}
                     </div>
-                  ) : (
-                    <>
-                      <button
-                        className="card-btn card-btn-delete"
-                        type="button"
-                        onClick={async () => {
-                          const ok = window.confirm('Delete this preset? This cannot be undone.')
-                          if (!ok) return
-                          setFormError(null)
-                          try {
-                            const headers: Record<string, string> = {}
-                            const csrf = getCsrfToken()
-                            if (csrf) headers['x-csrf-token'] = csrf
-                            const res = await fetch(`/api/visualizer-presets/${encodeURIComponent(String(id))}`, {
-                              method: 'DELETE',
-                              credentials: 'same-origin',
-                              headers,
-                            })
-                            const j: any = await res.json().catch(() => ({}))
-                            if (!res.ok) throw new Error(String(j?.detail || j?.error || 'Failed to delete'))
-                            setPresets((prev) => prev.filter((x) => Number((x as any)?.id || 0) !== id))
-                          } catch (e: any) {
-                            setFormError(e?.message || 'Failed to delete')
-                          }
-                        }}
-                      >
-                        Delete
-                      </button>
-                      <div className="card-actions" style={{ gap: 8 }}>
-                        <button
-                          className="card-btn card-btn-edit"
-                          type="button"
-                          onClick={() => {
-                            const target = `/assets/visualizers/${encodeURIComponent(String(id))}/edit`
-                            window.location.href = target
-                          }}
-                        >
-                          Edit
-                        </button>
-                        <button
-                          className="card-btn card-btn-open"
-                          type="button"
-                          onClick={async () => {
-                            setFormError(null)
-                            try {
-                              const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-                              const csrf = getCsrfToken()
-                              if (csrf) headers['x-csrf-token'] = csrf
-                              const body = {
-                                name: `${name} Copy`,
-                                description: preset.description,
-                                bgColor: preset.bgColor,
-                                instances: normalizeInstances(preset.instances),
-                              }
-                              const res = await fetch('/api/visualizer-presets', {
-                                method: 'POST',
-                                credentials: 'same-origin',
-                                headers,
-                                body: JSON.stringify(body),
-                              })
-                              const json = await res.json().catch(() => null)
-                              if (!res.ok) throw new Error(String(json?.detail || json?.error || 'Failed to clone'))
-                              const created = json?.preset
-                              if (created) {
-                                setPresets((prev) => [created, ...prev])
-                              }
-                            } catch (e: any) {
-                              setFormError(String(e?.message || 'Failed to clone'))
-                            }
-                          }}
-                        >
-                          Clone
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
-            )
-          })}
+                    {desc ? <div className="card-meta" style={{ lineHeight: 1.35 }}>{desc}</div> : null}
+                    <div className="card-actions card-actions-spread" style={{ marginTop: 6 }}>
+                      {isPickMode ? (
+                        <div className="card-actions card-actions-right" style={{ width: '100%' }}>
+                          <button
+                            className="card-btn card-btn-open"
+                            type="button"
+                            onClick={() => {
+                              const href = buildReturnHref({ cvPickType: 'visualizer', cvPickPresetId: String(id) })
+                              if (href) window.location.href = href
+                            }}
+                          >
+                            Select
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          {preset.isStarter ? (
+                            <button
+                              className="card-btn card-btn-edit"
+                              type="button"
+                              onClick={() => { void handleResetStarterPreset(id) }}
+                            >
+                              Reset
+                            </button>
+                          ) : (
+                            <button
+                              className="card-btn card-btn-delete"
+                              type="button"
+                              onClick={() => { void handleDeletePreset(id) }}
+                            >
+                              Delete
+                            </button>
+                          )}
+                          <div className="card-actions" style={{ gap: 8 }}>
+                            <button
+                              className="card-btn card-btn-edit"
+                              type="button"
+                              onClick={() => {
+                                const target = `/assets/visualizers/${encodeURIComponent(String(id))}/edit`
+                                window.location.href = target
+                              }}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              className="card-btn card-btn-open"
+                              type="button"
+                              onClick={async () => {
+                                setFormError(null)
+                                try {
+                                  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+                                  const csrf = getCsrfToken()
+                                  if (csrf) headers['x-csrf-token'] = csrf
+                                  const body = {
+                                    name: `${name} Copy`,
+                                    description: preset.description,
+                                    bgColor: preset.bgColor,
+                                    instances: normalizeInstances(preset.instances),
+                                  }
+                                  const res = await fetch('/api/visualizer-presets', {
+                                    method: 'POST',
+                                    credentials: 'same-origin',
+                                    headers,
+                                    body: JSON.stringify(body),
+                                  })
+                                  const json = await res.json().catch(() => null)
+                                  if (!res.ok) throw new Error(String(json?.detail || json?.error || 'Failed to clone'))
+                                  const created = json?.preset
+                                  if (created) {
+                                    const normalized = normalizePresetDraft(created)
+                                    const nextPreset: VisualizerPreset = {
+                                      id: Number(created?.id || 0),
+                                      name: String(created?.name || normalized.name),
+                                      description: created?.description == null ? null : String(created.description),
+                                      sourceTemplateKey: created?.sourceTemplateKey == null ? null : String(created.sourceTemplateKey),
+                                      isStarter: created?.isStarter === true || Number(created?.is_starter) === 1,
+                                      bgColor: normalized.bgColor,
+                                      instances: normalized.instances,
+                                      createdAt: String(created?.createdAt || ''),
+                                      updatedAt: String(created?.updatedAt || ''),
+                                      archivedAt: created?.archivedAt == null ? null : String(created.archivedAt),
+                                    }
+                                    setPresets((prev) => [nextPreset, ...prev])
+                                  }
+                                } catch (e: any) {
+                                  setFormError(String(e?.message || 'Failed to clone'))
+                                }
+                              }}
+                            >
+                              Clone
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
         </div>
       </div>
     </div>
