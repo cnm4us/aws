@@ -53,6 +53,8 @@ When troubleshooting mismatches:
 - Without endpoint, traces export to console in development.
 - Logging level/format is controlled by `LOG_LEVEL` and `LOG_FORMAT`.
 - `OTEL_INSTRUMENT_MYSQL2=0` to disable noisy DB auto-spans from mysql2 while keeping manual spans.
+- `OTEL_INSTRUMENT_NET=0` (default) suppresses low-level `tcp.connect` spans from net instrumentation.
+- `OTEL_TRACE_STATIC=0` (default) suppresses static asset request traces such as `/favicon.ico` and `/app/assets/*`.
 
 ## Local Jaeger (No Docker Required)
 
@@ -82,6 +84,12 @@ LOG_LEVEL=debug \
 LOG_FORMAT=pretty \
 npm run serve
 ```
+
+Shortcut profile:
+
+- `npm run serve:jaeger`
+- Loads `.env.jaeger` if present, otherwise `.env.jaeger.example`.
+- Override file path with `JAEGER_ENV_FILE=/path/to/file`.
 
 ## Daily Jaeger Workflow
 

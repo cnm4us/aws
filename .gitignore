@@ -3,6 +3,7 @@ videos/
 dist/
 keys/
 .env
+.env.jaeger
 .mc-endpoint.json
 .DS_Store
 .tmp_awscli/
