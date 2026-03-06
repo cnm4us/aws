@@ -37,6 +37,17 @@ This app uses both DB-backed job records and telemetry data. They are intentiona
   - `mediajob.failures_total`
   - `mediajob.count_total`
 
+High-value operation tags:
+- `create_video.timeline.patch`
+- `create_video.export.enqueue`
+- `create_video.export.process` (media job execution)
+- `uploads.file.get`
+- `uploads.edit_proxy.get`
+- `mediajobs.attempt.process`
+
+Surface tag:
+- `app.surface` (`create_video`, `assets`, `unknown`)
+
 ## Reconciliation Guidance
 
 When troubleshooting mismatches:

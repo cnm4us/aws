@@ -168,7 +168,10 @@ async function runOne(job: any, attempt: any, workerId: string) {
     return Number.isFinite(t) ? t : null
   }
   const jobCreatedMs = parseTimeMs((job as any)?.created_at ?? (job as any)?.createdAt)
+  const jobOperation = jobType === 'create_video_export_v1' ? 'create_video.export.process' : 'mediajobs.attempt.process'
   const stageAttrs = {
+    'app.operation': jobOperation,
+    'app.operation_family': 'mediajobs.attempt.process',
     mediajob_id: jobId,
     mediajob_attempt_no: attemptNo,
     mediajob_type: jobType,

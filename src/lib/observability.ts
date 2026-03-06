@@ -47,11 +47,76 @@ function requestPath(req: any): string {
   }
 }
 
+function headerValue(v: unknown): string {
+  if (Array.isArray(v)) return String(v[0] || '')
+  return String(v || '')
+}
+
+function requestRefererPath(req: any): string | null {
+  const ref = headerValue(req?.headers?.referer || req?.headers?.referrer).trim()
+  if (!ref) return null
+  try {
+    return new URL(ref).pathname || null
+  } catch {
+    return null
+  }
+}
+
 function isStaticAssetPath(pathname: string): boolean {
   if (!pathname) return false
   if (pathname === '/favicon.ico' || pathname === '/robots.txt' || pathname === '/manifest.json') return true
   if (pathname.startsWith('/app/assets/')) return true
   return STATIC_EXT_RE.test(pathname)
+}
+
+function classifyHttpOperation(methodRaw: string, pathname: string): string | null {
+  const method = String(methodRaw || '').toUpperCase()
+  if (method === 'PATCH' && /^\/api\/create-video\/projects\/[^/]+\/timeline$/.test(pathname)) {
+    return 'create_video.timeline.patch'
+  }
+  if (method === 'PATCH' && pathname === '/api/create-video/project') {
+    return 'create_video.timeline.patch'
+  }
+  if (method === 'POST' && /^\/api\/create-video\/projects\/[^/]+\/export$/.test(pathname)) {
+    return 'create_video.export.enqueue'
+  }
+  if (method === 'POST' && pathname === '/api/create-video/project/export') {
+    return 'create_video.export.enqueue'
+  }
+  if (method === 'GET' && /^\/api\/uploads\/[^/]+\/file$/.test(pathname)) {
+    return 'uploads.file.get'
+  }
+  if (method === 'GET' && /^\/api\/uploads\/[^/]+\/edit-proxy$/.test(pathname)) {
+    return 'uploads.edit_proxy.get'
+  }
+  return null
+}
+
+function classifySurface(pathname: string, req: any, operation: string | null): string | null {
+  if (operation?.startsWith('create_video.')) return 'create_video'
+  const refPath = requestRefererPath(req)
+  if (refPath && refPath.startsWith('/create-video')) return 'create_video'
+  if (refPath && (refPath.startsWith('/assets') || refPath.startsWith('/library') || refPath.startsWith('/uploads'))) {
+    return 'assets'
+  }
+  if (pathname.startsWith('/api/uploads/')) return 'unknown'
+  return null
+}
+
+function applySpanNamingAndTags(span: any, req: any) {
+  const p = requestPath(req)
+  const method = String(req?.method || 'GET').toUpperCase()
+  const isStatic = isStaticAssetPath(p)
+  if (isStatic) {
+    span?.setAttribute?.('app.request.class', 'static_asset')
+  }
+  if ((isStatic || !String(span?.name || '').match(/\//)) && isLowCardinalityPath(p)) {
+    span?.updateName?.(`HTTP ${method} ${p}`)
+  }
+  const op = classifyHttpOperation(method, p)
+  if (op) span?.setAttribute?.('app.operation', op)
+  const surface = classifySurface(p, req, op)
+  if (surface) span?.setAttribute?.('app.surface', surface)
 }
 
 function isLowCardinalityPath(pathname: string): boolean {
@@ -107,26 +172,10 @@ export async function initObservability() {
             return isStaticAssetPath(p)
           },
           requestHook: (span: any, req: any) => {
-            const p = requestPath(req)
-            const method = String(req?.method || 'GET').toUpperCase()
-            const isStatic = isStaticAssetPath(p)
-            if (isStatic) {
-              span?.setAttribute?.('app.request.class', 'static_asset')
-            }
-            if ((isStatic || !String(span?.name || '').match(/\//)) && isLowCardinalityPath(p)) {
-              span?.updateName?.(`HTTP ${method} ${p}`)
-            }
+            applySpanNamingAndTags(span, req)
           },
           applyCustomAttributesOnSpan: (span: any, req: any) => {
-            const p = requestPath(req)
-            const method = String(req?.method || 'GET').toUpperCase()
-            const isStatic = isStaticAssetPath(p)
-            if (isStatic) {
-              span?.setAttribute?.('app.request.class', 'static_asset')
-            }
-            if ((isStatic || !String(span?.name || '').match(/\//)) && isLowCardinalityPath(p)) {
-              span?.updateName?.(`HTTP ${method} ${p}`)
-            }
+            applySpanNamingAndTags(span, req)
           },
         },
         '@opentelemetry/instrumentation-net': { enabled: instrumentNetEnabled() },
