@@ -102,6 +102,21 @@ Shortcut profile:
 - Loads `.env.jaeger` if present, otherwise `.env.jaeger.example`.
 - Override file path with `JAEGER_ENV_FILE=/path/to/file`.
 
+## Command Cheat Sheet
+
+- Start Jaeger:
+  - `npm run jaeger:start`
+- Stop Jaeger:
+  - `npm run jaeger:stop`
+- Jaeger status:
+  - `npm run jaeger:status`
+- Tail Jaeger logs:
+  - `npm run jaeger:logs`
+- Start app with Jaeger profile:
+  - `npm run serve:jaeger`
+- Start app with explicit flags:
+  - `OTEL_ENABLED=1 OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318 OTEL_SERVICE_NAME=aws-mediaconvert-service OTEL_SERVICE_VERSION=dev OTEL_INSTRUMENT_MYSQL2=0 OTEL_INSTRUMENT_NET=0 OTEL_TRACE_STATIC=0 LOG_LEVEL=debug LOG_FORMAT=pretty npm run serve`
+
 ## Daily Jaeger Workflow
 
 1. Start Jaeger first:
@@ -118,3 +133,29 @@ Shortcut profile:
    - With `limit=20`, results are the most recent 20 traces.
 6. Shut down Jaeger when done:
    - `npm run jaeger:stop`
+
+## Tag Reference
+
+## Common query tags
+- `app.operation`
+- `app.surface`
+- `mediajob_type`
+- `mediajob_status`
+- `mediajob_id`
+- `error_code`
+
+## `app.operation` values currently emitted
+- `create_video.timeline.patch`
+- `create_video.export.enqueue`
+- `create_video.export.process`
+- `uploads.file.get`
+- `uploads.edit_proxy.get`
+- `mediajobs.attempt.process`
+
+## `app.surface` values currently emitted
+- `create_video`
+- `assets`
+- `unknown`
+
+## Request classification tag
+- `app.request.class=static_asset` for static resources (when static traces are enabled with `OTEL_TRACE_STATIC=1`).
