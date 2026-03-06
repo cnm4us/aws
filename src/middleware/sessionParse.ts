@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { getPool } from '../db';
 import { parseCookies } from '../utils/cookies';
+import { getLogger } from '../lib/logger';
 
 declare global {
   namespace Express {
@@ -25,6 +26,7 @@ declare global {
 }
 
 const SID_COOKIE = 'sid';
+const sessionLogger = getLogger({ component: 'middleware.session_parse' })
 
 export async function sessionParse(req: Request, _res: Response, next: NextFunction) {
   try {
@@ -66,7 +68,7 @@ export async function sessionParse(req: Request, _res: Response, next: NextFunct
     };
     return next();
   } catch (err) {
-    console.warn('session parse skipped', err);
+    sessionLogger.warn({ err, path: req.path }, 'session_parse_skipped')
     return next();
   }
 }

@@ -1,6 +1,9 @@
 import fs from 'fs';
 import path from 'path';
 import { REQUEST_LOGS_DIR } from '../config';
+import { getLogger } from '../lib/logger';
+
+const requestLogLogger = getLogger({ component: 'utils.request_log' })
 
 function ensureDir(p: string) {
   try { fs.mkdirSync(p, { recursive: true }); } catch {}
@@ -26,8 +29,6 @@ export function writeRequestLog(nameHint: string, payload: any) {
     const body = JSON.stringify({ meta, payload }, null, 2);
     fs.writeFileSync(file, body);
   } catch (e) {
-    // eslint-disable-next-line no-console
-    console.warn('request log write failed', e);
+    requestLogLogger.warn({ err: e, name_hint: nameHint }, 'request_log_write_failed')
   }
 }
-

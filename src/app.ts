@@ -26,6 +26,7 @@ import { ulidMonotonic as genSpaceUlid } from './utils/ulid';
 import { SCREEN_TITLE_RENDERER, TERMS_UPLOAD_KEY, TERMS_UPLOAD_VERSION } from './config'
 import { sessionParse } from './middleware/sessionParse';
 import { csrfProtect } from './middleware/csrf';
+import { requestLogger } from './middleware/requestLogger';
 import { requireAuth } from './middleware/auth';
 import { getPool } from './db';
 import { createSession, revokeSession, parseSidCookie } from './security/sessionStore';
@@ -33,6 +34,9 @@ import { requireSiteAdminPage } from './middleware/auth';
 import { can } from './security/permissions'
 import { PERM } from './security/perm'
 import { domainErrorMiddleware } from './core/http';
+import { getLogger, logError } from './lib/logger';
+
+const appLogger = getLogger({ component: 'app' })
 
 export function buildServer(): express.Application {
   const app = express();
@@ -50,6 +54,7 @@ export function buildServer(): express.Application {
   app.use(cors(corsOptions));
   app.use(express.json({ limit: '2mb' }));
   app.use(express.urlencoded({ extended: true, limit: '2mb' }));
+  app.use(requestLogger);
   app.use(sessionParse);
   app.use(csrfProtect);
 
@@ -83,8 +88,9 @@ export function buildServer(): express.Application {
   // Centralized error handling: map thrown DomainError to consistent JSON
   app.use(domainErrorMiddleware);
   // Fallback: unknown errors
-  app.use((err: any, _req: any, res: any, _next: any) => {
-    try { console.error('Unhandled error', err) } catch {}
+  app.use((err: any, req: any, res: any, _next: any) => {
+    const log = req?.log || appLogger
+    logError(log, err, 'unhandled_error', { path: req?.path, method: req?.method })
     res.status(err?.status || 500).json({ error: 'internal_error', detail: String(err?.message || err) })
   });
 
@@ -196,7 +202,7 @@ export function buildServer(): express.Application {
         personalSpace,
       });
     } catch (err: any) {
-      console.error('me endpoint error', err);
+      logError(req.log || appLogger, err, 'me_endpoint_error', { path: req.path, user_id: req.user?.id ?? null })
       res.status(500).json({ error: 'me_failed', detail: String(err?.message || err) });
     }
   });
@@ -314,7 +320,7 @@ export function buildServer(): express.Application {
     } catch (err: any) {
       const msg = String(err?.message || err);
       if (msg.includes('ER_DUP_ENTRY')) return res.status(409).json({ error: 'email_taken' });
-      console.error('register error', err);
+      logError(req.log || appLogger, err, 'register_error', { path: req.path })
       res.status(500).json({ error: 'register_failed' });
     }
   });
@@ -369,7 +375,7 @@ export function buildServer(): express.Application {
       });
       res.json({ ok: true, userId: row.id });
     } catch (err) {
-      console.error('login error', err);
+      logError(req.log || appLogger, err, 'login_error', { path: req.path })
       res.status(500).json({ error: 'login_failed' });
     }
   });
@@ -380,7 +386,8 @@ export function buildServer(): express.Application {
       try {
         await revokeSession(token);
       } catch (err) {
-        console.warn('logout revoke failed', err);
+        const log = req.log || appLogger
+        log.warn({ err, path: req.path }, 'logout_revoke_failed')
       }
     }
     res.clearCookie('sid');

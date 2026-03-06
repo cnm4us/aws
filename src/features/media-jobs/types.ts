@@ -38,6 +38,11 @@ export type MediaJobAttemptRow = {
   started_at: string
   finished_at: string | null
   exit_code: number | null
+  queue_wait_ms: number | null
+  duration_ms: number | null
+  input_bytes: number | null
+  output_bytes: number | null
+  error_class: string | null
   stdout_s3_bucket: string | null
   stdout_s3_key: string | null
   stderr_s3_bucket: string | null

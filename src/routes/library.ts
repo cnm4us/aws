@@ -2,8 +2,10 @@ import { Router } from 'express'
 import { requireAuth } from '../middleware/auth'
 import * as librarySvc from '../features/library/service'
 import { librarySourceOptions } from '../config/librarySources'
+import { getLogger, logError } from '../lib/logger'
 
 export const libraryRouter = Router()
+const libraryLogger = getLogger({ component: 'routes.library' })
 
 libraryRouter.get('/api/library/source-orgs', requireAuth, async (_req, res) => {
   try {
@@ -29,7 +31,7 @@ libraryRouter.get('/api/library/videos', requireAuth, async (req, res) => {
     )
     return res.json(data)
   } catch (err: any) {
-    console.error('list library videos error', err)
+    logError(req.log || libraryLogger, err, 'list_library_videos_error', { path: req.path })
     const status = err?.status || 500
     return res.status(status).json({ error: err?.code || 'failed_to_list', detail: String(err?.message || err) })
   }
@@ -170,7 +172,7 @@ libraryRouter.post('/api/library/clips/:id/favorite', requireAuth, async (req, r
     const data = await librarySvc.setLibraryClipFavorite(id, { favorite }, { userId: Number(req.user!.id) })
     return res.json(data)
   } catch (err: any) {
-    console.error('favorite library clip error', err)
+    logError(req.log || libraryLogger, err, 'favorite_library_clip_error', { path: req.path })
     const status = err?.status || 500
     return res.status(status).json({ error: err?.code || 'failed_to_favorite', detail: String(err?.message || err) })
   }

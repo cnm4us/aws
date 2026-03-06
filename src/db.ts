@@ -1075,6 +1075,11 @@ export async function ensureSchema(db: DB) {
 	      started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	      finished_at TIMESTAMP NULL DEFAULT NULL,
 	      exit_code INT NULL,
+	      queue_wait_ms BIGINT UNSIGNED NULL,
+	      duration_ms BIGINT UNSIGNED NULL,
+	      input_bytes BIGINT UNSIGNED NULL,
+	      output_bytes BIGINT UNSIGNED NULL,
+	      error_class VARCHAR(64) NULL,
 	      stdout_s3_bucket VARCHAR(255) NULL,
 	      stdout_s3_key VARCHAR(1024) NULL,
 	      stderr_s3_bucket VARCHAR(255) NULL,
@@ -1086,6 +1091,11 @@ export async function ensureSchema(db: DB) {
 	      KEY idx_media_job_attempts_started (started_at, id)
 	    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 	  `);
+	  await db.query(`ALTER TABLE media_job_attempts ADD COLUMN IF NOT EXISTS queue_wait_ms BIGINT UNSIGNED NULL`);
+	  await db.query(`ALTER TABLE media_job_attempts ADD COLUMN IF NOT EXISTS duration_ms BIGINT UNSIGNED NULL`);
+	  await db.query(`ALTER TABLE media_job_attempts ADD COLUMN IF NOT EXISTS input_bytes BIGINT UNSIGNED NULL`);
+	  await db.query(`ALTER TABLE media_job_attempts ADD COLUMN IF NOT EXISTS output_bytes BIGINT UNSIGNED NULL`);
+	  await db.query(`ALTER TABLE media_job_attempts ADD COLUMN IF NOT EXISTS error_class VARCHAR(64) NULL`);
 	  try { await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_media_job_attempt_no ON media_job_attempts (job_id, attempt_no)`); } catch {}
 
   // --- RBAC+ core tables ---

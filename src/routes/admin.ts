@@ -18,6 +18,7 @@ import {
   removeAllRoles,
   type SpaceRow,
 } from '../services/spaceMembership';
+import { getLogger, logError } from '../lib/logger';
 
 type NullableBool = boolean | null;
 
@@ -45,6 +46,7 @@ function toDbValue(value: NullableBool): number | null {
 }
 
 export const adminRouter = Router();
+const adminLogger = getLogger({ component: 'routes.admin' })
 
 adminRouter.use(requireAuth);
 adminRouter.use(requireSiteAdmin);
@@ -647,7 +649,7 @@ adminRouter.get('/spaces/:id/invitations', async (req, res) => {
     const result = await adminSvc.listSpaceInvitations(spaceId)
     res.json(result)
   } catch (err: any) {
-    console.error('admin list invitations failed', err);
+    logError(req.log || adminLogger, err, 'admin_list_invitations_failed', { path: req.path })
     const status = err?.status || 500
     res.status(status).json({ error: err?.code || 'failed_to_list_invitations', detail: String(err?.message || err) })
   }
@@ -662,7 +664,7 @@ adminRouter.delete('/spaces/:id/invitations/:userId', async (req, res) => {
     const result = await adminSvc.revokeSpaceInvitation(spaceId, userId)
     res.json(result)
   } catch (err: any) {
-    console.error('admin revoke invitation failed', err);
+    logError(req.log || adminLogger, err, 'admin_revoke_invitation_failed', { path: req.path })
     const status = err?.status || 500
     res.status(status).json({ error: err?.code || 'failed_to_revoke_invitation', detail: String(err?.message || err) })
   }
@@ -681,7 +683,7 @@ adminRouter.post('/spaces/:id/members', async (req, res) => {
     if (!result.roles || !result.roles.length) return res.status(400).json({ error: 'roles_not_assigned' })
     res.json(result)
   } catch (err: any) {
-    console.error('admin add member failed', err);
+    logError(req.log || adminLogger, err, 'admin_add_member_failed', { path: req.path })
     const status = err?.status || 500
     res.status(status).json({ error: err?.code || 'failed_to_add_member', detail: String(err?.message || err) })
   }

@@ -1,5 +1,6 @@
 import 'dotenv/config';
+import { getLogger } from './lib/logger';
 
-console.log('AWS MediaConvert service workspace ready.');
-console.log('Set AWS credentials via instance profile or .env');
-
+const logger = getLogger({ component: 'index' });
+logger.info('aws_mediaconvert_service_workspace_ready');
+logger.info('set_aws_credentials_via_instance_profile_or_env');

@@ -14,6 +14,7 @@ This file is a lightweight index for ongoing work and “what’s next”.
 - `agents/implementation/plan_70.md` — Screen Title Styles under `/assets/screen-titles`
 - `agents/implementation/plan_71.md` — Create Video: Video Overlay lane (PiP) v1
 - `agents/implementation/plan_105.md` — Visualizer Layer + Preset Library
+- `agents/implementation/plan_109.md` — App-wide observability (Pino logs + OpenTelemetry traces/metrics)
 
 ## In Progress / Next Up
 - Roadmap: `agents/roadmaps/roadmap_create_video.md`

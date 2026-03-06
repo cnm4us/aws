@@ -7,8 +7,10 @@ import { requireAuth } from '../middleware/auth';
 import { can } from '../security/permissions';
 import { PERM } from '../security/perm'
 import * as prodSvc from '../features/productions/service'
+import { getLogger, logError } from '../lib/logger';
 
 export const publishRouter = Router();
+const publishLogger = getLogger({ component: 'routes.publish' })
 
 const publishSchema = z.object({
   id: z.number().int().positive(),
@@ -45,7 +47,7 @@ publishRouter.post('/api/publish', requireAuth, async (req, res) => {
     const result = await prodSvc.createForPublishRoute({ uploadId: id, profile: chosenProfile, quality, sound }, currentUserId)
     res.json({ ok: true, jobId: result.jobId, productionId: result.production.id, output: result.output, profile: chosenProfile })
   } catch (err: any) {
-    console.error('publish error', err);
+    logError(req.log || publishLogger, err, 'publish_error', { path: req.path })
     res.status(400).json({ error: 'failed_to_publish', detail: String(err?.message || err) });
   }
 });

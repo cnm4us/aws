@@ -176,6 +176,48 @@ export async function finishAttempt(
   )
 }
 
+export async function updateAttemptAnalytics(
+  attemptId: number,
+  patch: {
+    queueWaitMs?: number | null
+    durationMs?: number | null
+    inputBytes?: number | null
+    outputBytes?: number | null
+    errorClass?: string | null
+  },
+  conn?: Conn
+): Promise<void> {
+  const db = poolOr(conn)
+  const queueWaitMs =
+    patch.queueWaitMs == null || !Number.isFinite(Number(patch.queueWaitMs))
+      ? null
+      : Math.max(0, Math.round(Number(patch.queueWaitMs)))
+  const durationMs =
+    patch.durationMs == null || !Number.isFinite(Number(patch.durationMs))
+      ? null
+      : Math.max(0, Math.round(Number(patch.durationMs)))
+  const inputBytes =
+    patch.inputBytes == null || !Number.isFinite(Number(patch.inputBytes))
+      ? null
+      : Math.max(0, Math.round(Number(patch.inputBytes)))
+  const outputBytes =
+    patch.outputBytes == null || !Number.isFinite(Number(patch.outputBytes))
+      ? null
+      : Math.max(0, Math.round(Number(patch.outputBytes)))
+  const errorClass = patch.errorClass == null ? null : String(patch.errorClass).trim().slice(0, 64)
+
+  await db.query(
+    `UPDATE media_job_attempts
+        SET queue_wait_ms = COALESCE(?, queue_wait_ms),
+            duration_ms = COALESCE(?, duration_ms),
+            input_bytes = COALESCE(?, input_bytes),
+            output_bytes = COALESCE(?, output_bytes),
+            error_class = COALESCE(?, error_class)
+      WHERE id = ?`,
+    [queueWaitMs, durationMs, inputBytes, outputBytes, errorClass || null, attemptId]
+  )
+}
+
 export async function updateJobProcessingHeartbeat(jobId: number, workerId: string, conn?: Conn): Promise<void> {
   const db = poolOr(conn)
   await db.query(

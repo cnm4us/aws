@@ -3,8 +3,10 @@ import { z } from 'zod';
 // route now delegates to uploads service; no direct crypto/db/config usage here
 import * as uploadsSvc from '../features/uploads/service'
 import { requireAuthOrAdminToken } from '../middleware/auth';
+import { getLogger, logError } from '../lib/logger';
 
 export const signingRouter = Router();
+const signingLogger = getLogger({ component: 'routes.signing' })
 
 const signSchema = z.object({
   filename: z.string().min(1),
@@ -57,7 +59,7 @@ signingRouter.post('/api/sign-upload', requireAuthOrAdminToken, async (req, res)
     }, { userId: actorId, ip: (req as any).ip ? String((req as any).ip) : null, userAgent: req.headers['user-agent'] ? String(req.headers['user-agent']) : null })
     res.json(result)
   } catch (err: any) {
-    console.error('sign-upload error', err);
+    logError(req.log || signingLogger, err, 'sign_upload_error', { path: req.path })
     res.status(400).json({ error: 'failed_to_sign', detail: String(err?.message || err) });
   }
 });
@@ -74,7 +76,7 @@ signingRouter.post('/api/mark-complete', requireAuthOrAdminToken, async (req, re
     const result = await uploadsSvc.markComplete({ id, etag: etag ?? undefined, sizeBytes: sizeBytes ?? undefined }, { userId: req.user ? Number(req.user.id) : null })
     res.json(result)
   } catch (err: any) {
-    console.error('mark-complete error', err);
+    logError(req.log || signingLogger, err, 'mark_complete_error', { path: req.path })
     res.status(400).json({ error: 'failed_to_mark', detail: String(err?.message || err) });
   }
 });

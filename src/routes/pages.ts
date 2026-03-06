@@ -22,8 +22,10 @@ import { s3 } from '../services/s3'
 import { pipeline } from 'stream/promises'
 import { TERMS_UPLOAD_VERSION } from '../config'
 import { librarySourceOptions, getLibrarySourceLabel } from '../config/librarySources'
+import { getLogger, logError } from '../lib/logger'
 
 const publicDir = path.join(process.cwd(), 'public');
+const pagesLogger = getLogger({ component: 'routes.pages' })
 
 function serveHtml(res: any, relativePath: string) {
   res.set('X-Build', BUILD_TAG);
@@ -312,7 +314,7 @@ pagesRouter.get(/^\/api\/pages\/(.+)$/, async (req: any, res: any) => {
         : {}),
     });
   } catch (err) {
-    console.error('api pages failed', err);
+    logError(req.log || pagesLogger, err, 'api pages failed', { path: req.path })
     jsonError(res, 500, 'internal_error');
   }
 });
@@ -399,7 +401,7 @@ pagesRouter.get(/^\/api\/rules\/(.+)$/, async (req: any, res: any) => {
       versions,
     });
   } catch (err) {
-    console.error('api rules failed', err);
+    logError(req.log || pagesLogger, err, 'api rules failed', { path: req.path })
     jsonError(res, 500, 'internal_error');
   }
 });
@@ -447,7 +449,7 @@ pagesRouter.get('/api/rules', async (req: any, res: any) => {
       }),
     });
   } catch (err) {
-    console.error('api rules index failed', err);
+    logError(req.log || pagesLogger, err, 'api rules index failed', { path: req.path })
     jsonError(res, 500, 'internal_error');
   }
 });
@@ -578,7 +580,7 @@ pagesRouter.get(/^\/rules\/(.+?)\/v:(\d+)\/?$/, async (req: any, res: any) => {
     res.set('Cache-Control', 'no-store');
     res.send(doc);
   } catch (err) {
-    console.error('rule version render failed', err);
+    logError(req.log || pagesLogger, err, 'rule version render failed', { path: req.path })
     res.status(500).send('Failed to load rule version');
   }
 });
@@ -735,7 +737,7 @@ pagesRouter.get('/admin/pages', async (req: any, res: any) => {
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.send(doc);
   } catch (err) {
-    console.error('admin pages list failed', err);
+    logError(req.log || pagesLogger, err, 'admin pages list failed', { path: req.path })
     res.status(500).send('Failed to load pages');
   }
 });
@@ -869,7 +871,7 @@ pagesRouter.get('/admin/categories', async (req: any, res: any) => {
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.send(doc);
   } catch (err) {
-    console.error('admin categories list failed', err);
+    logError(req.log || pagesLogger, err, 'admin categories list failed', { path: req.path })
     res.status(500).send('Failed to load categories');
   }
 });
@@ -922,7 +924,7 @@ pagesRouter.post('/admin/categories', async (req: any, res: any) => {
 
     res.redirect(`/admin/categories?notice=${encodeURIComponent('Category created.')}`);
   } catch (err) {
-    console.error('admin create category failed', err);
+    logError(req.log || pagesLogger, err, 'admin create category failed', { path: req.path })
     res.status(500).send('Failed to create category');
   }
 });
@@ -957,7 +959,7 @@ pagesRouter.get('/admin/categories/:id', async (req: any, res: any) => {
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.send(doc);
   } catch (err) {
-    console.error('admin category detail failed', err);
+    logError(req.log || pagesLogger, err, 'admin category detail failed', { path: req.path })
     res.status(500).send('Failed to load category');
   }
 });
@@ -1032,7 +1034,7 @@ pagesRouter.post('/admin/categories/:id', async (req: any, res: any) => {
 
     res.redirect(`/admin/categories/${encodeURIComponent(String(id))}?notice=${encodeURIComponent('Saved.')}`);
   } catch (err) {
-    console.error('admin update category failed', err);
+    logError(req.log || pagesLogger, err, 'admin update category failed', { path: req.path })
     res.status(500).send('Failed to save category');
   }
 });
@@ -1069,7 +1071,7 @@ pagesRouter.post('/admin/categories/:id/delete', async (req: any, res: any) => {
 
     res.redirect(`/admin/categories?notice=${encodeURIComponent('Category deleted.')}`);
   } catch (err) {
-    console.error('admin delete category failed', err);
+    logError(req.log || pagesLogger, err, 'admin delete category failed', { path: req.path })
     res.status(500).send('Failed to delete category');
   }
 });
@@ -1141,7 +1143,7 @@ pagesRouter.get('/admin/cultures', async (req: any, res: any) => {
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.send(doc);
   } catch (err) {
-    console.error('admin cultures list failed', err);
+    logError(req.log || pagesLogger, err, 'admin cultures list failed', { path: req.path })
     res.status(500).send('Failed to load cultures');
   }
 });
@@ -1194,7 +1196,7 @@ pagesRouter.post('/admin/cultures', async (req: any, res: any) => {
 
     res.redirect(`/admin/cultures?notice=${encodeURIComponent('Culture created.')}`);
   } catch (err) {
-    console.error('admin create culture failed', err);
+    logError(req.log || pagesLogger, err, 'admin create culture failed', { path: req.path })
     res.status(500).send('Failed to create culture');
   }
 });
@@ -1317,7 +1319,7 @@ pagesRouter.get('/admin/cultures/:id', async (req: any, res: any) => {
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.send(doc);
   } catch (err) {
-    console.error('admin culture detail failed', err);
+    logError(req.log || pagesLogger, err, 'admin culture detail failed', { path: req.path })
     res.status(500).send('Failed to load culture');
   }
 });
@@ -1451,7 +1453,7 @@ pagesRouter.post('/admin/cultures/:id', async (req: any, res: any) => {
     res.redirect(`/admin/cultures/${encodeURIComponent(String(id))}?notice=${encodeURIComponent('Saved.')}`);
   } catch (err) {
     try { if (conn) await conn.rollback(); } catch {}
-    console.error('admin update culture failed', err);
+    logError(req.log || pagesLogger, err, 'admin update culture failed', { path: req.path })
     res.status(500).send('Failed to save culture');
   } finally {
     try { if (conn) conn.release(); } catch {}
@@ -1492,7 +1494,7 @@ pagesRouter.post('/admin/cultures/:id/delete', async (req: any, res: any) => {
     res.redirect(`/admin/cultures?notice=${encodeURIComponent('Culture deleted.')}`);
   } catch (err) {
     try { if (conn) await conn.rollback(); } catch {}
-    console.error('admin delete culture failed', err);
+    logError(req.log || pagesLogger, err, 'admin delete culture failed', { path: req.path })
     res.status(500).send('Failed to delete culture');
   } finally {
     try { if (conn) conn.release(); } catch {}
@@ -1996,7 +1998,7 @@ pagesRouter.get('/admin/rules', async (req: any, res: any) => {
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.send(doc);
   } catch (err) {
-    console.error('admin rules list failed', err);
+    logError(req.log || pagesLogger, err, 'admin rules list failed', { path: req.path })
     res.status(500).send('Failed to load rules');
   }
 });
@@ -2028,7 +2030,7 @@ pagesRouter.get('/admin/rules/:id/edit', async (req: any, res: any) => {
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.send(doc);
   } catch (err) {
-    console.error('admin rule draft load failed', err);
+    logError(req.log || pagesLogger, err, 'admin rule draft load failed', { path: req.path })
     res.status(500).send('Failed to load rule draft');
   }
 });
@@ -2265,7 +2267,7 @@ pagesRouter.post('/admin/rules/:id/edit', async (req: any, res: any) => {
     res.redirect(`/admin/rules/${encodeURIComponent(String(id))}/edit?notice=${encodeURIComponent('Draft saved.')}`);
   } catch (err) {
     try { if (conn) await conn.rollback(); } catch {}
-    console.error('admin save rule draft failed', err);
+    logError(req.log || pagesLogger, err, 'admin save rule draft failed', { path: req.path })
     res.status(500).send('Failed to save draft');
   } finally {
     try { if (conn) conn.release(); } catch {}
@@ -2306,7 +2308,7 @@ pagesRouter.post('/admin/rules/:id/delete', async (req: any, res: any) => {
     res.redirect('/admin/rules');
   } catch (err) {
     try { if (conn) await conn.rollback(); } catch {}
-    console.error('admin delete rule failed', err);
+    logError(req.log || pagesLogger, err, 'admin delete rule failed', { path: req.path })
     res.status(500).send('Failed to delete rule');
   } finally {
     try { if (conn) conn.release(); } catch {}
@@ -2441,7 +2443,7 @@ pagesRouter.post('/admin/rules', async (req: any, res: any) => {
 
     res.redirect('/admin/rules');
   } catch (err) {
-    console.error('admin create rule failed', err);
+    logError(req.log || pagesLogger, err, 'admin create rule failed', { path: req.path })
     res.status(500).send('Failed to create rule');
   }
 });
@@ -2498,7 +2500,7 @@ pagesRouter.get('/admin/rules/:id', async (req: any, res: any) => {
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.send(doc);
   } catch (err) {
-    console.error('admin rule detail failed', err);
+    logError(req.log || pagesLogger, err, 'admin rule detail failed', { path: req.path })
     res.status(500).send('Failed to load rule');
   }
 });
@@ -2565,7 +2567,7 @@ pagesRouter.get('/admin/rules/:id/versions/new', async (req: any, res: any) => {
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.send(doc);
   } catch (err) {
-    console.error('admin new rule version form failed', err);
+    logError(req.log || pagesLogger, err, 'admin new rule version form failed', { path: req.path })
     res.status(500).send('Failed to load version form');
   }
 });
@@ -2661,7 +2663,7 @@ pagesRouter.post('/admin/rules/:id/versions/new', async (req: any, res: any) => 
 
     res.redirect(`/admin/rules/${rule.id}`);
   } catch (err) {
-    console.error('admin create rule version failed', err);
+    logError(req.log || pagesLogger, err, 'admin create rule version failed', { path: req.path })
     res.status(500).send('Failed to create rule version');
   }
 });
@@ -2803,7 +2805,7 @@ pagesRouter.post('/admin/pages', async (req: any, res: any) => {
 
     res.redirect('/admin/pages');
   } catch (err) {
-    console.error('admin create page failed', err);
+    logError(req.log || pagesLogger, err, 'admin create page failed', { path: req.path })
     res.status(500).send('Failed to create page');
   }
 });
@@ -2822,7 +2824,7 @@ pagesRouter.get('/admin/pages/:id', async (req: any, res: any) => {
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.send(doc);
   } catch (err) {
-    console.error('admin edit page load failed', err);
+    logError(req.log || pagesLogger, err, 'admin edit page load failed', { path: req.path })
     res.status(500).send('Failed to load page for editing');
   }
 });
@@ -2883,7 +2885,7 @@ pagesRouter.post('/admin/pages/:id', async (req: any, res: any) => {
 
     res.redirect('/admin/pages');
   } catch (err) {
-    console.error('admin update page failed', err);
+    logError(req.log || pagesLogger, err, 'admin update page failed', { path: req.path })
     res.status(500).send('Failed to update page');
   }
 });
@@ -3114,7 +3116,7 @@ pagesRouter.get('/admin/lower-thirds', async (req: any, res: any) => {
     res.set('Content-Type', 'text/html; charset=utf-8')
     res.send(doc)
   } catch (err) {
-    console.error('admin lower thirds list failed', err)
+    logError(req.log || pagesLogger, err, 'admin lower thirds list failed', { path: req.path })
     res.status(500).send('Failed to load lower thirds')
   }
 })
@@ -3178,7 +3180,7 @@ pagesRouter.get('/admin/lower-thirds/new', async (req: any, res: any) => {
     res.set('Content-Type', 'text/html; charset=utf-8')
     res.send(doc)
   } catch (err) {
-    console.error('admin lower thirds new failed', err)
+    logError(req.log || pagesLogger, err, 'admin lower thirds new failed', { path: req.path })
     res.status(500).send('Failed to load form')
   }
 })
@@ -3244,7 +3246,7 @@ pagesRouter.post('/admin/lower-thirds/:templateKey/:version/archive', async (req
     )
     res.redirect('/admin/lower-thirds')
   } catch (err) {
-    console.error('archive lower third failed', err)
+    logError(req.log || pagesLogger, err, 'archive lower third failed', { path: req.path })
     res.status(500).send('Failed to archive')
   }
 })
@@ -3263,7 +3265,7 @@ pagesRouter.post('/admin/lower-thirds/:templateKey/:version/unarchive', async (r
     )
     res.redirect('/admin/lower-thirds')
   } catch (err) {
-    console.error('unarchive lower third failed', err)
+    logError(req.log || pagesLogger, err, 'unarchive lower third failed', { path: req.path })
     res.status(500).send('Failed to unarchive')
   }
 })
@@ -3425,7 +3427,7 @@ pagesRouter.get('/admin/audio', async (req: any, res: any) => {
     res.set('Content-Type', 'text/html; charset=utf-8')
     res.send(doc)
   } catch (err) {
-    console.error('admin audio list failed', err)
+    logError(req.log || pagesLogger, err, 'admin audio list failed', { path: req.path })
     res.status(500).send('Failed to load audio')
   }
 })
@@ -3553,7 +3555,7 @@ pagesRouter.get('/admin/audio/:id', async (req: any, res: any) => {
 	    res.set('Content-Type', 'text/html; charset=utf-8')
 	    res.send(doc)
 	  } catch (err) {
-    console.error('admin audio edit page failed', err)
+    logError(req.log || pagesLogger, err, 'admin audio edit page failed', { path: req.path })
     res.status(500).send('Failed to load audio')
   }
 })
@@ -3645,7 +3647,7 @@ pagesRouter.post('/admin/audio/:id', async (req: any, res: any) => {
 	    res.set('Content-Type', 'text/html; charset=utf-8')
 	    res.send(doc)
 	  } catch (err) {
-    console.error('admin audio update failed', err)
+    logError(req.log || pagesLogger, err, 'admin audio update failed', { path: req.path })
 		    res.status(500).send('Failed to save audio')
 		  }
 		})
@@ -3729,7 +3731,7 @@ pagesRouter.get('/admin/audio-tags', async (req: any, res: any) => {
     res.set('Content-Type', 'text/html; charset=utf-8')
     res.send(doc)
   } catch (err) {
-    console.error('admin audio-tags page failed', err)
+    logError(req.log || pagesLogger, err, 'admin audio-tags page failed', { path: req.path })
     res.status(500).send('Failed to load audio tags')
   }
 })
@@ -3808,7 +3810,7 @@ pagesRouter.get('/admin/license-sources', async (req: any, res: any) => {
     res.set('Content-Type', 'text/html; charset=utf-8')
     res.send(doc)
   } catch (err) {
-    console.error('admin license sources page failed', err)
+    logError(req.log || pagesLogger, err, 'admin license sources page failed', { path: req.path })
     res.status(500).send('Failed to load license sources')
   }
 })
@@ -3821,7 +3823,7 @@ pagesRouter.post('/admin/license-sources', async (req: any, res: any) => {
     await licenseSourcesSvc.createAdminSource({ kind: 'audio', name }, { userId: currentUserId } as any)
     res.redirect(`/admin/license-sources`)
   } catch (err) {
-    console.error('admin license sources create failed', err)
+    logError(req.log || pagesLogger, err, 'admin license sources create failed', { path: req.path })
     res.status(500).send('Failed to create license source')
   }
 })
@@ -3836,7 +3838,7 @@ pagesRouter.post('/admin/license-sources/:id', async (req: any, res: any) => {
     await licenseSourcesSvc.renameAdminSource(id, name, { userId: currentUserId } as any)
     res.redirect('/admin/license-sources')
   } catch (err) {
-    console.error('admin license sources rename failed', err)
+    logError(req.log || pagesLogger, err, 'admin license sources rename failed', { path: req.path })
     res.status(500).send('Failed to rename license source')
   }
 })
@@ -3850,7 +3852,7 @@ pagesRouter.post('/admin/license-sources/:id/archive', async (req: any, res: any
     await licenseSourcesSvc.archiveAdminSource(id, true, { userId: currentUserId } as any)
     res.redirect('/admin/license-sources')
   } catch (err) {
-    console.error('admin license sources archive failed', err)
+    logError(req.log || pagesLogger, err, 'admin license sources archive failed', { path: req.path })
     res.status(500).send('Failed to archive license source')
   }
 })
@@ -3864,7 +3866,7 @@ pagesRouter.post('/admin/license-sources/:id/unarchive', async (req: any, res: a
     await licenseSourcesSvc.archiveAdminSource(id, false, { userId: currentUserId } as any)
     res.redirect('/admin/license-sources')
   } catch (err) {
-    console.error('admin license sources unarchive failed', err)
+    logError(req.log || pagesLogger, err, 'admin license sources unarchive failed', { path: req.path })
     res.status(500).send('Failed to unarchive license source')
   }
 })
@@ -3879,7 +3881,7 @@ pagesRouter.post('/admin/audio-tags', async (req: any, res: any) => {
     await audioTagsSvc.createAdminTag({ kind, name }, { userId: currentUserId } as any)
     res.redirect(`/admin/audio-tags?kind=${encodeURIComponent(kind)}`)
   } catch (err) {
-    console.error('admin audio-tags create failed', err)
+    logError(req.log || pagesLogger, err, 'admin audio-tags create failed', { path: req.path })
     res.status(500).send('Failed to create tag')
   }
 })
@@ -3894,7 +3896,7 @@ pagesRouter.post('/admin/audio-tags/:id', async (req: any, res: any) => {
     await audioTagsSvc.renameAdminTag(id, name, { userId: currentUserId } as any)
     res.redirect('/admin/audio-tags')
   } catch (err) {
-    console.error('admin audio-tags rename failed', err)
+    logError(req.log || pagesLogger, err, 'admin audio-tags rename failed', { path: req.path })
     res.status(500).send('Failed to rename tag')
   }
 })
@@ -3908,7 +3910,7 @@ pagesRouter.post('/admin/audio-tags/:id/archive', async (req: any, res: any) => 
     await audioTagsSvc.archiveAdminTag(id, true, { userId: currentUserId } as any)
     res.redirect('/admin/audio-tags')
   } catch (err) {
-    console.error('admin audio-tags archive failed', err)
+    logError(req.log || pagesLogger, err, 'admin audio-tags archive failed', { path: req.path })
     res.status(500).send('Failed to archive tag')
   }
 })
@@ -3922,7 +3924,7 @@ pagesRouter.post('/admin/audio-tags/:id/unarchive', async (req: any, res: any) =
     await audioTagsSvc.archiveAdminTag(id, false, { userId: currentUserId } as any)
     res.redirect('/admin/audio-tags')
   } catch (err) {
-    console.error('admin audio-tags unarchive failed', err)
+    logError(req.log || pagesLogger, err, 'admin audio-tags unarchive failed', { path: req.path })
     res.status(500).send('Failed to unarchive tag')
   }
 })
@@ -3936,7 +3938,7 @@ pagesRouter.post('/admin/audio-tags/:id/unarchive', async (req: any, res: any) =
     await uploadsSvc.remove(id, currentUserId)
     res.redirect('/admin/audio')
   } catch (err: any) {
-    console.error('admin audio delete failed', err)
+    logError(req.log || pagesLogger, err, 'admin audio delete failed', { path: req.path })
     res.status(500).send('Failed to delete audio')
   }
 })
@@ -4148,7 +4150,7 @@ pagesRouter.get('/admin/audio-configs', async (req: any, res: any) => {
     res.set('Content-Type', 'text/html; charset=utf-8')
     res.send(doc)
   } catch (err) {
-    console.error('admin audio-configs list failed', err)
+    logError(req.log || pagesLogger, err, 'admin audio-configs list failed', { path: req.path })
     res.status(500).send('Failed to load audio configs')
   }
 })
@@ -4248,7 +4250,7 @@ pagesRouter.get('/admin/audio-configs/:id', async (req: any, res: any) => {
     res.set('Content-Type', 'text/html; charset=utf-8')
     res.send(doc)
   } catch (err: any) {
-    console.error('admin audio-config edit page failed', err)
+    logError(req.log || pagesLogger, err, 'admin audio-config edit page failed', { path: req.path })
     res.status(500).send('Failed to load audio config')
   }
 })
@@ -4326,7 +4328,7 @@ pagesRouter.post('/admin/audio-configs/:id/archive', async (req: any, res: any) 
     await audioConfigsSvc.archiveForOwner(id, currentUserId)
     res.redirect('/admin/audio-configs')
   } catch (err: any) {
-    console.error('admin audio-config archive failed', err)
+    logError(req.log || pagesLogger, err, 'admin audio-config archive failed', { path: req.path })
     res.status(500).send('Failed to archive audio config')
   }
 })
@@ -4443,10 +4445,14 @@ pagesRouter.get('/admin/media-jobs', async (req: any, res: any) => {
     const items = rows as any[]
     const jobIds = items.map((r) => Number(r.id)).filter((v) => Number.isFinite(v) && v > 0)
     const manifestByJobId = new Map<number, any>()
+    const attemptStatsByJobId = new Map<
+      number,
+      { durationMs: number | null; queueWaitMs: number | null; inputBytes: number | null; outputBytes: number | null; errorClass: string | null }
+    >()
     if (jobIds.length) {
       try {
         const [attRows] = await db.query(
-          `SELECT a.job_id, a.scratch_manifest_json
+          `SELECT a.job_id, a.scratch_manifest_json, a.duration_ms, a.queue_wait_ms, a.input_bytes, a.output_bytes, a.error_class
              FROM media_job_attempts a
              JOIN (
                SELECT job_id, MAX(attempt_no) AS max_no
@@ -4460,6 +4466,13 @@ pagesRouter.get('/admin/media-jobs', async (req: any, res: any) => {
           let manifest: any = r.scratch_manifest_json
           try { if (typeof manifest === 'string') manifest = JSON.parse(manifest) } catch {}
           if (manifest) manifestByJobId.set(Number(r.job_id), manifest)
+          attemptStatsByJobId.set(Number(r.job_id), {
+            durationMs: r.duration_ms == null ? null : Number(r.duration_ms),
+            queueWaitMs: r.queue_wait_ms == null ? null : Number(r.queue_wait_ms),
+            inputBytes: r.input_bytes == null ? null : Number(r.input_bytes),
+            outputBytes: r.output_bytes == null ? null : Number(r.output_bytes),
+            errorClass: r.error_class == null ? null : String(r.error_class),
+          })
         }
       } catch {}
     }
@@ -4515,7 +4528,13 @@ pagesRouter.get('/admin/media-jobs', async (req: any, res: any) => {
         const updated = String(r.updated_at || '')
         const completed = r.completed_at ? new Date(String(r.completed_at)) : null
         const createdAt = created ? new Date(created) : null
-        const durMs = completed && createdAt ? Math.max(0, completed.getTime() - createdAt.getTime()) : null
+        const attemptStats = attemptStatsByJobId.get(id) || null
+        const durMs =
+          attemptStats?.durationMs != null
+            ? Number(attemptStats.durationMs)
+            : completed && createdAt
+              ? Math.max(0, completed.getTime() - createdAt.getTime())
+              : null
         const durLabel = durMs != null ? `${(durMs / 1000).toFixed(1)}s` : ''
         const manifest = manifestByJobId.get(id) || null
         const metrics = manifest?.metrics || {}
@@ -4534,9 +4553,18 @@ pagesRouter.get('/admin/media-jobs', async (req: any, res: any) => {
           Number.isFinite(ioIn) || Number.isFinite(ioOut)
             ? `IO ${Number.isFinite(ioIn) ? (ioIn / 1e6).toFixed(1) : '-'} / ${Number.isFinite(ioOut) ? (ioOut / 1e6).toFixed(1) : '-'} MB/s`
             : ''
+        const ioDbLabel =
+          attemptStats && (Number.isFinite(Number(attemptStats.inputBytes)) || Number.isFinite(Number(attemptStats.outputBytes)))
+            ? `I/O ${(Number(attemptStats.inputBytes || 0) / 1e6).toFixed(1)} / ${(Number(attemptStats.outputBytes || 0) / 1e6).toFixed(1)} MB`
+            : ''
+        const queueWaitLabel =
+          attemptStats && Number.isFinite(Number(attemptStats.queueWaitMs))
+            ? `Queue ${(Number(attemptStats.queueWaitMs) / 1000).toFixed(1)}s`
+            : ''
+        const errorClassLabel = attemptStats?.errorClass ? `ErrClass ${attemptStats.errorClass}` : ''
         const overheadMs = Number(metrics?.overheadMs)
         const overheadLabel = Number.isFinite(overheadMs) ? `OH ${(overheadMs / 1000).toFixed(1)}s` : ''
-        const metricsLabel = [resLabel, inputDurLabel, rtfLabel, ioLabel, overheadLabel].filter(Boolean).join(' • ') || '-'
+        const metricsLabel = [resLabel, inputDurLabel, rtfLabel, ioDbLabel || ioLabel, queueWaitLabel, errorClassLabel, overheadLabel].filter(Boolean).join(' • ') || '-'
         const typePill = `<span class="pill" style="background:rgba(255,255,255,0.08); font-size:10px; padding:2px 6px">${escapeHtml(type)}</span>`
         body += `<tr>`
         body += `<td><a href="/admin/media-jobs/${id}">#${id}</a></td>`
@@ -4568,7 +4596,7 @@ pagesRouter.get('/admin/media-jobs', async (req: any, res: any) => {
     res.set('Content-Type', 'text/html; charset=utf-8')
     res.send(doc)
   } catch (err) {
-    console.error('admin media-jobs list failed', err)
+    logError(req.log || pagesLogger, err, 'admin media-jobs list failed', { path: req.path })
     res.status(500).send('Failed to load media jobs')
   }
 })
@@ -4593,7 +4621,7 @@ pagesRouter.post('/admin/media-jobs/:id/retry', async (req: any, res: any) => {
     )
     res.redirect(`/admin/media-jobs/${id}`)
   } catch (err) {
-    console.error('admin media-jobs retry failed', err)
+    logError(req.log || pagesLogger, err, 'admin media-jobs retry failed', { path: req.path })
     res.status(500).send('Failed to retry media job')
   }
 })
@@ -4647,13 +4675,18 @@ pagesRouter.get('/admin/media-jobs/:id', async (req: any, res: any) => {
     if (!attempts.length) {
       body += '<p>No attempts yet.</p>'
     } else {
-      body += '<table><thead><tr><th>#</th><th>Started</th><th>Finished</th><th>Exit</th><th>Logs</th></tr></thead><tbody>'
+      body += '<table><thead><tr><th>#</th><th>Started</th><th>Finished</th><th>Exit</th><th>Queue</th><th>Duration</th><th>I/O</th><th>Error Class</th><th>Logs</th></tr></thead><tbody>'
       for (const a of attempts) {
         const aid = Number(a.id)
         const no = Number(a.attempt_no)
         const started = String(a.started_at || '')
         const finished = a.finished_at ? String(a.finished_at) : ''
         const exit = a.exit_code != null ? String(a.exit_code) : ''
+        const queueWaitMs = a.queue_wait_ms == null ? null : Number(a.queue_wait_ms)
+        const durationMs = a.duration_ms == null ? null : Number(a.duration_ms)
+        const inputBytes = a.input_bytes == null ? null : Number(a.input_bytes)
+        const outputBytes = a.output_bytes == null ? null : Number(a.output_bytes)
+        const errorClass = a.error_class == null ? '' : String(a.error_class)
         const hasStdout = a.stdout_s3_bucket && a.stdout_s3_key
         const hasStderr = a.stderr_s3_bucket && a.stderr_s3_key
         body += `<tr>`
@@ -4661,6 +4694,10 @@ pagesRouter.get('/admin/media-jobs/:id', async (req: any, res: any) => {
         body += `<td>${escapeHtml(started)}</td>`
         body += `<td>${escapeHtml(finished)}</td>`
         body += `<td>${escapeHtml(exit)}</td>`
+        body += `<td>${queueWaitMs != null ? escapeHtml(`${(queueWaitMs / 1000).toFixed(2)}s`) : ''}</td>`
+        body += `<td>${durationMs != null ? escapeHtml(`${(durationMs / 1000).toFixed(2)}s`) : ''}</td>`
+        body += `<td>${(inputBytes != null || outputBytes != null) ? escapeHtml(`${((inputBytes || 0) / 1e6).toFixed(2)} / ${((outputBytes || 0) / 1e6).toFixed(2)} MB`) : ''}</td>`
+        body += `<td>${escapeHtml(errorClass)}</td>`
         body += `<td>`
         body += hasStdout ? `<a href="/admin/media-jobs/${id}/attempts/${aid}/stdout">stdout</a>` : 'stdout: -'
         body += ' &nbsp; '
@@ -4759,7 +4796,7 @@ pagesRouter.get('/admin/media-jobs/:id', async (req: any, res: any) => {
     res.set('Content-Type', 'text/html; charset=utf-8')
     res.send(doc)
   } catch (err) {
-    console.error('admin media-job detail failed', err)
+    logError(req.log || pagesLogger, err, 'admin media-job detail failed', { path: req.path })
     res.status(500).send('Failed to load media job')
   }
 })
@@ -4786,7 +4823,7 @@ pagesRouter.get('/admin/media-jobs/:jobId/attempts/:attemptId/:stream', async (r
     res.set('Cache-Control', 'no-store')
     await pipeline(body, res)
   } catch (err) {
-    console.error('admin media-job log stream failed', err)
+    logError(req.log || pagesLogger, err, 'admin media-job log stream failed', { path: req.path })
     res.status(500).send('Failed to load log')
   }
 })
@@ -4799,7 +4836,7 @@ pagesRouter.post('/admin/media-jobs/:id/purge', async (req: any, res: any) => {
     await purgeAndDeleteMediaJob(db, id)
     res.redirect('/admin/media-jobs')
   } catch (err) {
-    console.error('admin media-job purge failed', err)
+    logError(req.log || pagesLogger, err, 'admin media-job purge failed', { path: req.path })
     res.status(500).send('Failed to purge media job logs')
   }
 })
@@ -4823,7 +4860,7 @@ pagesRouter.post('/admin/media-jobs/purge', async (req: any, res: any) => {
     }
     res.redirect('/admin/media-jobs')
   } catch (err) {
-    console.error('admin media-jobs bulk purge failed', err)
+    logError(req.log || pagesLogger, err, 'admin media-jobs bulk purge failed', { path: req.path })
     res.status(500).send('Failed to purge media jobs logs')
   }
 })
@@ -5224,7 +5261,7 @@ pagesRouter.get('/admin/video-library', async (req: any, res: any) => {
     res.set('Content-Type', 'text/html; charset=utf-8')
     res.send(doc)
   } catch (err: any) {
-    console.error('admin video library error', err)
+    logError(req.log || pagesLogger, err, 'admin video library error', { path: req.path })
     res.status(500).send(renderAdminPage({ title: 'Video Library', bodyHtml: `<div class=\"error\">${escapeHtml(String(err?.message || err))}</div>`, active: 'video_library' }))
   }
 })
@@ -5263,7 +5300,7 @@ pagesRouter.get('/admin/review', async (req: any, res: any) => {
     res.set('Content-Type', 'text/html; charset=utf-8')
     res.send(doc)
   } catch (err) {
-    console.error('admin review landing failed', err)
+    logError(req.log || pagesLogger, err, 'admin review landing failed', { path: req.path })
     res.status(500).send('Failed to load review')
   }
 })
@@ -5361,7 +5398,7 @@ pagesRouter.get('/admin/review/global', async (req: any, res: any) => {
     res.set('Content-Type', 'text/html; charset=utf-8')
     res.send(doc)
   } catch (err: any) {
-    console.error('admin review global failed', err)
+    logError(req.log || pagesLogger, err, 'admin review global failed', { path: req.path })
     const status = err?.status || 500
     if (status === 403) return res.status(403).send('Forbidden')
     res.status(500).send('Failed to load global review queue')
@@ -5468,7 +5505,7 @@ pagesRouter.get('/admin/review/personal', async (req: any, res: any) => {
     res.set('Content-Type', 'text/html; charset=utf-8')
     res.send(doc)
   } catch (err) {
-    console.error('admin review personal list failed', err)
+    logError(req.log || pagesLogger, err, 'admin review personal list failed', { path: req.path })
     res.status(500).send('Failed to load personal spaces')
   }
 })
@@ -5567,7 +5604,7 @@ pagesRouter.get('/admin/review/personal/:spaceId', async (req: any, res: any) =>
     res.set('Content-Type', 'text/html; charset=utf-8')
     res.send(doc)
   } catch (err: any) {
-    console.error('admin review personal queue failed', err)
+    logError(req.log || pagesLogger, err, 'admin review personal queue failed', { path: req.path })
     const status = err?.status || 500
     if (status === 403) return res.status(403).send('Forbidden')
     res.status(500).send('Failed to load personal review queue')
@@ -5760,7 +5797,7 @@ pagesRouter.get('/admin/review/groups', async (req: any, res: any) => {
     res.set('Content-Type', 'text/html; charset=utf-8')
     res.send(doc)
   } catch (err) {
-    console.error('admin review groups list failed', err)
+    logError(req.log || pagesLogger, err, 'admin review groups list failed', { path: req.path })
     res.status(500).send('Failed to load groups')
   }
 })
@@ -5852,7 +5889,7 @@ pagesRouter.get('/admin/review/channels', async (req: any, res: any) => {
     res.set('Content-Type', 'text/html; charset=utf-8')
     res.send(doc)
   } catch (err) {
-    console.error('admin review channels list failed', err)
+    logError(req.log || pagesLogger, err, 'admin review channels list failed', { path: req.path })
     res.status(500).send('Failed to load channels')
   }
 })
@@ -5870,7 +5907,7 @@ pagesRouter.get('/admin/review/groups/:spaceId', async (req: any, res: any) => {
       returnTo: `/admin/review/groups/${encodeURIComponent(String(spaceId))}`,
     })
   } catch (err: any) {
-    console.error('admin review group queue failed', err)
+    logError(req.log || pagesLogger, err, 'admin review group queue failed', { path: req.path })
     const status = err?.status || 500
     if (status === 403) return res.status(403).send('Forbidden')
     res.status(500).send('Failed to load group review queue')
@@ -5890,7 +5927,7 @@ pagesRouter.get('/admin/review/channels/:spaceId', async (req: any, res: any) =>
       returnTo: `/admin/review/channels/${encodeURIComponent(String(spaceId))}`,
     })
   } catch (err: any) {
-    console.error('admin review channel queue failed', err)
+    logError(req.log || pagesLogger, err, 'admin review channel queue failed', { path: req.path })
     const status = err?.status || 500
     if (status === 403) return res.status(403).send('Forbidden')
     res.status(500).send('Failed to load channel review queue')
@@ -6046,7 +6083,7 @@ pagesRouter.get('/admin/users', async (req: any, res: any) => {
     res.set('Content-Type', 'text/html; charset=utf-8')
     res.send(doc)
   } catch (err) {
-    console.error('admin users list failed', err)
+    logError(req.log || pagesLogger, err, 'admin users list failed', { path: req.path })
     res.status(500).send('Failed to load users')
   }
 });
@@ -6276,7 +6313,7 @@ pagesRouter.get('/admin/users/:id', async (req: any, res: any) => {
     res.set('Content-Type', 'text/html; charset=utf-8')
     res.send(doc)
   } catch (err: any) {
-    console.error('admin user detail failed', err)
+    logError(req.log || pagesLogger, err, 'admin user detail failed', { path: req.path })
     const status = err?.status || 500
     if (status === 404) return res.status(404).send('User not found')
     res.status(500).send('Failed to load user')
@@ -6397,7 +6434,7 @@ pagesRouter.post('/admin/users/:id/suspensions', async (req: any, res: any) => {
     } catch {}
     res.redirect(`/admin/users/${encodeURIComponent(String(userId))}?notice=${encodeURIComponent('Suspension saved.')}`)
   } catch (err) {
-    console.error('admin create suspension failed', err)
+    logError(req.log || pagesLogger, err, 'admin create suspension failed', { path: req.path })
     res.redirect(`/admin/users/${encodeURIComponent(String(userId))}?error=${encodeURIComponent('Failed to create suspension.')}`)
   }
 })
@@ -6689,7 +6726,7 @@ pagesRouter.get('/admin/groups', async (req: any, res: any) => {
     res.set('Content-Type', 'text/html; charset=utf-8')
     res.send(doc)
   } catch (err) {
-    console.error('admin groups list failed', err)
+    logError(req.log || pagesLogger, err, 'admin groups list failed', { path: req.path })
     res.status(500).send('Failed to load groups')
   }
 });
@@ -6774,7 +6811,7 @@ pagesRouter.get('/admin/groups/:id', async (req: any, res: any) => {
     res.set('Content-Type', 'text/html; charset=utf-8')
     res.send(doc)
   } catch (err) {
-    console.error('admin group detail failed', err)
+    logError(req.log || pagesLogger, err, 'admin group detail failed', { path: req.path })
     res.status(500).send('Failed to load group')
   }
 });
@@ -6861,7 +6898,7 @@ pagesRouter.get('/admin/channels', async (req: any, res: any) => {
     res.set('Content-Type', 'text/html; charset=utf-8')
     res.send(doc)
   } catch (err) {
-    console.error('admin channels list failed', err)
+    logError(req.log || pagesLogger, err, 'admin channels list failed', { path: req.path })
     res.status(500).send('Failed to load channels')
   }
 });
@@ -6945,7 +6982,7 @@ pagesRouter.get('/admin/channels/:id', async (req: any, res: any) => {
     res.set('Content-Type', 'text/html; charset=utf-8')
     res.send(doc)
   } catch (err) {
-    console.error('admin channel detail failed', err)
+    logError(req.log || pagesLogger, err, 'admin channel detail failed', { path: req.path })
     res.status(500).send('Failed to load channel')
   }
 });
@@ -7068,7 +7105,7 @@ pagesRouter.get('/admin/dev', async (req: any, res: any) => {
     res.set('Content-Type', 'text/html; charset=utf-8')
     res.send(doc)
   } catch (err) {
-    console.error('admin dev page failed', err)
+    logError(req.log || pagesLogger, err, 'admin dev page failed', { path: req.path })
     res.status(500).send('Failed to load dev page')
   }
 });
@@ -7083,7 +7120,7 @@ pagesRouter.post('/admin/dev/truncate', async (req: any, res: any) => {
     await adminSvc.truncateContent()
     res.redirect(`/admin/dev?notice=${encodeURIComponent('Content truncated.')}`)
   } catch (err) {
-    console.error('admin dev truncate failed', err)
+    logError(req.log || pagesLogger, err, 'admin dev truncate failed', { path: req.path })
     res.redirect(`/admin/dev?error=${encodeURIComponent('Failed to truncate content.')}`)
   }
 });
@@ -7327,15 +7364,15 @@ pagesRouter.get('/logo-configs', (_req, res) => {
 
 pagesRouter.get('/screen-title-presets', (req: any, res) => {
   try {
-    const uid = req?.user?.id ? Number(req.user.id) : null
-    console.warn('legacy_route_screen_title_presets', { userId: uid, ip: req?.ip, ua: String(req?.headers?.['user-agent'] || '') })
+    const uid = req?.user?.id ? Number(req.user.id) : null;
+    (req.log || pagesLogger).warn({ userId: uid, ip: req?.ip, ua: String(req?.headers?.['user-agent'] || '') }, 'legacy_route_screen_title_presets')
   } catch {}
   res.status(404).type('text/plain').send('Not found')
 });
 pagesRouter.get('/screen-title-presets/', (req: any, res) => {
   try {
-    const uid = req?.user?.id ? Number(req.user.id) : null
-    console.warn('legacy_route_screen_title_presets', { userId: uid, ip: req?.ip, ua: String(req?.headers?.['user-agent'] || '') })
+    const uid = req?.user?.id ? Number(req.user.id) : null;
+    (req.log || pagesLogger).warn({ userId: uid, ip: req?.ip, ua: String(req?.headers?.['user-agent'] || '') }, 'legacy_route_screen_title_presets')
   } catch {}
   res.status(404).type('text/plain').send('Not found')
 });

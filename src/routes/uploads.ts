@@ -3,8 +3,10 @@ import { requireAuth } from '../middleware/auth';
 import * as uploadsSvc from '../features/uploads/service'
 import { clampLimit, parseNumberCursor } from '../core/pagination'
 import * as audioTagsSvc from '../features/audio-tags/service'
+import { getLogger, logError } from '../lib/logger'
 
 export const uploadsRouter = Router();
+const uploadsLogger = getLogger({ component: 'routes.uploads' })
 
 uploadsRouter.get('/api/uploads', async (req, res) => {
   try {
@@ -26,7 +28,7 @@ uploadsRouter.get('/api/uploads', async (req, res) => {
     }, { userId: (req as any).user?.id ? Number((req as any).user.id) : undefined })
     return res.json(result)
   } catch (err: any) {
-    console.error('list uploads error', err)
+    logError(req.log || uploadsLogger, err, 'uploads_route_error', { path: req.path })
     const status = err?.status || 500
     res.status(status).json({ error: 'failed_to_list', detail: String(err?.message || err) })
   }
@@ -48,7 +50,7 @@ uploadsRouter.get('/api/uploads/summary', requireAuth, async (req, res) => {
     )
     return res.json(data)
   } catch (err: any) {
-    console.error('list upload summaries error', err)
+    logError(req.log || uploadsLogger, err, 'uploads_route_error', { path: req.path })
     const status = err?.status || 500
     res.status(status).json({ error: 'failed_to_list', detail: String(err?.message || err) })
   }
@@ -63,7 +65,7 @@ uploadsRouter.get('/api/uploads/:id', async (req, res) => {
     const data = await uploadsSvc.get(id, { includePublications, includeProductions }, { userId: (req as any).user?.id ? Number((req as any).user.id) : undefined })
     return res.json(data)
   } catch (err: any) {
-    console.error('get upload error', err)
+    logError(req.log || uploadsLogger, err, 'uploads_route_error', { path: req.path })
     const status = err?.status || 500
     res.status(status).json({ error: 'failed_to_get', detail: String(err?.message || err) })
   }
@@ -80,7 +82,7 @@ uploadsRouter.get('/api/system-audio', requireAuth, async (req, res) => {
     )
     return res.json(data)
   } catch (err: any) {
-    console.error('list system audio error', err)
+    logError(req.log || uploadsLogger, err, 'uploads_route_error', { path: req.path })
     const status = err?.status || 500
     res.status(status).json({ error: 'failed_to_list', detail: String(err?.message || err) })
   }
@@ -115,7 +117,7 @@ uploadsRouter.get('/api/system-audio/search', requireAuth, async (req, res) => {
     )
     return res.json({ items: data })
   } catch (err: any) {
-    console.error('search system audio error', err)
+    logError(req.log || uploadsLogger, err, 'uploads_route_error', { path: req.path })
     const status = err?.status || 500
     res.status(status).json({ error: err?.code || 'failed_to_search', detail: String(err?.message || err) })
   }
@@ -130,7 +132,7 @@ uploadsRouter.post('/api/system-audio/:id/favorite', requireAuth, async (req, re
     const result = await uploadsSvc.setSystemAudioFavorite({ uploadId, favorite }, { userId })
     return res.json(result)
   } catch (err: any) {
-    console.error('toggle system audio favorite error', err)
+    logError(req.log || uploadsLogger, err, 'uploads_route_error', { path: req.path })
     const status = err?.status || 500
     res.status(status).json({ error: err?.code || 'failed_to_favorite', detail: String(err?.message || err) })
   }
@@ -153,7 +155,7 @@ uploadsRouter.get('/api/assets/videos', requireAuth, async (req, res) => {
     )
     return res.json(data)
   } catch (err: any) {
-    console.error('list video assets error', err)
+    logError(req.log || uploadsLogger, err, 'uploads_route_error', { path: req.path })
     const status = err?.status || 500
     res.status(status).json({ error: err?.code || 'failed_to_list', detail: String(err?.message || err) })
   }
@@ -168,7 +170,7 @@ uploadsRouter.post('/api/assets/videos/:id/favorite', requireAuth, async (req, r
     const data = await uploadsSvc.setVideoAssetFavorite({ uploadId, favorite }, { userId })
     return res.json(data)
   } catch (err: any) {
-    console.error('favorite video asset error', err)
+    logError(req.log || uploadsLogger, err, 'uploads_route_error', { path: req.path })
     const status = err?.status || 500
     res.status(status).json({ error: err?.code || 'failed_to_favorite', detail: String(err?.message || err) })
   }
@@ -182,7 +184,7 @@ uploadsRouter.post('/api/assets/videos/:id/used', requireAuth, async (req, res) 
     const data = await uploadsSvc.markVideoAssetUsed({ uploadId }, { userId })
     return res.json(data)
   } catch (err: any) {
-    console.error('mark video used error', err)
+    logError(req.log || uploadsLogger, err, 'uploads_route_error', { path: req.path })
     const status = err?.status || 500
     res.status(status).json({ error: err?.code || 'failed_to_mark_used', detail: String(err?.message || err) })
   }
@@ -205,7 +207,7 @@ uploadsRouter.get('/api/assets/graphics', requireAuth, async (req, res) => {
     )
     return res.json(data)
   } catch (err: any) {
-    console.error('list graphic assets error', err)
+    logError(req.log || uploadsLogger, err, 'uploads_route_error', { path: req.path })
     const status = err?.status || 500
     res.status(status).json({ error: err?.code || 'failed_to_list', detail: String(err?.message || err) })
   }
@@ -220,7 +222,7 @@ uploadsRouter.post('/api/assets/graphics/:id/favorite', requireAuth, async (req,
     const data = await uploadsSvc.setGraphicAssetFavorite({ uploadId, favorite }, { userId })
     return res.json(data)
   } catch (err: any) {
-    console.error('favorite graphic asset error', err)
+    logError(req.log || uploadsLogger, err, 'uploads_route_error', { path: req.path })
     const status = err?.status || 500
     res.status(status).json({ error: err?.code || 'failed_to_favorite', detail: String(err?.message || err) })
   }
@@ -234,7 +236,7 @@ uploadsRouter.post('/api/assets/graphics/:id/used', requireAuth, async (req, res
     const data = await uploadsSvc.markGraphicAssetUsed({ uploadId }, { userId })
     return res.json(data)
   } catch (err: any) {
-    console.error('mark graphic used error', err)
+    logError(req.log || uploadsLogger, err, 'uploads_route_error', { path: req.path })
     const status = err?.status || 500
     res.status(status).json({ error: err?.code || 'failed_to_mark_used', detail: String(err?.message || err) })
   }
@@ -246,7 +248,7 @@ uploadsRouter.get('/api/audio-tags', requireAuth, async (req, res) => {
     const data = await audioTagsSvc.listActiveTagsDto({ userId })
     return res.json(data)
   } catch (err: any) {
-    console.error('list audio tags error', err)
+    logError(req.log || uploadsLogger, err, 'uploads_route_error', { path: req.path })
     const status = err?.status || 500
     res.status(status).json({ error: err?.code || 'failed_to_list', detail: String(err?.message || err) })
   }
@@ -296,7 +298,7 @@ uploadsRouter.get('/api/uploads/:id/file', requireAuth, async (req, res) => {
     const status = err?.status || 500
     if (status === 403) return res.status(403).send('forbidden')
     if (status === 404) return res.status(404).send('not_found')
-    console.error('upload file fetch failed', err)
+    logError(req.log || uploadsLogger, err, 'uploads_route_error', { path: req.path })
     return res.status(status).send('failed')
   }
 })
@@ -340,7 +342,7 @@ uploadsRouter.get('/api/uploads/:id/edit-proxy', requireAuth, async (req, res) =
     const status = err?.status || 500
     if (status === 403) return res.status(403).send('forbidden')
     if (status === 404) return res.status(404).send('not_found')
-    console.error('upload edit proxy fetch failed', err)
+    logError(req.log || uploadsLogger, err, 'uploads_route_error', { path: req.path })
     return res.status(status).send('failed')
   }
 })
@@ -355,7 +357,7 @@ uploadsRouter.get('/api/uploads/:id/audio-envelope', requireAuth, async (req, re
   } catch (err: any) {
     const status = err?.status || 500
     if (status === 403) return res.status(403).json({ error: 'forbidden' })
-    console.error('get upload audio envelope error', err)
+    logError(req.log || uploadsLogger, err, 'uploads_route_error', { path: req.path })
     return res.status(status).json({ error: err?.code || 'failed', detail: String(err?.message || err) })
   }
 })
@@ -421,7 +423,7 @@ uploadsRouter.get('/api/uploads/:id/thumb', requireAuth, async (req, res) => {
 </svg>`
 	        )
 	    }
-	    console.error('upload thumb fetch failed', err)
+	    logError(req.log || uploadsLogger, err, 'uploads_route_error', { path: req.path })
 	    return res.status(status).send('failed')
 	  }
 	})
@@ -454,7 +456,7 @@ uploadsRouter.get('/api/uploads/:id/publish-options', requireAuth, async (req, r
     const data = await uploadsSvc.getPublishOptions(uploadId, { userId: Number(req.user!.id) })
     res.json(data)
   } catch (err: any) {
-    console.error('publish options failed', err)
+    logError(req.log || uploadsLogger, err, 'uploads_route_error', { path: req.path })
     const status = err?.status || 500
     res.status(status).json({ error: 'failed_to_fetch_options', detail: String(err?.message || err) })
   }
@@ -468,7 +470,7 @@ uploadsRouter.delete('/api/uploads/:id', requireAuth, async (req, res) => {
     const result = await uploadsSvc.remove(id, currentUserId)
     res.json(result)
   } catch (err: any) {
-    console.error('delete upload error', err)
+    logError(req.log || uploadsLogger, err, 'uploads_route_error', { path: req.path })
     const status = err?.status || 500
     const code = err?.code || 'failed_to_delete'
     res.status(status).json({ error: code, detail: err?.detail ?? String(err?.message || err) })
@@ -491,7 +493,7 @@ uploadsRouter.patch('/api/uploads/:id', requireAuth, async (req, res) => {
     )
     return res.json(result)
   } catch (err: any) {
-    console.error('update upload error', err)
+    logError(req.log || uploadsLogger, err, 'uploads_route_error', { path: req.path })
     const status = err?.status || 500
     const code = err?.code || 'failed_to_update'
     res.status(status).json({ error: code, detail: err?.detail ?? String(err?.message || err) })
@@ -506,7 +508,7 @@ uploadsRouter.post('/api/uploads/:id/delete-source', requireAuth, async (req, re
     const result = await uploadsSvc.deleteSourceVideo(id, currentUserId)
     res.json(result)
   } catch (err: any) {
-    console.error('delete source upload error', err)
+    logError(req.log || uploadsLogger, err, 'uploads_route_error', { path: req.path })
     const status = err?.status || 500
     const code = err?.code || 'failed_to_delete_source'
     res.status(status).json({ error: code, detail: err?.detail ?? String(err?.message || err) })
@@ -528,7 +530,7 @@ uploadsRouter.post('/api/uploads/:id/freeze-frame', requireAuth, async (req, res
     if (result.status === 'pending') return res.status(202).json(result)
     return res.json(result)
   } catch (err: any) {
-    console.error('request freeze frame error', err)
+    logError(req.log || uploadsLogger, err, 'uploads_route_error', { path: req.path })
     const status = err?.status || 500
     const code = err?.code || err?.message || 'failed'
     return res.status(status).json({ error: String(code), detail: err?.detail ?? String(err?.message || err) })
