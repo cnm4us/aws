@@ -30,6 +30,10 @@ function instrumentNetEnabled() {
   return envBool(process.env.OTEL_INSTRUMENT_NET, false)
 }
 
+function instrumentExpressEnabled() {
+  return envBool(process.env.OTEL_INSTRUMENT_EXPRESS, false)
+}
+
 function traceStaticEnabled() {
   return envBool(process.env.OTEL_TRACE_STATIC, false)
 }
@@ -67,6 +71,21 @@ function isStaticAssetPath(pathname: string): boolean {
   if (pathname === '/favicon.ico' || pathname === '/robots.txt' || pathname === '/manifest.json') return true
   if (pathname.startsWith('/app/assets/')) return true
   return STATIC_EXT_RE.test(pathname)
+}
+
+function isDynamicSegment(seg: string): boolean {
+  if (!seg) return false
+  if (/^\d+$/.test(seg)) return true
+  if (/^[0-9a-f]{8,}$/i.test(seg)) return true
+  if (/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(seg)) return true
+  return false
+}
+
+function pathTemplate(pathname: string): string {
+  if (!pathname) return '/'
+  const parts = pathname.split('/').filter(Boolean)
+  if (!parts.length) return '/'
+  return '/' + parts.map((p) => (isDynamicSegment(p) ? ':id' : p)).join('/')
 }
 
 function classifyHttpOperation(methodRaw: string, pathname: string): string | null {
@@ -107,11 +126,14 @@ function applySpanNamingAndTags(span: any, req: any) {
   const p = requestPath(req)
   const method = String(req?.method || 'GET').toUpperCase()
   const isStatic = isStaticAssetPath(p)
+  const currentName = String(span?.name || '')
   if (isStatic) {
     span?.setAttribute?.('app.request.class', 'static_asset')
   }
-  if ((isStatic || !String(span?.name || '').match(/\//)) && isLowCardinalityPath(p)) {
+  if (isStatic && isLowCardinalityPath(p)) {
     span?.updateName?.(`HTTP ${method} ${p}`)
+  } else if (!currentName.match(/\//)) {
+    span?.updateName?.(`HTTP ${method} ${pathTemplate(p)}`)
   }
   const op = classifyHttpOperation(method, p)
   if (op) span?.setAttribute?.('app.operation', op)
@@ -178,6 +200,7 @@ export async function initObservability() {
             applySpanNamingAndTags(span, req)
           },
         },
+        '@opentelemetry/instrumentation-express': { enabled: instrumentExpressEnabled() },
         '@opentelemetry/instrumentation-net': { enabled: instrumentNetEnabled() },
         '@opentelemetry/instrumentation-mysql2': { enabled: instrumentMysql2Enabled() },
       }),
@@ -190,6 +213,7 @@ export async function initObservability() {
       service_name: String(process.env.OTEL_SERVICE_NAME || '').trim() || 'aws-mediaconvert-service',
       exporter_endpoint: String(process.env.OTEL_EXPORTER_OTLP_ENDPOINT || '').trim() || 'console',
       mysql2_instrumentation_enabled: instrumentMysql2Enabled(),
+      express_instrumentation_enabled: instrumentExpressEnabled(),
       net_instrumentation_enabled: instrumentNetEnabled(),
       trace_static_enabled: traceStaticEnabled(),
     },

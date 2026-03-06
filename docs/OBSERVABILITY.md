@@ -64,6 +64,7 @@ When troubleshooting mismatches:
 - Without endpoint, traces export to console in development.
 - Logging level/format is controlled by `LOG_LEVEL` and `LOG_FORMAT`.
 - `OTEL_INSTRUMENT_MYSQL2=0` to disable noisy DB auto-spans from mysql2 while keeping manual spans.
+- `OTEL_INSTRUMENT_EXPRESS=0` (default) suppresses Express middleware/router child spans.
 - `OTEL_INSTRUMENT_NET=0` (default) suppresses low-level `tcp.connect` spans from net instrumentation.
 - `OTEL_TRACE_STATIC=0` (default) suppresses static asset request traces such as `/favicon.ico` and `/app/assets/*`.
 
@@ -115,7 +116,7 @@ Shortcut profile:
 - Start app with Jaeger profile:
   - `npm run serve:jaeger`
 - Start app with explicit flags:
-  - `OTEL_ENABLED=1 OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318 OTEL_SERVICE_NAME=aws-mediaconvert-service OTEL_SERVICE_VERSION=dev OTEL_INSTRUMENT_MYSQL2=0 OTEL_INSTRUMENT_NET=0 OTEL_TRACE_STATIC=0 LOG_LEVEL=debug LOG_FORMAT=pretty npm run serve`
+  - `OTEL_ENABLED=1 OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318 OTEL_SERVICE_NAME=aws-mediaconvert-service OTEL_SERVICE_VERSION=dev OTEL_INSTRUMENT_MYSQL2=0 OTEL_INSTRUMENT_EXPRESS=0 OTEL_INSTRUMENT_NET=0 OTEL_TRACE_STATIC=0 LOG_LEVEL=debug LOG_FORMAT=pretty npm run serve`
 
 ## Daily Jaeger Workflow
 
