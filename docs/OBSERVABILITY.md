@@ -329,6 +329,8 @@ Swap recommendation for this host:
 ## Common query tags
 - `app.operation`
 - `app.surface`
+- `app.outcome`
+- `error.class`
 - `mediajob_type`
 - `mediajob_status`
 - `mediajob_id`
@@ -363,6 +365,23 @@ Library + visualizer API family (examples):
 - `create_video`
 - `assets`
 - `unknown`
+
+## `app.outcome` values currently emitted
+- `success` (2xx)
+- `redirect` (3xx)
+- `client_error` (4xx)
+- `server_error` (5xx)
+
+## `error.class` values currently emitted
+- `validation` (`400`, `422`)
+- `auth` (`401`)
+- `forbidden` (`403`)
+- `not_found` (`404`)
+- `conflict` (`409`)
+- `rate_limit` (`429`)
+- `upstream` (`502`, `503`, `504`)
+- `internal` (other `5xx`)
+- `client` (other `4xx`)
 
 ## Request classification tag
 - `app.request.class=static_asset` for static resources (when static traces are enabled with `OTEL_TRACE_STATIC=1`).

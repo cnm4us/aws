@@ -236,6 +236,46 @@ function applySpanNamingAndTags(span: any, req: any) {
   if (surface) span?.setAttribute?.('app.surface', surface)
 }
 
+function responseStatusCode(res: any): number | null {
+  const raw = res?.statusCode
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return null
+  const v = Math.round(n)
+  if (v < 100 || v > 599) return null
+  return v
+}
+
+function classifyOutcomeFromStatus(statusCode: number): 'success' | 'redirect' | 'client_error' | 'server_error' {
+  if (statusCode >= 500) return 'server_error'
+  if (statusCode >= 400) return 'client_error'
+  if (statusCode >= 300) return 'redirect'
+  return 'success'
+}
+
+function classifyErrorClassFromStatus(statusCode: number): string | null {
+  if (statusCode < 400) return null
+  if (statusCode === 400 || statusCode === 422) return 'validation'
+  if (statusCode === 401) return 'auth'
+  if (statusCode === 403) return 'forbidden'
+  if (statusCode === 404) return 'not_found'
+  if (statusCode === 409) return 'conflict'
+  if (statusCode === 429) return 'rate_limit'
+  if (statusCode === 502 || statusCode === 503 || statusCode === 504) return 'upstream'
+  if (statusCode >= 500) return 'internal'
+  return 'client'
+}
+
+function applySpanOutcomeTags(span: any, req: any, res: any) {
+  if (!req?.method) return
+  const statusCode = responseStatusCode(res)
+  if (statusCode == null) return
+  span?.setAttribute?.('app.outcome', classifyOutcomeFromStatus(statusCode))
+  if (statusCode >= 400) {
+    const errorClass = classifyErrorClassFromStatus(statusCode)
+    if (errorClass) span?.setAttribute?.('error.class', errorClass)
+  }
+}
+
 function isLowCardinalityPath(pathname: string): boolean {
   if (!pathname) return false
   // Avoid naming spans with dynamic IDs directly in the name.
@@ -293,8 +333,9 @@ export async function initObservability() {
           requestHook: (span: any, req: any) => {
             applySpanNamingAndTags(span, req)
           },
-          applyCustomAttributesOnSpan: (span: any, req: any) => {
+          applyCustomAttributesOnSpan: (span: any, req: any, res: any) => {
             applySpanNamingAndTags(span, req)
+            applySpanOutcomeTags(span, req, res)
           },
         },
         '@opentelemetry/instrumentation-express': { enabled: instrumentExpressEnabled() },
