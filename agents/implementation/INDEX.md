@@ -15,6 +15,8 @@ This file is a lightweight index for ongoing work and “what’s next”.
 - `agents/implementation/plan_71.md` — Create Video: Video Overlay lane (PiP) v1
 - `agents/implementation/plan_105.md` — Visualizer Layer + Preset Library
 - `agents/implementation/plan_109.md` — App-wide observability (Pino logs + OpenTelemetry traces/metrics)
+- `agents/implementation/plan_110.md` — Trace naming + signal quality hardening (Jaeger usability)
+- `agents/implementation/plan_111.md` — Jaeger SPM via Prometheus + OTel Collector (dev profile)
 
 ## In Progress / Next Up
 - Roadmap: `agents/roadmaps/roadmap_create_video.md`

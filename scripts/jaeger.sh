@@ -7,6 +7,11 @@ BIN_PATH="$JAEGER_DIR/jaeger-all-in-one"
 PID_FILE="$JAEGER_DIR/jaeger.pid"
 LOG_FILE="$ROOT_DIR/logs/jaeger.log"
 JAEGER_VERSION="${JAEGER_VERSION:-1.62.0}"
+METRICS_STORAGE_TYPE="${METRICS_STORAGE_TYPE:-prometheus}"
+PROMETHEUS_SERVER_URL="${PROMETHEUS_SERVER_URL:-http://127.0.0.1:9090}"
+PROMETHEUS_QUERY_NAMESPACE="${PROMETHEUS_QUERY_NAMESPACE:-traces_span_metrics}"
+PROMETHEUS_QUERY_NORMALIZE_CALLS="${PROMETHEUS_QUERY_NORMALIZE_CALLS:-true}"
+PROMETHEUS_QUERY_NORMALIZE_DURATION="${PROMETHEUS_QUERY_NORMALIZE_DURATION:-true}"
 
 map_os() {
   case "$(uname -s)" in
@@ -90,10 +95,16 @@ start_jaeger() {
   install_jaeger
   mkdir -p "$ROOT_DIR/logs"
 
-  setsid "$BIN_PATH" \
+  setsid env \
+    METRICS_STORAGE_TYPE="$METRICS_STORAGE_TYPE" \
+    PROMETHEUS_SERVER_URL="$PROMETHEUS_SERVER_URL" \
+    PROMETHEUS_QUERY_NAMESPACE="$PROMETHEUS_QUERY_NAMESPACE" \
+    PROMETHEUS_QUERY_NORMALIZE_CALLS="$PROMETHEUS_QUERY_NORMALIZE_CALLS" \
+    PROMETHEUS_QUERY_NORMALIZE_DURATION="$PROMETHEUS_QUERY_NORMALIZE_DURATION" \
+    "$BIN_PATH" \
     --collector.otlp.enabled=true \
-    --collector.otlp.grpc.host-port=0.0.0.0:4317 \
-    --collector.otlp.http.host-port=0.0.0.0:4318 \
+    --collector.otlp.grpc.host-port=127.0.0.1:4317 \
+    --collector.otlp.http.host-port=127.0.0.1:4318 \
     >"$LOG_FILE" 2>&1 < /dev/null &
 
   local pid
@@ -105,6 +116,8 @@ start_jaeger() {
     echo "Jaeger started (pid $pid)"
     echo "UI: http://localhost:16686"
     echo "OTLP HTTP endpoint: http://localhost:4318"
+    echo "SPM metrics storage: $METRICS_STORAGE_TYPE"
+    echo "SPM Prometheus URL: $PROMETHEUS_SERVER_URL"
     return 0
   fi
 
@@ -144,6 +157,8 @@ status_jaeger() {
     echo "Jaeger running (pid $(cat "$PID_FILE"))"
     echo "UI: http://localhost:16686"
     echo "OTLP HTTP endpoint: http://localhost:4318"
+    echo "SPM metrics storage: $METRICS_STORAGE_TYPE"
+    echo "SPM Prometheus URL: $PROMETHEUS_SERVER_URL"
   else
     echo "Jaeger not running"
   fi

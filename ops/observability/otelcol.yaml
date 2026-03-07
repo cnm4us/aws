@@ -1,0 +1,42 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 127.0.0.1:5317
+      http:
+        endpoint: 127.0.0.1:5318
+
+connectors:
+  spanmetrics:
+    namespace: traces_span_metrics
+    metrics_flush_interval: 30s
+    dimensions:
+      - name: http.method
+
+processors:
+  memory_limiter:
+    check_interval: 2s
+    limit_mib: 512
+    spike_limit_mib: 128
+  batch:
+    timeout: 5s
+    send_batch_size: 1024
+
+exporters:
+  otlp/jaeger:
+    endpoint: 127.0.0.1:4317
+    tls:
+      insecure: true
+  prometheus:
+    endpoint: 127.0.0.1:8889
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlp/jaeger, spanmetrics]
+    metrics/spanmetrics:
+      receivers: [spanmetrics]
+      processors: [memory_limiter, batch]
+      exporters: [prometheus]

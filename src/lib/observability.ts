@@ -38,7 +38,16 @@ function traceStaticEnabled() {
   return envBool(process.env.OTEL_TRACE_STATIC, false)
 }
 
+function traceProbeEnabled() {
+  return envBool(process.env.OTEL_TRACE_PROBES, false)
+}
+
+function traceRootEnabled() {
+  return envBool(process.env.OTEL_TRACE_ROOT, false)
+}
+
 const STATIC_EXT_RE = /\.(?:html|json|css|js|mjs|map|png|jpe?g|gif|svg|ico|webp|woff2?|ttf|eot)$/i
+const PROBE_RE = /^\/(?:\.env(?:\..*)?|\.git(?:\/.*)?|wp-(?:admin|login\.php|content)(?:\/.*)?|xmlrpc\.php|phpmyadmin(?:\/.*)?|server-status(?:\/.*)?|boaform(?:\/.*)?|cgi-bin(?:\/.*)?)/i
 
 function requestPath(req: any): string {
   const raw = String(req?.url || '').trim()
@@ -71,6 +80,11 @@ function isStaticAssetPath(pathname: string): boolean {
   if (pathname === '/favicon.ico' || pathname === '/robots.txt' || pathname === '/manifest.json') return true
   if (pathname.startsWith('/app/assets/')) return true
   return STATIC_EXT_RE.test(pathname)
+}
+
+function isProbePath(pathname: string): boolean {
+  if (!pathname) return false
+  return PROBE_RE.test(pathname)
 }
 
 function isDynamicSegment(seg: string): boolean {
@@ -126,11 +140,18 @@ function applySpanNamingAndTags(span: any, req: any) {
   const p = requestPath(req)
   const method = String(req?.method || 'GET').toUpperCase()
   const isStatic = isStaticAssetPath(p)
+  const isProbe = isProbePath(p)
   const currentName = String(span?.name || '')
   if (isStatic) {
     span?.setAttribute?.('app.request.class', 'static_asset')
+  } else if (isProbe) {
+    span?.setAttribute?.('app.request.class', 'probe')
+  } else if (p === '/') {
+    span?.setAttribute?.('app.request.class', 'root')
   }
   if (isStatic && isLowCardinalityPath(p)) {
+    span?.updateName?.(`HTTP ${method} ${p}`)
+  } else if (isProbe) {
     span?.updateName?.(`HTTP ${method} ${p}`)
   } else if (!currentName.match(/\//)) {
     span?.updateName?.(`HTTP ${method} ${pathTemplate(p)}`)
@@ -189,9 +210,11 @@ export async function initObservability() {
         '@opentelemetry/instrumentation-fs': { enabled: false },
         '@opentelemetry/instrumentation-http': {
           ignoreIncomingRequestHook: (req: any) => {
-            if (traceStaticEnabled()) return false
             const p = requestPath(req)
-            return isStaticAssetPath(p)
+            if (!traceRootEnabled() && p === '/') return true
+            if (!traceProbeEnabled() && isProbePath(p)) return true
+            if (!traceStaticEnabled() && isStaticAssetPath(p)) return true
+            return false
           },
           requestHook: (span: any, req: any) => {
             applySpanNamingAndTags(span, req)
@@ -216,6 +239,8 @@ export async function initObservability() {
       express_instrumentation_enabled: instrumentExpressEnabled(),
       net_instrumentation_enabled: instrumentNetEnabled(),
       trace_static_enabled: traceStaticEnabled(),
+      trace_probe_enabled: traceProbeEnabled(),
+      trace_root_enabled: traceRootEnabled(),
     },
     'otel.started'
   )
