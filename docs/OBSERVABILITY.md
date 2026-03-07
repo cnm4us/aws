@@ -193,6 +193,8 @@ This repo now includes a Prometheus helper with a dev-focused retention profile.
 
 - Config path:
   - `ops/observability/prometheus.yml`
+- Rules path:
+  - `ops/observability/prometheus-rules.yml`
 - Default listen:
   - `127.0.0.1:9090`
 - Default retention:
@@ -202,6 +204,22 @@ This repo now includes a Prometheus helper with a dev-focused retention profile.
 - Scrape targets:
   - Prometheus itself (`127.0.0.1:9090`)
   - OTel Collector spanmetrics endpoint (`127.0.0.1:8889`)
+
+Recording rules (minimal baseline):
+- `app:http_requests_per_second:5m`
+- `app:http_errors_per_second:5m`
+- `app:http_error_rate:5m`
+- `app:http_p95_latency_ms:5m`
+
+Alert rules (minimal baseline):
+- `AppHttpP95LatencyHigh` (p95 > 1500ms for 10m)
+- `AppHttpErrorRateHigh` (error rate > 2% for 5m with traffic floor)
+
+Where to view:
+- Prometheus UI alerts page: `http://127.0.0.1:9090/alerts`
+- Prometheus API:
+  - rules: `http://127.0.0.1:9090/api/v1/rules`
+  - alerts: `http://127.0.0.1:9090/api/v1/alerts`
 
 Environment overrides for script:
 - `PROM_CONFIG_FILE`

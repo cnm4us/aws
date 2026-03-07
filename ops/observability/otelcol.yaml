@@ -12,6 +12,8 @@ connectors:
     metrics_flush_interval: 30s
     dimensions:
       - name: http.method
+      - name: app.operation
+      - name: app.outcome
 
 processors:
   memory_limiter:

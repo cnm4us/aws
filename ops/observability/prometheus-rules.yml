@@ -1,0 +1,82 @@
+groups:
+  - name: app-spanmetrics-recording
+    interval: 30s
+    rules:
+      - record: app:http_requests_per_second:5m
+        expr: |
+          sum by (app_operation) (
+            rate(
+              traces_span_metrics_calls_total{
+                service_name="aws-mediaconvert-service",
+                span_kind="SPAN_KIND_SERVER",
+                app_operation!=""
+              }[5m]
+            )
+          )
+
+      - record: app:http_errors_per_second:5m
+        expr: |
+          sum by (app_operation) (
+            rate(
+              traces_span_metrics_calls_total{
+                service_name="aws-mediaconvert-service",
+                span_kind="SPAN_KIND_SERVER",
+                app_operation!="",
+                app_outcome=~"client_error|server_error"
+              }[5m]
+            )
+          )
+
+      - record: app:http_error_rate:5m
+        expr: |
+          app:http_errors_per_second:5m
+          /
+          clamp_min(app:http_requests_per_second:5m, 0.001)
+
+      - record: app:http_p95_latency_ms:5m
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le, app_operation) (
+              rate(
+                traces_span_metrics_duration_milliseconds_bucket{
+                  service_name="aws-mediaconvert-service",
+                  span_kind="SPAN_KIND_SERVER",
+                  app_operation!=""
+                }[5m]
+              )
+            )
+          )
+
+  - name: app-spanmetrics-alerts
+    interval: 30s
+    rules:
+      - alert: AppHttpP95LatencyHigh
+        expr: |
+          app:http_p95_latency_ms:5m{
+            app_operation=~"create_video.timeline.patch|create_video.export.enqueue|uploads.file.get|uploads.edit_proxy.get"
+          } > 1500
+        for: 10m
+        labels:
+          severity: warning
+          team: app
+        annotations:
+          summary: "High p95 latency for {{ $labels.app_operation }}"
+          description: "p95 latency is {{ $value }} ms for at least 10m."
+
+      - alert: AppHttpErrorRateHigh
+        expr: |
+          app:http_error_rate:5m{
+            app_operation=~"create_video.timeline.patch|create_video.export.enqueue|uploads.file.get|uploads.edit_proxy.get"
+          } > 0.02
+          and
+          app:http_requests_per_second:5m{
+            app_operation=~"create_video.timeline.patch|create_video.export.enqueue|uploads.file.get|uploads.edit_proxy.get"
+          } > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          team: app
+        annotations:
+          summary: "High HTTP error rate for {{ $labels.app_operation }}"
+          description: "error rate is {{ $value }} over 5m with sustained traffic."
