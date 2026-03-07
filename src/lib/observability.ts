@@ -104,32 +104,106 @@ function pathTemplate(pathname: string): string {
 
 function classifyHttpOperation(methodRaw: string, pathname: string): string | null {
   const method = String(methodRaw || '').toUpperCase()
-  if (method === 'PATCH' && /^\/api\/create-video\/projects\/[^/]+\/timeline$/.test(pathname)) {
-    return 'create_video.timeline.patch'
-  }
-  if (method === 'PATCH' && pathname === '/api/create-video/project') {
-    return 'create_video.timeline.patch'
-  }
-  if (method === 'POST' && /^\/api\/create-video\/projects\/[^/]+\/export$/.test(pathname)) {
-    return 'create_video.export.enqueue'
-  }
-  if (method === 'POST' && pathname === '/api/create-video/project/export') {
-    return 'create_video.export.enqueue'
-  }
-  if (method === 'GET' && /^\/api\/uploads\/[^/]+\/file$/.test(pathname)) {
-    return 'uploads.file.get'
-  }
-  if (method === 'GET' && /^\/api\/uploads\/[^/]+\/edit-proxy$/.test(pathname)) {
-    return 'uploads.edit_proxy.get'
+  const rules: Array<{ method: string; re: RegExp; op: string }> = [
+    // Create Video (projects + legacy active project routes)
+    { method: 'POST', re: /^\/api\/create-video\/project$/, op: 'create_video.project.active.ensure' },
+    { method: 'GET', re: /^\/api\/create-video\/project$/, op: 'create_video.project.active.get' },
+    { method: 'PATCH', re: /^\/api\/create-video\/project$/, op: 'create_video.timeline.patch' },
+    { method: 'POST', re: /^\/api\/create-video\/project\/archive$/, op: 'create_video.project.active.archive' },
+    { method: 'POST', re: /^\/api\/create-video\/project\/export$/, op: 'create_video.export.enqueue' },
+    { method: 'GET', re: /^\/api\/create-video\/project\/export-status$/, op: 'create_video.export.status' },
+    { method: 'GET', re: /^\/api\/create-video\/projects$/, op: 'create_video.projects.list' },
+    { method: 'POST', re: /^\/api\/create-video\/projects$/, op: 'create_video.projects.create' },
+    { method: 'GET', re: /^\/api\/create-video\/projects\/[^/]+$/, op: 'create_video.projects.get' },
+    { method: 'PATCH', re: /^\/api\/create-video\/projects\/[^/]+$/, op: 'create_video.projects.patch' },
+    { method: 'DELETE', re: /^\/api\/create-video\/projects\/[^/]+$/, op: 'create_video.projects.delete' },
+    { method: 'POST', re: /^\/api\/create-video\/projects\/[^/]+\/archive$/, op: 'create_video.projects.archive' },
+    { method: 'PATCH', re: /^\/api\/create-video\/projects\/[^/]+\/timeline$/, op: 'create_video.timeline.patch' },
+    { method: 'POST', re: /^\/api\/create-video\/projects\/[^/]+\/export$/, op: 'create_video.export.enqueue' },
+    { method: 'GET', re: /^\/api\/create-video\/projects\/[^/]+\/export-status$/, op: 'create_video.export.status' },
+    { method: 'POST', re: /^\/api\/create-video\/screen-titles\/render$/, op: 'create_video.screen_titles.render' },
+    { method: 'POST', re: /^\/api\/create-video\/narration\/sign$/, op: 'create_video.narration.sign' },
+    { method: 'GET', re: /^\/api\/create-video\/narration\/list$/, op: 'create_video.narration.list' },
+    { method: 'PATCH', re: /^\/api\/create-video\/narration\/[^/]+$/, op: 'create_video.narration.patch' },
+    { method: 'DELETE', re: /^\/api\/create-video\/narration\/[^/]+$/, op: 'create_video.narration.delete' },
+    { method: 'POST', re: /^\/api\/create-video\/audio\/sign$/, op: 'create_video.audio.sign' },
+    { method: 'GET', re: /^\/api\/create-video\/audio\/list$/, op: 'create_video.audio.list' },
+    { method: 'PATCH', re: /^\/api\/create-video\/audio\/[^/]+$/, op: 'create_video.audio.patch' },
+    { method: 'DELETE', re: /^\/api\/create-video\/audio\/[^/]+$/, op: 'create_video.audio.delete' },
+    { method: 'GET', re: /^\/api\/exports\/[^/]+\/hls-status$/, op: 'create_video.exports.hls_status.get' },
+    { method: 'POST', re: /^\/api\/exports\/[^/]+\/prep-hls$/, op: 'create_video.exports.hls_prep.post' },
+    { method: 'GET', re: /^\/api\/exports\/hls-status$/, op: 'create_video.exports.hls_status.get' },
+
+    // Uploads + asset browsing
+    { method: 'GET', re: /^\/api\/uploads$/, op: 'uploads.list' },
+    { method: 'GET', re: /^\/api\/uploads\/summary$/, op: 'uploads.summary.get' },
+    { method: 'GET', re: /^\/api\/uploads\/[^/]+$/, op: 'uploads.get' },
+    { method: 'PATCH', re: /^\/api\/uploads\/[^/]+$/, op: 'uploads.patch' },
+    { method: 'DELETE', re: /^\/api\/uploads\/[^/]+$/, op: 'uploads.delete' },
+    { method: 'GET', re: /^\/api\/uploads\/[^/]+\/file$/, op: 'uploads.file.get' },
+    { method: 'GET', re: /^\/api\/uploads\/[^/]+\/edit-proxy$/, op: 'uploads.edit_proxy.get' },
+    { method: 'GET', re: /^\/api\/uploads\/[^/]+\/audio-envelope$/, op: 'uploads.audio_envelope.get' },
+    { method: 'GET', re: /^\/api\/uploads\/[^/]+\/thumb$/, op: 'uploads.thumb.get' },
+    { method: 'POST', re: /^\/api\/uploads\/[^/]+\/thumb$/, op: 'uploads.thumb.refresh' },
+    { method: 'GET', re: /^\/api\/uploads\/[^/]+\/publish-options$/, op: 'uploads.publish_options.get' },
+    { method: 'POST', re: /^\/api\/uploads\/[^/]+\/delete-source$/, op: 'uploads.delete_source' },
+    { method: 'POST', re: /^\/api\/uploads\/[^/]+\/freeze-frame$/, op: 'uploads.freeze_frame' },
+    { method: 'GET', re: /^\/api\/assets\/videos$/, op: 'assets.videos.list' },
+    { method: 'POST', re: /^\/api\/assets\/videos\/[^/]+\/favorite$/, op: 'assets.videos.favorite' },
+    { method: 'POST', re: /^\/api\/assets\/videos\/[^/]+\/used$/, op: 'assets.videos.used' },
+    { method: 'GET', re: /^\/api\/assets\/graphics$/, op: 'assets.graphics.list' },
+    { method: 'POST', re: /^\/api\/assets\/graphics\/[^/]+\/favorite$/, op: 'assets.graphics.favorite' },
+    { method: 'POST', re: /^\/api\/assets\/graphics\/[^/]+\/used$/, op: 'assets.graphics.used' },
+    { method: 'GET', re: /^\/api\/system-audio$/, op: 'assets.audio.system.list' },
+    { method: 'GET', re: /^\/api\/system-audio\/search$/, op: 'assets.audio.system.search' },
+    { method: 'POST', re: /^\/api\/system-audio\/[^/]+\/favorite$/, op: 'assets.audio.system.favorite' },
+    { method: 'GET', re: /^\/api\/audio-tags$/, op: 'assets.audio.tags.list' },
+
+    // Library (shared/system videos + clips)
+    { method: 'GET', re: /^\/api\/library\/source-orgs$/, op: 'library.source_orgs.list' },
+    { method: 'GET', re: /^\/api\/library\/videos$/, op: 'library.videos.list' },
+    { method: 'GET', re: /^\/api\/library\/videos\/[^/]+$/, op: 'library.videos.get' },
+    { method: 'GET', re: /^\/api\/library\/videos\/[^/]+\/captions$/, op: 'library.videos.captions' },
+    { method: 'GET', re: /^\/api\/library\/videos\/[^/]+\/search$/, op: 'library.videos.search' },
+    { method: 'GET', re: /^\/api\/library\/clips$/, op: 'library.clips.list' },
+    { method: 'POST', re: /^\/api\/library\/clips$/, op: 'library.clips.create' },
+    { method: 'GET', re: /^\/api\/library\/clips\/[^/]+$/, op: 'library.clips.get' },
+    { method: 'PATCH', re: /^\/api\/library\/clips\/[^/]+$/, op: 'library.clips.patch' },
+    { method: 'DELETE', re: /^\/api\/library\/clips\/[^/]+$/, op: 'library.clips.delete' },
+    { method: 'POST', re: /^\/api\/library\/clips\/[^/]+\/favorite$/, op: 'library.clips.favorite' },
+
+    // Visualizer presets
+    { method: 'GET', re: /^\/api\/visualizer-presets$/, op: 'visualizer_presets.list' },
+    { method: 'POST', re: /^\/api\/visualizer-presets$/, op: 'visualizer_presets.create' },
+    { method: 'GET', re: /^\/api\/visualizer-presets\/[^/]+$/, op: 'visualizer_presets.get' },
+    { method: 'PATCH', re: /^\/api\/visualizer-presets\/[^/]+$/, op: 'visualizer_presets.patch' },
+    { method: 'PUT', re: /^\/api\/visualizer-presets\/[^/]+$/, op: 'visualizer_presets.patch' },
+    { method: 'DELETE', re: /^\/api\/visualizer-presets\/[^/]+$/, op: 'visualizer_presets.delete' },
+    { method: 'POST', re: /^\/api\/visualizer-presets\/[^/]+\/reset$/, op: 'visualizer_presets.reset' },
+  ]
+  for (const rule of rules) {
+    if (method === rule.method && rule.re.test(pathname)) {
+      return rule.op
+    }
   }
   return null
 }
 
 function classifySurface(pathname: string, req: any, operation: string | null): string | null {
   if (operation?.startsWith('create_video.')) return 'create_video'
+  if (
+    operation?.startsWith('assets.') ||
+    operation?.startsWith('library.') ||
+    operation?.startsWith('visualizer_presets.')
+  ) {
+    return 'assets'
+  }
   const refPath = requestRefererPath(req)
   if (refPath && refPath.startsWith('/create-video')) return 'create_video'
   if (refPath && (refPath.startsWith('/assets') || refPath.startsWith('/library') || refPath.startsWith('/uploads'))) {
+    return 'assets'
+  }
+  if (pathname.startsWith('/api/assets/') || pathname.startsWith('/api/library/') || pathname.startsWith('/api/visualizer-presets')) {
     return 'assets'
   }
   if (pathname.startsWith('/api/uploads/')) return 'unknown'

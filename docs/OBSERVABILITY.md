@@ -335,12 +335,29 @@ Swap recommendation for this host:
 - `error_code`
 
 ## `app.operation` values currently emitted
+Core media job operations:
+- `create_video.export.process`
+- `mediajobs.attempt.process`
+
+Create-video API family (examples):
 - `create_video.timeline.patch`
 - `create_video.export.enqueue`
-- `create_video.export.process`
+- `create_video.export.status`
+- `create_video.projects.list`
+- `create_video.projects.get`
+
+Uploads/assets API family (examples):
+- `uploads.list`
 - `uploads.file.get`
 - `uploads.edit_proxy.get`
-- `mediajobs.attempt.process`
+- `assets.videos.list`
+- `assets.graphics.list`
+
+Library + visualizer API family (examples):
+- `library.videos.list`
+- `library.clips.create`
+- `visualizer_presets.list`
+- `visualizer_presets.patch`
 
 ## `app.surface` values currently emitted
 - `create_video`
