@@ -69,6 +69,9 @@ When troubleshooting mismatches:
 - `OTEL_TRACE_STATIC=0` (default) suppresses static asset request traces such as `/favicon.ico` and `/app/assets/*`.
 - `OTEL_TRACE_PROBES=0` (default) suppresses scanner/probe traces such as `/.env`, `/.git/*`, `wp-*`, `xmlrpc.php`, etc.
 - `OTEL_TRACE_ROOT=0` (default) suppresses `GET /` root traces by default.
+- `LOG_REQUEST_STATIC=0` (default) suppresses request logs for static assets and `/help/*` pages.
+- `LOG_REQUEST_PROBES=0` (default) suppresses request logs for probe/scanner paths (`/.env`, `/.git/*`, etc.).
+- `LOG_REQUEST_ROOT=0` (default) suppresses request logs for `GET /`.
 
 ## SPM Compatibility Lock (Phase A)
 
@@ -185,7 +188,7 @@ Shortcut profile:
 - Start app with Jaeger profile:
   - `npm run serve:jaeger`
 - Start app with explicit flags:
-  - `OTEL_ENABLED=1 OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:5318 OTEL_SERVICE_NAME=aws-mediaconvert-service OTEL_SERVICE_VERSION=dev OTEL_INSTRUMENT_MYSQL2=0 OTEL_INSTRUMENT_EXPRESS=0 OTEL_INSTRUMENT_NET=0 OTEL_TRACE_STATIC=0 OTEL_TRACE_PROBES=0 OTEL_TRACE_ROOT=0 LOG_LEVEL=debug LOG_FORMAT=pretty npm run serve`
+  - `OTEL_ENABLED=1 OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:5318 OTEL_SERVICE_NAME=aws-mediaconvert-service OTEL_SERVICE_VERSION=dev OTEL_INSTRUMENT_MYSQL2=0 OTEL_INSTRUMENT_EXPRESS=0 OTEL_INSTRUMENT_NET=0 OTEL_TRACE_STATIC=0 OTEL_TRACE_PROBES=0 OTEL_TRACE_ROOT=0 LOG_REQUEST_STATIC=0 LOG_REQUEST_PROBES=0 LOG_REQUEST_ROOT=0 LOG_LEVEL=debug LOG_FORMAT=pretty npm run serve`
 
 ## Local Prometheus (Phase B)
 

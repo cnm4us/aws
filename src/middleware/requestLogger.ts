@@ -24,6 +24,37 @@ function makeRequestId(): string {
   return crypto.randomBytes(16).toString('hex')
 }
 
+function envBool(raw: string | undefined, fallback: boolean): boolean {
+  const v = String(raw || '').trim().toLowerCase()
+  if (!v) return fallback
+  if (v === '1' || v === 'true' || v === 'yes' || v === 'on') return true
+  if (v === '0' || v === 'false' || v === 'no' || v === 'off') return false
+  return fallback
+}
+
+const STATIC_EXT_RE = /\.(?:html|json|css|js|mjs|map|png|jpe?g|gif|svg|ico|webp|woff2?|ttf|eot)$/i
+const PROBE_RE = /^\/(?:\.env(?:\..*)?|\.git(?:\/.*)?|wp-(?:admin|login\.php|content)(?:\/.*)?|xmlrpc\.php|phpmyadmin(?:\/.*)?|server-status(?:\/.*)?|boaform(?:\/.*)?|cgi-bin(?:\/.*)?)/i
+
+function isStaticAssetPath(pathname: string): boolean {
+  if (!pathname) return false
+  if (pathname === '/favicon.ico' || pathname === '/robots.txt' || pathname === '/manifest.json') return true
+  if (pathname.startsWith('/app/assets/')) return true
+  if (pathname.startsWith('/help/')) return true
+  return STATIC_EXT_RE.test(pathname)
+}
+
+function isProbePath(pathname: string): boolean {
+  if (!pathname) return false
+  return PROBE_RE.test(pathname)
+}
+
+function shouldLogRequest(pathname: string): boolean {
+  if (!envBool(process.env.LOG_REQUEST_ROOT, false) && pathname === '/') return false
+  if (!envBool(process.env.LOG_REQUEST_PROBES, false) && isProbePath(pathname)) return false
+  if (!envBool(process.env.LOG_REQUEST_STATIC, false) && isStaticAssetPath(pathname)) return false
+  return true
+}
+
 export function requestLogger(req: Request, res: Response, next: NextFunction) {
   const startAt = process.hrtime.bigint()
   const inboundRequestId = parseRequestId(req.headers['x-request-id'])
@@ -38,16 +69,21 @@ export function requestLogger(req: Request, res: Response, next: NextFunction) {
   })
   req.log = reqLogger
 
-  reqLogger.debug(
-    {
-      path: req.path,
-      ip: req.ip,
-      user_id: req.user?.id ?? null,
-    },
-    'request.start'
-  )
+  const path = req.path || '/'
+  const logThisRequest = shouldLogRequest(path)
+  if (logThisRequest) {
+    reqLogger.debug(
+      {
+        path,
+        ip: req.ip,
+        user_id: req.user?.id ?? null,
+      },
+      'request.start'
+    )
+  }
 
   res.on('finish', () => {
+    if (!logThisRequest) return
     const durationMs = Number(process.hrtime.bigint() - startAt) / 1_000_000
     const routePath = req.route?.path ? String(req.route.path) : undefined
     const contentLength = Number(res.getHeader('content-length') || 0) || undefined
@@ -67,4 +103,3 @@ export function requestLogger(req: Request, res: Response, next: NextFunction) {
 
   next()
 }
-
