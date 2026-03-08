@@ -21002,7 +21002,30 @@ export default function CreateVideo() {
           </div>
         </div>
         <div style={{ marginTop: 10 }}>
-          {exportStatus ? <div style={{ color: '#bbb' }}>{exportStatus}</div> : null}
+          {exportStatus ? (
+            <div style={{ color: '#bbb', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <span>{exportStatus}</span>
+              {!exporting && exportResultUploadId != null ? (
+                <a
+                  href={`/exports?from=${encodeURIComponent('/create-video')}`}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '6px 10px',
+                    borderRadius: 10,
+                    border: '1px solid rgba(10,132,255,0.55)',
+                    background: 'rgba(10,132,255,0.18)',
+                    color: '#9ecbff',
+                    textDecoration: 'none',
+                    fontWeight: 800,
+                  }}
+                >
+                  View in Exports
+                </a>
+              ) : null}
+            </div>
+          ) : null}
           {exporting && exportProgressPct != null ? (
             <div style={{ marginTop: 8, maxWidth: 360 }}>
               <div
@@ -21022,20 +21045,6 @@ export default function CreateVideo() {
                   }}
                 />
               </div>
-            </div>
-          ) : null}
-          {!exporting && exportResultUploadId != null ? (
-            <div style={{ marginTop: 8 }}>
-              <a
-                href={`/exports?from=${encodeURIComponent('/create-video')}`}
-                style={{
-                  color: '#9ecbff',
-                  textDecoration: 'underline',
-                  fontWeight: 700,
-                }}
-              >
-                View in Exports
-              </a>
             </div>
           ) : null}
           {exportError ? <div style={{ marginTop: 10, color: '#ff9b9b' }}>{exportError}</div> : null}
