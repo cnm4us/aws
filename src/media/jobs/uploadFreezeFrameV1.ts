@@ -1,8 +1,8 @@
-import { HeadObjectCommand } from '@aws-sdk/client-s3'
 import { getPool } from '../../db'
 import { s3 } from '../../services/s3'
 import type { UploadFreezeFrameV1Input } from '../../features/media-jobs/types'
 import { createUploadFreezeFramePng } from '../../services/ffmpeg/freezeFramePipeline'
+import { s3ObjectExists } from '../../services/s3ObjectExists'
 
 export async function runUploadFreezeFrameV1Job(
   input: UploadFreezeFrameV1Input,
@@ -21,8 +21,14 @@ export async function runUploadFreezeFrameV1Job(
   } catch {}
 
   // Idempotency: if image already exists, skip re-rendering.
-  try {
-    await s3.send(new HeadObjectCommand({ Bucket: uploadBucket, Key: outKey }))
+  const exists = await s3ObjectExists({
+    s3,
+    bucket: uploadBucket,
+    key: outKey,
+    objectKind: 'freeze_frame_image',
+    attrs: { 'app.operation': 'mediajobs.attempt.process' },
+  })
+  if (exists.exists) {
     try {
       if (freezeUploadId > 0) {
         await db.query(
@@ -36,10 +42,6 @@ export async function runUploadFreezeFrameV1Job(
       }
     } catch {}
     return { output: { bucket: uploadBucket, key: outKey, s3Url: `s3://${uploadBucket}/${outKey}`, sizeBytes: 0 }, skipped: true }
-  } catch (e: any) {
-    const status = Number(e?.$metadata?.httpStatusCode || 0)
-    const name = String(e?.name || e?.Code || '')
-    if (!(status === 404 || name === 'NotFound' || name === 'NoSuchKey')) throw e
   }
 
   const longEdgePx = Math.max(64, Math.min(2160, Math.round(Number(input.longEdgePx || 1080))))
@@ -68,4 +70,3 @@ export async function runUploadFreezeFrameV1Job(
 
   return { output: { ...result } }
 }
-

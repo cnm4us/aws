@@ -1,7 +1,7 @@
-import { HeadObjectCommand } from '@aws-sdk/client-s3'
 import { s3 } from '../../services/s3'
 import type { UploadThumbV1Input } from '../../features/media-jobs/types'
 import { createUploadThumbJpeg } from '../../services/ffmpeg/thumbPipeline'
+import { s3ObjectExists } from '../../services/s3ObjectExists'
 
 export async function runUploadThumbV1Job(
   input: UploadThumbV1Input,
@@ -15,16 +15,15 @@ export async function runUploadThumbV1Job(
 
   // Idempotency: if thumb already exists, skip re-rendering.
   if (!force) {
-    try {
-      await s3.send(new HeadObjectCommand({ Bucket: bucket, Key: key }))
+    const exists = await s3ObjectExists({
+      s3,
+      bucket,
+      key,
+      objectKind: 'upload_thumb',
+      attrs: { 'app.operation': 'mediajobs.attempt.process' },
+    })
+    if (exists.exists) {
       return { output: { bucket, key, s3Url: `s3://${bucket}/${key}` }, skipped: true, ffmpegCommands }
-    } catch (e: any) {
-      const status = Number(e?.$metadata?.httpStatusCode || 0)
-      const name = String(e?.name || e?.Code || '')
-      if (!(status === 404 || name === 'NotFound' || name === 'NoSuchKey')) {
-        // Unexpected (permissions/infra) - bubble up so the job can retry.
-        throw e
-      }
     }
   }
 

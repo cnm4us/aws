@@ -14,7 +14,7 @@ import { createPresignedPost } from '@aws-sdk/s3-presigned-post'
 import { randomUUID } from 'crypto'
 import { MEDIA_JOBS_ENABLED, OUTPUT_BUCKET, UPLOAD_BUCKET, MAX_UPLOAD_MB, UPLOAD_PREFIX } from '../../config'
 import { sanitizeFilename, pickExtension, nowDateYmd, buildUploadKey } from '../../utils/naming'
-import { DeleteObjectsCommand, GetObjectCommand, HeadObjectCommand, ListObjectsV2Command, type ListObjectsV2CommandOutput, type _Object } from '@aws-sdk/client-s3'
+import { DeleteObjectsCommand, GetObjectCommand, ListObjectsV2Command, type ListObjectsV2CommandOutput, type _Object } from '@aws-sdk/client-s3'
 import { clampLimit } from '../../core/pagination'
 import { enqueueJob } from '../media-jobs/service'
 import * as prodRepo from '../productions/repo'
@@ -27,6 +27,7 @@ import { buildUploadFreezeFrameKey } from '../../utils/uploadFreezeFrame'
 import { UPLOADS_CDN_DOMAIN, UPLOADS_CDN_SIGNED_URL_TTL_SECONDS, UPLOADS_CLOUDFRONT_KEY_PAIR_ID, UPLOADS_CLOUDFRONT_PRIVATE_KEY_PEM_BASE64 } from '../../config'
 import { buildCloudFrontSignedUrl } from '../../utils/cloudfrontSignedUrl'
 import { librarySourceValueSet } from '../../config/librarySources'
+import { s3ObjectExists } from '../../services/s3ObjectExists'
 
 export type ServiceContext = { userId?: number | null; ip?: string | null; userAgent?: string | null }
 
@@ -388,26 +389,28 @@ export async function getUploadSignedCdnUrl(
     if (rowKind !== 'video') throw new NotFoundError('not_found')
     key = buildUploadEditProxyKey(uploadId)
     // Ensure exists or enqueue.
-    try {
-      await s3.send(new HeadObjectCommand({ Bucket: String(UPLOAD_BUCKET), Key: key }))
-    } catch (e: any) {
-      const status = Number(e?.$metadata?.httpStatusCode || 0)
-      const name = String(e?.name || e?.Code || '')
-      const isMissing = status === 404 || name === 'NotFound' || name === 'NoSuchKey'
-      if (!isMissing) throw e
+    const exists = await s3ObjectExists({
+      s3,
+      bucket: String(UPLOAD_BUCKET),
+      key,
+      objectKind: 'upload_edit_proxy',
+      attrs: { 'app.operation': 'uploads.edit_proxy.get' },
+    })
+    if (!exists.exists) {
       await ensureEditProxyEnqueued(row, ctx)
       throw new NotFoundError('not_found')
     }
   } else if (kind === 'thumb') {
     if (rowKind !== 'video') throw new NotFoundError('not_found')
     key = buildUploadThumbKey(uploadId)
-    try {
-      await s3.send(new HeadObjectCommand({ Bucket: String(UPLOAD_BUCKET), Key: key }))
-    } catch (e: any) {
-      const status = Number(e?.$metadata?.httpStatusCode || 0)
-      const name = String(e?.name || e?.Code || '')
-      const isMissing = status === 404 || name === 'NotFound' || name === 'NoSuchKey'
-      if (!isMissing) throw e
+    const exists = await s3ObjectExists({
+      s3,
+      bucket: String(UPLOAD_BUCKET),
+      key,
+      objectKind: 'upload_thumb',
+      attrs: { 'app.operation': 'uploads.thumb.get' },
+    })
+    if (!exists.exists) {
       await ensureThumbEnqueued(row, ctx)
       throw new NotFoundError('not_found')
     }
@@ -449,11 +452,14 @@ async function ensureAudioEnvelopeEnqueued(uploadRow: any, ctx: ServiceContext):
     if (!proxyBucket || !proxyKey) return
     if (!isAudio) {
       // Require the edit proxy to exist before enqueuing (video only).
-      try {
-        await s3.send(new HeadObjectCommand({ Bucket: String(UPLOAD_BUCKET), Key: proxyKey }))
-      } catch {
-        return
-      }
+      const proxyExists = await s3ObjectExists({
+        s3,
+        bucket: String(UPLOAD_BUCKET),
+        key: proxyKey,
+        objectKind: 'upload_edit_proxy',
+        attrs: { 'app.operation': 'uploads.audio_envelope.get' },
+      })
+      if (!proxyExists.exists) return
     }
 
     let alreadyQueued = false
@@ -732,18 +738,17 @@ export async function requestFreezeFrameUpload(
   if (!bucket || !proxyKey) throw new NotFoundError('not_found')
 
   // Ensure the edit proxy exists; if missing, enqueue generation and return pending.
-  let proxyExists = false
-  try {
-    await s3.send(new HeadObjectCommand({ Bucket: bucket, Key: proxyKey }))
-    proxyExists = true
-  } catch (e: any) {
-    const status = Number(e?.$metadata?.httpStatusCode || 0)
-    const name = String(e?.name || e?.Code || '')
-    const isMissing = status === 404 || name === 'NotFound' || name === 'NoSuchKey'
-    if (!isMissing) throw e
+  const proxyExists = await s3ObjectExists({
+    s3,
+    bucket,
+    key: proxyKey,
+    objectKind: 'upload_edit_proxy',
+    attrs: { 'app.operation': 'uploads.freeze_frame' },
+  })
+  if (!proxyExists.exists) {
     await ensureEditProxyEnqueued(row, ctx)
   }
-  if (!proxyExists) {
+  if (!proxyExists.exists) {
     return { status: 'pending', freezeUploadId: 0, key: '', bucket: '' }
   }
 
@@ -765,8 +770,14 @@ export async function requestFreezeFrameUpload(
   const freezeUploadId = Number((res as any).insertId)
 
   // If the image already exists in S3, mark completed and return.
-  try {
-    await s3.send(new HeadObjectCommand({ Bucket: bucket, Key: outKey }))
+  const freezeExists = await s3ObjectExists({
+    s3,
+    bucket,
+    key: outKey,
+    objectKind: 'freeze_frame_image',
+    attrs: { 'app.operation': 'uploads.freeze_frame' },
+  })
+  if (freezeExists.exists) {
     try {
       await db.query(
         `UPDATE uploads
@@ -776,11 +787,6 @@ export async function requestFreezeFrameUpload(
       )
     } catch {}
     return { status: 'completed', freezeUploadId, key: outKey, bucket }
-  } catch (e: any) {
-    const status = Number(e?.$metadata?.httpStatusCode || 0)
-    const name = String(e?.name || e?.Code || '')
-    const isMissing = status === 404 || name === 'NotFound' || name === 'NoSuchKey'
-    if (!isMissing) throw e
   }
 
   // Best-effort: avoid duplicate in-flight jobs for this derived upload.

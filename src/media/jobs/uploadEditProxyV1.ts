@@ -1,7 +1,7 @@
-import { HeadObjectCommand } from '@aws-sdk/client-s3'
 import { s3 } from '../../services/s3'
 import type { UploadEditProxyV1Input } from '../../features/media-jobs/types'
 import { createUploadEditProxyMp4 } from '../../services/ffmpeg/proxyPipeline'
+import { s3ObjectExists } from '../../services/s3ObjectExists'
 
 export async function runUploadEditProxyV1Job(
   input: UploadEditProxyV1Input,
@@ -12,15 +12,15 @@ export async function runUploadEditProxyV1Job(
   if (!bucket || !key) throw new Error('missing_output_pointer')
 
   // Idempotency: if proxy already exists, skip re-rendering.
-  try {
-    await s3.send(new HeadObjectCommand({ Bucket: bucket, Key: key }))
+  const exists = await s3ObjectExists({
+    s3,
+    bucket,
+    key,
+    objectKind: 'upload_edit_proxy',
+    attrs: { 'app.operation': 'mediajobs.attempt.process' },
+  })
+  if (exists.exists) {
     return { output: { bucket, key, s3Url: `s3://${bucket}/${key}` }, skipped: true }
-  } catch (e: any) {
-    const status = Number(e?.$metadata?.httpStatusCode || 0)
-    const name = String(e?.name || e?.Code || '')
-    if (!(status === 404 || name === 'NotFound' || name === 'NoSuchKey')) {
-      throw e
-    }
   }
 
   const longEdgePx = Math.max(160, Math.min(1080, Math.round(Number(input.longEdgePx || 540))))

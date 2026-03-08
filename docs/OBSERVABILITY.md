@@ -423,3 +423,12 @@ Library + visualizer API family (examples):
 - `app.request.class=static_asset` for static resources (when static traces are enabled with `OTEL_TRACE_STATIC=1`).
 - `app.request.class=probe` for scanner/probe paths (when enabled with `OTEL_TRACE_PROBES=1`).
 - `app.request.class=root` for `GET /` root requests (when enabled with `OTEL_TRACE_ROOT=1`).
+
+## Storage existence-check tags
+Used to mark expected S3 missing-object checks (for idempotent/provisioning flows):
+- `storage_backend=s3`
+- `storage_check=head_object`
+- `storage_object_kind` (for example `upload_edit_proxy`, `upload_thumb`, `upload_audio_envelope`, `freeze_frame_image`)
+- `storage_exists=true|false`
+- `storage_missing_expected=true|false`
+- `storage_lookup_result=exists|missing_expected|error_unexpected`
