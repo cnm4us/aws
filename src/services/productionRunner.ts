@@ -16,6 +16,7 @@ import { randomUUID } from 'crypto'
 import { s3 } from './s3'
 import * as lowerThirdsSvc from '../features/lower-thirds/service'
 import { rasterizeLowerThirdSvgToPng } from './lowerThirdPng'
+import { withExternalAwsSpan } from '../lib/externalObservability'
 
 export type RenderOptions = {
   upload: any
@@ -82,6 +83,16 @@ function ensurePosterOutputGroups(settings: any) {
     }
     ;(settings as any).OutputGroups = groups
   } catch {}
+}
+
+function mediaConvertQueueLabel(queueArn: string | null | undefined): string | undefined {
+  const raw = String(queueArn || '').trim()
+  if (!raw) return undefined
+  const slashIdx = raw.lastIndexOf('/')
+  if (slashIdx >= 0 && slashIdx < raw.length - 1) return raw.slice(slashIdx + 1)
+  const colonIdx = raw.lastIndexOf(':')
+  if (colonIdx >= 0 && colonIdx < raw.length - 1) return raw.slice(colonIdx + 1)
+  return raw
 }
 
 export async function startMediaConvertForExistingProduction(opts: {
@@ -238,7 +249,22 @@ export async function startMediaConvertForExistingProduction(opts: {
   }
 
   writeRequestLog(`upload:${opts.upload.id}:${opts.profile || ''}`, params)
-  const resp = await mc.send(new CreateJobCommand(params))
+  const resp = await withExternalAwsSpan(
+    {
+      spanName: 'external.mediaconvert.job.create',
+      provider: 'aws_mediaconvert',
+      operation: 'job.create',
+      attrs: {
+        'app.operation': 'external.mediaconvert.job.create',
+        'aws.region': String(AWS_REGION || '').trim() || undefined,
+        external_queue: mediaConvertQueueLabel(MC_QUEUE_ARN),
+        production_id: Number(opts.productionId),
+        upload_id: Number(opts.upload?.id),
+        profile: String(opts.profile || '').trim() || undefined,
+      },
+    },
+    () => mc.send(new CreateJobCommand(params))
+  )
   const jobId = resp.Job?.Id || null
   const outPrefix = getFirstCmafDestinationPrefix(settings, OUTPUT_BUCKET) || getFirstHlsDestinationPrefix(settings, OUTPUT_BUCKET) || `${OUTPUT_PREFIX}${opts.upload.id}/`
 

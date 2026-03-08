@@ -4,10 +4,11 @@ import { getPool } from '../../db'
 import type { AssemblyAiTranscriptV1Input, S3Pointer } from '../../features/media-jobs/types'
 import { ASSEMBLYAI_POLL_INTERVAL_MS, ASSEMBLYAI_POLL_TIMEOUT_SECONDS, ASSEMBLYAI_PRESIGN_TTL_SECONDS, UPLOAD_BUCKET } from '../../config'
 import { presignGetObjectUrl } from '../../services/s3Presign'
-import { createTranscript, fetchVtt, waitForTranscript } from '../../services/assemblyai'
+import { createTranscript, fetchVtt, waitForTranscript, type AssemblyAiTelemetryContext } from '../../services/assemblyai'
 import { uploadTextToS3 } from '../../services/mediaJobs/s3Logs'
 import { MEDIA_JOBS_LOGS_BUCKET } from '../../config'
 import * as captionsRepo from '../../features/captions/repo'
+import { withExternalSpan } from '../../lib/externalObservability'
 
 function appendLog(filePath: string | undefined, line: string) {
   if (!filePath) return
@@ -65,7 +66,8 @@ async function resolveTranscriptionSource(productionId: number): Promise<{ sourc
 
 export async function runAssemblyAiTranscriptV1Job(
   input: AssemblyAiTranscriptV1Input,
-  logPaths?: { stdoutPath?: string; stderrPath?: string }
+  logPaths?: { stdoutPath?: string; stderrPath?: string },
+  telemetry?: AssemblyAiTelemetryContext
 ): Promise<{
   productionId: number
   transcriptId: string
@@ -87,19 +89,44 @@ export async function runAssemblyAiTranscriptV1Job(
     expiresInSeconds: ASSEMBLYAI_PRESIGN_TTL_SECONDS,
   })
 
-  const { id: transcriptId } = await createTranscript(audioUrl)
-  appendLog(logPaths?.stdoutPath, `transcriptId=${transcriptId}`)
-
-  const done = await waitForTranscript(transcriptId, {
-    pollIntervalMs: ASSEMBLYAI_POLL_INTERVAL_MS,
-    timeoutSeconds: ASSEMBLYAI_POLL_TIMEOUT_SECONDS,
-  })
-  if (done.status !== 'completed') {
-    appendLog(logPaths?.stderrPath, `assemblyai_failed status=${done.status} error=${done.error || ''}`)
-    throw new Error(`assemblyai_failed:${done.error || 'error'}`)
+  const callTelemetry: AssemblyAiTelemetryContext = {
+    attrs: {
+      'app.operation': 'mediajobs.attempt.process',
+      mediajob_type: 'assemblyai_transcript_v1',
+      production_id: productionId,
+      ...(telemetry?.attrs || {}),
+    },
   }
 
-  const vtt = await fetchVtt(transcriptId)
+  const { transcriptId } = await withExternalSpan(
+    {
+      spanName: 'external.assemblyai.transcript.turnaround',
+      provider: 'assemblyai',
+      operation: 'transcript.turnaround',
+      attrs: {
+        'app.operation': 'external.assemblyai.transcript.turnaround',
+        mediajob_type: 'assemblyai_transcript_v1',
+        production_id: productionId,
+        ...(callTelemetry.attrs || {}),
+      },
+    },
+    async (span) => {
+      const { id: transcriptId } = await createTranscript(audioUrl, callTelemetry)
+      appendLog(logPaths?.stdoutPath, `transcriptId=${transcriptId}`)
+      const done = await waitForTranscript(transcriptId, {
+        pollIntervalMs: ASSEMBLYAI_POLL_INTERVAL_MS,
+        timeoutSeconds: ASSEMBLYAI_POLL_TIMEOUT_SECONDS,
+      }, callTelemetry)
+      if (done.status !== 'completed') {
+        appendLog(logPaths?.stderrPath, `assemblyai_failed status=${done.status} error=${done.error || ''}`)
+        throw new Error(`assemblyai_failed:${done.error || 'error'}`)
+      }
+      span.setAttribute('app.outcome', 'success')
+      return { transcriptId }
+    }
+  )
+
+  const vtt = await fetchVtt(transcriptId, callTelemetry)
 
   const outDir = path.join(process.cwd(), 'logs', 'assemblyai')
   fs.mkdirSync(outDir, { recursive: true })

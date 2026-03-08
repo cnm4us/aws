@@ -80,3 +80,96 @@ groups:
         annotations:
           summary: "High HTTP error rate for {{ $labels.app_operation }}"
           description: "error rate is {{ $value }} over 5m with sustained traffic."
+
+  - name: external-spanmetrics-recording
+    interval: 30s
+    rules:
+      - record: external:calls_per_second:5m
+        expr: |
+          sum by (app_operation) (
+            rate(
+              traces_span_metrics_calls_total{
+                service_name="aws-mediaconvert-service",
+                span_kind="SPAN_KIND_CLIENT",
+                app_operation=~"external\\..+"
+              }[5m]
+            )
+          )
+
+      - record: external:errors_per_second:5m
+        expr: |
+          sum by (app_operation) (
+            rate(
+              traces_span_metrics_calls_total{
+                service_name="aws-mediaconvert-service",
+                span_kind="SPAN_KIND_CLIENT",
+                app_operation=~"external\\..+",
+                app_outcome=~"client_error|server_error"
+              }[5m]
+            )
+          )
+
+      - record: external:error_rate:5m
+        expr: |
+          external:errors_per_second:5m
+          /
+          clamp_min(external:calls_per_second:5m, 0.001)
+
+      - record: external:p95_latency_ms:30m
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le, app_operation) (
+              increase(
+                traces_span_metrics_duration_milliseconds_bucket{
+                  service_name="aws-mediaconvert-service",
+                  span_kind="SPAN_KIND_CLIENT",
+                  app_operation=~"external\\..+"
+                }[30m]
+              )
+            )
+          )
+
+      - record: external:job_turnaround_p95_ms:30m
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le, app_operation) (
+              increase(
+                traces_span_metrics_duration_milliseconds_bucket{
+                  service_name="aws-mediaconvert-service",
+                  span_kind="SPAN_KIND_CLIENT",
+                  app_operation=~"external\\.assemblyai\\.transcript\\.turnaround|external\\.mediaconvert\\.job\\.turnaround"
+                }[30m]
+              )
+            )
+          )
+
+  - name: external-spanmetrics-alerts
+    interval: 30s
+    rules:
+      - alert: ExternalProviderErrorRateHigh
+        expr: |
+          external:error_rate:5m > 0.05
+          and
+          external:calls_per_second:5m > 0.01
+        for: 10m
+        labels:
+          severity: warning
+          team: app
+        annotations:
+          summary: "High external provider error rate for {{ $labels.app_operation }}"
+          description: "error rate is {{ $value }} over 5m with sustained traffic."
+
+      - alert: ExternalProviderTurnaroundHigh
+        expr: |
+          external:job_turnaround_p95_ms:30m{
+            app_operation=~"external\\.assemblyai\\.transcript\\.turnaround|external\\.mediaconvert\\.job\\.turnaround"
+          } > 900000
+        for: 10m
+        labels:
+          severity: warning
+          team: app
+        annotations:
+          summary: "High external turnaround p95 for {{ $labels.app_operation }}"
+          description: "p95 turnaround is {{ $value }} ms for at least 10m."

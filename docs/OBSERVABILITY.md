@@ -213,16 +213,31 @@ Recording rules (minimal baseline):
 - `app:http_errors_per_second:5m`
 - `app:http_error_rate:5m`
 - `app:http_p95_latency_ms:5m`
+- `external:calls_per_second:5m`
+- `external:errors_per_second:5m`
+- `external:error_rate:5m`
+- `external:p95_latency_ms:30m`
+- `external:job_turnaround_p95_ms:30m`
 
 Alert rules (minimal baseline):
 - `AppHttpP95LatencyHigh` (p95 > 1500ms for 10m)
 - `AppHttpErrorRateHigh` (error rate > 2% for 5m with traffic floor)
+- `ExternalProviderErrorRateHigh` (error rate > 5% for 10m with traffic floor)
+- `ExternalProviderTurnaroundHigh` (turnaround p95 > 15m for 10m)
 
 Where to view:
 - Prometheus UI alerts page: `http://127.0.0.1:9090/alerts`
 - Prometheus API:
   - rules: `http://127.0.0.1:9090/api/v1/rules`
   - alerts: `http://127.0.0.1:9090/api/v1/alerts`
+
+External-provider query starters:
+- `external:calls_per_second:5m`
+- `external:error_rate:5m`
+- `external:p95_latency_ms:30m`
+- `external:job_turnaround_p95_ms:30m`
+- Example filter:
+  - `external:p95_latency_ms:30m{app_operation="external.mediaconvert.job.get"}`
 
 Environment overrides for script:
 - `PROM_CONFIG_FILE`

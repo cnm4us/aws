@@ -515,14 +515,30 @@ async function runOne(job: any, attempt: any, workerId: string) {
 
     if (jobType === 'assemblyai_transcript_v1') {
       const input = job.input_json as any
-      const result = await runStage('execute', async () => runAssemblyAiTranscriptV1Job(input, { stdoutPath, stderrPath }))
+      const result = await runStage('execute', async () =>
+        runAssemblyAiTranscriptV1Job(input, { stdoutPath, stderrPath }, {
+          attrs: {
+            mediajob_id: jobId,
+            mediajob_attempt_no: attemptNo,
+            mediajob_type: jobType,
+          },
+        })
+      )
       await persistSuccess(result)
       return
     }
 
     if (jobType === 'assemblyai_upload_transcript_v1') {
       const input = job.input_json as any
-      const result = await runStage('execute', async () => runAssemblyAiUploadTranscriptV1Job(input, { stdoutPath, stderrPath }))
+      const result = await runStage('execute', async () =>
+        runAssemblyAiUploadTranscriptV1Job(input, { stdoutPath, stderrPath }, {
+          attrs: {
+            mediajob_id: jobId,
+            mediajob_attempt_no: attemptNo,
+            mediajob_type: jobType,
+          },
+        })
+      )
       await persistSuccess(result)
       return
     }

@@ -9,6 +9,7 @@ import { startMediaJobsWorker, stopMediaJobsWorkerAndWait } from './services/med
 import * as mediaJobs from './features/media-jobs/service'
 import { getLogger, logError, observabilityConfig } from './lib/logger';
 import { shutdownObservability } from './lib/observability';
+import { recordExternalTurnaroundSpan, withExternalAwsSpan } from './lib/externalObservability';
 
 const db = getPool();
 const serverLogger = getLogger({ component: 'server' })
@@ -120,11 +121,40 @@ async function pollStatuses() {
         StartTime?: Date;
         FinishTime?: Date;
       } | undefined;
+      let createdAt: Date | undefined;
+      const firstUploadId =
+        bucket.uploads.length > 0 && Number.isFinite(Number(bucket.uploads[0]?.id))
+          ? Number(bucket.uploads[0]?.id)
+          : undefined;
+      const firstProductionId =
+        bucket.productions.length > 0 && Number.isFinite(Number(bucket.productions[0]?.id))
+          ? Number(bucket.productions[0]?.id)
+          : undefined;
 
       try {
-        const resp = await mc.send(new GetJobCommand({ Id: jobId }));
+        const resp = await withExternalAwsSpan(
+          {
+            spanName: 'external.mediaconvert.job.get',
+            provider: 'aws_mediaconvert',
+            operation: 'job.get',
+            attrs: {
+              'app.operation': 'external.mediaconvert.job.get',
+              'aws.region': region,
+              upload_id: firstUploadId,
+              production_id: firstProductionId,
+              bucket_upload_count: bucket.uploads.length,
+              bucket_production_count: bucket.productions.length,
+            },
+          },
+          () => mc.send(new GetJobCommand({ Id: jobId }))
+        );
         status = resp.Job?.Status;
         errorMessage = resp.Job?.ErrorMessage || undefined;
+        try {
+          const rawCreated = (resp as any)?.Job?.CreatedAt
+          const parsedCreated = rawCreated ? new Date(rawCreated) : undefined
+          if (parsedCreated && Number.isFinite(parsedCreated.getTime())) createdAt = parsedCreated
+        } catch {}
         const timingRaw: any = resp.Job?.Timing;
         if (timingRaw) {
           timing = {
@@ -147,6 +177,28 @@ async function pollStatuses() {
       }
 
       if (!status) continue;
+
+      if (status === 'COMPLETE' || status === 'ERROR' || status === 'CANCELED') {
+        const startMs = createdAt ? createdAt.getTime() : NaN
+        const endMs = timing?.FinishTime ? timing.FinishTime.getTime() : NaN
+        if (Number.isFinite(startMs) && Number.isFinite(endMs) && endMs >= startMs) {
+          recordExternalTurnaroundSpan({
+            spanName: 'external.mediaconvert.job.turnaround',
+            provider: 'aws_mediaconvert',
+            operation: 'job.turnaround',
+            startTimeMs: startMs,
+            endTimeMs: endMs,
+            outcome: status === 'COMPLETE' ? 'success' : 'server_error',
+            errorClass: status === 'COMPLETE' ? null : 'upstream',
+            attrs: {
+              'app.operation': 'external.mediaconvert.job.turnaround',
+              'aws.region': region,
+              upload_id: firstUploadId,
+              production_id: firstProductionId,
+            },
+          })
+        }
+      }
 
       // Update uploads table based on job status
       for (const row of bucket.uploads) {
