@@ -2,6 +2,8 @@
 
 This app uses both DB-backed job records and telemetry data. They are intentionally complementary.
 
+For a full tag/value lookup, see `docs/OBSERVABILITY_MATRIX.md`.
+
 ## Responsibility Matrix
 
 - `media_jobs` + `media_job_attempts` (DB): durable product/admin truth.
