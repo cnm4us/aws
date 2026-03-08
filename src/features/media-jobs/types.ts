@@ -15,6 +15,10 @@ export type MediaJobRow = {
   id: number
   type: string
   status: MediaJobStatus
+  progress_pct: number | null
+  progress_stage: string | null
+  progress_message: string | null
+  progress_updated_at: string | null
   priority: number
   attempts: number
   max_attempts: number

@@ -21,6 +21,13 @@ import { DeleteObjectsCommand, ListObjectsV2Command, type ListObjectsV2CommandOu
 
 export const createVideoRouter = Router()
 
+function markNoStore(res: any) {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0')
+  res.setHeader('Pragma', 'no-cache')
+  res.setHeader('Expires', '0')
+  res.setHeader('Surrogate-Control', 'no-store')
+}
+
 type DeleteSummary = { bucket: string; prefix: string; deleted: number; batches: number; samples: string[]; errors: string[] }
 async function deletePrefix(bucket: string, prefix: string): Promise<DeleteSummary> {
   let token: string | undefined = undefined
@@ -90,6 +97,7 @@ createVideoRouter.post('/api/create-video/projects', requireAuth, async (req, re
 
 createVideoRouter.get('/api/create-video/projects/:id', requireAuth, async (req, res, next) => {
   try {
+    markNoStore(res)
     const currentUserId = Number(req.user!.id)
     const projectId = Number(req.params.id)
     const result = await createVideoSvc.getProjectForUserById(currentUserId, projectId)
@@ -453,6 +461,7 @@ createVideoRouter.get('/api/exports/hls-status', requireAuth, async (req, res, n
 
 createVideoRouter.get('/api/create-video/projects/:id/export-status', requireAuth, async (req, res, next) => {
   try {
+    markNoStore(res)
     const currentUserId = Number(req.user!.id)
     const projectId = Number(req.params.id)
     const jobId = req.query.jobId != null ? Number(req.query.jobId) : null
@@ -465,6 +474,7 @@ createVideoRouter.get('/api/create-video/projects/:id/export-status', requireAut
 
 createVideoRouter.get('/api/create-video/project', requireAuth, async (req, res, next) => {
   try {
+    markNoStore(res)
     const currentUserId = Number(req.user!.id)
     const project = await createVideoSvc.getActiveProjectForUser(currentUserId)
     res.json({ project })
@@ -506,6 +516,7 @@ createVideoRouter.post('/api/create-video/project/export', requireAuth, async (r
 
 createVideoRouter.get('/api/create-video/project/export-status', requireAuth, async (req, res, next) => {
   try {
+    markNoStore(res)
     const currentUserId = Number(req.user!.id)
     const jobId = req.query.jobId != null ? Number(req.query.jobId) : null
     const result = await createVideoSvc.getExportStatusForUser(currentUserId, { jobId })

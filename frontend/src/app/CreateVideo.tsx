@@ -1096,6 +1096,18 @@ export default function CreateVideo() {
   const [exportError, setExportError] = useState<string | null>(null)
   const [exportStatus, setExportStatus] = useState<string | null>(null)
   const [exportJobId, setExportJobId] = useState<number | null>(null)
+  const [exportProgressPct, setExportProgressPct] = useState<number | null>(null)
+  const [exportProgressBufferPct, setExportProgressBufferPct] = useState<number | null>(null)
+  const [exportPendingResultUploadId, setExportPendingResultUploadId] = useState<number | null>(null)
+  const [exportResultUploadId, setExportResultUploadId] = useState<number | null>(null)
+  const [exportStartUploadId, setExportStartUploadId] = useState<number | null>(null)
+  const [exportStartAtMs, setExportStartAtMs] = useState<number | null>(null)
+  const exportProgressStageRef = useRef<string>('')
+  const exportProgressLastServerAtRef = useRef<number>(0)
+  const exportProgressLastServerPctRef = useRef<number>(0)
+  const exportProgressLastServerSignalRef = useRef<string>('')
+  const exportProgressUiPctRef = useRef<number>(0)
+  const exportCompletedJobIdRef = useRef<number | null>(null)
   const [timelineMessage, setTimelineMessage] = useState<string | null>(null)
   const [timelineErrorModal, setTimelineErrorModal] = useState<string | null>(null)
   const [guidelineMenuOpen, setGuidelineMenuOpen] = useState(false)
@@ -20537,6 +20549,18 @@ export default function CreateVideo() {
     setExportError(null)
     setExportStatus('Starting export…')
     setExportJobId(null)
+    setExportProgressPct(0)
+    setExportProgressBufferPct(0)
+    setExportPendingResultUploadId(null)
+    setExportResultUploadId(null)
+    setExportStartUploadId(Number.isFinite(Number(project?.lastExportUploadId)) ? Number(project?.lastExportUploadId) : null)
+    setExportStartAtMs(Date.now())
+    exportProgressStageRef.current = ''
+    exportProgressLastServerAtRef.current = Date.now()
+    exportProgressLastServerPctRef.current = 0
+    exportProgressLastServerSignalRef.current = ''
+    exportProgressUiPctRef.current = 0
+    exportCompletedJobIdRef.current = null
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       const csrf = getCsrfToken()
@@ -20550,41 +20574,271 @@ export default function CreateVideo() {
       const json: any = await res.json().catch(() => null)
       if (!res.ok) throw new Error(String(json?.error || 'export_failed'))
       const jid = Number(json?.jobId)
-      if (Number.isFinite(jid) && jid > 0) setExportJobId(jid)
+      if (!(Number.isFinite(jid) && jid > 0)) throw new Error('export_missing_job_id')
+      setExportJobId(jid)
       setExportStatus('Export in progress…')
     } catch (e: any) {
       setExportError(e?.message || 'export_failed')
       setExportStatus(null)
       setExporting(false)
       setExportJobId(null)
+      setExportProgressPct(null)
+      setExportProgressBufferPct(null)
+      setExportPendingResultUploadId(null)
+      setExportResultUploadId(null)
+      setExportStartAtMs(null)
+      exportProgressStageRef.current = ''
+      exportProgressLastServerAtRef.current = 0
+      exportProgressLastServerPctRef.current = 0
+      exportProgressLastServerSignalRef.current = ''
+      exportProgressUiPctRef.current = 0
+      exportCompletedJobIdRef.current = null
     }
   }, [audioSegments, project?.id, project?.name, totalSeconds])
 
   useEffect(() => {
     if (!exporting) return
+    if (exportProgressBufferPct == null || !Number.isFinite(exportProgressBufferPct)) return
+    const t = window.setInterval(() => {
+      setExportProgressPct((prev) => {
+        const cur = prev == null || !Number.isFinite(prev) ? 0 : Number(prev)
+        const target = Math.max(0, Math.min(100, Number(exportProgressBufferPct)))
+        if (cur >= target) {
+          exportProgressUiPctRef.current = cur
+          return cur
+        }
+        const gap = target - cur
+        // Intentionally conservative display speed so buffer stays ahead.
+        const step = gap > 40 ? 0.7 : gap > 20 ? 0.4 : gap > 8 ? 0.23 : 0.12
+        const next = Math.min(target, cur + step)
+        exportProgressUiPctRef.current = next
+        return next
+      })
+    }, 120)
+    return () => window.clearInterval(t)
+  }, [exporting, exportProgressBufferPct])
+
+  useEffect(() => {
+    if (!exporting) return
+    const t = window.setInterval(() => {
+      const lastServerAt = exportProgressLastServerAtRef.current || 0
+      if (!lastServerAt) return
+      const now = Date.now()
+      // If server progress stalls, creep forward slightly so long renders don't feel frozen.
+      if (now - lastServerAt < 2200) return
+      const stage = String(exportProgressStageRef.current || '').toLowerCase()
+      setExportProgressBufferPct((prev) => {
+        if (prev == null || !Number.isFinite(prev)) return prev
+        if (prev < 60) return prev
+        const max = stage === 'finalize' ? 99.4 : 92.5
+        if (prev >= max) return prev
+        const step = stage === 'finalize' ? 0.65 : 0.2
+        return Math.min(max, prev + step)
+      })
+    }, 750)
+    return () => window.clearInterval(t)
+  }, [exporting])
+
+  useEffect(() => {
+    if (!exporting) return
+    if (exportPendingResultUploadId == null || !Number.isFinite(exportPendingResultUploadId) || exportPendingResultUploadId <= 0) return
+    const uploadId = Number(exportPendingResultUploadId)
+    let done = false
+    const finishNow = () => {
+      if (done) return
+      done = true
+      setExportProgressPct(100)
+      setExportProgressBufferPct(100)
+      exportProgressUiPctRef.current = 100
+      setExportResultUploadId(uploadId)
+      setExportPendingResultUploadId(null)
+      setExportStatus('Export completed.')
+      setExporting(false)
+      setExportStartAtMs(null)
+      setProject((prev) => {
+        if (!prev) return prev
+        const next: any = { ...prev, lastExportUploadId: uploadId }
+        const completedJobId = exportCompletedJobIdRef.current
+        if (completedJobId != null && Number.isFinite(completedJobId) && completedJobId > 0) {
+          next.lastExportJobId = Number(completedJobId)
+        }
+        return next
+      })
+      exportCompletedJobIdRef.current = null
+    }
+    setExportStatus('Finalizing export…')
+    setExportProgressBufferPct(100)
+    const startPct = Math.max(0, Math.min(100, Number(exportProgressUiPctRef.current || 0)))
+    const durationMs = 1400
+    const startedAt = (typeof performance !== 'undefined' && typeof performance.now === 'function') ? performance.now() : Date.now()
+    const easeOut = (t: number) => 1 - Math.pow(1 - t, 3)
+    let rafId = 0
+    const stepFrame = () => {
+      if (done) return
+      const now = (typeof performance !== 'undefined' && typeof performance.now === 'function') ? performance.now() : Date.now()
+      const t = Math.max(0, Math.min(1, (now - startedAt) / durationMs))
+      const eased = easeOut(t)
+      const next = startPct + (100 - startPct) * eased
+      exportProgressUiPctRef.current = next
+      setExportProgressPct(next)
+      setExportStatus(`Export ${Math.round(next)}% — Finalizing export…`)
+      if (t >= 1 || next >= 99.95) {
+        finishNow()
+        return
+      }
+      rafId = window.requestAnimationFrame(stepFrame)
+    }
+    rafId = window.requestAnimationFrame(stepFrame)
+    const force = window.setTimeout(() => finishNow(), 2200)
+    return () => {
+      if (rafId) window.cancelAnimationFrame(rafId)
+      window.clearTimeout(force)
+    }
+  }, [exporting, exportPendingResultUploadId])
+
+  useEffect(() => {
+    if (!exporting) return
     if (!project?.id) return
+    if (!(exportJobId != null && Number.isFinite(exportJobId) && exportJobId > 0)) return
     let alive = true
-    const tick = async () => {
+    let pollSeq = 0
+    const completeExport = (uploadId: number | null) => {
+      const normalizedUploadId = uploadId != null && Number.isFinite(uploadId) && uploadId > 0 ? Number(uploadId) : null
+      if (normalizedUploadId == null) {
+        setExportProgressPct(100)
+        setExportProgressBufferPct(100)
+        exportProgressUiPctRef.current = 100
+        setExportPendingResultUploadId(null)
+        setExportResultUploadId(null)
+        setExportStatus('Export completed.')
+        setExporting(false)
+        setExportJobId(null)
+        setExportStartAtMs(null)
+        exportCompletedJobIdRef.current = exportJobId != null && Number.isFinite(exportJobId) && exportJobId > 0 ? Number(exportJobId) : null
+        exportProgressStageRef.current = 'completed'
+        exportProgressLastServerAtRef.current = Date.now()
+        exportProgressLastServerPctRef.current = 100
+        exportProgressLastServerSignalRef.current = 'completed|100|completed'
+        return
+      }
+      setExportProgressBufferPct(100)
+      setExportStatus('Finalizing export…')
+      setExportPendingResultUploadId(normalizedUploadId)
+      exportCompletedJobIdRef.current = exportJobId != null && Number.isFinite(exportJobId) && exportJobId > 0 ? Number(exportJobId) : null
+      setExportJobId(null)
+      exportProgressStageRef.current = 'completed'
+      exportProgressLastServerAtRef.current = Date.now()
+      exportProgressLastServerPctRef.current = 100
+      exportProgressLastServerSignalRef.current = 'completed|100|completed'
+    }
+    const checkProjectForCompletion = async (): Promise<number | null> => {
       try {
-        const qs = exportJobId != null && Number.isFinite(exportJobId) && exportJobId > 0 ? `?jobId=${encodeURIComponent(String(exportJobId))}` : ''
-        const res = await fetch(`/api/create-video/projects/${encodeURIComponent(String(project.id))}/export-status${qs}`, { credentials: 'same-origin' })
+        const res = await fetch(`/api/create-video/projects/${encodeURIComponent(String(project.id))}?_ts=${Date.now()}`, {
+          credentials: 'same-origin',
+          cache: 'no-store',
+          headers: {
+            'cache-control': 'no-cache, no-store, max-age=0',
+            pragma: 'no-cache',
+            'if-none-match': 'no-match',
+            'if-modified-since': '0',
+          },
+        })
         const json: any = await res.json().catch(() => null)
+        const p: any = json?.project || null
+        const latestUploadId = Number(p?.lastExportUploadId)
+        const latestJobId = Number(p?.lastExportJobId)
+        const updatedAtMs = Date.parse(String(p?.updatedAt || ''))
+        const hasUpload = Number.isFinite(latestUploadId) && latestUploadId > 0
+        const baseline = Number.isFinite(Number(exportStartUploadId)) ? Number(exportStartUploadId) : null
+        const uploadChanged = baseline == null ? hasUpload : hasUpload && latestUploadId !== baseline
+        const hasStart = exportStartAtMs != null && Number.isFinite(Number(exportStartAtMs))
+        const recencyOk =
+          !hasStart || !Number.isFinite(updatedAtMs) || updatedAtMs >= Number(exportStartAtMs) - 5000
+        if (uploadChanged && recencyOk) {
+          // Keep local project baseline aligned for the next export run.
+          setProject((prev) => {
+            if (!prev) return prev
+            return {
+              ...prev,
+              lastExportUploadId: latestUploadId,
+              lastExportJobId: Number.isFinite(latestJobId) && latestJobId > 0 ? latestJobId : prev.lastExportJobId,
+            }
+          })
+          return latestUploadId
+        }
+      } catch {}
+      return null
+    }
+    const tick = async () => {
+      pollSeq += 1
+      try {
+        // eslint-disable-next-line no-console
+        console.log('[cv-export-poll] tick:start', {
+          seq: pollSeq,
+          projectId: project.id,
+          exportJobId,
+          at: new Date().toISOString(),
+        })
+      } catch {}
+      try {
+        const parts: string[] = []
+        if (exportJobId != null && Number.isFinite(exportJobId) && exportJobId > 0) parts.push(`jobId=${encodeURIComponent(String(exportJobId))}`)
+        parts.push(`_ts=${Date.now()}`)
+        const qs = `?${parts.join('&')}`
+        const res = await fetch(`/api/create-video/projects/${encodeURIComponent(String(project.id))}/export-status${qs}`, {
+          credentials: 'same-origin',
+          cache: 'no-store',
+          headers: {
+            'cache-control': 'no-cache, no-store, max-age=0',
+            pragma: 'no-cache',
+            'if-none-match': 'no-match',
+            'if-modified-since': '0',
+          },
+        })
+        const json: any = await res.json().catch(() => null)
+        try {
+          // eslint-disable-next-line no-console
+          console.log('[cv-export-poll] tick:response', {
+            seq: pollSeq,
+            statusCode: res.status,
+            payload: json,
+          })
+        } catch {}
         if (!alive) return
         const status = String(json?.status || '')
+        const uploadIdRaw = Number(json?.resultUploadId)
+        const hasResultUpload = Number.isFinite(uploadIdRaw) && uploadIdRaw > 0
+        const progressPctRaw = Number(json?.progressPct)
+        const progressPct = Number.isFinite(progressPctRaw) ? Math.max(0, Math.min(100, Math.round(progressPctRaw))) : null
+        const progressStage = String(json?.progressStage || '').trim()
+        const progressMessage = String(json?.progressMessage || '').trim()
+        const stageLc = progressStage.toLowerCase()
+        let bufferProgressPct: number | null = null
+        if (progressPct != null) {
+          if (stageLc === 'finalize') {
+            // Keep visible progress below the high 90s until backend completion lands.
+            bufferProgressPct = Math.min(92, Math.max(70, progressPct * 0.92))
+          } else {
+            // Heavier damping during render phase to preserve end-of-job headroom.
+            bufferProgressPct = Math.min(72, progressPct * 0.8)
+          }
+          bufferProgressPct = Math.round(bufferProgressPct * 10) / 10
+        }
+        const signal = `${status}|${bufferProgressPct == null ? '' : bufferProgressPct}|${progressStage}|${progressMessage}`
+        if (signal !== exportProgressLastServerSignalRef.current) {
+          exportProgressLastServerSignalRef.current = signal
+          exportProgressLastServerAtRef.current = Date.now()
+        }
+        exportProgressStageRef.current = progressStage
+        if (bufferProgressPct != null && bufferProgressPct > exportProgressLastServerPctRef.current) {
+          exportProgressLastServerPctRef.current = bufferProgressPct
+        }
         if (!status || status === 'idle') {
           setExportStatus('Waiting…')
           return
         }
-        if (status === 'completed') {
-          const uploadId = Number(json?.resultUploadId)
-          if (Number.isFinite(uploadId) && uploadId > 0) {
-            window.location.href = `/exports?from=${encodeURIComponent('/create-video')}`
-            return
-          }
-          setExportError('Export completed but missing upload id.')
-          setExportStatus(null)
-          setExporting(false)
-          setExportJobId(null)
+        if (status === 'completed' || (hasResultUpload && status !== 'failed' && status !== 'dead')) {
+          completeExport(hasResultUpload ? uploadIdRaw : null)
           return
         }
         if (status === 'failed' || status === 'dead') {
@@ -20592,20 +20846,58 @@ export default function CreateVideo() {
           setExportStatus(null)
           setExporting(false)
           setExportJobId(null)
+          setExportProgressPct(null)
+          setExportProgressBufferPct(null)
+          setExportPendingResultUploadId(null)
+          exportProgressUiPctRef.current = 0
+          exportProgressStageRef.current = status
+          exportProgressLastServerAtRef.current = Date.now()
+          exportProgressLastServerPctRef.current = 0
+          exportProgressLastServerSignalRef.current = `${status}|0|${status}`
           return
         }
-        setExportStatus(`Export: ${status}`)
+        const fallbackUploadId = await checkProjectForCompletion()
+        if (!alive) return
+        if (fallbackUploadId != null) {
+          completeExport(fallbackUploadId)
+          return
+        }
+        if (bufferProgressPct != null) {
+          const normalized = bufferProgressPct
+          setExportProgressBufferPct((prev) => {
+            const prior = prev == null || !Number.isFinite(prev) ? 0 : Number(prev)
+            return Math.max(prior, normalized)
+          })
+        }
+        const uiPct = Math.max(0, Math.min(99, Number(exportProgressUiPctRef.current || 0)))
+        const displayPct = uiPct
+        const pctLabel = `${Math.round(displayPct)}%`
+        const detail = progressMessage || progressStage || 'Processing'
+        setExportStatus(`Export ${pctLabel} — ${detail}`)
       } catch {
-        // ignore transient
+        try {
+          // eslint-disable-next-line no-console
+          console.log('[cv-export-poll] tick:error', {
+            seq: pollSeq,
+            at: new Date().toISOString(),
+          })
+        } catch {}
+        const fallbackUploadId = await checkProjectForCompletion()
+        if (!alive) return
+        if (fallbackUploadId != null) {
+          completeExport(fallbackUploadId)
+          return
+        }
+        setExportStatus((prev) => prev || 'Export in progress…')
       }
     }
     tick()
-    const t = window.setInterval(tick, 2000)
+    const t = window.setInterval(tick, 750)
     return () => {
       alive = false
       window.clearInterval(t)
     }
-  }, [exporting, exportJobId, project?.id])
+  }, [exporting, exportJobId, exportStartAtMs, exportStartUploadId, project?.id])
 
   if (loading) {
     return (
@@ -20708,6 +21000,45 @@ export default function CreateVideo() {
               Export
             </button>
           </div>
+        </div>
+        <div style={{ marginTop: 10 }}>
+          {exportStatus ? <div style={{ color: '#bbb' }}>{exportStatus}</div> : null}
+          {exporting && exportProgressPct != null ? (
+            <div style={{ marginTop: 8, maxWidth: 360 }}>
+              <div
+                style={{
+                  height: 8,
+                  borderRadius: 999,
+                  background: 'rgba(255,255,255,0.16)',
+                  overflow: 'hidden',
+                }}
+              >
+                <div
+                  style={{
+                    height: '100%',
+                    width: `${Math.max(0, Math.min(100, exportProgressPct))}%`,
+                    background: '#0a84ff',
+                    transition: 'width 220ms linear',
+                  }}
+                />
+              </div>
+            </div>
+          ) : null}
+          {!exporting && exportResultUploadId != null ? (
+            <div style={{ marginTop: 8 }}>
+              <a
+                href={`/exports?from=${encodeURIComponent('/create-video')}`}
+                style={{
+                  color: '#9ecbff',
+                  textDecoration: 'underline',
+                  fontWeight: 700,
+                }}
+              >
+                View in Exports
+              </a>
+            </div>
+          ) : null}
+          {exportError ? <div style={{ marginTop: 10, color: '#ff9b9b' }}>{exportError}</div> : null}
         </div>
         <h1 style={{ margin: '12px 0 10px', fontSize: 28 }}>Create Video</h1>
         <div style={{ color: '#bbb', fontSize: 13 }}>
@@ -23977,10 +24308,6 @@ export default function CreateVideo() {
             ) : null}
         </div>
 
-        <div style={{ maxWidth: 960, margin: '0 auto' }}>
-          {exportStatus ? <div style={{ marginTop: 12, color: '#bbb' }}>{exportStatus}</div> : null}
-          {exportError ? <div style={{ marginTop: 10, color: '#ff9b9b' }}>{exportError}</div> : null}
-        </div>
       </div>
 
       {/* [cv-editor-video-graphics + cv-editor-branding-audio] modal host boundary for standalone lazy chunk. */}

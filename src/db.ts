@@ -1047,6 +1047,10 @@ export async function ensureSchema(db: DB) {
 	      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
 	      type VARCHAR(64) NOT NULL,
 	      status ENUM('pending','processing','completed','failed','dead') NOT NULL DEFAULT 'pending',
+	      progress_pct TINYINT UNSIGNED NULL,
+	      progress_stage VARCHAR(64) NULL,
+	      progress_message VARCHAR(255) NULL,
+	      progress_updated_at TIMESTAMP NULL DEFAULT NULL,
 	      priority INT NOT NULL DEFAULT 0,
 	      attempts INT NOT NULL DEFAULT 0,
 	      max_attempts INT NOT NULL DEFAULT 3,
@@ -1065,6 +1069,10 @@ export async function ensureSchema(db: DB) {
 	      KEY idx_media_jobs_type (type, status, id)
 	    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 	  `);
+	  await db.query(`ALTER TABLE media_jobs ADD COLUMN IF NOT EXISTS progress_pct TINYINT UNSIGNED NULL`);
+	  await db.query(`ALTER TABLE media_jobs ADD COLUMN IF NOT EXISTS progress_stage VARCHAR(64) NULL`);
+	  await db.query(`ALTER TABLE media_jobs ADD COLUMN IF NOT EXISTS progress_message VARCHAR(255) NULL`);
+	  await db.query(`ALTER TABLE media_jobs ADD COLUMN IF NOT EXISTS progress_updated_at TIMESTAMP NULL DEFAULT NULL`);
 
 	  await db.query(`
 	    CREATE TABLE IF NOT EXISTS media_job_attempts (

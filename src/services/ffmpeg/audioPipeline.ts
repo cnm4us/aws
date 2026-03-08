@@ -122,7 +122,14 @@ export async function uploadFileToS3(bucket: string, key: string, filePath: stri
 
 export async function runFfmpeg(
   args: string[],
-  opts?: { stdoutPath?: string; stderrPath?: string; commandLog?: string[]; commandLabel?: string }
+  opts?: {
+    stdoutPath?: string
+    stderrPath?: string
+    commandLog?: string[]
+    commandLabel?: string
+    progressDurationSeconds?: number
+    onProgress?: (progress: { ratio: number; outTimeSeconds: number; speed: number | null; state: 'continue' | 'end' }) => void
+  }
 ): Promise<void> {
   const started = Date.now()
   await withSubprocessSpan(
@@ -143,6 +150,8 @@ export async function runFfmpeg(
         const nice = parsePositiveIntEnv('FFMPEG_NICE')
 
         const injected: string[] = ['-hide_banner', '-y']
+        const wantsProgress = typeof opts?.onProgress === 'function'
+        if (wantsProgress) injected.push('-nostats', '-progress', 'pipe:1')
         if (filterThreads) injected.push('-filter_threads', String(filterThreads))
         if (filterComplexThreads) injected.push('-filter_complex_threads', String(filterComplexThreads))
 
@@ -167,6 +176,44 @@ export async function runFfmpeg(
         const errStream = opts?.stderrPath ? fs.createWriteStream(opts.stderrPath, { flags: 'a' }) : null
         if (outStream) p.stdout.pipe(outStream)
         if (errStream) p.stderr.pipe(errStream)
+        const expectedDuration = Number(opts?.progressDurationSeconds)
+        const expectedDurationSec = Number.isFinite(expectedDuration) && expectedDuration > 0 ? expectedDuration : null
+        let progressBuf = ''
+        let outTimeMs = 0
+        let speed: number | null = null
+        const emitProgress = (state: 'continue' | 'end') => {
+          if (!wantsProgress) return
+          const outTimeSeconds = Math.max(0, outTimeMs / 1_000_000)
+          const ratioRaw = expectedDurationSec != null && expectedDurationSec > 0 ? outTimeSeconds / expectedDurationSec : 0
+          const ratio = Math.max(0, Math.min(1, ratioRaw))
+          try {
+            opts?.onProgress?.({ ratio, outTimeSeconds, speed, state })
+          } catch {}
+        }
+        p.stdout.on('data', (d) => {
+          if (!wantsProgress) return
+          progressBuf += String(d)
+          const lines = progressBuf.split(/\r?\n/)
+          progressBuf = lines.pop() || ''
+          for (const rawLine of lines) {
+            const line = String(rawLine || '').trim()
+            if (!line) continue
+            const idx = line.indexOf('=')
+            if (idx <= 0) continue
+            const key = line.slice(0, idx).trim()
+            const value = line.slice(idx + 1).trim()
+            if (key === 'out_time_ms') {
+              const v = Number(value)
+              if (Number.isFinite(v) && v >= 0) outTimeMs = v
+            } else if (key === 'speed') {
+              const raw = value.endsWith('x') ? value.slice(0, -1) : value
+              const v = Number(raw)
+              speed = Number.isFinite(v) && v > 0 ? v : null
+            } else if (key === 'progress') {
+              emitProgress(value === 'end' ? 'end' : 'continue')
+            }
+          }
+        })
         let stderr = ''
         const maxStderr = 8000
         p.stderr.on('data', (d) => {
@@ -188,6 +235,7 @@ export async function runFfmpeg(
             exitCode: Number.isFinite(Number(code)) ? Number(code) : -1,
             success: code === 0,
           })
+          if (code === 0) emitProgress('end')
           if (code === 0) return resolve()
           reject(new Error(`ffmpeg_failed:${code}:${stderr.slice(0, 800)}`))
         })

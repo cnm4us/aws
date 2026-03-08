@@ -11,7 +11,14 @@ import { burnPngOverlaysIntoMp4, probeVideoDisplayDimensions } from '../../servi
 import { probeMediaInfo } from '../../services/ffmpeg/metrics'
 import { markSubprocessResult, withSubprocessSpan } from '../../lib/subprocessObservability'
 
-type FfmpegLogPaths = { stdoutPath?: string; stderrPath?: string; commandLog?: string[]; commandLabel?: string }
+type FfmpegLogPaths = {
+  stdoutPath?: string
+  stderrPath?: string
+  commandLog?: string[]
+  commandLabel?: string
+  progressDurationSeconds?: number
+  onProgress?: (progress: { ratio: number; outTimeSeconds: number; speed: number | null; state: 'continue' | 'end' }) => void
+}
 
 type Clip = {
   id: string
@@ -2097,10 +2104,41 @@ async function insertGeneratedUpload(input: {
 
 export async function runCreateVideoExportV1Job(
   input: CreateVideoExportV1Input,
-  logPaths?: FfmpegLogPaths
+  logPaths?: FfmpegLogPaths,
+  opts?: {
+    onProgress?: (progress: {
+      progressPct: number
+      stage: 'prepare' | 'render' | 'finalize'
+      message: string
+      ffmpegRatio: number
+      ffmpegOutTimeSeconds: number
+      ffmpegSpeed: number | null
+    }) => void
+  }
 ): Promise<{ resultUploadId: number; output: { bucket: string; key: string; s3Url: string }; ffmpegCommands?: string[]; metricsInput?: any }> {
   const ffmpegCommands: string[] = []
-  logPaths = { ...(logPaths || {}), commandLog: ffmpegCommands }
+  const timelineSecondsRaw = Number((input as any)?.timeline?.playheadSeconds)
+  const timelineSeconds = Number.isFinite(timelineSecondsRaw) && timelineSecondsRaw > 0 ? timelineSecondsRaw : 30
+  logPaths = {
+    ...(logPaths || {}),
+    commandLog: ffmpegCommands,
+    progressDurationSeconds: timelineSeconds,
+    onProgress:
+      typeof opts?.onProgress === 'function'
+        ? (p) => {
+            const ffmpegRatio = Math.max(0, Math.min(1, Number(p?.ratio || 0)))
+            const progressPct = Math.max(5, Math.min(90, Math.round(5 + ffmpegRatio * 85)))
+            opts.onProgress?.({
+              progressPct,
+              stage: 'render',
+              message: 'Rendering',
+              ffmpegRatio,
+              ffmpegOutTimeSeconds: Number.isFinite(Number(p?.outTimeSeconds)) ? Number(p.outTimeSeconds) : 0,
+              ffmpegSpeed: Number.isFinite(Number(p?.speed)) ? Number(p.speed) : null,
+            })
+          }
+        : undefined,
+  }
   const userId = Number(input.userId)
   const clips = Array.isArray(input.timeline?.clips) ? input.timeline.clips : []
   const stills = Array.isArray((input.timeline as any)?.stills) ? ((input.timeline as any).stills as Still[]) : []
@@ -2217,6 +2255,16 @@ export async function runCreateVideoExportV1Job(
     !audioSegments.length
   )
     throw new Error('empty_timeline')
+  try {
+    opts?.onProgress?.({
+      progressPct: 2,
+      stage: 'prepare',
+      message: 'Preparing export inputs',
+      ffmpegRatio: 0,
+      ffmpegOutTimeSeconds: 0,
+      ffmpegSpeed: null,
+    })
+  } catch {}
 
   const db = getPool()
   const ids = Array.from(
@@ -3333,6 +3381,16 @@ export async function runCreateVideoExportV1Job(
     const key = buildExportKey(String(UPLOAD_PREFIX || ''), folder, assetUuid, '.mp4')
     const bucket = String(UPLOAD_BUCKET || '')
     if (!bucket) throw new Error('missing_upload_bucket')
+    try {
+      opts?.onProgress?.({
+        progressPct: 92,
+        stage: 'finalize',
+        message: 'Uploading export',
+        ffmpegRatio: 1,
+        ffmpegOutTimeSeconds: Number.isFinite(Number(durationSeconds)) && Number(durationSeconds) > 0 ? Number(durationSeconds) : timelineSeconds,
+        ffmpegSpeed: null,
+      })
+    } catch {}
     await uploadFileToS3(bucket, key, finalOut, 'video/mp4')
 
     const uploadId = await insertGeneratedUpload({
@@ -3347,6 +3405,16 @@ export async function runCreateVideoExportV1Job(
       assetUuid,
       dateYmd: ymd,
     })
+    try {
+      opts?.onProgress?.({
+        progressPct: 98,
+        stage: 'finalize',
+        message: 'Finalizing export',
+        ffmpegRatio: 1,
+        ffmpegOutTimeSeconds: Number.isFinite(Number(durationSeconds)) && Number(durationSeconds) > 0 ? Number(durationSeconds) : timelineSeconds,
+        ffmpegSpeed: null,
+      })
+    } catch {}
 
     return { resultUploadId: uploadId, output: { bucket, key, s3Url: `s3://${bucket}/${key}` }, ffmpegCommands, metricsInput }
   } finally {

@@ -88,6 +88,8 @@ export async function claimNext(
   await conn.query(
     `UPDATE media_jobs
         SET status = 'processing',
+            progress_stage = COALESCE(progress_stage, 'processing'),
+            progress_updated_at = NOW(),
             locked_at = NOW(),
             locked_by = ?,
             updated_at = NOW()
@@ -228,11 +230,44 @@ export async function updateJobProcessingHeartbeat(jobId: number, workerId: stri
   )
 }
 
+export async function updateJobProgress(
+  jobId: number,
+  patch: {
+    progressPct?: number | null
+    progressStage?: string | null
+    progressMessage?: string | null
+  },
+  conn?: Conn
+): Promise<void> {
+  const db = poolOr(conn)
+  const progressPctRaw = patch.progressPct
+  const progressPct =
+    progressPctRaw == null || !Number.isFinite(Number(progressPctRaw))
+      ? null
+      : Math.max(0, Math.min(100, Math.round(Number(progressPctRaw))))
+  const progressStage = patch.progressStage == null ? null : String(patch.progressStage).trim().slice(0, 64)
+  const progressMessage = patch.progressMessage == null ? null : String(patch.progressMessage).trim().slice(0, 255)
+  await db.query(
+    `UPDATE media_jobs
+        SET progress_pct = COALESCE(?, progress_pct),
+            progress_stage = COALESCE(?, progress_stage),
+            progress_message = ?,
+            progress_updated_at = NOW(),
+            updated_at = NOW()
+      WHERE id = ?`,
+    [progressPct, progressStage || null, progressMessage, jobId]
+  )
+}
+
 export async function completeJob(jobId: number, resultJson: any, conn?: Conn): Promise<void> {
   const db = poolOr(conn)
   await db.query(
     `UPDATE media_jobs
         SET status = 'completed',
+            progress_pct = 100,
+            progress_stage = 'completed',
+            progress_message = NULL,
+            progress_updated_at = NOW(),
             result_json = ?,
             error_code = NULL,
             error_message = NULL,
@@ -256,6 +291,9 @@ export async function failJob(
   await db.query(
     `UPDATE media_jobs
         SET status = ?,
+            progress_stage = ?,
+            progress_message = ?,
+            progress_updated_at = NOW(),
             error_code = ?,
             error_message = ?,
             run_after = ?,
@@ -263,7 +301,7 @@ export async function failJob(
             locked_by = NULL,
             updated_at = NOW()
       WHERE id = ?`,
-    [status, patch.errorCode ?? null, patch.errorMessage ?? null, runAfter, jobId]
+    [status, status, patch.errorMessage ?? null, patch.errorCode ?? null, patch.errorMessage ?? null, runAfter, jobId]
   )
 }
 

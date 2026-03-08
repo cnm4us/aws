@@ -18,6 +18,7 @@ This file is a lightweight index for ongoing work and “what’s next”.
 - `agents/implementation/plan_110.md` — Trace naming + signal quality hardening (Jaeger usability)
 - `agents/implementation/plan_111.md` — Jaeger SPM via Prometheus + OTel Collector (dev profile)
 - `agents/implementation/plan_112.md` — External provider telemetry (AssemblyAI + MediaConvert)
+- `agents/implementation/plan_113.md` — Create Video export progress + consistent post-export UX
 
 ## In Progress / Next Up
 - Roadmap: `agents/roadmaps/roadmap_create_video.md`

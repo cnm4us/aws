@@ -179,7 +179,66 @@ async function runOne(job: any, attempt: any, workerId: string) {
     project_id: Number.isFinite(Number(jobInput?.projectId)) ? Number(jobInput?.projectId) : undefined,
     upload_id: Number.isFinite(Number(jobInput?.uploadId)) ? Number(jobInput?.uploadId) : undefined,
   }
-  const runStage = <T>(stage: string, fn: () => Promise<T>) => withMediaJobStage(stage, stageAttrs, fn)
+  let lastProgressAtMs = 0
+  let lastProgressPct = -1
+  let lastProgressStage = ''
+  let lastProgressMessage = ''
+  const stageRank = (s: string): number => {
+    const x = String(s || '').trim().toLowerCase()
+    if (x === 'prepare') return 1
+    if (x === 'render') return 2
+    if (x === 'finalize') return 3
+    if (x === 'completed') return 4
+    return 0
+  }
+  const updateProgress = async (
+    patch: { progressPct?: number | null; progressStage?: string | null; progressMessage?: string | null },
+    opts?: { force?: boolean }
+  ) => {
+    if (jobType !== 'create_video_export_v1') return
+    const force = Boolean(opts?.force)
+    const pct = patch.progressPct == null || !Number.isFinite(Number(patch.progressPct))
+      ? null
+      : Math.max(0, Math.min(100, Math.round(Number(patch.progressPct))))
+    const requestedStage = patch.progressStage == null ? '' : String(patch.progressStage)
+    const requestedMessage = patch.progressMessage == null ? '' : String(patch.progressMessage)
+    const stage = !force && stageRank(requestedStage) > 0 && stageRank(requestedStage) < stageRank(lastProgressStage)
+      ? lastProgressStage
+      : requestedStage
+    const message = requestedMessage
+    const effectivePct =
+      pct == null
+        ? null
+        : lastProgressPct >= 0
+          ? Math.max(lastProgressPct, pct)
+          : pct
+    const nowMs = Date.now()
+    const stageChanged = stage !== lastProgressStage
+    const msgChanged = message !== lastProgressMessage
+    const pctChanged = effectivePct != null && Math.abs(effectivePct - lastProgressPct) >= 1
+    const timeElapsed = nowMs - lastProgressAtMs >= 800
+    if (!force && !stageChanged && !msgChanged && !(pctChanged && timeElapsed)) return
+    try {
+      await mediaJobsRepo.updateJobProgress(jobId, {
+        progressPct: effectivePct,
+        progressStage: stage || null,
+        progressMessage: message || null,
+      })
+      lastProgressAtMs = nowMs
+      if (effectivePct != null) lastProgressPct = effectivePct
+      if (stage) lastProgressStage = stage
+      if (message) lastProgressMessage = message
+    } catch {}
+  }
+  const runStage = async <T>(stage: string, fn: () => Promise<T>) => {
+    if (jobType === 'create_video_export_v1') {
+      if (stage === 'fetch_inputs') await updateProgress({ progressPct: 3, progressStage: 'prepare', progressMessage: 'Preparing export inputs' })
+      else if (stage === 'execute') await updateProgress({ progressPct: 10, progressStage: 'render', progressMessage: 'Rendering' })
+      else if (stage === 'upload_outputs') await updateProgress({ progressPct: 93, progressStage: 'finalize', progressMessage: 'Uploading logs' })
+      else if (stage === 'persist_results') await updateProgress({ progressPct: 96, progressStage: 'finalize', progressMessage: 'Saving results' })
+    }
+    return await withMediaJobStage(stage, stageAttrs, fn)
+  }
   const uploadStdLogs = async () => {
     return runStage('upload_outputs', async () => {
       const stdoutPtr = fs.existsSync(stdoutPath)
@@ -389,9 +448,24 @@ async function runOne(job: any, attempt: any, workerId: string) {
 
     if (jobType === 'create_video_export_v1') {
       const input = job.input_json as any
-      const result = await runStage('execute', async () => runCreateVideoExportV1Job(input, { stdoutPath, stderrPath }))
+      const result = await runStage('execute', async () =>
+        runCreateVideoExportV1Job(
+          input,
+          { stdoutPath, stderrPath },
+          {
+            onProgress: (p) => {
+              void updateProgress({
+                progressPct: p.progressPct,
+                progressStage: p.stage,
+                progressMessage: p.message,
+              })
+            },
+          }
+        )
+      )
       metricsInput = (result as any)?.metricsInput || null
       const ffmpegCommands = Array.isArray((result as any)?.ffmpegCommands) ? (result as any).ffmpegCommands : null
+      await updateProgress({ progressPct: 99, progressStage: 'finalize', progressMessage: 'Completing export' }, { force: true })
       await persistSuccess(result, { ffmpegCommands: ffmpegCommands || undefined })
 
       // Best-effort: record the resulting upload id on the project for quick resume.
