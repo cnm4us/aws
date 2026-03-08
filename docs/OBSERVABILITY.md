@@ -391,6 +391,10 @@ Uploads/assets API family (examples):
 - `assets.videos.list`
 - `assets.graphics.list`
 
+Local subprocess operations:
+- `subprocess.ffmpeg.run`
+- `subprocess.ffprobe.run`
+
 Library + visualizer API family (examples):
 - `library.videos.list`
 - `library.clips.create`
@@ -432,3 +436,14 @@ Used to mark expected S3 missing-object checks (for idempotent/provisioning flow
 - `storage_exists=true|false`
 - `storage_missing_expected=true|false`
 - `storage_lookup_result=exists|missing_expected|error_unexpected`
+
+## Subprocess tags
+Used for local command execution spans (FFmpeg family):
+- `subprocess.name` (for example `ffmpeg`)
+- `subprocess.exec_mode` (`local` today; reserved for `remote` later)
+- `subprocess.command_label` (when available)
+- `subprocess.args_count`
+- `subprocess.purpose` (for analysis helpers)
+- `subprocess.exit_code`
+- `subprocess.success`
+- `subprocess.handled_nonzero`

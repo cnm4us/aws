@@ -3,6 +3,7 @@ import os from 'os'
 import path from 'path'
 import { spawn } from 'child_process'
 import { downloadS3ObjectToFile, runFfmpeg } from './audioPipeline'
+import { markSubprocessResult, withSubprocessSpan } from '../../lib/subprocessObservability'
 
 type S3Pointer = { bucket: string; key: string }
 
@@ -164,26 +165,40 @@ function computeFadeSeconds(cfg: { fade?: any }) {
 }
 
 export async function probeVideoDisplayDimensions(filePath: string): Promise<{ width: number; height: number }> {
-  return await new Promise((resolve, reject) => {
-    const p = spawn(
-      'ffprobe',
-      [
-        '-v', 'error',
-        '-select_streams', 'v:0',
-        '-show_entries', 'stream=width,height:stream_tags=rotate:side_data_list',
-        '-of', 'json',
-        filePath,
-      ],
-      { stdio: ['ignore', 'pipe', 'pipe'] }
-    )
-    let out = ''
-    let err = ''
-    p.stdout.on('data', (d) => { out += String(d) })
-    p.stderr.on('data', (d) => { err += String(d) })
-    p.on('error', reject)
-    p.on('close', (code) => {
-      if (code !== 0) return reject(new Error(`ffprobe_failed:${code}:${err.slice(0, 400)}`))
-      try {
+  return await withSubprocessSpan(
+    {
+      spanName: 'subprocess.ffprobe.run',
+      command: 'ffprobe',
+      operation: 'subprocess.ffprobe.run',
+      attrs: { 'subprocess.purpose': 'probe_video_display_dimensions' },
+    },
+    async (span) => {
+      return await new Promise((resolve, reject) => {
+        const p = spawn(
+          'ffprobe',
+          [
+            '-v', 'error',
+            '-select_streams', 'v:0',
+            '-show_entries', 'stream=width,height:stream_tags=rotate:side_data_list',
+            '-of', 'json',
+            filePath,
+          ],
+          { stdio: ['ignore', 'pipe', 'pipe'] }
+        )
+        let out = ''
+        let err = ''
+        p.stdout.on('data', (d) => { out += String(d) })
+        p.stderr.on('data', (d) => { err += String(d) })
+        p.on('error', (error) => {
+          markSubprocessResult(span, { success: false })
+          reject(error)
+        })
+        p.on('close', (code) => {
+          if (code !== 0) {
+            markSubprocessResult(span, { exitCode: code, success: false })
+            return reject(new Error(`ffprobe_failed:${code}:${err.slice(0, 400)}`))
+          }
+          try {
         const parseProbeDims = (stdout: string): { width: number; height: number; rotate: number } => {
           const trimmed = String(stdout || '').trim()
           if (!trimmed) throw new Error('ffprobe_json_empty')
@@ -259,19 +274,26 @@ export async function probeVideoDisplayDimensions(filePath: string): Promise<{ w
           }
         }
 
-        const dims = parseProbeDims(out)
-        const w = dims.width
-        const h = dims.height
-        const rot = Number.isFinite(dims.rotate) ? Math.abs(Math.round(dims.rotate)) % 360 : 0
-        if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return reject(new Error('ffprobe_missing_dims'))
-        if (rot === 90 || rot === 270) return resolve({ width: h, height: w })
-        resolve({ width: w, height: h })
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e)
-        reject(new Error(`${msg} (ffprobe stdout: ${String(out).slice(0, 260).replace(/\s+/g, ' ')})`))
-      }
-    })
-  })
+            const dims = parseProbeDims(out)
+            const w = dims.width
+            const h = dims.height
+            const rot = Number.isFinite(dims.rotate) ? Math.abs(Math.round(dims.rotate)) % 360 : 0
+            if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) {
+              markSubprocessResult(span, { exitCode: code, success: false })
+              return reject(new Error('ffprobe_missing_dims'))
+            }
+            markSubprocessResult(span, { exitCode: code, success: true })
+            if (rot === 90 || rot === 270) return resolve({ width: h, height: w })
+            resolve({ width: w, height: h })
+          } catch (e) {
+            markSubprocessResult(span, { exitCode: code, success: false })
+            const msg = e instanceof Error ? e.message : String(e)
+            reject(new Error(`${msg} (ffprobe stdout: ${String(out).slice(0, 260).replace(/\s+/g, ' ')})`))
+          }
+        })
+      })
+    }
+  )
 }
 
 export async function downloadOverlayPngToFile(ptr: S3Pointer, outPath: string) {

@@ -9,6 +9,7 @@ import { buildExportKey, nowDateYmd } from '../../utils/naming'
 import { downloadS3ObjectToFile, runFfmpeg, uploadFileToS3 } from '../../services/ffmpeg/audioPipeline'
 import { burnPngOverlaysIntoMp4, probeVideoDisplayDimensions } from '../../services/ffmpeg/visualPipeline'
 import { probeMediaInfo } from '../../services/ffmpeg/metrics'
+import { markSubprocessResult, withSubprocessSpan } from '../../lib/subprocessObservability'
 
 type FfmpegLogPaths = { stdoutPath?: string; stderrPath?: string; commandLog?: string[]; commandLabel?: string }
 
@@ -347,39 +348,76 @@ function clamp(n: number, min: number, max: number): number {
 }
 
 async function hasAudioStream(filePath: string): Promise<boolean> {
-  return await new Promise<boolean>((resolve) => {
-    const p = spawn(
-      'ffprobe',
-      ['-v', 'error', '-select_streams', 'a:0', '-show_entries', 'stream=index', '-of', 'csv=p=0', filePath],
-      { stdio: ['ignore', 'pipe', 'ignore'] }
-    )
-    let out = ''
-    p.stdout.on('data', (d) => { out += String(d) })
-    p.on('close', (code) => {
-      if (code !== 0) return resolve(false)
-      resolve(Boolean(String(out || '').trim()))
-    })
-    p.on('error', () => resolve(false))
-  })
+  return await withSubprocessSpan(
+    {
+      spanName: 'subprocess.ffprobe.run',
+      command: 'ffprobe',
+      operation: 'subprocess.ffprobe.run',
+      attrs: { 'subprocess.purpose': 'has_audio_stream' },
+    },
+    async (span) => {
+      return await new Promise<boolean>((resolve) => {
+        const p = spawn(
+          'ffprobe',
+          ['-v', 'error', '-select_streams', 'a:0', '-show_entries', 'stream=index', '-of', 'csv=p=0', filePath],
+          { stdio: ['ignore', 'pipe', 'ignore'] }
+        )
+        let out = ''
+        p.stdout.on('data', (d) => { out += String(d) })
+        p.on('close', (code) => {
+          if (code !== 0) {
+            markSubprocessResult(span, { exitCode: code, success: false, handled: true })
+            return resolve(false)
+          }
+          markSubprocessResult(span, { exitCode: code, success: true })
+          resolve(Boolean(String(out || '').trim()))
+        })
+        p.on('error', () => {
+          markSubprocessResult(span, { success: false, handled: true })
+          resolve(false)
+        })
+      })
+    }
+  )
 }
 
 async function probeDurationSeconds(filePath: string): Promise<number | null> {
-  return await new Promise<number | null>((resolve) => {
-    const p = spawn(
-      'ffprobe',
-      ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', filePath],
-      { stdio: ['ignore', 'pipe', 'ignore'] }
-    )
-    let out = ''
-    p.stdout.on('data', (d) => { out += String(d) })
-    p.on('close', (code) => {
-      if (code !== 0) return resolve(null)
-      const v = Number(String(out || '').trim())
-      if (!Number.isFinite(v) || v <= 0) return resolve(null)
-      resolve(v)
-    })
-    p.on('error', () => resolve(null))
-  })
+  return await withSubprocessSpan(
+    {
+      spanName: 'subprocess.ffprobe.run',
+      command: 'ffprobe',
+      operation: 'subprocess.ffprobe.run',
+      attrs: { 'subprocess.purpose': 'probe_duration_seconds' },
+    },
+    async (span) => {
+      return await new Promise<number | null>((resolve) => {
+        const p = spawn(
+          'ffprobe',
+          ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', filePath],
+          { stdio: ['ignore', 'pipe', 'ignore'] }
+        )
+        let out = ''
+        p.stdout.on('data', (d) => { out += String(d) })
+        p.on('close', (code) => {
+          if (code !== 0) {
+            markSubprocessResult(span, { exitCode: code, success: false, handled: true })
+            return resolve(null)
+          }
+          const v = Number(String(out || '').trim())
+          if (!Number.isFinite(v) || v <= 0) {
+            markSubprocessResult(span, { exitCode: code, success: false, handled: true })
+            return resolve(null)
+          }
+          markSubprocessResult(span, { exitCode: code, success: true })
+          resolve(v)
+        })
+        p.on('error', () => {
+          markSubprocessResult(span, { success: false, handled: true })
+          resolve(null)
+        })
+      })
+    }
+  )
 }
 
 async function detectInitialNonSilenceSeconds(
@@ -397,34 +435,59 @@ async function detectInitialNonSilenceSeconds(
       ? Math.max(3, Math.min(180, maxAnalyzeSecondsRaw))
       : 30
 
-  return await new Promise<number | null>((resolve) => {
-    const args = [
-      '-hide_banner',
-      '-t',
-      String(maxAnalyzeSeconds),
-      '-i',
-      filePath,
-      '-vn',
-      '-af',
-      `silencedetect=n=${noiseDb}:d=${minNonSilenceSeconds.toFixed(2)}`,
-      '-f',
-      'null',
-      '-',
-    ]
-    const p = spawn('ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'] })
-    let stderr = ''
-    p.stderr.on('data', (d) => { stderr += String(d) })
-    p.on('close', (code) => {
-      if (code !== 0) return resolve(0)
-      const hasSilenceStart = /silence_start:\s*([0-9.]+)/.test(stderr)
-      const m = stderr.match(/silence_end:\s*([0-9.]+)/)
-      if (!m) return resolve(hasSilenceStart ? null : 0)
-      const v = Number(m[1])
-      if (!Number.isFinite(v) || v < 0) return resolve(0)
-      resolve(v)
-    })
-    p.on('error', () => resolve(0))
-  })
+  return await withSubprocessSpan(
+    {
+      spanName: 'subprocess.ffmpeg.run',
+      command: 'ffmpeg',
+      operation: 'subprocess.ffmpeg.run',
+      attrs: {
+        'subprocess.purpose': 'detect_initial_non_silence',
+      },
+    },
+    async (span) => {
+      return await new Promise<number | null>((resolve) => {
+        const args = [
+          '-hide_banner',
+          '-t',
+          String(maxAnalyzeSeconds),
+          '-i',
+          filePath,
+          '-vn',
+          '-af',
+          `silencedetect=n=${noiseDb}:d=${minNonSilenceSeconds.toFixed(2)}`,
+          '-f',
+          'null',
+          '-',
+        ]
+        const p = spawn('ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'] })
+        let stderr = ''
+        p.stderr.on('data', (d) => { stderr += String(d) })
+        p.on('close', (code) => {
+          if (code !== 0) {
+            markSubprocessResult(span, { exitCode: code, success: false, handled: true })
+            return resolve(0)
+          }
+          const hasSilenceStart = /silence_start:\s*([0-9.]+)/.test(stderr)
+          const m = stderr.match(/silence_end:\s*([0-9.]+)/)
+          if (!m) {
+            markSubprocessResult(span, { exitCode: code, success: true })
+            return resolve(hasSilenceStart ? null : 0)
+          }
+          const v = Number(m[1])
+          if (!Number.isFinite(v) || v < 0) {
+            markSubprocessResult(span, { exitCode: code, success: false, handled: true })
+            return resolve(0)
+          }
+          markSubprocessResult(span, { exitCode: code, success: true })
+          resolve(v)
+        })
+        p.on('error', () => {
+          markSubprocessResult(span, { success: false, handled: true })
+          resolve(0)
+        })
+      })
+    }
+  )
 }
 
 function thresholdForGate(gate: string): number {
