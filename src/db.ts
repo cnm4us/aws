@@ -582,6 +582,53 @@ export async function ensureSchema(db: DB) {
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
           `);
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_visualizer_templates_archived ON visualizer_preset_templates (archived_at, id)`); } catch {}
+
+          // --- Feed prompts registry (plan_114A) ---
+          await db.query(`
+            CREATE TABLE IF NOT EXISTS feed_prompts (
+              id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+              name VARCHAR(120) NOT NULL,
+              kind ENUM('prompt_full','prompt_overlay') NOT NULL DEFAULT 'prompt_full',
+              headline VARCHAR(280) NOT NULL,
+              body TEXT NULL,
+              cta_primary_label VARCHAR(100) NOT NULL,
+              cta_primary_href VARCHAR(1200) NOT NULL,
+              cta_secondary_label VARCHAR(100) NULL,
+              cta_secondary_href VARCHAR(1200) NULL,
+              media_upload_id BIGINT UNSIGNED NULL,
+              category VARCHAR(64) NOT NULL,
+              priority INT NOT NULL DEFAULT 100,
+              status ENUM('draft','active','paused','archived') NOT NULL DEFAULT 'draft',
+              starts_at DATETIME NULL,
+              ends_at DATETIME NULL,
+              created_by BIGINT UNSIGNED NOT NULL DEFAULT 0,
+              updated_by BIGINT UNSIGNED NOT NULL DEFAULT 0,
+              created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              KEY idx_feed_prompts_status_category (status, category, priority, id),
+              KEY idx_feed_prompts_kind_status (kind, status, priority, id),
+              KEY idx_feed_prompts_active_window (status, starts_at, ends_at, priority, id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+          `)
+          await db.query(`ALTER TABLE feed_prompts ADD COLUMN IF NOT EXISTS name VARCHAR(120) NOT NULL`)
+          await db.query(`ALTER TABLE feed_prompts ADD COLUMN IF NOT EXISTS kind ENUM('prompt_full','prompt_overlay') NOT NULL DEFAULT 'prompt_full'`)
+          await db.query(`ALTER TABLE feed_prompts ADD COLUMN IF NOT EXISTS headline VARCHAR(280) NOT NULL`)
+          await db.query(`ALTER TABLE feed_prompts ADD COLUMN IF NOT EXISTS body TEXT NULL`)
+          await db.query(`ALTER TABLE feed_prompts ADD COLUMN IF NOT EXISTS cta_primary_label VARCHAR(100) NOT NULL`)
+          await db.query(`ALTER TABLE feed_prompts ADD COLUMN IF NOT EXISTS cta_primary_href VARCHAR(1200) NOT NULL`)
+          await db.query(`ALTER TABLE feed_prompts ADD COLUMN IF NOT EXISTS cta_secondary_label VARCHAR(100) NULL`)
+          await db.query(`ALTER TABLE feed_prompts ADD COLUMN IF NOT EXISTS cta_secondary_href VARCHAR(1200) NULL`)
+          await db.query(`ALTER TABLE feed_prompts ADD COLUMN IF NOT EXISTS media_upload_id BIGINT UNSIGNED NULL`)
+          await db.query(`ALTER TABLE feed_prompts ADD COLUMN IF NOT EXISTS category VARCHAR(64) NOT NULL`)
+          await db.query(`ALTER TABLE feed_prompts ADD COLUMN IF NOT EXISTS priority INT NOT NULL DEFAULT 100`)
+          await db.query(`ALTER TABLE feed_prompts ADD COLUMN IF NOT EXISTS status ENUM('draft','active','paused','archived') NOT NULL DEFAULT 'draft'`)
+          await db.query(`ALTER TABLE feed_prompts ADD COLUMN IF NOT EXISTS starts_at DATETIME NULL`)
+          await db.query(`ALTER TABLE feed_prompts ADD COLUMN IF NOT EXISTS ends_at DATETIME NULL`)
+          await db.query(`ALTER TABLE feed_prompts ADD COLUMN IF NOT EXISTS created_by BIGINT UNSIGNED NOT NULL DEFAULT 0`)
+          await db.query(`ALTER TABLE feed_prompts ADD COLUMN IF NOT EXISTS updated_by BIGINT UNSIGNED NOT NULL DEFAULT 0`)
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_prompts_status_category ON feed_prompts (status, category, priority, id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_prompts_kind_status ON feed_prompts (kind, status, priority, id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_prompts_active_window ON feed_prompts (status, starts_at, ends_at, priority, id)`); } catch {}
           try {
             const curatedOwnerUserId = 1
             const curatedPresetIds = [3, 4, 5, 6, 7, 8, 9, 10, 11]

@@ -180,6 +180,14 @@ function classifyHttpOperation(methodRaw: string, pathname: string): string | nu
     { method: 'PUT', re: /^\/api\/visualizer-presets\/[^/]+$/, op: 'visualizer_presets.patch' },
     { method: 'DELETE', re: /^\/api\/visualizer-presets\/[^/]+$/, op: 'visualizer_presets.delete' },
     { method: 'POST', re: /^\/api\/visualizer-presets\/[^/]+\/reset$/, op: 'visualizer_presets.reset' },
+
+    // Admin prompts (plan_114A)
+    { method: 'GET', re: /^\/api\/admin\/prompts$/, op: 'admin.prompts.list' },
+    { method: 'POST', re: /^\/api\/admin\/prompts$/, op: 'admin.prompts.write' },
+    { method: 'GET', re: /^\/api\/admin\/prompts\/[^/]+$/, op: 'admin.prompts.get' },
+    { method: 'PATCH', re: /^\/api\/admin\/prompts\/[^/]+$/, op: 'admin.prompts.write' },
+    { method: 'POST', re: /^\/api\/admin\/prompts\/[^/]+\/clone$/, op: 'admin.prompts.write' },
+    { method: 'POST', re: /^\/api\/admin\/prompts\/[^/]+\/status$/, op: 'admin.prompts.write' },
   ]
   for (const rule of rules) {
     if (method === rule.method && rule.re.test(pathname)) {
@@ -198,6 +206,7 @@ function classifySurface(pathname: string, req: any, operation: string | null): 
   ) {
     return 'assets'
   }
+  if (operation?.startsWith('admin.')) return 'admin'
   const refPath = requestRefererPath(req)
   if (refPath && refPath.startsWith('/create-video')) return 'create_video'
   if (refPath && (refPath.startsWith('/assets') || refPath.startsWith('/library') || refPath.startsWith('/uploads'))) {
@@ -206,6 +215,7 @@ function classifySurface(pathname: string, req: any, operation: string | null): 
   if (pathname.startsWith('/api/assets/') || pathname.startsWith('/api/library/') || pathname.startsWith('/api/visualizer-presets')) {
     return 'assets'
   }
+  if (pathname.startsWith('/api/admin/')) return 'admin'
   if (pathname.startsWith('/api/uploads/')) return 'unknown'
   return null
 }

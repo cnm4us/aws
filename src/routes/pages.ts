@@ -17,6 +17,7 @@ import * as audioTagsRepo from '../features/audio-tags/repo'
 import * as licenseSourcesSvc from '../features/license-sources/service'
 import * as licenseSourcesRepo from '../features/license-sources/repo'
 import * as lowerThirdsSvc from '../features/lower-thirds/service'
+import * as promptsSvc from '../features/prompts/service'
 import { GetObjectCommand, DeleteObjectsCommand, ListObjectsV2Command } from '@aws-sdk/client-s3'
 import { s3 } from '../services/s3'
 import { pipeline } from 'stream/promises'
@@ -642,6 +643,7 @@ type AdminNavKey =
 	| 'lower_thirds'
 	| 'audio_configs'
 	| 'media_jobs'
+  | 'prompts'
 	| 'settings'
 	| 'dev';
 
@@ -661,6 +663,7 @@ const ADMIN_NAV_ITEMS: Array<{ key: AdminNavKey; label: string; href: string }> 
 	{ key: 'lower_thirds', label: 'Lower Thirds', href: '/admin/lower-thirds' },
 	{ key: 'audio_configs', label: 'Audio Configs', href: '/admin/audio-configs' },
 	{ key: 'media_jobs', label: 'Media Jobs', href: '/admin/media-jobs' },
+  { key: 'prompts', label: 'Prompts', href: '/admin/prompts' },
   { key: 'settings', label: 'Settings', href: '/admin/settings' },
   { key: 'dev', label: 'Dev', href: '/admin/dev' },
 ];
@@ -2975,6 +2978,7 @@ pagesRouter.get('/admin', async (_req: any, res: any) => {
     { title: 'Lower Thirds', href: '/admin/lower-thirds', desc: 'Manage system lower third templates (SVG + descriptor)' },
     { title: 'Audio Configs', href: '/admin/audio-configs', desc: 'Presets for Mix/Replace + ducking (creators pick when producing)' },
     { title: 'Media Jobs', href: '/admin/media-jobs', desc: 'Debug ffmpeg mastering jobs (logs, retries, purge)' },
+    { title: 'Prompts', href: '/admin/prompts', desc: 'In-feed registration/login prompt catalog and lifecycle controls' },
     { title: 'Settings', href: '/admin/settings', desc: 'Coming soon' },
     { title: 'Dev', href: '/admin/dev', desc: 'Dev stats and guarded tools' },
   ]
@@ -2996,6 +3000,306 @@ pagesRouter.get('/admin', async (_req: any, res: any) => {
   const doc = renderAdminPage({ title: 'Admin', bodyHtml: body })
   res.set('Content-Type', 'text/html; charset=utf-8')
   res.send(doc)
+})
+
+function toDateTimeLocalValue(raw: any): string {
+  const value = String(raw || '').trim()
+  if (!value) return ''
+  const parts = value.replace('T', ' ').split(' ')
+  const datePart = parts[0] || ''
+  const timePart = parts[1] || ''
+  const hhmm = timePart.slice(0, 5)
+  if (!datePart || !hhmm) return ''
+  return `${datePart}T${hhmm}`
+}
+
+function renderPromptKindBadge(kind: string): string {
+  return kind === 'prompt_overlay' ? 'Overlay' : 'Full'
+}
+
+function renderAdminPromptForm(opts: {
+  title: string
+  action: string
+  csrfToken?: string | null
+  backHref: string
+  values: any
+  error?: string | null
+  notice?: string | null
+  showClone?: boolean
+}): string {
+  const csrfToken = opts.csrfToken ? String(opts.csrfToken) : ''
+  const values = opts.values || {}
+  const id = values.id ? Number(values.id) : null
+
+  let body = `<h1>${escapeHtml(opts.title)}</h1>`
+  body += `<div class="toolbar"><div><a href="${escapeHtml(opts.backHref)}">← Back to prompts</a></div><div></div></div>`
+  if (opts.error) body += `<div class="error">${escapeHtml(String(opts.error))}</div>`
+  if (opts.notice) body += `<div class="notice">${escapeHtml(String(opts.notice))}</div>`
+
+  body += `<form method="post" action="${escapeHtml(opts.action)}">`
+  if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
+
+  body += `<div class="section"><div class="section-title">Identity</div>`
+  body += `<label>Name<input type="text" name="name" value="${escapeHtml(String(values.name || ''))}" required maxlength="120" /></label>`
+  body += `<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px">`
+  body += `<label>Kind<select name="kind">
+    <option value="prompt_full"${String(values.kind || '') === 'prompt_full' ? ' selected' : ''}>Prompt Full</option>
+    <option value="prompt_overlay"${String(values.kind || '') === 'prompt_overlay' ? ' selected' : ''}>Prompt Overlay</option>
+  </select></label>`
+  body += `<label>Category<input type="text" name="category" value="${escapeHtml(String(values.category || 'register_prompt'))}" required maxlength="64" /></label>`
+  body += `<label>Priority<input type="number" name="priority" value="${escapeHtml(String(values.priority ?? 100))}" /></label>`
+  body += `<label>Status<select name="status">
+    <option value="draft"${String(values.status || '') === 'draft' ? ' selected' : ''}>Draft</option>
+    <option value="active"${String(values.status || '') === 'active' ? ' selected' : ''}>Active</option>
+    <option value="paused"${String(values.status || '') === 'paused' ? ' selected' : ''}>Paused</option>
+    <option value="archived"${String(values.status || '') === 'archived' ? ' selected' : ''}>Archived</option>
+  </select></label>`
+  body += `</div>`
+  body += `</div>`
+
+  body += `<div class="section"><div class="section-title">Content</div>`
+  body += `<label>Headline<input type="text" name="headline" value="${escapeHtml(String(values.headline || ''))}" required maxlength="280" /></label>`
+  body += `<label>Body<textarea name="body" rows="4">${escapeHtml(String(values.body || ''))}</textarea></label>`
+  body += `</div>`
+
+  body += `<div class="section"><div class="section-title">Calls to Action</div>`
+  body += `<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px">`
+  body += `<label>Primary Label<input type="text" name="ctaPrimaryLabel" value="${escapeHtml(String(values.ctaPrimaryLabel || values.cta_primary_label || ''))}" required maxlength="100" /></label>`
+  body += `<label>Primary Href<input type="text" name="ctaPrimaryHref" value="${escapeHtml(String(values.ctaPrimaryHref || values.cta_primary_href || '/register?return=/'))}" required maxlength="1200" /></label>`
+  body += `<label>Secondary Label<input type="text" name="ctaSecondaryLabel" value="${escapeHtml(String(values.ctaSecondaryLabel || values.cta_secondary_label || ''))}" maxlength="100" /></label>`
+  body += `<label>Secondary Href<input type="text" name="ctaSecondaryHref" value="${escapeHtml(String(values.ctaSecondaryHref || values.cta_secondary_href || ''))}" maxlength="1200" /></label>`
+  body += `</div>`
+  body += `<div class="field-hint">V1 supports internal paths only, e.g. <code>/register?return=/</code> or <code>/login?return=/</code>.</div>`
+  body += `</div>`
+
+  body += `<div class="section"><div class="section-title">Scheduling</div>`
+  body += `<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px">`
+  body += `<label>Starts At (UTC)<input type="datetime-local" name="startsAt" value="${escapeHtml(toDateTimeLocalValue(values.startsAt || values.starts_at))}" /></label>`
+  body += `<label>Ends At (UTC)<input type="datetime-local" name="endsAt" value="${escapeHtml(toDateTimeLocalValue(values.endsAt || values.ends_at))}" /></label>`
+  body += `<label>Media Upload ID (optional)<input type="number" name="mediaUploadId" value="${escapeHtml(String(values.mediaUploadId || values.media_upload_id || ''))}" min="1" /></label>`
+  body += `</div>`
+  body += `</div>`
+
+  body += `<div class="section"><div class="section-title">Preview</div>`
+  body += `<div style="border:1px solid rgba(255,255,255,0.2); border-radius:12px; background:rgba(255,255,255,0.04); overflow:hidden">`
+  if (String(values.kind || '') === 'prompt_overlay') {
+    body += `<div style="height:180px; background:linear-gradient(130deg,#101828,#1f2937); position:relative">`
+    body += `<div style="position:absolute; left:14px; right:14px; bottom:14px; border:1px solid rgba(255,255,255,0.25); border-radius:10px; background:rgba(0,0,0,0.45); padding:12px">`
+    body += `<div style="font-weight:700; margin-bottom:6px">${escapeHtml(String(values.headline || 'Prompt headline'))}</div>`
+    if (values.body) body += `<div style="opacity:0.9; margin-bottom:10px">${escapeHtml(String(values.body || ''))}</div>`
+    body += `<div style="display:flex; gap:8px; flex-wrap:wrap"><span class="btn">${escapeHtml(String(values.ctaPrimaryLabel || values.cta_primary_label || 'Primary'))}</span>`
+    if (values.ctaSecondaryLabel || values.cta_secondary_label) body += `<span class="btn" style="background:rgba(255,255,255,0.06)">${escapeHtml(String(values.ctaSecondaryLabel || values.cta_secondary_label || 'Secondary'))}</span>`
+    body += `</div></div></div>`
+  } else {
+    body += `<div style="padding:18px; min-height:180px; display:flex; align-items:center; justify-content:center">`
+    body += `<div style="width:min(420px,100%); border:1px solid rgba(255,255,255,0.22); border-radius:14px; background:rgba(0,0,0,0.48); padding:16px">`
+    body += `<div style="font-size:22px; font-weight:800; margin-bottom:8px">${escapeHtml(String(values.headline || 'Prompt headline'))}</div>`
+    if (values.body) body += `<div style="opacity:0.92; margin-bottom:12px">${escapeHtml(String(values.body || ''))}</div>`
+    body += `<div style="display:flex; gap:8px; flex-wrap:wrap"><span class="btn">${escapeHtml(String(values.ctaPrimaryLabel || values.cta_primary_label || 'Primary'))}</span>`
+    if (values.ctaSecondaryLabel || values.cta_secondary_label) body += `<span class="btn" style="background:rgba(255,255,255,0.06)">${escapeHtml(String(values.ctaSecondaryLabel || values.cta_secondary_label || 'Secondary'))}</span>`
+    body += `</div></div></div>`
+  }
+  body += `</div></div>`
+
+  body += `<div class="toolbar"><div></div><div style="display:flex; gap:8px"><button class="btn" type="submit">Save</button></div></div>`
+  body += `</form>`
+
+  if (opts.showClone && id) {
+    body += `<div class="section"><div class="section-title">Actions</div>`
+    body += `<div style="display:flex; gap:8px; flex-wrap:wrap">`
+    body += `<form method="post" action="/admin/prompts/${id}/clone" style="margin:0">`
+    if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
+    body += `<button class="btn" type="submit">Clone</button></form>`
+    for (const s of ['draft', 'active', 'paused', 'archived']) {
+      if (String(values.status || '') === s) continue
+      body += `<form method="post" action="/admin/prompts/${id}/status" style="margin:0">`
+      if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
+      body += `<input type="hidden" name="status" value="${escapeHtml(s)}" />`
+      body += `<button class="btn" type="submit">Set ${escapeHtml(s)}</button></form>`
+    }
+    body += `</div></div>`
+  }
+
+  return renderAdminPage({ title: opts.title, bodyHtml: body, active: 'prompts' })
+}
+
+pagesRouter.get('/admin/prompts', async (req: any, res: any) => {
+  try {
+    const includeArchived = String(req.query?.include_archived || '0') === '1'
+    const status = req.query?.status ? String(req.query.status) : ''
+    const kind = req.query?.kind ? String(req.query.kind) : ''
+    const category = req.query?.category ? String(req.query.category) : ''
+    const notice = req.query?.notice ? String(req.query.notice) : ''
+    const error = req.query?.error ? String(req.query.error) : ''
+    const items = await promptsSvc.listForAdmin({ includeArchived, limit: 500, status, kind, category })
+
+    let body = '<h1>Prompts</h1>'
+    body += '<div class="toolbar"><div><span class="pill">Prompt Registry</span></div><div><a href="/admin/prompts/new">New prompt</a></div></div>'
+    if (notice) body += `<div class="notice">${escapeHtml(notice)}</div>`
+    if (error) body += `<div class="error">${escapeHtml(error)}</div>`
+    body += `<form method="get" action="/admin/prompts" class="section" style="margin:12px 0">`
+    body += `<div style="display:flex; gap:10px; flex-wrap:wrap; align-items:end">`
+    body += `<label style="min-width:160px">Status<select name="status">
+      <option value="">All</option>
+      <option value="draft"${status === 'draft' ? ' selected' : ''}>Draft</option>
+      <option value="active"${status === 'active' ? ' selected' : ''}>Active</option>
+      <option value="paused"${status === 'paused' ? ' selected' : ''}>Paused</option>
+      <option value="archived"${status === 'archived' ? ' selected' : ''}>Archived</option>
+    </select></label>`
+    body += `<label style="min-width:180px">Kind<select name="kind">
+      <option value="">All</option>
+      <option value="prompt_full"${kind === 'prompt_full' ? ' selected' : ''}>Prompt Full</option>
+      <option value="prompt_overlay"${kind === 'prompt_overlay' ? ' selected' : ''}>Prompt Overlay</option>
+    </select></label>`
+    body += `<label style="min-width:180px">Category<input type="text" name="category" value="${escapeHtml(category)}" /></label>`
+    body += `<label><input type="checkbox" name="include_archived" value="1"${includeArchived ? ' checked' : ''} /> Include archived</label>`
+    body += `<button class="btn" type="submit">Apply</button>`
+    body += `</div></form>`
+
+    if (!items.length) {
+      body += '<p>No prompts found for current filters.</p>'
+    } else {
+      body += '<table><thead><tr><th>ID</th><th>Name</th><th>Kind</th><th>Category</th><th>Priority</th><th>Status</th><th>Window</th><th>Updated</th></tr></thead><tbody>'
+      for (const item of items) {
+        const windowLabel = item.startsAt || item.endsAt ? `${item.startsAt || '—'} → ${item.endsAt || '—'}` : 'Always'
+        body += `<tr>
+          <td>${item.id}</td>
+          <td><a href="/admin/prompts/${item.id}">${escapeHtml(item.name)}</a></td>
+          <td>${escapeHtml(renderPromptKindBadge(item.kind))}</td>
+          <td>${escapeHtml(item.category)}</td>
+          <td>${item.priority}</td>
+          <td>${escapeHtml(item.status)}</td>
+          <td>${escapeHtml(windowLabel)}</td>
+          <td>${escapeHtml(item.updatedAt || '')}</td>
+        </tr>`
+      }
+      body += '</tbody></table>'
+    }
+
+    const doc = renderAdminPage({ title: 'Prompts', bodyHtml: body, active: 'prompts' })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.send(doc)
+  } catch (err) {
+    logError(req.log || pagesLogger, err, 'admin prompts list failed', { path: req.path })
+    res.status(500).send('Failed to load prompts')
+  }
+})
+
+pagesRouter.get('/admin/prompts/new', async (req: any, res: any) => {
+  const cookies = parseCookies(req.headers.cookie)
+  const csrfToken = cookies['csrf'] || ''
+  const doc = renderAdminPromptForm({
+    title: 'New Prompt',
+    action: '/admin/prompts',
+    csrfToken,
+    backHref: '/admin/prompts',
+    values: {
+      name: '',
+      kind: 'prompt_full',
+      headline: '',
+      body: '',
+      ctaPrimaryLabel: 'Register',
+      ctaPrimaryHref: '/register?return=/',
+      ctaSecondaryLabel: 'Log In',
+      ctaSecondaryHref: '/login?return=/',
+      category: 'register_prompt',
+      priority: 100,
+      status: 'draft',
+      startsAt: '',
+      endsAt: '',
+      mediaUploadId: '',
+    },
+  })
+  res.set('Content-Type', 'text/html; charset=utf-8')
+  res.send(doc)
+})
+
+pagesRouter.post('/admin/prompts', async (req: any, res: any) => {
+  const cookies = parseCookies(req.headers.cookie)
+  const csrfToken = cookies['csrf'] || ''
+  try {
+    const created = await promptsSvc.createForAdmin(req.body || {}, Number(req.user?.id || 0))
+    res.redirect(`/admin/prompts/${created.id}?notice=${encodeURIComponent('Prompt created.')}`)
+  } catch (err: any) {
+    const doc = renderAdminPromptForm({
+      title: 'New Prompt',
+      action: '/admin/prompts',
+      csrfToken,
+      backHref: '/admin/prompts',
+      values: req.body || {},
+      error: String(err?.message || 'Failed to create prompt'),
+    })
+    res.status(400).set('Content-Type', 'text/html; charset=utf-8').send(doc)
+  }
+})
+
+pagesRouter.get('/admin/prompts/:id', async (req: any, res: any) => {
+  const id = Number(req.params.id)
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).send('Bad prompt id')
+  try {
+    const prompt = await promptsSvc.getForAdmin(id)
+    const cookies = parseCookies(req.headers.cookie)
+    const csrfToken = cookies['csrf'] || ''
+    const doc = renderAdminPromptForm({
+      title: `Edit Prompt #${id}`,
+      action: `/admin/prompts/${id}`,
+      csrfToken,
+      backHref: '/admin/prompts',
+      values: prompt,
+      notice: req.query?.notice ? String(req.query.notice) : '',
+      error: req.query?.error ? String(req.query.error) : '',
+      showClone: true,
+    })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.send(doc)
+  } catch (err) {
+    logError(req.log || pagesLogger, err, 'admin prompt detail failed', { path: req.path, prompt_id: id })
+    res.status(404).send('Prompt not found')
+  }
+})
+
+pagesRouter.post('/admin/prompts/:id', async (req: any, res: any) => {
+  const id = Number(req.params.id)
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).send('Bad prompt id')
+  const cookies = parseCookies(req.headers.cookie)
+  const csrfToken = cookies['csrf'] || ''
+  try {
+    await promptsSvc.updateForAdmin(id, req.body || {}, Number(req.user?.id || 0))
+    res.redirect(`/admin/prompts/${id}?notice=${encodeURIComponent('Saved.')}`)
+  } catch (err: any) {
+    const doc = renderAdminPromptForm({
+      title: `Edit Prompt #${id}`,
+      action: `/admin/prompts/${id}`,
+      csrfToken,
+      backHref: '/admin/prompts',
+      values: { ...(req.body || {}), id },
+      error: String(err?.message || 'Failed to save prompt'),
+      showClone: true,
+    })
+    res.status(400).set('Content-Type', 'text/html; charset=utf-8').send(doc)
+  }
+})
+
+pagesRouter.post('/admin/prompts/:id/clone', async (req: any, res: any) => {
+  const id = Number(req.params.id)
+  if (!Number.isFinite(id) || id <= 0) return res.redirect('/admin/prompts?error=bad_id')
+  try {
+    const cloned = await promptsSvc.cloneForAdmin(id, Number(req.user?.id || 0))
+    res.redirect(`/admin/prompts/${cloned.id}?notice=${encodeURIComponent(`Cloned from #${id}.`)}`)
+  } catch (err: any) {
+    res.redirect(`/admin/prompts/${id}?error=${encodeURIComponent(String(err?.message || 'Failed to clone prompt'))}`)
+  }
+})
+
+pagesRouter.post('/admin/prompts/:id/status', async (req: any, res: any) => {
+  const id = Number(req.params.id)
+  if (!Number.isFinite(id) || id <= 0) return res.redirect('/admin/prompts?error=bad_id')
+  try {
+    await promptsSvc.updateStatusForAdmin(id, req.body?.status, Number(req.user?.id || 0))
+    res.redirect(`/admin/prompts/${id}?notice=${encodeURIComponent('Status updated.')}`)
+  } catch (err: any) {
+    res.redirect(`/admin/prompts/${id}?error=${encodeURIComponent(String(err?.message || 'Failed to update status'))}`)
+  }
 })
 
 function parseJsonOrNull(raw: any): any | null {
