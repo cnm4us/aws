@@ -43,14 +43,18 @@ Common fields:
   - auth completion rate
   - completion per impression (topline conversion)
 
+Bundle requirement:
+- `/admin/prompt-analytics` must be admin-only lazy bundle.
+- Public/global-feed bundle must not include analytics dashboard code.
+
 ## Acceptance Criteria
 1. Prompt funnel metrics available for active prompts.
 2. Metrics can be segmented by prompt and date range.
 3. Admin can identify overexposure (high dismiss, low conversion).
 4. Event volume and ingestion are observable (drop detection).
+5. Analytics UI code is isolated from public bundle.
 
 ## Observability
 - `app.operation=prompt.analytics.ingest`
 - `app.operation=prompt.analytics.query`
 - Track ingestion lag and query latency.
-

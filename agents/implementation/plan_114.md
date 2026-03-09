@@ -13,6 +13,29 @@ Design and deliver an in-feed prompt system that:
 - Frequency caps are mandatory (avoid spam).
 - Prompt delivery must be observable (impressions, clicks, conversions).
 
+## V1 Default Policy (Approved)
+- CTA routing:
+  - primary: `/register?return=/`
+  - secondary: `/login?return=/`
+- Anonymous identity:
+  - first-party cookie `anon_session_id` (UUIDv4), TTL 30 days.
+- First prompt eligibility:
+  - `min_slides_viewed=6` OR `min_watch_seconds=45`.
+- Session safety caps:
+  - `max_prompts_per_session=2`
+  - `min_slides_between_prompts=15`
+  - `cooldown_seconds_after_dismiss=900` (15 minutes)
+- Selection:
+  - highest priority active prompt; random tie-break among same priority.
+- Feature flags:
+  - `PROMPTS_ENABLED=0|1` (dev default `1`, prod default `0` until rollout)
+  - anonymous rollout percent gate (start at 10%).
+
+## Bundle Strategy
+- Admin-only prompt tooling must ship in admin-only React bundles.
+- No prompt-admin UI code in public feed bundles.
+- Routes `/admin/prompts`, `/admin/prompt-rules`, `/admin/prompt-analytics` must be lazy-loaded chunks behind admin auth.
+
 ## Program Shape
 This is a multi-component program, not one monolith.
 
@@ -68,4 +91,3 @@ Mitigations:
 1. Dark-launch prompt rendering with feature flag (off by default).
 2. Enable for a small percent of anonymous sessions.
 3. Validate retention + conversion before wider rollout.
-

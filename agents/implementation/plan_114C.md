@@ -24,6 +24,9 @@ Out of scope:
   - `slides_since_last_prompt`
   - `last_prompt_dismissed_at`
 
+Session default:
+- For anonymous users, `session_id` comes from `anon_session_id` first-party cookie (TTL 30 days).
+
 ## Output Contract (V1)
 - `should_insert: boolean`
 - `prompt_id: number | null`
@@ -46,4 +49,3 @@ Out of scope:
 ## Observability
 - Span tag: `app.operation=feed.prompt.decide`
 - Attributes: `prompt_decision`, `reason_code`, `prompt_id` (when selected)
-

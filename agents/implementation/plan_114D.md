@@ -26,6 +26,9 @@ Unified item shape in feed response:
   - primary/secondary CTA links,
   - dismiss/skip action,
   - consistent swipe/scroll transitions.
+- Default CTA destinations for registration prompts:
+  - primary `/register?return=/`
+  - secondary `/login?return=/`
 - Overlay prompt should not break underlying media rendering.
 
 ## Insertion Rules (V1)
@@ -44,4 +47,3 @@ Unified item shape in feed response:
   - `prompt_impression`
   - `prompt_click`
   - `prompt_dismiss`
-
