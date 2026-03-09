@@ -20,6 +20,7 @@ import { screenTitlePreviewRouter } from './routes/screen-title-preview';
 import { visualizerPresetsRouter } from './routes/visualizer-presets';
 import { adminPromptsRouter } from './routes/admin-prompts';
 import { adminPromptRulesRouter } from './routes/admin-prompt-rules';
+import { adminPromptAnalyticsRouter } from './routes/admin-prompt-analytics';
 import { feedPromptsRouter } from './routes/feed-prompts';
 import { productionDraftsRouter } from './routes/production-drafts';
 import { createVideoRouter } from './routes/create-video';
@@ -38,6 +39,7 @@ import { can } from './security/permissions'
 import { PERM } from './security/perm'
 import { domainErrorMiddleware } from './core/http';
 import { getLogger, logError } from './lib/logger';
+import * as promptAnalyticsSvc from './features/prompt-analytics/service'
 
 const appLogger = getLogger({ component: 'app' })
 
@@ -84,6 +86,7 @@ export function buildServer(): express.Application {
   app.use(visualizerPresetsRouter);
   app.use(adminPromptsRouter);
   app.use(adminPromptRulesRouter);
+  app.use(adminPromptAnalyticsRouter);
   app.use(feedPromptsRouter);
   app.use(productionDraftsRouter);
   app.use(createVideoRouter);
@@ -284,6 +287,27 @@ export function buildServer(): express.Application {
     }
   });
 
+  async function trackPromptAuthComplete(req: any, userId: number | null) {
+    try {
+      const promptIdRaw = req?.body?.prompt_id
+      if (promptIdRaw == null || promptIdRaw === '') return
+      await promptAnalyticsSvc.recordPromptEvent({
+        event: 'auth_complete',
+        surface: 'global_feed',
+        promptId: promptIdRaw,
+        promptKind: req?.body?.prompt_kind,
+        promptCategory: req?.body?.prompt_category,
+        sessionId: req?.body?.prompt_session_id,
+        ctaKind: req?.body?.prompt_cta_kind,
+        viewerState: userId != null && Number(userId) > 0 ? 'authenticated' : 'anonymous',
+        userId: userId != null && Number.isFinite(Number(userId)) ? Number(userId) : null,
+      })
+    } catch (err) {
+      const log = req.log || appLogger
+      log.warn({ err, path: req.path }, 'prompt_auth_complete_track_failed')
+    }
+  }
+
   app.post('/api/register', async (req, res) => {
     try {
       const { email, password, displayName, phone } = (req.body || {}) as any;
@@ -322,6 +346,7 @@ export function buildServer(): express.Application {
       // Assign default roles using new catalog
       await db.query(`INSERT IGNORE INTO user_roles (user_id, role_id) SELECT ?, id FROM roles WHERE name IN ('site_member')`, [userId]);
       await db.query(`INSERT IGNORE INTO user_space_roles (user_id, space_id, role_id) SELECT ?, ?, id FROM roles WHERE name IN ('space_member','space_poster')`, [userId, spaceId]);
+      await trackPromptAuthComplete(req, userId)
       res.json({ ok: true, userId, space: { id: spaceId, slug } });
     } catch (err: any) {
       const msg = String(err?.message || err);
@@ -379,6 +404,7 @@ export function buildServer(): express.Application {
         maxAge,
         path: '/',
       });
+      await trackPromptAuthComplete(req, Number(row.id))
       res.json({ ok: true, userId: row.id });
     } catch (err) {
       logError(req.log || appLogger, err, 'login_error', { path: req.path })

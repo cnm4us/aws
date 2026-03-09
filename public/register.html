@@ -40,9 +40,15 @@
       </form>
     </div>
     <script>
+      const qs = new URLSearchParams(window.location.search || '');
       function getCsrfToken() {
         const m = document.cookie.match(/(?:^|;)\s*csrf=([^;]+)/);
         return m ? decodeURIComponent(m[1]) : null;
+      }
+      function nextHref() {
+        const raw = (qs.get('return') || '/').trim();
+        if (!raw.startsWith('/') || raw.startsWith('//')) return '/';
+        return raw;
       }
       const f = document.getElementById('f');
       const err = document.getElementById('err');
@@ -57,11 +63,22 @@
           const headers = { 'content-type': 'application/json' };
           const csrf = getCsrfToken();
           if (csrf) headers['x-csrf-token'] = csrf;
-          const res = await fetch('/api/register', { method:'POST', headers, body: JSON.stringify({ email, password, displayName, phone }) });
+          const payload = {
+            email,
+            password,
+            displayName,
+            phone,
+            prompt_id: qs.get('prompt_id'),
+            prompt_kind: qs.get('prompt_kind'),
+            prompt_category: qs.get('prompt_category'),
+            prompt_session_id: qs.get('prompt_session_id'),
+            prompt_cta_kind: qs.get('prompt_cta_kind'),
+          };
+          const res = await fetch('/api/register', { method:'POST', headers, body: JSON.stringify(payload) });
           const data = await res.json().catch(()=>({}));
           if (!res.ok) { err.textContent = data && data.error ? data.error : 'Registration failed'; return; }
           ok.textContent = 'Registered! You can close this and continue.';
-          setTimeout(()=>{ window.location.href = '/' }, 800);
+          setTimeout(()=>{ window.location.href = nextHref() }, 800);
         } catch (e) {
           err.textContent = 'Network error';
         }

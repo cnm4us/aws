@@ -276,7 +276,9 @@ async function sendPromptEvent(input: {
   event: 'impression' | 'click' | 'dismiss' | 'auth_start' | 'auth_complete'
   promptId: number
   promptKind: FeedPromptKind
+  promptCategory: string | null
   sessionId: string | null
+  ctaKind?: 'primary' | 'secondary'
 }) {
   try {
     await fetch('/api/feed/prompt-events', {
@@ -289,7 +291,9 @@ async function sendPromptEvent(input: {
         surface: 'global_feed',
         prompt_id: input.promptId,
         prompt_kind: input.promptKind,
+        prompt_category: input.promptCategory,
         session_id: input.sessionId,
+        cta_kind: input.ctaKind || null,
       }),
     })
   } catch {}
@@ -1609,18 +1613,21 @@ export default function Feed() {
       event: 'dismiss',
       promptId: prompt.id,
       promptKind: prompt.kind,
+      promptCategory: prompt.category || null,
       sessionId: promptSessionId,
     })
   }, [promptSessionId])
 
-  const handlePromptCtaClick = useCallback((prompt: FeedPromptPayload, href: string) => {
+  const handlePromptCtaClick = useCallback((prompt: FeedPromptPayload, href: string, ctaKind: 'primary' | 'secondary') => {
     const targetHref = String(href || '').trim()
     if (!targetHref) return
     void sendPromptEvent({
       event: 'click',
       promptId: prompt.id,
       promptKind: prompt.kind,
+      promptCategory: prompt.category || null,
       sessionId: promptSessionId,
+      ctaKind,
     })
     const lowerHref = targetHref.toLowerCase()
     if (lowerHref.startsWith('/register') || lowerHref.startsWith('/login')) {
@@ -1628,9 +1635,22 @@ export default function Feed() {
         event: 'auth_start',
         promptId: prompt.id,
         promptKind: prompt.kind,
+        promptCategory: prompt.category || null,
         sessionId: promptSessionId,
       })
     }
+    try {
+      const url = new URL(targetHref, window.location.origin)
+      if (url.origin === window.location.origin) {
+        url.searchParams.set('prompt_id', String(prompt.id))
+        url.searchParams.set('prompt_kind', prompt.kind)
+        if (prompt.category) url.searchParams.set('prompt_category', prompt.category)
+        if (promptSessionId) url.searchParams.set('prompt_session_id', promptSessionId)
+        url.searchParams.set('prompt_cta_kind', ctaKind)
+        window.location.href = `${url.pathname}${url.search}${url.hash || ''}`
+        return
+      }
+    } catch {}
     window.location.href = targetHref
   }, [promptSessionId])
 
@@ -1672,6 +1692,7 @@ export default function Feed() {
       event: 'impression',
       promptId: prompt.id,
       promptKind: prompt.kind,
+      promptCategory: prompt.category || null,
       sessionId: promptSessionId,
     })
   }, [index, items, promptSessionId])
@@ -2051,7 +2072,7 @@ export default function Feed() {
                       <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
                         <button
                           type="button"
-                          onClick={() => handlePromptCtaClick(prompt, prompt.ctaPrimaryHref)}
+                          onClick={() => handlePromptCtaClick(prompt, prompt.ctaPrimaryHref, 'primary')}
                           style={{
                             border: '1px solid rgba(10,132,255,0.8)',
                             background: 'rgba(10,132,255,0.45)',
@@ -2067,7 +2088,7 @@ export default function Feed() {
                         {prompt.ctaSecondaryLabel && prompt.ctaSecondaryHref ? (
                           <button
                             type="button"
-                            onClick={() => handlePromptCtaClick(prompt, prompt.ctaSecondaryHref || '')}
+                            onClick={() => handlePromptCtaClick(prompt, prompt.ctaSecondaryHref || '', 'secondary')}
                             style={{
                               border: '1px solid rgba(255,255,255,0.45)',
                               background: 'rgba(6,10,16,0.65)',

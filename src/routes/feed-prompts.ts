@@ -6,6 +6,7 @@ import { PERM } from '../security/perm'
 import { buildDecisionInput, ANON_SESSION_COOKIE, ANON_SESSION_TTL_MS, decidePrompt } from '../features/prompt-decision/service'
 import * as promptsSvc from '../features/prompts/service'
 import * as uploadsSvc from '../features/uploads/service'
+import * as promptAnalyticsSvc from '../features/prompt-analytics/service'
 import { getLogger } from '../lib/logger'
 
 export const feedPromptsRouter = Router()
@@ -143,6 +144,8 @@ feedPromptsRouter.post('/api/feed/prompt-events', async (req: any, res: any, nex
     const event = String(body.event || '').trim().toLowerCase()
     const promptId = Number(body.prompt_id)
     const promptKind = body.prompt_kind ? String(body.prompt_kind) : null
+    const promptCategory = body.prompt_category ? String(body.prompt_category) : null
+    const ctaKind = body.cta_kind ? String(body.cta_kind) : null
     const surface = String(body.surface || 'global_feed').trim().toLowerCase() || 'global_feed'
     const sessionId = body.session_id ? String(body.session_id).trim() : null
 
@@ -151,6 +154,18 @@ feedPromptsRouter.post('/api/feed/prompt-events', async (req: any, res: any, nex
     }
     if (!Number.isFinite(promptId) || promptId <= 0) return res.status(400).json({ error: 'bad_prompt_id' })
     if (surface !== 'global_feed') return res.status(400).json({ error: 'bad_surface' })
+
+    const tracked = await promptAnalyticsSvc.recordPromptEvent({
+      event: event as any,
+      promptId,
+      promptKind,
+      promptCategory,
+      ctaKind,
+      surface: 'global_feed',
+      sessionId,
+      viewerState: req.user?.id ? 'authenticated' : 'anonymous',
+      userId: req.user?.id ? Number(req.user.id) : null,
+    })
 
     const opByEvent: Record<string, string> = {
       impression: 'feed.prompt.render',
@@ -184,13 +199,23 @@ feedPromptsRouter.post('/api/feed/prompt-events', async (req: any, res: any, nex
         app_outcome: outcomeByEvent[event] || 'shown',
         prompt_id: promptId,
         prompt_kind: promptKind,
+        prompt_category: promptCategory,
+        cta_kind: ctaKind,
         prompt_session_id: sessionId,
+        prompt_event_type: tracked.eventType,
+        prompt_event_deduped: !tracked.inserted,
+        prompt_event_attributed: tracked.attributed,
         viewer_user_id: req.user?.id ? Number(req.user.id) : null,
       },
       'feed.prompt.event'
     )
 
-    return res.json({ ok: true })
+    return res.json({
+      ok: true,
+      deduped: !tracked.inserted,
+      counted: tracked.countedInRollup,
+      attributed: tracked.attributed,
+    })
   } catch (err) {
     return next(err)
   }

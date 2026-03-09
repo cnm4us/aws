@@ -15,7 +15,7 @@ Scope notes:
 |---|---|---|---|
 | `app.operation` | See full catalog below | enum | Primary operation name for traces/metrics queries. |
 | `app.operation_family` | `mediajobs.attempt.process` | enum | Grouping for media job operation families. |
-| `app.surface` | `create_video`, `assets`, `unknown` | enum | User surface derived from route/referer context. |
+| `app.surface` | `create_video`, `assets`, `admin`, `global_feed`, `unknown` | enum | User surface derived from route/referer context. |
 | `app.outcome` | `success`, `redirect`, `client_error`, `server_error` | enum | Derived from HTTP status or explicit span outcome. |
 | `app.request.class` | `static_asset`, `probe`, `root` | enum | Set only when trace toggles include those classes. |
 | `error.class` | `validation`, `auth`, `forbidden`, `not_found`, `conflict`, `rate_limit`, `upstream`, `internal`, `client`, `timeout`, `network` | enum | Some values are route-status-derived; others from external error classification. |
@@ -126,6 +126,20 @@ Scope notes:
 - `visualizer_presets.delete`
 - `visualizer_presets.reset`
 
+### Prompt / admin operations
+- `admin.prompts.list`
+- `admin.prompts.get`
+- `admin.prompts.write`
+- `admin.prompt_rules.list`
+- `admin.prompt_rules.get`
+- `admin.prompt_rules.write`
+- `feed.global.list`
+- `feed.prompt.decide`
+- `feed.prompt.fetch`
+- `feed.prompt.event`
+- `prompt.analytics.ingest`
+- `prompt.analytics.query`
+
 ### Media job operations
 - `create_video.export.process`
 - `mediajobs.attempt.process`
@@ -174,4 +188,3 @@ Scope notes:
   - `/api/v1/label/app_outcome/values`
   - `/api/v1/label/error_class/values`
   - `/api/v1/label/mediajob_type/values`
-

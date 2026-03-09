@@ -19,6 +19,7 @@ import * as licenseSourcesRepo from '../features/license-sources/repo'
 import * as lowerThirdsSvc from '../features/lower-thirds/service'
 import * as promptsSvc from '../features/prompts/service'
 import * as promptRulesSvc from '../features/prompt-rules/service'
+import * as promptAnalyticsSvc from '../features/prompt-analytics/service'
 import { GetObjectCommand, DeleteObjectsCommand, ListObjectsV2Command } from '@aws-sdk/client-s3'
 import { s3 } from '../services/s3'
 import { pipeline } from 'stream/promises'
@@ -646,6 +647,7 @@ type AdminNavKey =
 	| 'media_jobs'
   | 'prompts'
   | 'prompt_rules'
+  | 'prompt_analytics'
 	| 'settings'
 	| 'dev';
 
@@ -667,6 +669,7 @@ const ADMIN_NAV_ITEMS: Array<{ key: AdminNavKey; label: string; href: string }> 
 	{ key: 'media_jobs', label: 'Media Jobs', href: '/admin/media-jobs' },
   { key: 'prompts', label: 'Prompts', href: '/admin/prompts' },
   { key: 'prompt_rules', label: 'Prompt Rules', href: '/admin/prompt-rules' },
+  { key: 'prompt_analytics', label: 'Prompt Analytics', href: '/admin/prompt-analytics' },
   { key: 'settings', label: 'Settings', href: '/admin/settings' },
   { key: 'dev', label: 'Dev', href: '/admin/dev' },
 ];
@@ -2983,6 +2986,7 @@ pagesRouter.get('/admin', async (_req: any, res: any) => {
     { title: 'Media Jobs', href: '/admin/media-jobs', desc: 'Debug ffmpeg mastering jobs (logs, retries, purge)' },
     { title: 'Prompts', href: '/admin/prompts', desc: 'In-feed registration/login prompt catalog and lifecycle controls' },
     { title: 'Prompt Rules', href: '/admin/prompt-rules', desc: 'Eligibility thresholds and pacing caps for prompt orchestration' },
+    { title: 'Prompt Analytics', href: '/admin/prompt-analytics', desc: 'Funnel metrics, conversion rates, and overexposure detection for prompts' },
     { title: 'Settings', href: '/admin/settings', desc: 'Coming soon' },
     { title: 'Dev', href: '/admin/dev', desc: 'Dev stats and guarded tools' },
   ]
@@ -3529,6 +3533,122 @@ pagesRouter.post('/admin/prompt-rules/:id/toggle', async (req: any, res: any) =>
     res.redirect(`/admin/prompt-rules/${id}?notice=${encodeURIComponent('Enabled state updated.')}`)
   } catch (err: any) {
     res.redirect(`/admin/prompt-rules/${id}?error=${encodeURIComponent(String(err?.message || 'Failed to update enabled state'))}`)
+  }
+})
+
+function pctText(rate: number): string {
+  const n = Number(rate || 0)
+  if (!Number.isFinite(n)) return '0.00%'
+  return `${(Math.max(0, n) * 100).toFixed(2)}%`
+}
+
+pagesRouter.get('/admin/prompt-analytics', async (req: any, res: any) => {
+  try {
+    const report = await promptAnalyticsSvc.getPromptAnalyticsReportForAdmin({
+      fromDate: req.query?.from,
+      toDate: req.query?.to,
+      surface: req.query?.surface,
+      promptId: req.query?.prompt_id,
+      promptCategory: req.query?.prompt_category,
+      viewerState: req.query?.viewer_state,
+    })
+
+    if (String(req.query?.format || '').toLowerCase() === 'csv') {
+      const csv = promptAnalyticsSvc.buildPromptAnalyticsCsv(report)
+      const filename = `prompt-analytics-${report.range.fromDate}_to_${report.range.toDate}.csv`
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+      res.setHeader('Content-Disposition', `attachment; filename=\"${filename}\"`)
+      return res.send(csv)
+    }
+
+    const q = new URLSearchParams()
+    q.set('from', report.range.fromDate)
+    q.set('to', report.range.toDate)
+    if (report.range.surface) q.set('surface', report.range.surface)
+    if (report.range.promptId != null) q.set('prompt_id', String(report.range.promptId))
+    if (report.range.promptCategory) q.set('prompt_category', report.range.promptCategory)
+    if (report.range.viewerState) q.set('viewer_state', report.range.viewerState)
+
+    let body = '<h1>Prompt Analytics</h1>'
+    body += '<div class="toolbar"><div><span class="pill">Prompt Funnel</span></div><div></div></div>'
+    body += `<form method="get" action="/admin/prompt-analytics" class="section" style="margin:12px 0">`
+    body += `<div style="display:grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); gap:10px; align-items:end">`
+    body += `<label>From (UTC)<input type="date" name="from" value="${escapeHtml(report.range.fromDate)}" /></label>`
+    body += `<label>To (UTC)<input type="date" name="to" value="${escapeHtml(report.range.toDate)}" /></label>`
+    body += `<label>Surface<select name="surface">
+      <option value=""${report.range.surface == null ? ' selected' : ''}>All</option>
+      <option value="global_feed"${report.range.surface === 'global_feed' ? ' selected' : ''}>Global Feed</option>
+    </select></label>`
+    body += `<label>Viewer State<select name="viewer_state">
+      <option value=""${report.range.viewerState == null ? ' selected' : ''}>All</option>
+      <option value="anonymous"${report.range.viewerState === 'anonymous' ? ' selected' : ''}>Anonymous</option>
+      <option value="authenticated"${report.range.viewerState === 'authenticated' ? ' selected' : ''}>Authenticated</option>
+    </select></label>`
+    body += `<label>Prompt ID<input type="number" name="prompt_id" min="1" value="${escapeHtml(report.range.promptId == null ? '' : String(report.range.promptId))}" /></label>`
+    body += `<label>Category<input type="text" name="prompt_category" value="${escapeHtml(report.range.promptCategory || '')}" /></label>`
+    body += `</div>`
+    body += `<div style="display:flex; gap:10px; margin-top:10px; flex-wrap:wrap">`
+    body += `<button class="btn" type="submit">Apply</button>`
+    body += `<a class="btn" href="/admin/prompt-analytics?${escapeHtml(`${q.toString()}&format=csv`)}">Export CSV</a>`
+    body += `</div>`
+    body += `</form>`
+
+    body += `<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px; margin-bottom:12px">`
+    body += `<div class="section" style="margin:0"><div class="section-title">Impressions</div><div style="font-size:24px; font-weight:800">${report.kpis.totals.impressions}</div><div class="field-hint">Unique sessions: ${report.kpis.uniqueSessions.impressions}</div></div>`
+    body += `<div class="section" style="margin:0"><div class="section-title">CTR</div><div style="font-size:24px; font-weight:800">${pctText(report.kpis.rates.ctr)}</div><div class="field-hint">${report.kpis.totals.clicksTotal} clicks</div></div>`
+    body += `<div class="section" style="margin:0"><div class="section-title">Dismiss Rate</div><div style="font-size:24px; font-weight:800">${pctText(report.kpis.rates.dismissRate)}</div><div class="field-hint">${report.kpis.totals.dismiss} dismiss</div></div>`
+    body += `<div class="section" style="margin:0"><div class="section-title">Auth Start Rate</div><div style="font-size:24px; font-weight:800">${pctText(report.kpis.rates.authStartRate)}</div><div class="field-hint">${report.kpis.totals.authStart} starts</div></div>`
+    body += `<div class="section" style="margin:0"><div class="section-title">Auth Completion Rate</div><div style="font-size:24px; font-weight:800">${pctText(report.kpis.rates.authCompletionRate)}</div><div class="field-hint">${report.kpis.totals.authComplete} completions</div></div>`
+    body += `</div>`
+
+    if (!report.byPrompt.length) {
+      body += '<p>No prompt analytics events found in this range.</p>'
+    } else {
+      body += '<table><thead><tr><th>Prompt</th><th>Category</th><th>Kind</th><th>Impressions</th><th>Clicks</th><th>CTR</th><th>Dismiss</th><th>Dismiss Rate</th><th>Auth Start</th><th>Auth Complete</th><th>Auth Completion Rate</th><th>Status</th></tr></thead><tbody>'
+      for (const row of report.byPrompt) {
+        const status = row.rates.dismissRate >= 0.5 && row.rates.authCompletionRate < 0.01 ? 'Overexposed' : 'Healthy'
+        const label = row.promptName ? `${row.promptName} (#${row.promptId})` : `#${row.promptId}`
+        body += `<tr>
+          <td>${escapeHtml(label)}</td>
+          <td>${escapeHtml(row.promptCategory || '—')}</td>
+          <td>${escapeHtml(row.promptKind || '—')}</td>
+          <td>${row.totals.impressions} <span class="field-hint">(u:${row.uniqueSessions.impressions})</span></td>
+          <td>${row.totals.clicksTotal} <span class="field-hint">(u:${row.uniqueSessions.clicksTotal})</span></td>
+          <td>${pctText(row.rates.ctr)}</td>
+          <td>${row.totals.dismiss} <span class="field-hint">(u:${row.uniqueSessions.dismiss})</span></td>
+          <td>${pctText(row.rates.dismissRate)}</td>
+          <td>${row.totals.authStart} <span class="field-hint">(u:${row.uniqueSessions.authStart})</span></td>
+          <td>${row.totals.authComplete} <span class="field-hint">(u:${row.uniqueSessions.authComplete})</span></td>
+          <td>${pctText(row.rates.authCompletionRate)}</td>
+          <td>${escapeHtml(status)}</td>
+        </tr>`
+      }
+      body += '</tbody></table>'
+    }
+
+    if (report.byDay.length) {
+      body += '<div class="section" style="margin-top:12px"><div class="section-title">Daily Trend (UTC)</div>'
+      body += '<table><thead><tr><th>Date</th><th>Impressions</th><th>Clicks</th><th>CTR</th><th>Dismiss Rate</th><th>Auth Start Rate</th><th>Auth Completion Rate</th></tr></thead><tbody>'
+      for (const row of report.byDay) {
+        body += `<tr>
+          <td>${escapeHtml(row.dateUtc)}</td>
+          <td>${row.totals.impressions}</td>
+          <td>${row.totals.clicksTotal}</td>
+          <td>${pctText(row.rates.ctr)}</td>
+          <td>${pctText(row.rates.dismissRate)}</td>
+          <td>${pctText(row.rates.authStartRate)}</td>
+          <td>${pctText(row.rates.authCompletionRate)}</td>
+        </tr>`
+      }
+      body += '</tbody></table></div>'
+    }
+
+    const doc = renderAdminPage({ title: 'Prompt Analytics', bodyHtml: body, active: 'prompt_analytics' })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    return res.send(doc)
+  } catch (err) {
+    logError(req.log || pagesLogger, err, 'admin prompt analytics failed', { path: req.path })
+    return res.status(500).send('Failed to load prompt analytics')
   }
 })
 

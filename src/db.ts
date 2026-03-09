@@ -716,6 +716,122 @@ export async function ensureSchema(db: DB) {
           try { await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_prompt_decision_session_surface ON prompt_decision_sessions (session_id, surface)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_prompt_decision_surface_updated ON prompt_decision_sessions (surface, updated_at)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_prompt_decision_updated ON prompt_decision_sessions (updated_at)`); } catch {}
+
+          // --- Prompt analytics events + rollups (plan_114E) ---
+          await db.query(`
+            CREATE TABLE IF NOT EXISTS feed_prompt_events (
+              id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+              event_type ENUM(
+                'prompt_impression',
+                'prompt_click_primary',
+                'prompt_click_secondary',
+                'prompt_dismiss',
+                'auth_start_from_prompt',
+                'auth_complete_from_prompt'
+              ) NOT NULL,
+              surface ENUM('global_feed') NOT NULL DEFAULT 'global_feed',
+              viewer_state ENUM('anonymous','authenticated') NOT NULL DEFAULT 'anonymous',
+              session_id VARCHAR(120) NULL,
+              user_id BIGINT UNSIGNED NULL,
+              prompt_id BIGINT UNSIGNED NOT NULL,
+              prompt_kind ENUM('prompt_full','prompt_overlay') NULL,
+              prompt_category VARCHAR(64) NULL,
+              cta_kind ENUM('primary','secondary') NULL,
+              attributed TINYINT(1) NOT NULL DEFAULT 1,
+              occurred_at DATETIME NOT NULL,
+              dedupe_bucket_start DATETIME NOT NULL,
+              dedupe_key CHAR(64) NOT NULL,
+              created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              UNIQUE KEY uniq_feed_prompt_events_dedupe_key (dedupe_key),
+              KEY idx_feed_prompt_events_occurred (occurred_at, id),
+              KEY idx_feed_prompt_events_surface_occurred (surface, occurred_at, id),
+              KEY idx_feed_prompt_events_prompt_occurred (prompt_id, occurred_at, id),
+              KEY idx_feed_prompt_events_event_occurred (event_type, occurred_at, id),
+              KEY idx_feed_prompt_events_session_event (session_id, event_type, occurred_at, id),
+              KEY idx_feed_prompt_events_user_event (user_id, event_type, occurred_at, id),
+              KEY idx_feed_prompt_events_category_occurred (prompt_category, occurred_at, id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+          `)
+          await db.query(`ALTER TABLE feed_prompt_events ADD COLUMN IF NOT EXISTS event_type ENUM('prompt_impression','prompt_click_primary','prompt_click_secondary','prompt_dismiss','auth_start_from_prompt','auth_complete_from_prompt') NOT NULL`)
+          await db.query(`ALTER TABLE feed_prompt_events ADD COLUMN IF NOT EXISTS surface ENUM('global_feed') NOT NULL DEFAULT 'global_feed'`)
+          await db.query(`ALTER TABLE feed_prompt_events ADD COLUMN IF NOT EXISTS viewer_state ENUM('anonymous','authenticated') NOT NULL DEFAULT 'anonymous'`)
+          await db.query(`ALTER TABLE feed_prompt_events ADD COLUMN IF NOT EXISTS session_id VARCHAR(120) NULL`)
+          await db.query(`ALTER TABLE feed_prompt_events ADD COLUMN IF NOT EXISTS user_id BIGINT UNSIGNED NULL`)
+          await db.query(`ALTER TABLE feed_prompt_events ADD COLUMN IF NOT EXISTS prompt_id BIGINT UNSIGNED NOT NULL DEFAULT 0`)
+          await db.query(`ALTER TABLE feed_prompt_events ADD COLUMN IF NOT EXISTS prompt_kind ENUM('prompt_full','prompt_overlay') NULL`)
+          await db.query(`ALTER TABLE feed_prompt_events ADD COLUMN IF NOT EXISTS prompt_category VARCHAR(64) NULL`)
+          await db.query(`ALTER TABLE feed_prompt_events ADD COLUMN IF NOT EXISTS cta_kind ENUM('primary','secondary') NULL`)
+          await db.query(`ALTER TABLE feed_prompt_events ADD COLUMN IF NOT EXISTS attributed TINYINT(1) NOT NULL DEFAULT 1`)
+          await db.query(`ALTER TABLE feed_prompt_events ADD COLUMN IF NOT EXISTS occurred_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP`)
+          await db.query(`ALTER TABLE feed_prompt_events ADD COLUMN IF NOT EXISTS dedupe_bucket_start DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP`)
+          await db.query(`ALTER TABLE feed_prompt_events ADD COLUMN IF NOT EXISTS dedupe_key CHAR(64) NULL`)
+          try { await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_feed_prompt_events_dedupe_key ON feed_prompt_events (dedupe_key)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_prompt_events_occurred ON feed_prompt_events (occurred_at, id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_prompt_events_surface_occurred ON feed_prompt_events (surface, occurred_at, id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_prompt_events_prompt_occurred ON feed_prompt_events (prompt_id, occurred_at, id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_prompt_events_event_occurred ON feed_prompt_events (event_type, occurred_at, id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_prompt_events_session_event ON feed_prompt_events (session_id, event_type, occurred_at, id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_prompt_events_user_event ON feed_prompt_events (user_id, event_type, occurred_at, id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_prompt_events_category_occurred ON feed_prompt_events (prompt_category, occurred_at, id)`); } catch {}
+          try { await db.query(`UPDATE feed_prompt_events SET dedupe_key = LPAD(HEX(id), 64, '0') WHERE dedupe_key IS NULL OR dedupe_key = ''`); } catch {}
+
+          await db.query(`
+            CREATE TABLE IF NOT EXISTS feed_prompt_daily_stats (
+              date_utc DATE NOT NULL,
+              surface ENUM('global_feed') NOT NULL DEFAULT 'global_feed',
+              prompt_id BIGINT UNSIGNED NOT NULL,
+              prompt_kind VARCHAR(24) NOT NULL DEFAULT '',
+              prompt_category VARCHAR(64) NOT NULL DEFAULT '',
+              viewer_state ENUM('anonymous','authenticated') NOT NULL DEFAULT 'anonymous',
+              event_type ENUM(
+                'prompt_impression',
+                'prompt_click_primary',
+                'prompt_click_secondary',
+                'prompt_dismiss',
+                'auth_start_from_prompt',
+                'auth_complete_from_prompt'
+              ) NOT NULL,
+              total_events BIGINT UNSIGNED NOT NULL DEFAULT 0,
+              created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              PRIMARY KEY (
+                date_utc, surface, prompt_id, prompt_kind, prompt_category, viewer_state, event_type
+              ),
+              KEY idx_feed_prompt_daily_stats_surface_date (surface, date_utc, event_type),
+              KEY idx_feed_prompt_daily_stats_prompt_date (prompt_id, date_utc, event_type),
+              KEY idx_feed_prompt_daily_stats_category_date (prompt_category, date_utc, event_type)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+          `)
+          await db.query(`ALTER TABLE feed_prompt_daily_stats ADD COLUMN IF NOT EXISTS date_utc DATE NOT NULL`)
+          await db.query(`ALTER TABLE feed_prompt_daily_stats ADD COLUMN IF NOT EXISTS surface ENUM('global_feed') NOT NULL DEFAULT 'global_feed'`)
+          await db.query(`ALTER TABLE feed_prompt_daily_stats ADD COLUMN IF NOT EXISTS prompt_id BIGINT UNSIGNED NOT NULL DEFAULT 0`)
+          await db.query(`ALTER TABLE feed_prompt_daily_stats ADD COLUMN IF NOT EXISTS prompt_kind VARCHAR(24) NOT NULL DEFAULT ''`)
+          await db.query(`ALTER TABLE feed_prompt_daily_stats ADD COLUMN IF NOT EXISTS prompt_category VARCHAR(64) NOT NULL DEFAULT ''`)
+          await db.query(`ALTER TABLE feed_prompt_daily_stats ADD COLUMN IF NOT EXISTS viewer_state ENUM('anonymous','authenticated') NOT NULL DEFAULT 'anonymous'`)
+          await db.query(`ALTER TABLE feed_prompt_daily_stats ADD COLUMN IF NOT EXISTS event_type ENUM('prompt_impression','prompt_click_primary','prompt_click_secondary','prompt_dismiss','auth_start_from_prompt','auth_complete_from_prompt') NOT NULL`)
+          await db.query(`ALTER TABLE feed_prompt_daily_stats ADD COLUMN IF NOT EXISTS total_events BIGINT UNSIGNED NOT NULL DEFAULT 0`)
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_prompt_daily_stats_surface_date ON feed_prompt_daily_stats (surface, date_utc, event_type)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_prompt_daily_stats_prompt_date ON feed_prompt_daily_stats (prompt_id, date_utc, event_type)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_prompt_daily_stats_category_date ON feed_prompt_daily_stats (prompt_category, date_utc, event_type)`); } catch {}
+          try {
+            await db.query(
+              `INSERT INTO feed_prompt_daily_stats
+                (date_utc, surface, prompt_id, prompt_kind, prompt_category, viewer_state, event_type, total_events)
+               SELECT
+                 DATE(occurred_at) AS date_utc,
+                 surface,
+                 prompt_id,
+                 COALESCE(prompt_kind, '') AS prompt_kind,
+                 COALESCE(prompt_category, '') AS prompt_category,
+                 viewer_state,
+                 event_type,
+                 COUNT(*) AS total_events
+               FROM feed_prompt_events
+               WHERE event_type <> 'auth_complete_from_prompt' OR attributed = 1
+               GROUP BY DATE(occurred_at), surface, prompt_id, COALESCE(prompt_kind, ''), COALESCE(prompt_category, ''), viewer_state, event_type
+               ON DUPLICATE KEY UPDATE total_events = VALUES(total_events), updated_at = CURRENT_TIMESTAMP`
+            )
+          } catch {}
           try {
             const curatedOwnerUserId = 1
             const curatedPresetIds = [3, 4, 5, 6, 7, 8, 9, 10, 11]

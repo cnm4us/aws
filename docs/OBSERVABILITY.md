@@ -46,6 +46,8 @@ High-value operation tags:
 - `uploads.file.get`
 - `uploads.edit_proxy.get`
 - `mediajobs.attempt.process`
+- `prompt.analytics.ingest`
+- `prompt.analytics.query`
 
 Surface tag:
 - `app.surface` (`create_video`, `assets`, `unknown`)
