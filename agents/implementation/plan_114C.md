@@ -49,3 +49,4 @@ Session default:
 ## Observability
 - Span tag: `app.operation=feed.prompt.decide`
 - Attributes: `prompt_decision`, `reason_code`, `prompt_id` (when selected)
+- Must align with program-level standard in `plan_114.md` (`Observability Minimum` section).

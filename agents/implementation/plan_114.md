@@ -36,6 +36,36 @@ Design and deliver an in-feed prompt system that:
 - No prompt-admin UI code in public feed bundles.
 - Routes `/admin/prompts`, `/admin/prompt-rules`, `/admin/prompt-analytics` must be lazy-loaded chunks behind admin auth.
 
+## Observability Minimum (Program Standard)
+Trace tags:
+- `app.surface=global_feed`
+- `app.operation=feed.prompt.decide|feed.prompt.insert|feed.prompt.render|feed.prompt.click`
+- `app.prompt_id` (when known)
+- `app.prompt_kind` (`prompt_full|prompt_overlay`)
+- `app.prompt_category`
+- `app.rule_id` (when rule matched)
+- `app.rule_reason` (`eligible|below_threshold|cap_reached|cooldown|no_candidate|...`)
+- `app.outcome=shown|blocked|clicked|dismissed|auth_start|auth_complete`
+
+Metrics (low-cardinality):
+- `prompt_impressions_total`
+- `prompt_clicks_total`
+- `prompt_dismiss_total`
+- `prompt_auth_start_total`
+- `prompt_auth_complete_total`
+- `prompt_decision_latency_ms` (histogram)
+- `prompt_insert_rate` (derived in query layer)
+
+Structured logs:
+- Decision record with caps/threshold context and `reason_code`.
+- Render/insertion failures with prompt ID and surface.
+- Click attribution record (session + prompt + destination route class).
+
+Cardinality guardrails:
+- Do not use raw URL/query as labels.
+- Do not use `user_id` as metric label.
+- Keep prompt/rule/category dimensions bounded.
+
 ## Program Shape
 This is a multi-component program, not one monolith.
 

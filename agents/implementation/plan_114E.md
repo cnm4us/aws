@@ -58,3 +58,4 @@ Bundle requirement:
 - `app.operation=prompt.analytics.ingest`
 - `app.operation=prompt.analytics.query`
 - Track ingestion lag and query latency.
+- Must align with program-level standard in `plan_114.md` (`Observability Minimum` section).

@@ -47,3 +47,4 @@ Unified item shape in feed response:
   - `prompt_impression`
   - `prompt_click`
   - `prompt_dismiss`
+- Must align with program-level standard in `plan_114.md` (`Observability Minimum` section).
