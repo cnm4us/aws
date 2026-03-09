@@ -681,6 +681,41 @@ export async function ensureSchema(db: DB) {
               )
             }
           } catch {}
+
+          // --- Prompt decision sessions (plan_114C) ---
+          await db.query(`
+            CREATE TABLE IF NOT EXISTS prompt_decision_sessions (
+              id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+              session_id VARCHAR(120) NOT NULL,
+              surface ENUM('global_feed') NOT NULL DEFAULT 'global_feed',
+              viewer_state ENUM('anonymous','authenticated') NOT NULL DEFAULT 'anonymous',
+              slides_viewed INT UNSIGNED NOT NULL DEFAULT 0,
+              watch_seconds INT UNSIGNED NOT NULL DEFAULT 0,
+              prompts_shown_this_session INT UNSIGNED NOT NULL DEFAULT 0,
+              slides_since_last_prompt INT UNSIGNED NOT NULL DEFAULT 0,
+              last_prompt_dismissed_at DATETIME NULL,
+              last_shown_prompt_id BIGINT UNSIGNED NULL,
+              last_decision_reason VARCHAR(64) NULL,
+              created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              UNIQUE KEY uniq_prompt_decision_session_surface (session_id, surface),
+              KEY idx_prompt_decision_surface_updated (surface, updated_at),
+              KEY idx_prompt_decision_updated (updated_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+          `)
+          await db.query(`ALTER TABLE prompt_decision_sessions ADD COLUMN IF NOT EXISTS session_id VARCHAR(120) NOT NULL`)
+          await db.query(`ALTER TABLE prompt_decision_sessions ADD COLUMN IF NOT EXISTS surface ENUM('global_feed') NOT NULL DEFAULT 'global_feed'`)
+          await db.query(`ALTER TABLE prompt_decision_sessions ADD COLUMN IF NOT EXISTS viewer_state ENUM('anonymous','authenticated') NOT NULL DEFAULT 'anonymous'`)
+          await db.query(`ALTER TABLE prompt_decision_sessions ADD COLUMN IF NOT EXISTS slides_viewed INT UNSIGNED NOT NULL DEFAULT 0`)
+          await db.query(`ALTER TABLE prompt_decision_sessions ADD COLUMN IF NOT EXISTS watch_seconds INT UNSIGNED NOT NULL DEFAULT 0`)
+          await db.query(`ALTER TABLE prompt_decision_sessions ADD COLUMN IF NOT EXISTS prompts_shown_this_session INT UNSIGNED NOT NULL DEFAULT 0`)
+          await db.query(`ALTER TABLE prompt_decision_sessions ADD COLUMN IF NOT EXISTS slides_since_last_prompt INT UNSIGNED NOT NULL DEFAULT 0`)
+          await db.query(`ALTER TABLE prompt_decision_sessions ADD COLUMN IF NOT EXISTS last_prompt_dismissed_at DATETIME NULL`)
+          await db.query(`ALTER TABLE prompt_decision_sessions ADD COLUMN IF NOT EXISTS last_shown_prompt_id BIGINT UNSIGNED NULL`)
+          await db.query(`ALTER TABLE prompt_decision_sessions ADD COLUMN IF NOT EXISTS last_decision_reason VARCHAR(64) NULL`)
+          try { await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_prompt_decision_session_surface ON prompt_decision_sessions (session_id, surface)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_prompt_decision_surface_updated ON prompt_decision_sessions (surface, updated_at)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_prompt_decision_updated ON prompt_decision_sessions (updated_at)`); } catch {}
           try {
             const curatedOwnerUserId = 1
             const curatedPresetIds = [3, 4, 5, 6, 7, 8, 9, 10, 11]

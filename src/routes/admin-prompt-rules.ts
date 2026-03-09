@@ -4,8 +4,7 @@ import * as promptRulesSvc from '../features/prompt-rules/service'
 
 export const adminPromptRulesRouter = Router()
 
-adminPromptRulesRouter.use(requireAuth)
-adminPromptRulesRouter.use(requireSiteAdmin)
+adminPromptRulesRouter.use('/api/admin/prompt-rules', requireAuth, requireSiteAdmin)
 
 adminPromptRulesRouter.get('/api/admin/prompt-rules', async (req, res, next) => {
   try {

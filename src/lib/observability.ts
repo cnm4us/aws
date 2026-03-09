@@ -195,6 +195,13 @@ function classifyHttpOperation(methodRaw: string, pathname: string): string | nu
     { method: 'GET', re: /^\/api\/admin\/prompt-rules\/[^/]+$/, op: 'admin.prompt_rules.get' },
     { method: 'PATCH', re: /^\/api\/admin\/prompt-rules\/[^/]+$/, op: 'admin.prompt_rules.write' },
     { method: 'POST', re: /^\/api\/admin\/prompt-rules\/[^/]+\/toggle$/, op: 'admin.prompt_rules.write' },
+
+    // Feed prompt decision (plan_114C)
+    { method: 'GET', re: /^\/api\/feed\/global$/, op: 'feed.global.list' },
+    { method: 'POST', re: /^\/api\/feed\/prompt-decision$/, op: 'feed.prompt.decide' },
+    { method: 'GET', re: /^\/api\/feed\/prompt-decision$/, op: 'feed.prompt.decide' },
+    { method: 'GET', re: /^\/api\/feed\/prompts\/[^/]+$/, op: 'feed.prompt.fetch' },
+    { method: 'POST', re: /^\/api\/feed\/prompt-events$/, op: 'feed.prompt.event' },
   ]
   for (const rule of rules) {
     if (method === rule.method && rule.re.test(pathname)) {
@@ -214,6 +221,8 @@ function classifySurface(pathname: string, req: any, operation: string | null): 
     return 'assets'
   }
   if (operation?.startsWith('admin.')) return 'admin'
+  if (operation?.startsWith('feed.global.')) return 'global_feed'
+  if (operation?.startsWith('feed.prompt.')) return 'global_feed'
   const refPath = requestRefererPath(req)
   if (refPath && refPath.startsWith('/create-video')) return 'create_video'
   if (refPath && (refPath.startsWith('/assets') || refPath.startsWith('/library') || refPath.startsWith('/uploads'))) {

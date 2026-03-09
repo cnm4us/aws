@@ -468,10 +468,12 @@ spacesRouter.delete('/api/spaces/:id/users/:userId/follow', requireAuth, async (
   }
 })
 
-// Global feed aggregator: includes items explicitly marked visible_in_global and published
-spacesRouter.get('/api/feed/global', requireAuth, async (req, res, next) => {
+// Global feed aggregator: includes items explicitly marked visible_in_global and published.
+// Public route: anonymous callers are allowed and receive the same feed payload without
+// personalized flags (liked/commented/reported stay false when no user session exists).
+spacesRouter.get('/api/feed/global', async (req, res, next) => {
   try {
-    const userId = Number(req.user!.id)
+    const userId = req.user?.id ? Number(req.user.id) : null
     const limitRaw = Number(req.query.limit ?? 20)
     const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 100) : 20
     const cursor = typeof req.query.cursor === 'string' ? req.query.cursor : null

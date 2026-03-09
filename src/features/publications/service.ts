@@ -547,3 +547,25 @@ export async function getCaptionsVtt(publicationId: number, ctx: ServiceContext)
     body: resp.Body,
   }
 }
+
+// Anonymous-safe captions access for public/global feed playback.
+// Intentionally narrow: only published publications that are globally visible
+// or explicitly marked public.
+export async function getCaptionsVttPublic(publicationId: number): Promise<{ contentType: string; body: any }> {
+  const pub = await repo.getById(publicationId)
+  if (!pub) throw new NotFoundError('publication_not_found')
+  if (pub.production_id == null) throw new NotFoundError('captions_not_found')
+  if (String(pub.status || '') !== 'published') throw new NotFoundError('captions_not_found')
+
+  const canPublicView = Boolean(pub.visible_in_global) || String(pub.visibility || '') === 'public'
+  if (!canPublicView) throw new NotFoundError('captions_not_found')
+
+  const ptr = await repo.getCaptionsPointerByProductionId(Number(pub.production_id))
+  if (!ptr) throw new NotFoundError('captions_not_found')
+
+  const resp = await s3.send(new GetObjectCommand({ Bucket: ptr.bucket, Key: ptr.key }))
+  return {
+    contentType: resp.ContentType ? String(resp.ContentType) : 'text/vtt; charset=utf-8',
+    body: resp.Body,
+  }
+}

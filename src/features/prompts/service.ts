@@ -353,3 +353,17 @@ export async function listActiveForFeed(params?: {
   const rows = await repo.listActiveForFeed({ category, kind, limit: params?.limit })
   return rows.map(mapRow)
 }
+
+export async function getActiveForFeedById(id: number): Promise<PromptDto> {
+  const promptId = Number(id)
+  if (!Number.isFinite(promptId) || promptId <= 0) throw new DomainError('bad_id', 'bad_id', 400)
+  const row = await repo.getById(promptId)
+  if (!row) throw new NotFoundError('prompt_not_found')
+  if (row.status !== 'active') throw new NotFoundError('prompt_not_found')
+  const now = Date.now()
+  const startsAtMs = row.starts_at ? Date.parse(String(row.starts_at).replace(' ', 'T') + 'Z') : null
+  const endsAtMs = row.ends_at ? Date.parse(String(row.ends_at).replace(' ', 'T') + 'Z') : null
+  if (startsAtMs != null && Number.isFinite(startsAtMs) && startsAtMs > now) throw new NotFoundError('prompt_not_found')
+  if (endsAtMs != null && Number.isFinite(endsAtMs) && endsAtMs < now) throw new NotFoundError('prompt_not_found')
+  return mapRow(row)
+}

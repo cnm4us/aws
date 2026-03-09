@@ -35,6 +35,28 @@ type UploadItem = {
   hasStory?: boolean | null
   storyPreview?: string | null
   hasCaptions?: boolean | null
+  itemType?: 'video' | 'prompt_full' | 'prompt_overlay'
+  prompt?: FeedPromptPayload | null
+}
+
+type FeedPromptKind = 'prompt_full' | 'prompt_overlay'
+
+type FeedPromptPayload = {
+  id: number
+  kind: FeedPromptKind
+  category: string
+  headline: string
+  body: string | null
+  ctaPrimaryLabel: string
+  ctaPrimaryHref: string
+  ctaSecondaryLabel: string | null
+  ctaSecondaryHref: string | null
+  media: {
+    uploadId: number
+    master: string | null
+    posterPortrait: string | null
+    posterLandscape: string | null
+  } | null
 }
 
 type MeResponse = {
@@ -220,10 +242,68 @@ async function fetchGlobalFeed(opts: { cursor?: string | null; limit?: number } 
   return { items, nextCursor }
 }
 
+async function fetchPromptById(promptId: number): Promise<FeedPromptPayload> {
+  const id = Number(promptId)
+  if (!Number.isFinite(id) || id <= 0) throw new Error('bad_prompt_id')
+  const res = await fetch(`/api/feed/prompts/${encodeURIComponent(String(id))}`, { credentials: 'same-origin' })
+  if (!res.ok) throw new Error('failed_to_fetch_prompt')
+  const payload = await res.json()
+  const p = payload?.prompt
+  if (!p) throw new Error('missing_prompt_payload')
+  const kind: FeedPromptKind = p.kind === 'prompt_overlay' ? 'prompt_overlay' : 'prompt_full'
+  return {
+    id: Number(p.id),
+    kind,
+    category: String(p.category || ''),
+    headline: String(p.headline || ''),
+    body: p.body == null ? null : String(p.body),
+    ctaPrimaryLabel: String(p.cta_primary_label || 'Register'),
+    ctaPrimaryHref: String(p.cta_primary_href || '/register?return=/'),
+    ctaSecondaryLabel: p.cta_secondary_label == null ? null : String(p.cta_secondary_label),
+    ctaSecondaryHref: p.cta_secondary_href == null ? null : String(p.cta_secondary_href),
+    media: p.media
+      ? {
+          uploadId: Number(p.media.upload_id),
+          master: p.media.master == null ? null : String(p.media.master),
+          posterPortrait: p.media.poster_portrait == null ? null : String(p.media.poster_portrait),
+          posterLandscape: p.media.poster_landscape == null ? null : String(p.media.poster_landscape),
+        }
+      : null,
+  }
+}
+
+async function sendPromptEvent(input: {
+  event: 'impression' | 'click' | 'dismiss' | 'auth_start' | 'auth_complete'
+  promptId: number
+  promptKind: FeedPromptKind
+  sessionId: string | null
+}) {
+  try {
+    await fetch('/api/feed/prompt-events', {
+      method: 'POST',
+      credentials: 'same-origin',
+      keepalive: true,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        event: input.event,
+        surface: 'global_feed',
+        prompt_id: input.promptId,
+        prompt_kind: input.promptKind,
+        session_id: input.sessionId,
+      }),
+    })
+  } catch {}
+}
+
 function applyMineFilter(items: UploadItem[], mineOnly: boolean, myUserId: number | null): UploadItem[] {
   if (!mineOnly) return items
   if (myUserId == null) return []
   return items.filter((it) => it.ownerId === myUserId)
+}
+
+function isPromptItem(it: UploadItem | null | undefined): boolean {
+  if (!it) return false
+  return Boolean(it.prompt && (it.itemType === 'prompt_full' || it.itemType === 'prompt_overlay'))
 }
 
 function flattenSpaces(list: MySpacesResponse | null): SpaceSummary[] {
@@ -351,6 +431,25 @@ export default function Feed() {
   const itemsFeedKeyRef = useRef<string>('')
   const indexReasonRef = useRef<string>('initial')
   const [commentsSortOpen, setCommentsSortOpen] = useState(false)
+  const [promptSessionId, setPromptSessionId] = useState<string | null>(null)
+  const promptDecisionBusyRef = useRef<boolean>(false)
+  const promptSeenImpressionRef = useRef<Set<number>>(new Set())
+  const promptCountersRef = useRef<{
+    slidesViewed: number
+    watchSeconds: number
+    promptsShown: number
+    slidesSinceLastPrompt: number
+    lastPromptDismissedAt: string | null
+    lastPromptId: number | null
+  }>({
+    slidesViewed: 0,
+    watchSeconds: 0,
+    promptsShown: 0,
+    slidesSinceLastPrompt: 999,
+    lastPromptDismissedAt: null,
+    lastPromptId: null,
+  })
+  const lastIndexRef = useRef<number>(0)
 
   const isGlobalBillboard = useMemo(() => {
     if (feedMode.kind === 'global') return true
@@ -1236,8 +1335,14 @@ export default function Feed() {
   useEffect(() => {
     let canceled = false
     const load = async () => {
-      // Ensure user identity is known so durable restore can read user‑scoped keys
-      if (myUserId == null) return
+      // Ensure auth state is known before loading feed (supports anonymous global feed).
+      if (!meLoaded) return
+      if (mineOnly && myUserId == null) {
+        setItems([])
+        setCursor(null)
+        setInitialLoading(false)
+        return
+      }
       // If a canonical path is present but we haven't switched to its feed yet, defer loading
       if (canonicalTargetRef.current && feedMode.kind === 'global') {
         return
@@ -1389,7 +1494,7 @@ export default function Feed() {
     }
     load()
     return () => { canceled = true }
-  }, [feedMode, mineOnly, myUserId, spacesLoaded])
+  }, [feedMode, mineOnly, myUserId, spacesLoaded, meLoaded])
 
   useEffect(() => {
     if (typeof window === 'undefined' || !window.matchMedia) return
@@ -1486,6 +1591,162 @@ export default function Feed() {
 
     return 'none'
   }
+
+  const dismissPromptSlide = useCallback((slideUploadId: number, prompt: FeedPromptPayload) => {
+    const dismissedAtIso = new Date().toISOString()
+    promptCountersRef.current.lastPromptDismissedAt = dismissedAtIso
+    promptCountersRef.current.lastPromptId = prompt.id
+    promptCountersRef.current.slidesSinceLastPrompt = 0
+    setItems((prev) => {
+      const next = prev.filter((it) => Number(it.id) !== Number(slideUploadId))
+      setIndex((cur) => {
+        if (!next.length) return 0
+        return Math.max(0, Math.min(cur, next.length - 1))
+      })
+      return next
+    })
+    void sendPromptEvent({
+      event: 'dismiss',
+      promptId: prompt.id,
+      promptKind: prompt.kind,
+      sessionId: promptSessionId,
+    })
+  }, [promptSessionId])
+
+  const handlePromptCtaClick = useCallback((prompt: FeedPromptPayload, href: string) => {
+    const targetHref = String(href || '').trim()
+    if (!targetHref) return
+    void sendPromptEvent({
+      event: 'click',
+      promptId: prompt.id,
+      promptKind: prompt.kind,
+      sessionId: promptSessionId,
+    })
+    const lowerHref = targetHref.toLowerCase()
+    if (lowerHref.startsWith('/register') || lowerHref.startsWith('/login')) {
+      void sendPromptEvent({
+        event: 'auth_start',
+        promptId: prompt.id,
+        promptKind: prompt.kind,
+        sessionId: promptSessionId,
+      })
+    }
+    window.location.href = targetHref
+  }, [promptSessionId])
+
+  // Prompt counters: increment watch-seconds while on the global feed.
+  useEffect(() => {
+    if (!isGlobalBillboard) return
+    const timer = window.setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+      promptCountersRef.current.watchSeconds += 1
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [isGlobalBillboard])
+
+  // Prompt counters: track per-session slide traversal.
+  useEffect(() => {
+    if (!isGlobalBillboard) return
+    if (!items.length) return
+    const current = items[index]
+    if (!current) return
+    if (promptCountersRef.current.slidesViewed <= 0) {
+      promptCountersRef.current.slidesViewed = 1
+      lastIndexRef.current = index
+      return
+    }
+    if (index === lastIndexRef.current) return
+    lastIndexRef.current = index
+    promptCountersRef.current.slidesViewed += 1
+    promptCountersRef.current.slidesSinceLastPrompt += 1
+  }, [index, items, isGlobalBillboard])
+
+  // Emit prompt impression exactly once per prompt id (per page lifetime).
+  useEffect(() => {
+    const current = items[index]
+    if (!isPromptItem(current) || !current?.prompt) return
+    const prompt = current.prompt
+    if (promptSeenImpressionRef.current.has(prompt.id)) return
+    promptSeenImpressionRef.current.add(prompt.id)
+    void sendPromptEvent({
+      event: 'impression',
+      promptId: prompt.id,
+      promptKind: prompt.kind,
+      sessionId: promptSessionId,
+    })
+  }, [index, items, promptSessionId])
+
+  // Ask decision service whether to insert a prompt in the global anonymous feed.
+  useEffect(() => {
+    if (!isGlobalBillboard) return
+    if (!meLoaded) return
+    if (isAuthed) return
+    if (initialLoading) return
+    if (!items.length) return
+    if (isPromptItem(items[index])) return
+    if (items.some((it) => isPromptItem(it))) return
+    if (promptDecisionBusyRef.current) return
+
+    let canceled = false
+    const timer = window.setTimeout(async () => {
+      if (canceled) return
+      promptDecisionBusyRef.current = true
+      try {
+        const counters = promptCountersRef.current
+        const res = await fetch('/api/feed/prompt-decision', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            surface: 'global_feed',
+            session_id: promptSessionId,
+            slides_viewed: counters.slidesViewed,
+            watch_seconds: counters.watchSeconds,
+            prompts_shown_this_session: counters.promptsShown,
+            slides_since_last_prompt: counters.slidesSinceLastPrompt,
+            last_prompt_dismissed_at: counters.lastPromptDismissedAt,
+            last_prompt_id: counters.lastPromptId,
+          }),
+        })
+        if (!res.ok) return
+        const decision = await res.json()
+        if (canceled) return
+        if (typeof decision?.session_id === 'string' && decision.session_id.trim()) {
+          setPromptSessionId(decision.session_id.trim())
+        }
+        if (!decision?.should_insert) return
+        const promptId = Number(decision?.prompt_id)
+        if (!Number.isFinite(promptId) || promptId <= 0) return
+
+        const prompt = await fetchPromptById(promptId)
+        if (canceled) return
+
+        const syntheticUploadId = -Math.floor(Date.now() + prompt.id)
+        setItems((prev) => {
+          if (prev.some((it) => isPromptItem(it) && it.prompt?.id === prompt.id)) return prev
+          const insertAt = Math.max(0, Math.min(index + 1, prev.length))
+          const promptItem: UploadItem = {
+            id: syntheticUploadId,
+            url: '',
+            itemType: prompt.kind,
+            prompt,
+          }
+          return [...prev.slice(0, insertAt), promptItem, ...prev.slice(insertAt)]
+        })
+        counters.promptsShown += 1
+        counters.slidesSinceLastPrompt = 0
+        counters.lastPromptId = prompt.id
+      } catch {}
+      finally {
+        promptDecisionBusyRef.current = false
+      }
+    }, 120)
+
+    return () => {
+      canceled = true
+      window.clearTimeout(timer)
+    }
+  }, [isGlobalBillboard, meLoaded, isAuthed, initialLoading, items, index, promptSessionId])
 
   // HLSVideo handles attaching source on Safari and via hls.js elsewhere
 
@@ -1671,6 +1932,178 @@ export default function Feed() {
   const slides = useMemo(
     () =>
       items.map((it, i) => {
+        const prompt = it.prompt
+        if (prompt && isPromptItem(it)) {
+          const slideId = `prompt-${prompt.id}-${it.id}`
+          const promptPoster =
+            (isPortrait ? (prompt.media?.posterPortrait || prompt.media?.posterLandscape) : (prompt.media?.posterLandscape || prompt.media?.posterPortrait)) ||
+            prompt.media?.posterPortrait ||
+            prompt.media?.posterLandscape ||
+            null
+          const panelBg = promptPoster
+            ? `linear-gradient(180deg, rgba(0,0,0,.45) 0%, rgba(0,0,0,.72) 100%), url(${promptPoster}) center/cover no-repeat`
+            : 'linear-gradient(180deg, rgba(8,12,18,0.95) 0%, rgba(6,8,12,0.98) 100%)'
+          return (
+            <div
+              key={slideId}
+              className={styles.slide}
+              id={slideId}
+              data-prompt-id={String(prompt.id)}
+              data-prompt-kind={prompt.kind}
+              data-upload-id={String(it.id)}
+            >
+              <div className={styles.holder}>
+                <div
+                  className={styles.frame}
+                  onTouchStart={(e) => {
+                    try {
+                      const t = e.touches && e.touches[0]
+                      if (!t) return
+                      touchStartXRef.current = t.clientX
+                      touchStartYRef.current = t.clientY
+                      touchLastXRef.current = t.clientX
+                      touchLastYRef.current = t.clientY
+                      const nowTs = Date.now()
+                      touchStartTRef.current = nowTs
+                      touchLastTRef.current = nowTs
+                      dragStartOffsetRef.current = railOffsetRef.current || 0
+                      isDraggingRef.current = false
+                      dragThresholdPassedRef.current = false
+                    } catch {}
+                  }}
+                  onTouchMove={(e) => {
+                    try {
+                      const t = e.touches && e.touches[0]
+                      if (!t) return
+                      const now = Date.now()
+                      touchLastXRef.current = t.clientX
+                      touchLastYRef.current = t.clientY
+                      touchLastTRef.current = now
+                      if (i !== index) return
+                      const dyTotal = t.clientY - touchStartYRef.current
+                      if (!dragThresholdPassedRef.current && Math.abs(dyTotal) > 5) {
+                        dragThresholdPassedRef.current = true
+                        isDraggingRef.current = true
+                      }
+                      if (!isDraggingRef.current) return
+                      const r = railRef.current
+                      const h = getSlideHeight()
+                      if (!r || h <= 0 || items.length <= 0) return
+                      const maxOffset = 0
+                      const minOffset = -h * Math.max(0, items.length - 1)
+                      const nextOffset = Math.min(maxOffset, Math.max(minOffset, dragStartOffsetRef.current + dyTotal))
+                      railOffsetRef.current = nextOffset
+                      try {
+                        r.style.transition = 'none'
+                        r.style.transform = `translate3d(0, ${nextOffset}px, 0)`
+                      } catch {}
+                      try { if ((e as any).cancelable) e.preventDefault() } catch {}
+                    } catch {}
+                  }}
+                  onTouchEnd={() => {
+                    try {
+                      const kind = classifyGesture()
+                      const didDrag = dragThresholdPassedRef.current && isDraggingRef.current && i === index
+                      if (didDrag) {
+                        let targetIndex = index
+                        if (kind === 'swipeUp') targetIndex = Math.min(items.length - 1, index + 1)
+                        else if (kind === 'swipeDown') targetIndex = Math.max(0, index - 1)
+                        indexReasonRef.current = targetIndex === index ? 'drag-cancel' : (kind === 'swipeUp' ? 'drag-swipe-up' : kind === 'swipeDown' ? 'drag-swipe-down' : 'drag-cancel')
+                        try { reanchorToIndex(targetIndex, { reason: indexReasonRef.current }) } catch {}
+                      }
+                      isDraggingRef.current = false
+                      dragThresholdPassedRef.current = false
+                    } catch {}
+                  }}
+                  style={{ background: panelBg }}
+                >
+                  <div
+                    style={{
+                      position: 'absolute',
+                      inset: 0,
+                      display: 'grid',
+                      alignContent: 'center',
+                      justifyItems: 'center',
+                      padding: '18px 16px',
+                      textAlign: 'center',
+                      color: '#fff',
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: 'min(92vw, 560px)',
+                        borderRadius: 16,
+                        border: '1px solid rgba(255,255,255,0.26)',
+                        background: 'rgba(5,8,12,0.48)',
+                        padding: '16px 14px',
+                        backdropFilter: 'blur(6px)',
+                      }}
+                    >
+                      <div style={{ fontSize: 13, opacity: 0.85, marginBottom: 6 }}>
+                        {prompt.kind === 'prompt_overlay' ? 'Featured' : 'Join the Community'}
+                      </div>
+                      <div style={{ fontSize: 24, lineHeight: 1.18, fontWeight: 800, marginBottom: 8 }}>{prompt.headline}</div>
+                      {prompt.body ? (
+                        <div style={{ fontSize: 16, lineHeight: 1.35, opacity: 0.95, whiteSpace: 'pre-wrap', marginBottom: 14 }}>
+                          {prompt.body}
+                        </div>
+                      ) : null}
+                      <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+                        <button
+                          type="button"
+                          onClick={() => handlePromptCtaClick(prompt, prompt.ctaPrimaryHref)}
+                          style={{
+                            border: '1px solid rgba(10,132,255,0.8)',
+                            background: 'rgba(10,132,255,0.45)',
+                            color: '#fff',
+                            borderRadius: 11,
+                            padding: '9px 13px',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {prompt.ctaPrimaryLabel}
+                        </button>
+                        {prompt.ctaSecondaryLabel && prompt.ctaSecondaryHref ? (
+                          <button
+                            type="button"
+                            onClick={() => handlePromptCtaClick(prompt, prompt.ctaSecondaryHref || '')}
+                            style={{
+                              border: '1px solid rgba(255,255,255,0.45)',
+                              background: 'rgba(6,10,16,0.65)',
+                              color: '#fff',
+                              borderRadius: 11,
+                              padding: '9px 13px',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            {prompt.ctaSecondaryLabel}
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => dismissPromptSlide(it.id, prompt)}
+                          style={{
+                            border: '1px solid rgba(255,255,255,0.26)',
+                            background: 'rgba(0,0,0,0.38)',
+                            color: '#fff',
+                            borderRadius: 11,
+                            padding: '9px 13px',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Dismiss
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )
+        }
         // Determine asset capabilities once per item
         const hasLandscape = itemHasLandscape(it)
         // Choose poster to match the asset orientation, not device orientation,

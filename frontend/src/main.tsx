@@ -3,10 +3,9 @@ import './styles/variables.css'
 import './styles/base.css'
 import './styles/buttons.css'
 import { createRoot } from 'react-dom/client'
-import { loadFeed, loadHomePage, loadPageView, loadRuleView, loadRulesIndex, loadUploads, loadUploadNew, loadProductions, loadPublish, loadPublishStory, loadProduce, loadEditVideo, loadCreateVideo, loadExports, loadAssets, loadTimelines, loadLogoConfigs, loadLowerThirds, loadLibrary, loadProfile, loadProfileAvatar } from './ui/routes'
+import { loadFeed, loadPageView, loadRuleView, loadRulesIndex, loadUploads, loadUploadNew, loadProductions, loadPublish, loadPublishStory, loadProduce, loadEditVideo, loadCreateVideo, loadExports, loadAssets, loadTimelines, loadLogoConfigs, loadLowerThirds, loadLibrary, loadProfile, loadProfileAvatar } from './ui/routes'
 import { UploadsSkeleton, UploadNewSkeleton, ProductionsSkeleton, PublishSkeleton } from './ui/Skeletons'
 const HelpPage = React.lazy(() => import('./app/Help'))
-const HomePage = React.lazy(loadHomePage)
 const PageView = React.lazy(loadPageView)
 const RuleView = React.lazy(loadRuleView)
 const RulesIndexPage = React.lazy(loadRulesIndex)
@@ -78,11 +77,9 @@ const FullscreenFallback = ({ label = 'Loading…' }: { label?: string }) => (
 
 if (path === '/' || path === '') {
   root.render(
-    <Layout label="Home">
-      <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}>
-        <HomePage />
-      </Suspense>
-    </Layout>
+    <Suspense fallback={<FullscreenFallback label="Loading feed…" />}>
+      <Feed />
+    </Suspense>
   )
 } else if (/^\/pages\/.+/.test(path)) {
   root.render(

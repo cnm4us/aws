@@ -5,7 +5,7 @@ import { listSpaceFeedRows } from './repo'
 import { clampLimit, parseTsIdCursor, buildTsIdCursor } from '../../core/pagination'
 import { SpacePublicationStatus, SpacePublicationVisibility } from '../../db'
 
-export async function getGlobalFeed(opts: { userId: number; limit?: number; cursor?: string | null }): Promise<FeedResponse> {
+export async function getGlobalFeed(opts: { userId?: number | null; limit?: number; cursor?: string | null }): Promise<FeedResponse> {
   const limit = clampLimit(opts.limit, 20, 1, 100)
   const parsed = parseTsIdCursor(opts.cursor ?? null)
   const cursorPublishedAt = parsed?.ts ?? null

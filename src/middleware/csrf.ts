@@ -7,6 +7,11 @@ const CSRF_HEADER = 'x-csrf-token';
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 export function csrfProtect(req: Request, res: Response, next: NextFunction) {
+  // Prompt decision endpoint is a low-risk orchestration read path; allow both
+  // anonymous and authenticated callers without CSRF token requirements.
+  if (req.path === '/api/feed/prompt-decision') return next();
+  // Prompt telemetry endpoint accepts both anonymous and authenticated events.
+  if (req.path === '/api/feed/prompt-events') return next();
   if (!req.session || !req.user) return next();
   if (SAFE_METHODS.has(req.method.toUpperCase())) return next();
 

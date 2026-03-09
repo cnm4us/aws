@@ -4,8 +4,7 @@ import * as promptsSvc from '../features/prompts/service'
 
 export const adminPromptsRouter = Router()
 
-adminPromptsRouter.use(requireAuth)
-adminPromptsRouter.use(requireSiteAdmin)
+adminPromptsRouter.use('/api/admin/prompts', requireAuth, requireSiteAdmin)
 
 adminPromptsRouter.get('/api/admin/prompts', async (req, res, next) => {
   try {

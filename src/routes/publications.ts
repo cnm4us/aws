@@ -132,16 +132,18 @@ publicationsRouter.get('/api/publications/:id/story', requireAuth, async (req, r
   } catch (err: any) { next(err) }
 })
 
-publicationsRouter.get('/api/publications/:id/captions.vtt', requireAuth, async (req, res, next) => {
+publicationsRouter.get('/api/publications/:id/captions.vtt', async (req, res, next) => {
   try {
     const publicationId = Number(req.params.id)
     if (!Number.isFinite(publicationId) || publicationId <= 0) {
       return res.status(400).json({ error: 'bad_publication_id' })
     }
-    const userId = Number(req.user!.id)
-    const data = await pubsSvc.getCaptionsVtt(publicationId, { userId })
+    const userId = req.user?.id ? Number(req.user.id) : null
+    const data = userId
+      ? await pubsSvc.getCaptionsVtt(publicationId, { userId })
+      : await pubsSvc.getCaptionsVttPublic(publicationId)
     res.setHeader('Content-Type', data.contentType || 'text/vtt; charset=utf-8')
-    res.setHeader('Cache-Control', 'private, max-age=300')
+    res.setHeader('Cache-Control', userId ? 'private, max-age=300' : 'public, max-age=300')
     const body: any = (data as any).body
     if (body && typeof body.pipe === 'function') {
       body.pipe(res)

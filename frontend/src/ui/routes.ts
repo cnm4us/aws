@@ -18,7 +18,6 @@ export const loadLowerThirds = () => import('../app/LowerThirds')
 export const loadLibrary = () => import('../app/Library')
 export const loadProfile = () => import('../app/Profile')
 export const loadProfileAvatar = () => import('../app/ProfileAvatar')
-export const loadHomePage = () => import('../app/HomePage')
 export const loadPageView = () => import('../app/PageView')
 export const loadRuleView = () => import('../app/RuleView')
 export const loadRulesIndex = () => import('../app/RulesIndex')
@@ -45,7 +44,7 @@ export function prefetchForHref(href: string) {
     else if (href.startsWith('/pages/')) { void loadPageView() }
     else if (href === '/rules' || href === '/rules/') { void loadRulesIndex() }
     else if (href.startsWith('/rules/')) { void loadRuleView() }
-    else if (href === '/' || href === '') { void loadHomePage() }
+    else if (href === '/' || href === '') { void loadFeed() }
     else if (href.startsWith('/channels/') || href.startsWith('/groups/')) { void loadFeed() }
   } catch {}
 }
