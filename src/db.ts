@@ -629,6 +629,58 @@ export async function ensureSchema(db: DB) {
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_prompts_status_category ON feed_prompts (status, category, priority, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_prompts_kind_status ON feed_prompts (kind, status, priority, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_prompts_active_window ON feed_prompts (status, starts_at, ends_at, priority, id)`); } catch {}
+
+          // --- Prompt rules (plan_114B) ---
+          await db.query(`
+            CREATE TABLE IF NOT EXISTS prompt_rules (
+              id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+              name VARCHAR(120) NOT NULL,
+              enabled TINYINT(1) NOT NULL DEFAULT 1,
+              applies_to_surface ENUM('global_feed') NOT NULL DEFAULT 'global_feed',
+              auth_state ENUM('anonymous') NOT NULL DEFAULT 'anonymous',
+              min_slides_viewed INT UNSIGNED NOT NULL DEFAULT 6,
+              min_watch_seconds INT UNSIGNED NOT NULL DEFAULT 45,
+              max_prompts_per_session INT UNSIGNED NOT NULL DEFAULT 2,
+              min_slides_between_prompts INT UNSIGNED NOT NULL DEFAULT 15,
+              cooldown_seconds_after_dismiss INT UNSIGNED NOT NULL DEFAULT 900,
+              prompt_category_allowlist_json JSON NOT NULL,
+              priority INT NOT NULL DEFAULT 100,
+              tie_break_strategy ENUM('random') NOT NULL DEFAULT 'random',
+              created_by BIGINT UNSIGNED NOT NULL DEFAULT 0,
+              updated_by BIGINT UNSIGNED NOT NULL DEFAULT 0,
+              created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              KEY idx_prompt_rules_surface_enabled (applies_to_surface, auth_state, enabled, priority, id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+          `)
+          await db.query(`ALTER TABLE prompt_rules ADD COLUMN IF NOT EXISTS name VARCHAR(120) NOT NULL`)
+          await db.query(`ALTER TABLE prompt_rules ADD COLUMN IF NOT EXISTS enabled TINYINT(1) NOT NULL DEFAULT 1`)
+          await db.query(`ALTER TABLE prompt_rules ADD COLUMN IF NOT EXISTS applies_to_surface ENUM('global_feed') NOT NULL DEFAULT 'global_feed'`)
+          await db.query(`ALTER TABLE prompt_rules ADD COLUMN IF NOT EXISTS auth_state ENUM('anonymous') NOT NULL DEFAULT 'anonymous'`)
+          await db.query(`ALTER TABLE prompt_rules ADD COLUMN IF NOT EXISTS min_slides_viewed INT UNSIGNED NOT NULL DEFAULT 6`)
+          await db.query(`ALTER TABLE prompt_rules ADD COLUMN IF NOT EXISTS min_watch_seconds INT UNSIGNED NOT NULL DEFAULT 45`)
+          await db.query(`ALTER TABLE prompt_rules ADD COLUMN IF NOT EXISTS max_prompts_per_session INT UNSIGNED NOT NULL DEFAULT 2`)
+          await db.query(`ALTER TABLE prompt_rules ADD COLUMN IF NOT EXISTS min_slides_between_prompts INT UNSIGNED NOT NULL DEFAULT 15`)
+          await db.query(`ALTER TABLE prompt_rules ADD COLUMN IF NOT EXISTS cooldown_seconds_after_dismiss INT UNSIGNED NOT NULL DEFAULT 900`)
+          await db.query(`ALTER TABLE prompt_rules ADD COLUMN IF NOT EXISTS prompt_category_allowlist_json JSON NOT NULL`)
+          await db.query(`ALTER TABLE prompt_rules ADD COLUMN IF NOT EXISTS priority INT NOT NULL DEFAULT 100`)
+          await db.query(`ALTER TABLE prompt_rules ADD COLUMN IF NOT EXISTS tie_break_strategy ENUM('random') NOT NULL DEFAULT 'random'`)
+          await db.query(`ALTER TABLE prompt_rules ADD COLUMN IF NOT EXISTS created_by BIGINT UNSIGNED NOT NULL DEFAULT 0`)
+          await db.query(`ALTER TABLE prompt_rules ADD COLUMN IF NOT EXISTS updated_by BIGINT UNSIGNED NOT NULL DEFAULT 0`)
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_prompt_rules_surface_enabled ON prompt_rules (applies_to_surface, auth_state, enabled, priority, id)`); } catch {}
+
+          try {
+            const [ruleCountRows] = await db.query(`SELECT COUNT(*) AS c FROM prompt_rules`)
+            const ruleCount = Number((ruleCountRows as any[])[0]?.c || 0)
+            if (ruleCount <= 0) {
+              await db.query(
+                `INSERT INTO prompt_rules
+                  (name, enabled, applies_to_surface, auth_state, min_slides_viewed, min_watch_seconds, max_prompts_per_session, min_slides_between_prompts, cooldown_seconds_after_dismiss, prompt_category_allowlist_json, priority, tie_break_strategy, created_by, updated_by)
+                 VALUES (?, 1, 'global_feed', 'anonymous', 6, 45, 2, 15, 900, ?, 100, 'random', 0, 0)`,
+                ['Global Feed Anonymous Default', JSON.stringify(['register_prompt'])]
+              )
+            }
+          } catch {}
           try {
             const curatedOwnerUserId = 1
             const curatedPresetIds = [3, 4, 5, 6, 7, 8, 9, 10, 11]

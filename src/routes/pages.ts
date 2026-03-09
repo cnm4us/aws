@@ -18,6 +18,7 @@ import * as licenseSourcesSvc from '../features/license-sources/service'
 import * as licenseSourcesRepo from '../features/license-sources/repo'
 import * as lowerThirdsSvc from '../features/lower-thirds/service'
 import * as promptsSvc from '../features/prompts/service'
+import * as promptRulesSvc from '../features/prompt-rules/service'
 import { GetObjectCommand, DeleteObjectsCommand, ListObjectsV2Command } from '@aws-sdk/client-s3'
 import { s3 } from '../services/s3'
 import { pipeline } from 'stream/promises'
@@ -644,6 +645,7 @@ type AdminNavKey =
 	| 'audio_configs'
 	| 'media_jobs'
   | 'prompts'
+  | 'prompt_rules'
 	| 'settings'
 	| 'dev';
 
@@ -664,6 +666,7 @@ const ADMIN_NAV_ITEMS: Array<{ key: AdminNavKey; label: string; href: string }> 
 	{ key: 'audio_configs', label: 'Audio Configs', href: '/admin/audio-configs' },
 	{ key: 'media_jobs', label: 'Media Jobs', href: '/admin/media-jobs' },
   { key: 'prompts', label: 'Prompts', href: '/admin/prompts' },
+  { key: 'prompt_rules', label: 'Prompt Rules', href: '/admin/prompt-rules' },
   { key: 'settings', label: 'Settings', href: '/admin/settings' },
   { key: 'dev', label: 'Dev', href: '/admin/dev' },
 ];
@@ -2979,6 +2982,7 @@ pagesRouter.get('/admin', async (_req: any, res: any) => {
     { title: 'Audio Configs', href: '/admin/audio-configs', desc: 'Presets for Mix/Replace + ducking (creators pick when producing)' },
     { title: 'Media Jobs', href: '/admin/media-jobs', desc: 'Debug ffmpeg mastering jobs (logs, retries, purge)' },
     { title: 'Prompts', href: '/admin/prompts', desc: 'In-feed registration/login prompt catalog and lifecycle controls' },
+    { title: 'Prompt Rules', href: '/admin/prompt-rules', desc: 'Eligibility thresholds and pacing caps for prompt orchestration' },
     { title: 'Settings', href: '/admin/settings', desc: 'Coming soon' },
     { title: 'Dev', href: '/admin/dev', desc: 'Dev stats and guarded tools' },
   ]
@@ -3299,6 +3303,232 @@ pagesRouter.post('/admin/prompts/:id/status', async (req: any, res: any) => {
     res.redirect(`/admin/prompts/${id}?notice=${encodeURIComponent('Status updated.')}`)
   } catch (err: any) {
     res.redirect(`/admin/prompts/${id}?error=${encodeURIComponent(String(err?.message || 'Failed to update status'))}`)
+  }
+})
+
+function promptRuleAllowlistCsv(values: any): string {
+  const raw = values?.promptCategoryAllowlist ?? values?.prompt_category_allowlist ?? []
+  if (Array.isArray(raw)) return raw.map((x) => String(x || '').trim()).filter(Boolean).join(', ')
+  return String(raw || '').trim()
+}
+
+function renderAdminPromptRuleForm(opts: {
+  title: string
+  action: string
+  csrfToken?: string | null
+  backHref: string
+  values: any
+  error?: string | null
+  notice?: string | null
+}): string {
+  const csrfToken = opts.csrfToken ? String(opts.csrfToken) : ''
+  const values = opts.values || {}
+
+  let body = `<h1>${escapeHtml(opts.title)}</h1>`
+  body += `<div class="toolbar"><div><a href="${escapeHtml(opts.backHref)}">← Back to prompt rules</a></div><div></div></div>`
+  if (opts.error) body += `<div class="error">${escapeHtml(String(opts.error))}</div>`
+  if (opts.notice) body += `<div class="notice">${escapeHtml(String(opts.notice))}</div>`
+  body += `<div class="section"><div class="field-hint">Safety guards: max prompts/session ≤ 5, min slides-between ≥ 3, cooldown ≥ 60s.</div></div>`
+
+  body += `<form method="post" action="${escapeHtml(opts.action)}">`
+  if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
+  body += `<div class="section"><div class="section-title">Rule Identity</div>`
+  body += `<label>Name<input type="text" name="name" value="${escapeHtml(String(values.name || ''))}" required maxlength="120" /></label>`
+  body += `<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:10px">`
+  body += `<label style="display:flex; align-items:center; gap:8px; margin-top:10px"><input type="checkbox" name="enabled" value="1"${(values.enabled === true || String(values.enabled || '') === '1' || String(values.enabled || '') === 'true') ? ' checked' : ''} /> Enabled</label>`
+  body += `<label>Surface<select name="appliesToSurface"><option value="global_feed"${String(values.appliesToSurface || values.applies_to_surface || '') === 'global_feed' ? ' selected' : ''}>Global Feed</option></select></label>`
+  body += `<label>Auth State<select name="authState"><option value="anonymous"${String(values.authState || values.auth_state || '') === 'anonymous' ? ' selected' : ''}>Anonymous</option></select></label>`
+  body += `<label>Priority<input type="number" name="priority" value="${escapeHtml(String(values.priority ?? 100))}" /></label>`
+  body += `<label>Tie Break<select name="tieBreakStrategy"><option value="random"${String(values.tieBreakStrategy || values.tie_break_strategy || '') === 'random' ? ' selected' : ''}>Random (within top priority)</option></select></label>`
+  body += `</div></div>`
+
+  body += `<div class="section"><div class="section-title">Eligibility Thresholds</div>`
+  body += `<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px">`
+  body += `<label>Min Slides Viewed<input type="number" name="minSlidesViewed" min="0" value="${escapeHtml(String(values.minSlidesViewed ?? values.min_slides_viewed ?? 6))}" /></label>`
+  body += `<label>Min Watch Seconds<input type="number" name="minWatchSeconds" min="0" value="${escapeHtml(String(values.minWatchSeconds ?? values.min_watch_seconds ?? 45))}" /></label>`
+  body += `</div></div>`
+
+  body += `<div class="section"><div class="section-title">Session Caps</div>`
+  body += `<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px">`
+  body += `<label>Max Prompts / Session<input type="number" name="maxPromptsPerSession" min="1" value="${escapeHtml(String(values.maxPromptsPerSession ?? values.max_prompts_per_session ?? 2))}" /></label>`
+  body += `<label>Min Slides Between Prompts<input type="number" name="minSlidesBetweenPrompts" min="0" value="${escapeHtml(String(values.minSlidesBetweenPrompts ?? values.min_slides_between_prompts ?? 15))}" /></label>`
+  body += `<label>Cooldown Seconds After Dismiss<input type="number" name="cooldownSecondsAfterDismiss" min="0" value="${escapeHtml(String(values.cooldownSecondsAfterDismiss ?? values.cooldown_seconds_after_dismiss ?? 900))}" /></label>`
+  body += `</div></div>`
+
+  body += `<div class="section"><div class="section-title">Selection Filters</div>`
+  body += `<label>Prompt Category Allowlist (comma-separated)<input type="text" name="promptCategoryAllowlist" value="${escapeHtml(promptRuleAllowlistCsv(values))}" /></label>`
+  body += `<div class="field-hint">Example: <code>register_prompt</code>. Leave empty to allow all categories.</div>`
+  body += `</div>`
+
+  body += `<div class="toolbar"><div></div><div style="display:flex; gap:8px"><button class="btn" type="submit">Save</button></div></div>`
+  body += `</form>`
+
+  if (values?.id != null) {
+    body += `<div class="section"><div class="section-title">Quick Action</div>`
+    body += `<form method="post" action="/admin/prompt-rules/${Number(values.id)}/toggle" style="margin:0; display:inline-flex; gap:8px; align-items:center">`
+    if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
+    body += `<input type="hidden" name="enabled" value="${(values.enabled === true || String(values.enabled || '') === '1' || String(values.enabled || '') === 'true') ? '0' : '1'}" />`
+    body += `<button class="btn" type="submit">${(values.enabled === true || String(values.enabled || '') === '1' || String(values.enabled || '') === 'true') ? 'Disable' : 'Enable'}</button>`
+    body += `</form></div>`
+  }
+
+  return renderAdminPage({ title: opts.title, bodyHtml: body, active: 'prompt_rules' })
+}
+
+pagesRouter.get('/admin/prompt-rules', async (req: any, res: any) => {
+  try {
+    const enabled = req.query?.enabled == null ? '' : String(req.query.enabled)
+    const notice = req.query?.notice ? String(req.query.notice) : ''
+    const error = req.query?.error ? String(req.query.error) : ''
+    const items = await promptRulesSvc.listForAdmin({
+      limit: 500,
+      enabled: enabled === '' ? undefined : enabled,
+      appliesToSurface: req.query?.applies_to_surface,
+      authState: req.query?.auth_state,
+    })
+
+    let body = '<h1>Prompt Rules</h1>'
+    body += '<div class="toolbar"><div><span class="pill">Prompt Rule Profiles</span></div><div><a href="/admin/prompt-rules/new">New rule</a></div></div>'
+    if (notice) body += `<div class="notice">${escapeHtml(notice)}</div>`
+    if (error) body += `<div class="error">${escapeHtml(error)}</div>`
+    body += `<form method="get" action="/admin/prompt-rules" class="section" style="margin:12px 0">`
+    body += `<div style="display:flex; gap:10px; align-items:end; flex-wrap:wrap">`
+    body += `<label>Enabled<select name="enabled">
+      <option value=""${enabled === '' ? ' selected' : ''}>All</option>
+      <option value="1"${enabled === '1' ? ' selected' : ''}>Enabled</option>
+      <option value="0"${enabled === '0' ? ' selected' : ''}>Disabled</option>
+    </select></label>`
+    body += `<button class="btn" type="submit">Apply</button>`
+    body += `</div></form>`
+
+    if (!items.length) {
+      body += '<p>No prompt rules found.</p>'
+    } else {
+      body += '<table><thead><tr><th>ID</th><th>Name</th><th>Enabled</th><th>Surface</th><th>Auth</th><th>Thresholds</th><th>Caps</th><th>Priority</th><th>Updated</th></tr></thead><tbody>'
+      for (const item of items) {
+        body += `<tr>
+          <td>${item.id}</td>
+          <td><a href="/admin/prompt-rules/${item.id}">${escapeHtml(item.name)}</a></td>
+          <td>${item.enabled ? 'Yes' : 'No'}</td>
+          <td>${escapeHtml(item.appliesToSurface)}</td>
+          <td>${escapeHtml(item.authState)}</td>
+          <td>slides≥${item.minSlidesViewed}, watch≥${item.minWatchSeconds}s</td>
+          <td>max/session=${item.maxPromptsPerSession}, gap=${item.minSlidesBetweenPrompts}, cooldown=${item.cooldownSecondsAfterDismiss}s</td>
+          <td>${item.priority}</td>
+          <td>${escapeHtml(item.updatedAt || '')}</td>
+        </tr>`
+      }
+      body += '</tbody></table>'
+    }
+
+    const doc = renderAdminPage({ title: 'Prompt Rules', bodyHtml: body, active: 'prompt_rules' })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.send(doc)
+  } catch (err) {
+    logError(req.log || pagesLogger, err, 'admin prompt rules list failed', { path: req.path })
+    res.status(500).send('Failed to load prompt rules')
+  }
+})
+
+pagesRouter.get('/admin/prompt-rules/new', async (req: any, res: any) => {
+  const cookies = parseCookies(req.headers.cookie)
+  const csrfToken = cookies['csrf'] || ''
+  const doc = renderAdminPromptRuleForm({
+    title: 'New Prompt Rule',
+    action: '/admin/prompt-rules',
+    csrfToken,
+    backHref: '/admin/prompt-rules',
+    values: {
+      name: 'Global Feed Anonymous Rule',
+      enabled: true,
+      appliesToSurface: 'global_feed',
+      authState: 'anonymous',
+      minSlidesViewed: 6,
+      minWatchSeconds: 45,
+      maxPromptsPerSession: 2,
+      minSlidesBetweenPrompts: 15,
+      cooldownSecondsAfterDismiss: 900,
+      promptCategoryAllowlist: ['register_prompt'],
+      priority: 100,
+      tieBreakStrategy: 'random',
+    },
+  })
+  res.set('Content-Type', 'text/html; charset=utf-8')
+  res.send(doc)
+})
+
+pagesRouter.post('/admin/prompt-rules', async (req: any, res: any) => {
+  const cookies = parseCookies(req.headers.cookie)
+  const csrfToken = cookies['csrf'] || ''
+  try {
+    const created = await promptRulesSvc.createForAdmin(req.body || {}, Number(req.user?.id || 0))
+    res.redirect(`/admin/prompt-rules/${created.id}?notice=${encodeURIComponent('Rule created.')}`)
+  } catch (err: any) {
+    const doc = renderAdminPromptRuleForm({
+      title: 'New Prompt Rule',
+      action: '/admin/prompt-rules',
+      csrfToken,
+      backHref: '/admin/prompt-rules',
+      values: req.body || {},
+      error: String(err?.message || 'Failed to create rule'),
+    })
+    res.status(400).set('Content-Type', 'text/html; charset=utf-8').send(doc)
+  }
+})
+
+pagesRouter.get('/admin/prompt-rules/:id', async (req: any, res: any) => {
+  const id = Number(req.params.id)
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).send('Bad prompt rule id')
+  try {
+    const rule = await promptRulesSvc.getForAdmin(id)
+    const cookies = parseCookies(req.headers.cookie)
+    const csrfToken = cookies['csrf'] || ''
+    const doc = renderAdminPromptRuleForm({
+      title: `Edit Prompt Rule #${id}`,
+      action: `/admin/prompt-rules/${id}`,
+      csrfToken,
+      backHref: '/admin/prompt-rules',
+      values: rule,
+      notice: req.query?.notice ? String(req.query.notice) : '',
+      error: req.query?.error ? String(req.query.error) : '',
+    })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.send(doc)
+  } catch (err) {
+    logError(req.log || pagesLogger, err, 'admin prompt rule detail failed', { path: req.path, rule_id: id })
+    res.status(404).send('Prompt rule not found')
+  }
+})
+
+pagesRouter.post('/admin/prompt-rules/:id', async (req: any, res: any) => {
+  const id = Number(req.params.id)
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).send('Bad prompt rule id')
+  const cookies = parseCookies(req.headers.cookie)
+  const csrfToken = cookies['csrf'] || ''
+  try {
+    await promptRulesSvc.updateForAdmin(id, req.body || {}, Number(req.user?.id || 0))
+    res.redirect(`/admin/prompt-rules/${id}?notice=${encodeURIComponent('Saved.')}`)
+  } catch (err: any) {
+    const doc = renderAdminPromptRuleForm({
+      title: `Edit Prompt Rule #${id}`,
+      action: `/admin/prompt-rules/${id}`,
+      csrfToken,
+      backHref: '/admin/prompt-rules',
+      values: { ...(req.body || {}), id },
+      error: String(err?.message || 'Failed to save rule'),
+    })
+    res.status(400).set('Content-Type', 'text/html; charset=utf-8').send(doc)
+  }
+})
+
+pagesRouter.post('/admin/prompt-rules/:id/toggle', async (req: any, res: any) => {
+  const id = Number(req.params.id)
+  if (!Number.isFinite(id) || id <= 0) return res.redirect('/admin/prompt-rules?error=bad_id')
+  try {
+    await promptRulesSvc.toggleEnabledForAdmin(id, req.body?.enabled, Number(req.user?.id || 0))
+    res.redirect(`/admin/prompt-rules/${id}?notice=${encodeURIComponent('Enabled state updated.')}`)
+  } catch (err: any) {
+    res.redirect(`/admin/prompt-rules/${id}?error=${encodeURIComponent(String(err?.message || 'Failed to update enabled state'))}`)
   }
 })
 
