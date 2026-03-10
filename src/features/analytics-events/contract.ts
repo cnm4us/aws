@@ -26,6 +26,10 @@ export type CanonicalAnalyticsEvent = {
   userId: number | null
   promptId: number | null
   contentId: number | null
+  spaceId: number | null
+  spaceType: 'group' | 'channel' | 'personal' | null
+  spaceSlug: string | null
+  spaceName: string | null
   meta: AnalyticsMeta
 }
 
@@ -74,6 +78,29 @@ function asPositiveId(raw: any, code: string): number | null {
   const n = Number(raw)
   if (!Number.isFinite(n) || n <= 0) throw new DomainError(code, code, 400)
   return Math.round(n)
+}
+
+function asSpaceType(raw: any): 'group' | 'channel' | 'personal' | null {
+  if (raw == null || raw === '') return null
+  const v = String(raw || '').trim().toLowerCase()
+  if (v === 'group' || v === 'channel' || v === 'personal') return v
+  throw new DomainError('invalid_analytics_space_type', 'invalid_analytics_space_type', 400)
+}
+
+function asSpaceSlug(raw: any): string | null {
+  if (raw == null || raw === '') return null
+  const v = String(raw || '').trim().toLowerCase()
+  if (!v) return null
+  if (!/^[a-z0-9-]{1,120}$/.test(v)) throw new DomainError('invalid_analytics_space_slug', 'invalid_analytics_space_slug', 400)
+  return v
+}
+
+function asSpaceName(raw: any): string | null {
+  if (raw == null || raw === '') return null
+  const v = String(raw || '').trim()
+  if (!v) return null
+  if (v.length > 160) throw new DomainError('invalid_analytics_space_name', 'invalid_analytics_space_name', 400)
+  return v
 }
 
 function asEventName(raw: any): AnalyticsEventName {
@@ -133,6 +160,10 @@ export function buildCanonicalAnalyticsEvent(input: {
   userId?: number | null
   promptId?: number | null
   contentId?: number | null
+  spaceId?: number | null
+  spaceType?: 'group' | 'channel' | 'personal' | string | null
+  spaceSlug?: string | null
+  spaceName?: string | null
   meta?: AnalyticsMeta | null
 }): CanonicalAnalyticsEvent {
   return {
@@ -144,6 +175,10 @@ export function buildCanonicalAnalyticsEvent(input: {
     userId: asUserId(input.userId),
     promptId: asPositiveId(input.promptId, 'invalid_analytics_prompt_id'),
     contentId: asPositiveId(input.contentId, 'invalid_analytics_content_id'),
+    spaceId: asPositiveId(input.spaceId, 'invalid_analytics_space_id'),
+    spaceType: asSpaceType(input.spaceType),
+    spaceSlug: asSpaceSlug(input.spaceSlug),
+    spaceName: asSpaceName(input.spaceName),
     meta: sanitizeAnalyticsMeta(input.meta),
   }
 }

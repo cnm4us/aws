@@ -3762,7 +3762,7 @@ pagesRouter.get('/admin/analytics', async (req: any, res: any) => {
 
     let body = '<h1>Analytics</h1>'
     body += '<div class="toolbar"><div><span class="pill">Cross Metric View</span></div><div></div></div>'
-    body += `<form method="get" action="/admin/analytics" class="section" style="margin:12px 0">`
+    body += `<form id="analyticsFilters" method="get" action="/admin/analytics" class="section" style="margin:12px 0">`
     body += `<div style="display:grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); gap:10px; align-items:end">`
     body += `<label>From (UTC)<input type="date" name="from" value="${escapeHtml(feedReport.range.fromDate)}" /></label>`
     body += `<label>To (UTC)<input type="date" name="to" value="${escapeHtml(feedReport.range.toDate)}" /></label>`
@@ -3791,10 +3791,21 @@ pagesRouter.get('/admin/analytics', async (req: any, res: any) => {
     </select></label>`
     body += `</div>`
     body += `<div style="display:flex; gap:10px; margin-top:10px; flex-wrap:wrap">`
-    body += `<button class="btn" type="submit">Apply</button>`
     body += `<a class="btn" href="/admin/analytics?${escapeHtml(`${q.toString()}&format=csv`)}">Export CSV</a>`
     body += `</div>`
     body += `</form>`
+    body += `<script>
+      (() => {
+        const form = document.getElementById('analyticsFilters');
+        if (!form) return;
+        const selects = form.querySelectorAll('select');
+        for (const el of selects) {
+          el.addEventListener('change', () => {
+            try { form.requestSubmit(); } catch { form.submit(); }
+          });
+        }
+      })();
+    </script>`
 
     body += `<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px; margin-bottom:12px">`
     body += `<div class="section" style="margin:0"><div class="section-title">Sessions Started</div><div style="font-size:24px; font-weight:800">${feedReport.kpis.totals.sessionsStarted}</div><div class="field-hint">Ended: ${feedReport.kpis.totals.sessionsEnded}</div></div>`

@@ -91,6 +91,29 @@ function normalizeSpaceId(raw: any): number | null {
   return Math.round(n)
 }
 
+function normalizeSpaceType(raw: any): 'group' | 'channel' | 'personal' | null {
+  if (raw == null || raw === '') return null
+  const v = String(raw || '').trim().toLowerCase()
+  if (v === 'group' || v === 'channel' || v === 'personal') return v
+  throw new DomainError('invalid_feed_activity_space_type', 'invalid_feed_activity_space_type', 400)
+}
+
+function normalizeSpaceSlug(raw: any): string | null {
+  if (raw == null || raw === '') return null
+  const v = String(raw || '').trim().toLowerCase()
+  if (!v) return null
+  if (!/^[a-z0-9-]{1,120}$/.test(v)) throw new DomainError('invalid_feed_activity_space_slug', 'invalid_feed_activity_space_slug', 400)
+  return v
+}
+
+function normalizeSpaceName(raw: any): string | null {
+  if (raw == null || raw === '') return null
+  const v = String(raw || '').trim()
+  if (!v) return null
+  if (v.length > 160) throw new DomainError('invalid_feed_activity_space_name', 'invalid_feed_activity_space_name', 400)
+  return v
+}
+
 function normalizeWatchSeconds(raw: any): number {
   if (raw == null || raw === '') return 0
   const n = Number(raw)
@@ -134,6 +157,9 @@ type RecordFeedActivityInput = {
   userId?: number | string | null
   contentId?: number | string | null
   spaceId?: number | string | null
+  spaceType?: 'group' | 'channel' | 'personal' | string | null
+  spaceSlug?: string | null
+  spaceName?: string | null
   watchSeconds?: number | string | null
   occurredAt?: Date
 }
@@ -158,6 +184,9 @@ export async function recordFeedActivityEvent(input: RecordFeedActivityInput): P
       const sessionId = normalizeSessionId(input.sessionId)
       const contentId = normalizeContentId(input.contentId)
       const spaceId = normalizeSpaceId(input.spaceId)
+      const spaceType = normalizeSpaceType(input.spaceType)
+      const spaceSlug = normalizeSpaceSlug(input.spaceSlug)
+      const spaceName = normalizeSpaceName(input.spaceName)
       const watchSeconds = normalizeWatchSeconds(input.watchSeconds)
 
       if ((eventType === 'feed_slide_impression' || eventType === 'feed_slide_complete') && contentId == null) {
@@ -176,6 +205,10 @@ export async function recordFeedActivityEvent(input: RecordFeedActivityInput): P
         sessionId,
         userId,
         contentId,
+        spaceId,
+        spaceType,
+        spaceSlug,
+        spaceName,
         meta: {
           input_event: inputEvent,
           source_route: 'feed_activity_events',
@@ -248,6 +281,9 @@ export async function recordFeedActivityEvent(input: RecordFeedActivityInput): P
           app_event_name: canonical.eventName,
           app_content_id: canonical.contentId,
           app_space_id: spaceId,
+          app_space_type: spaceType,
+          app_space_slug: spaceSlug,
+          app_space_name: spaceName,
           feed_activity_event_type: eventType,
           feed_activity_deduped: !inserted.inserted,
           feed_activity_watch_seconds: eventType === 'feed_session_end' ? watchSeconds : 0,

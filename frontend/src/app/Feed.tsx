@@ -320,6 +320,9 @@ async function sendFeedActivityEvent(input: {
   event: 'session_start' | 'slide_impression' | 'slide_complete' | 'session_end'
   surface: 'global_feed' | 'group_feed' | 'channel_feed' | 'my_feed'
   spaceId?: number | null
+  spaceType?: 'group' | 'channel' | 'personal' | null
+  spaceSlug?: string | null
+  spaceName?: string | null
   sessionId: string
   contentId?: number | null
   watchSeconds?: number
@@ -334,6 +337,9 @@ async function sendFeedActivityEvent(input: {
         event: input.event,
         surface: input.surface,
         space_id: input.spaceId == null ? null : input.spaceId,
+        space_type: input.spaceType == null ? null : input.spaceType,
+        space_slug: input.spaceSlug == null ? null : input.spaceSlug,
+        space_name: input.spaceName == null ? null : input.spaceName,
         session_id: input.sessionId,
         content_id: input.contentId == null ? null : input.contentId,
         watch_seconds: input.watchSeconds == null ? null : input.watchSeconds,
@@ -481,7 +487,13 @@ export default function Feed() {
   const [promptSessionId, setPromptSessionId] = useState<string | null>(null)
   const [feedActivitySessionId, setFeedActivitySessionId] = useState<string | null>(null)
   const feedActivitySessionIdRef = useRef<string | null>(null)
-  const feedActivitySessionContextRef = useRef<{ surface: 'global_feed' | 'group_feed' | 'channel_feed' | 'my_feed'; spaceId: number | null } | null>(null)
+  const feedActivitySessionContextRef = useRef<{
+    surface: 'global_feed' | 'group_feed' | 'channel_feed' | 'my_feed'
+    spaceId: number | null
+    spaceType: 'group' | 'channel' | 'personal' | null
+    spaceSlug: string | null
+    spaceName: string | null
+  } | null>(null)
   const promptDecisionBusyRef = useRef<boolean>(false)
   const promptSeenImpressionRef = useRef<Set<number>>(new Set())
   const feedActivityStartedRef = useRef<boolean>(false)
@@ -525,17 +537,55 @@ export default function Feed() {
   }, [feedMode, spaceList])
 
   const feedActivityContext = useMemo(() => {
-    if (feedMode.kind === 'global') return { surface: 'global_feed' as const, spaceId: null as number | null }
+    if (feedMode.kind === 'global') {
+      return {
+        surface: 'global_feed' as const,
+        spaceId: null as number | null,
+        spaceType: null as 'group' | 'channel' | 'personal' | null,
+        spaceSlug: null as string | null,
+        spaceName: null as string | null,
+      }
+    }
     if (feedMode.kind !== 'space') return null
 
     const activeSpace = flattenSpaces(spaceList).find((s) => s.id === feedMode.spaceId) || null
     if (activeSpace) {
-      if (activeSpace.type === 'group') return { surface: 'group_feed' as const, spaceId: Number(activeSpace.id) }
-      if (activeSpace.type === 'channel') {
-        if (isGlobalFeedSlug(activeSpace.slug)) return { surface: 'global_feed' as const, spaceId: null as number | null }
-        return { surface: 'channel_feed' as const, spaceId: Number(activeSpace.id) }
+      if (activeSpace.type === 'group') {
+        return {
+          surface: 'group_feed' as const,
+          spaceId: Number(activeSpace.id),
+          spaceType: 'group' as const,
+          spaceSlug: activeSpace.slug || null,
+          spaceName: activeSpace.name || null,
+        }
       }
-      if (activeSpace.type === 'personal') return { surface: 'my_feed' as const, spaceId: Number(activeSpace.id) }
+      if (activeSpace.type === 'channel') {
+        if (isGlobalFeedSlug(activeSpace.slug)) {
+          return {
+            surface: 'global_feed' as const,
+            spaceId: null as number | null,
+            spaceType: null as 'group' | 'channel' | 'personal' | null,
+            spaceSlug: null as string | null,
+            spaceName: null as string | null,
+          }
+        }
+        return {
+          surface: 'channel_feed' as const,
+          spaceId: Number(activeSpace.id),
+          spaceType: 'channel' as const,
+          spaceSlug: activeSpace.slug || null,
+          spaceName: activeSpace.name || null,
+        }
+      }
+      if (activeSpace.type === 'personal') {
+        return {
+          surface: 'my_feed' as const,
+          spaceId: Number(activeSpace.id),
+          spaceType: 'personal' as const,
+          spaceSlug: activeSpace.slug || null,
+          spaceName: activeSpace.name || null,
+        }
+      }
     }
 
     try {
@@ -543,7 +593,15 @@ export default function Feed() {
       const m = p.match(/^\/channels\/([^\/]+)\/?$/)
       if (!m) return null
       const slug = decodeURIComponent(m[1] || '').trim()
-      if (isGlobalFeedSlug(slug)) return { surface: 'global_feed' as const, spaceId: null as number | null }
+      if (isGlobalFeedSlug(slug)) {
+        return {
+          surface: 'global_feed' as const,
+          spaceId: null as number | null,
+          spaceType: null as 'group' | 'channel' | 'personal' | null,
+          spaceSlug: null as string | null,
+          spaceName: null as string | null,
+        }
+      }
     } catch {}
     return null
   }, [feedMode, spaceList])
@@ -1745,6 +1803,9 @@ export default function Feed() {
       event: 'session_end',
       surface: ctx.surface,
       spaceId: ctx.spaceId,
+      spaceType: ctx.spaceType,
+      spaceSlug: ctx.spaceSlug,
+      spaceName: ctx.spaceName,
       sessionId: sid,
       watchSeconds: Math.max(1, Math.round(feedActivityWatchSecondsRef.current || 0)),
     })
@@ -1771,6 +1832,9 @@ export default function Feed() {
       event: 'session_start',
       surface: feedActivityContext.surface,
       spaceId: feedActivityContext.spaceId,
+      spaceType: feedActivityContext.spaceType,
+      spaceSlug: feedActivityContext.spaceSlug,
+      spaceName: feedActivityContext.spaceName,
       sessionId: sid,
     })
     try { debug.log('feed', 'activity session start', { sid, surface: feedActivityContext.surface, spaceId: feedActivityContext.spaceId }) } catch {}
@@ -1872,6 +1936,9 @@ export default function Feed() {
       event: 'slide_impression',
       surface: feedActivityContext.surface,
       spaceId: feedActivityContext.spaceId,
+      spaceType: feedActivityContext.spaceType,
+      spaceSlug: feedActivityContext.spaceSlug,
+      spaceName: feedActivityContext.spaceName,
       sessionId: feedActivitySessionId,
       contentId: publicationId,
     })
@@ -2006,6 +2073,9 @@ export default function Feed() {
         event: 'slide_complete',
         surface: feedActivityContext.surface,
         spaceId: feedActivityContext.spaceId,
+        spaceType: feedActivityContext.spaceType,
+        spaceSlug: feedActivityContext.spaceSlug,
+        spaceName: feedActivityContext.spaceName,
         sessionId: feedActivitySessionId,
         contentId: publicationId,
       })
