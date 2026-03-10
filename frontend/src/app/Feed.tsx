@@ -2324,12 +2324,14 @@ export default function Feed() {
                   >
                     <div
                       style={{
-                        width: 'min(92vw, 560px)',
+                        width: 'min(100%, 560px)',
+                        maxWidth: '100%',
                         borderRadius: 16,
                         border: '1px solid rgba(255,255,255,0.26)',
                         background: 'rgba(5,8,12,0.48)',
                         padding: '16px 14px',
                         backdropFilter: 'blur(6px)',
+                        boxSizing: 'border-box',
                       }}
                     >
                       <div style={{ fontSize: 13, opacity: 0.85, marginBottom: 6 }}>

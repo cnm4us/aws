@@ -3340,7 +3340,7 @@ function renderAdminPromptRuleForm(opts: {
   body += `<div class="toolbar"><div><a href="${escapeHtml(opts.backHref)}">← Back to prompt rules</a></div><div></div></div>`
   if (opts.error) body += `<div class="error">${escapeHtml(String(opts.error))}</div>`
   if (opts.notice) body += `<div class="notice">${escapeHtml(String(opts.notice))}</div>`
-  body += `<div class="section"><div class="field-hint">Safety guards: max prompts/session ≤ 5, min slides-between ≥ 3, cooldown ≥ 60s.</div></div>`
+  body += `<div class="section"><div class="field-hint">No safety minimums are enforced for prompt-rule pacing fields.</div></div>`
 
   body += `<form method="post" action="${escapeHtml(opts.action)}">`
   if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
@@ -3362,7 +3362,7 @@ function renderAdminPromptRuleForm(opts: {
 
   body += `<div class="section"><div class="section-title">Session Caps</div>`
   body += `<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px">`
-  body += `<label>Max Prompts / Session<input type="number" name="maxPromptsPerSession" min="1" value="${escapeHtml(String(values.maxPromptsPerSession ?? values.max_prompts_per_session ?? 2))}" /></label>`
+  body += `<label>Max Prompts / Session<input type="number" name="maxPromptsPerSession" min="0" value="${escapeHtml(String(values.maxPromptsPerSession ?? values.max_prompts_per_session ?? 2))}" /></label>`
   body += `<label>Min Slides Between Prompts<input type="number" name="minSlidesBetweenPrompts" min="0" value="${escapeHtml(String(values.minSlidesBetweenPrompts ?? values.min_slides_between_prompts ?? 15))}" /></label>`
   body += `<label>Cooldown Seconds After Dismiss<input type="number" name="cooldownSecondsAfterDismiss" min="0" value="${escapeHtml(String(values.cooldownSecondsAfterDismiss ?? values.cooldown_seconds_after_dismiss ?? 900))}" /></label>`
   body += `</div></div>`

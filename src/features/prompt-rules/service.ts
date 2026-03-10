@@ -98,22 +98,6 @@ function parseAllowlist(raw: any): string[] {
   return unique
 }
 
-function enforceSafetyGuards(input: {
-  maxPromptsPerSession: number
-  minSlidesBetweenPrompts: number
-  cooldownSecondsAfterDismiss: number
-}) {
-  if (input.maxPromptsPerSession > 5) {
-    throw new DomainError('unsafe_max_prompts_per_session', 'unsafe_max_prompts_per_session', 400)
-  }
-  if (input.minSlidesBetweenPrompts < 3) {
-    throw new DomainError('unsafe_min_slides_between_prompts', 'unsafe_min_slides_between_prompts', 400)
-  }
-  if (input.cooldownSecondsAfterDismiss < 60) {
-    throw new DomainError('unsafe_cooldown_seconds_after_dismiss', 'unsafe_cooldown_seconds_after_dismiss', 400)
-  }
-}
-
 function mapRow(row: PromptRuleRow): PromptRuleDto {
   let allowlist: string[] = []
   try {
@@ -181,14 +165,12 @@ export async function createForAdmin(input: any, actorUserId: number): Promise<P
   const authState = normalizeAuthState(input?.authState ?? input?.auth_state)
   const minSlidesViewed = normalizeInt(input?.minSlidesViewed ?? input?.min_slides_viewed, 'min_slides_viewed', 0, 5000, DEFAULTS.minSlidesViewed)
   const minWatchSeconds = normalizeInt(input?.minWatchSeconds ?? input?.min_watch_seconds, 'min_watch_seconds', 0, 86400, DEFAULTS.minWatchSeconds)
-  const maxPromptsPerSession = normalizeInt(input?.maxPromptsPerSession ?? input?.max_prompts_per_session, 'max_prompts_per_session', 1, 20, DEFAULTS.maxPromptsPerSession)
+  const maxPromptsPerSession = normalizeInt(input?.maxPromptsPerSession ?? input?.max_prompts_per_session, 'max_prompts_per_session', 0, 100000, DEFAULTS.maxPromptsPerSession)
   const minSlidesBetweenPrompts = normalizeInt(input?.minSlidesBetweenPrompts ?? input?.min_slides_between_prompts, 'min_slides_between_prompts', 0, 2000, DEFAULTS.minSlidesBetweenPrompts)
   const cooldownSecondsAfterDismiss = normalizeInt(input?.cooldownSecondsAfterDismiss ?? input?.cooldown_seconds_after_dismiss, 'cooldown_seconds_after_dismiss', 0, 604800, DEFAULTS.cooldownSecondsAfterDismiss)
   const promptCategoryAllowlist = parseAllowlist(input?.promptCategoryAllowlist ?? input?.prompt_category_allowlist ?? DEFAULTS.promptCategoryAllowlist)
   const priority = normalizeInt(input?.priority, 'priority', -100000, 100000, DEFAULTS.priority)
   const tieBreakStrategy = normalizeTieBreak(input?.tieBreakStrategy ?? input?.tie_break_strategy)
-
-  enforceSafetyGuards({ maxPromptsPerSession, minSlidesBetweenPrompts, cooldownSecondsAfterDismiss })
 
   const row = await repo.create({
     name,
@@ -240,7 +222,7 @@ export async function updateForAdmin(id: number, patch: any, actorUserId: number
       : current.minWatchSeconds
   const nextMaxPromptsPerSession =
     patch?.maxPromptsPerSession !== undefined || patch?.max_prompts_per_session !== undefined
-      ? normalizeInt(patch?.maxPromptsPerSession ?? patch?.max_prompts_per_session, 'max_prompts_per_session', 1, 20, current.maxPromptsPerSession)
+      ? normalizeInt(patch?.maxPromptsPerSession ?? patch?.max_prompts_per_session, 'max_prompts_per_session', 0, 100000, current.maxPromptsPerSession)
       : current.maxPromptsPerSession
   const nextMinSlidesBetweenPrompts =
     patch?.minSlidesBetweenPrompts !== undefined || patch?.min_slides_between_prompts !== undefined
@@ -262,12 +244,6 @@ export async function updateForAdmin(id: number, patch: any, actorUserId: number
     patch?.tieBreakStrategy !== undefined || patch?.tie_break_strategy !== undefined
       ? normalizeTieBreak(patch?.tieBreakStrategy ?? patch?.tie_break_strategy, current.tieBreakStrategy)
       : current.tieBreakStrategy
-
-  enforceSafetyGuards({
-    maxPromptsPerSession: nextMaxPromptsPerSession,
-    minSlidesBetweenPrompts: nextMinSlidesBetweenPrompts,
-    cooldownSecondsAfterDismiss: nextCooldownSecondsAfterDismiss,
-  })
 
   const row = await repo.update(id, {
     name: nextName,
