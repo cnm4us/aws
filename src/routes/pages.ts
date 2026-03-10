@@ -20,6 +20,7 @@ import * as lowerThirdsSvc from '../features/lower-thirds/service'
 import * as promptsSvc from '../features/prompts/service'
 import * as promptRulesSvc from '../features/prompt-rules/service'
 import * as promptAnalyticsSvc from '../features/prompt-analytics/service'
+import * as feedActivitySvc from '../features/feed-activity/service'
 import { getAnalyticsSinkHealth } from '../features/analytics-sink/service'
 import { GetObjectCommand, DeleteObjectsCommand, ListObjectsV2Command } from '@aws-sdk/client-s3'
 import { s3 } from '../services/s3'
@@ -648,6 +649,7 @@ type AdminNavKey =
 	| 'media_jobs'
   | 'prompts'
   | 'prompt_rules'
+  | 'analytics'
   | 'prompt_analytics'
   | 'analytics_sink'
 	| 'settings'
@@ -671,6 +673,7 @@ const ADMIN_NAV_ITEMS: Array<{ key: AdminNavKey; label: string; href: string }> 
 	{ key: 'media_jobs', label: 'Media Jobs', href: '/admin/media-jobs' },
   { key: 'prompts', label: 'Prompts', href: '/admin/prompts' },
   { key: 'prompt_rules', label: 'Prompt Rules', href: '/admin/prompt-rules' },
+  { key: 'analytics', label: 'Analytics', href: '/admin/analytics' },
   { key: 'prompt_analytics', label: 'Prompt Analytics', href: '/admin/prompt-analytics' },
   { key: 'analytics_sink', label: 'Analytics Sink', href: '/admin/analytics-sink' },
   { key: 'settings', label: 'Settings', href: '/admin/settings' },
@@ -2989,6 +2992,7 @@ pagesRouter.get('/admin', async (_req: any, res: any) => {
     { title: 'Media Jobs', href: '/admin/media-jobs', desc: 'Debug ffmpeg mastering jobs (logs, retries, purge)' },
     { title: 'Prompts', href: '/admin/prompts', desc: 'In-feed registration/login prompt catalog and lifecycle controls' },
     { title: 'Prompt Rules', href: '/admin/prompt-rules', desc: 'Eligibility thresholds and pacing caps for prompt orchestration' },
+    { title: 'Analytics', href: '/admin/analytics', desc: 'Cross-metric baseline feed + prompt conversion view with daily trend' },
     { title: 'Prompt Analytics', href: '/admin/prompt-analytics', desc: 'Funnel metrics, conversion rates, and overexposure detection for prompts' },
     { title: 'Analytics Sink', href: '/admin/analytics-sink', desc: 'Optional external sink health and counters (secondary analytics path)' },
     { title: 'Settings', href: '/admin/settings', desc: 'Coming soon' },
@@ -3545,6 +3549,320 @@ function pctText(rate: number): string {
   if (!Number.isFinite(n)) return '0.00%'
   return `${(Math.max(0, n) * 100).toFixed(2)}%`
 }
+
+function csvCell(value: any): string {
+  const raw = value == null ? '' : String(value)
+  return `"${raw.replace(/"/g, '""')}"`
+}
+
+function round2(value: number): number {
+  if (!Number.isFinite(value)) return 0
+  return Math.round(value * 100) / 100
+}
+
+pagesRouter.get('/admin/analytics', async (req: any, res: any) => {
+  try {
+    const feedReport = await feedActivitySvc.getFeedActivityReportForAdmin({
+      fromDate: req.query?.from,
+      toDate: req.query?.to,
+      surface: req.query?.surface,
+      spaceId: req.query?.space_id,
+      viewerState: req.query?.viewer_state,
+    })
+    const selectedSurface = feedReport.range.surface
+    const promptSurfaceEligible = (selectedSurface == null || selectedSurface === 'global_feed') && feedReport.range.spaceId == null
+    const emptyPromptReport = {
+      range: {
+        fromDate: feedReport.range.fromDate,
+        toDate: feedReport.range.toDate,
+        surface: promptSurfaceEligible ? selectedSurface : null,
+        promptId: null,
+        promptCategory: null,
+        viewerState: feedReport.range.viewerState,
+      },
+      kpis: {
+        totals: {
+          impressions: 0,
+          clicksPrimary: 0,
+          clicksSecondary: 0,
+          clicksTotal: 0,
+          dismiss: 0,
+          authStart: 0,
+          authComplete: 0,
+        },
+        uniqueSessions: {
+          impressions: 0,
+          clicksTotal: 0,
+          dismiss: 0,
+          authStart: 0,
+          authComplete: 0,
+        },
+        rates: {
+          ctr: 0,
+          dismissRate: 0,
+          authStartRate: 0,
+          authCompletionRate: 0,
+          completionPerStart: 0,
+        },
+      },
+      byPrompt: [],
+      byDay: [],
+    }
+    const promptReport = promptSurfaceEligible
+      ? await promptAnalyticsSvc.getPromptAnalyticsReportForAdmin({
+          fromDate: feedReport.range.fromDate,
+          toDate: feedReport.range.toDate,
+          surface: selectedSurface,
+          viewerState: feedReport.range.viewerState,
+        })
+      : emptyPromptReport
+
+    const splitBase = {
+      fromDate: feedReport.range.fromDate,
+      toDate: feedReport.range.toDate,
+      surface: feedReport.range.surface,
+      spaceId: feedReport.range.spaceId,
+    }
+    const [feedAnonymous, feedAuthenticated, promptAnonymous, promptAuthenticated] = await Promise.all([
+      feedActivitySvc.getFeedActivityReportForAdmin({ ...splitBase, viewerState: 'anonymous' }),
+      feedActivitySvc.getFeedActivityReportForAdmin({ ...splitBase, viewerState: 'authenticated' }),
+      promptSurfaceEligible
+        ? promptAnalyticsSvc.getPromptAnalyticsReportForAdmin({
+            fromDate: splitBase.fromDate,
+            toDate: splitBase.toDate,
+            surface: splitBase.surface,
+            viewerState: 'anonymous',
+          })
+        : Promise.resolve({ ...emptyPromptReport, range: { ...emptyPromptReport.range, viewerState: 'anonymous' as const } }),
+      promptSurfaceEligible
+        ? promptAnalyticsSvc.getPromptAnalyticsReportForAdmin({
+            fromDate: splitBase.fromDate,
+            toDate: splitBase.toDate,
+            surface: splitBase.surface,
+            viewerState: 'authenticated',
+          })
+        : Promise.resolve({ ...emptyPromptReport, range: { ...emptyPromptReport.range, viewerState: 'authenticated' as const } }),
+    ])
+    const selectedSpaceOptions = (selectedSurface === 'group_feed' || selectedSurface === 'channel_feed')
+      ? await feedActivitySvc.listSurfaceSpacesForAdmin({
+          fromDate: feedReport.range.fromDate,
+          toDate: feedReport.range.toDate,
+          surface: selectedSurface,
+        })
+      : []
+
+    const mergedByDate = new Map<string, {
+      dateUtc: string
+      feedSessionsStarted: number
+      feedSessionsEnded: number
+      feedSlideImpressions: number
+      feedSlideCompletes: number
+      feedWatchSeconds: number
+      promptImpressions: number
+      promptClicks: number
+      promptAuthStart: number
+      promptAuthComplete: number
+    }>()
+
+    for (const row of feedReport.byDay || []) {
+      mergedByDate.set(row.dateUtc, {
+        dateUtc: row.dateUtc,
+        feedSessionsStarted: Number(row.totals.sessionsStarted || 0),
+        feedSessionsEnded: Number(row.totals.sessionsEnded || 0),
+        feedSlideImpressions: Number(row.totals.slideImpressions || 0),
+        feedSlideCompletes: Number(row.totals.slideCompletes || 0),
+        feedWatchSeconds: Number(row.totals.totalWatchSeconds || 0),
+        promptImpressions: 0,
+        promptClicks: 0,
+        promptAuthStart: 0,
+        promptAuthComplete: 0,
+      })
+    }
+    for (const row of promptReport.byDay || []) {
+      const current = mergedByDate.get(row.dateUtc) || {
+        dateUtc: row.dateUtc,
+        feedSessionsStarted: 0,
+        feedSessionsEnded: 0,
+        feedSlideImpressions: 0,
+        feedSlideCompletes: 0,
+        feedWatchSeconds: 0,
+        promptImpressions: 0,
+        promptClicks: 0,
+        promptAuthStart: 0,
+        promptAuthComplete: 0,
+      }
+      current.promptImpressions = Number(row.totals.impressions || 0)
+      current.promptClicks = Number(row.totals.clicksTotal || 0)
+      current.promptAuthStart = Number(row.totals.authStart || 0)
+      current.promptAuthComplete = Number(row.totals.authComplete || 0)
+      mergedByDate.set(row.dateUtc, current)
+    }
+    const dailyRows = Array.from(mergedByDate.values()).sort((a, b) => a.dateUtc.localeCompare(b.dateUtc))
+
+    if (String(req.query?.format || '').toLowerCase() === 'csv') {
+      const header = [
+        'date_utc',
+        'feed_sessions_started',
+        'feed_sessions_ended',
+        'feed_slide_impressions',
+        'feed_slide_completes',
+        'feed_completion_rate',
+        'feed_total_watch_seconds',
+        'feed_avg_watch_seconds_per_session',
+        'prompt_impressions',
+        'prompt_clicks',
+        'prompt_ctr',
+        'prompt_auth_start',
+        'prompt_auth_complete',
+        'prompt_auth_completion_rate',
+        'prompt_coverage_per_slide_impression',
+      ]
+      const lines = [header.map(csvCell).join(',')]
+      for (const row of dailyRows) {
+        const feedCompletionRate = row.feedSlideImpressions > 0 ? row.feedSlideCompletes / row.feedSlideImpressions : 0
+        const denom = row.feedSessionsEnded > 0 ? row.feedSessionsEnded : row.feedSessionsStarted
+        const feedAvgWatch = denom > 0 ? row.feedWatchSeconds / denom : 0
+        const promptCtr = row.promptImpressions > 0 ? row.promptClicks / row.promptImpressions : 0
+        const promptAuthCompletionRate = row.promptImpressions > 0 ? row.promptAuthComplete / row.promptImpressions : 0
+        const promptCoverage = row.feedSlideImpressions > 0 ? row.promptImpressions / row.feedSlideImpressions : 0
+        lines.push([
+          row.dateUtc,
+          row.feedSessionsStarted,
+          row.feedSessionsEnded,
+          row.feedSlideImpressions,
+          row.feedSlideCompletes,
+          round2(feedCompletionRate),
+          row.feedWatchSeconds,
+          round2(feedAvgWatch),
+          row.promptImpressions,
+          row.promptClicks,
+          round2(promptCtr),
+          row.promptAuthStart,
+          row.promptAuthComplete,
+          round2(promptAuthCompletionRate),
+          round2(promptCoverage),
+        ].map(csvCell).join(','))
+      }
+      const filename = `analytics-${feedReport.range.fromDate}_to_${feedReport.range.toDate}.csv`
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
+      return res.send(lines.join('\n'))
+    }
+
+    const q = new URLSearchParams()
+    q.set('from', feedReport.range.fromDate)
+    q.set('to', feedReport.range.toDate)
+    if (feedReport.range.surface) q.set('surface', feedReport.range.surface)
+    if (feedReport.range.spaceId != null) q.set('space_id', String(feedReport.range.spaceId))
+    if (feedReport.range.viewerState) q.set('viewer_state', feedReport.range.viewerState)
+
+    const feedCoverage = feedReport.kpis.totals.slideImpressions > 0
+      ? promptReport.kpis.totals.impressions / feedReport.kpis.totals.slideImpressions
+      : 0
+
+    let body = '<h1>Analytics</h1>'
+    body += '<div class="toolbar"><div><span class="pill">Cross Metric View</span></div><div></div></div>'
+    body += `<form method="get" action="/admin/analytics" class="section" style="margin:12px 0">`
+    body += `<div style="display:grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); gap:10px; align-items:end">`
+    body += `<label>From (UTC)<input type="date" name="from" value="${escapeHtml(feedReport.range.fromDate)}" /></label>`
+    body += `<label>To (UTC)<input type="date" name="to" value="${escapeHtml(feedReport.range.toDate)}" /></label>`
+    body += `<label>Surface<select name="surface">
+      <option value=""${feedReport.range.surface == null ? ' selected' : ''}>All</option>
+      <option value="global_feed"${feedReport.range.surface === 'global_feed' ? ' selected' : ''}>Global Feed</option>
+      <option value="group_feed"${feedReport.range.surface === 'group_feed' ? ' selected' : ''}>Groups</option>
+      <option value="channel_feed"${feedReport.range.surface === 'channel_feed' ? ' selected' : ''}>Channels</option>
+      <option value="my_feed"${feedReport.range.surface === 'my_feed' ? ' selected' : ''}>My Feed</option>
+    </select></label>`
+    if (feedReport.range.surface === 'group_feed' || feedReport.range.surface === 'channel_feed') {
+      const label = feedReport.range.surface === 'group_feed' ? 'Group' : 'Channel'
+      body += `<label>${label}<select name="space_id">`
+      body += `<option value=""${feedReport.range.spaceId == null ? ' selected' : ''}>All ${label}s</option>`
+      for (const item of selectedSpaceOptions) {
+        const selected = feedReport.range.spaceId === item.id ? ' selected' : ''
+        const title = item.slug ? `${item.name} (${item.slug})` : item.name
+        body += `<option value="${item.id}"${selected}>${escapeHtml(title)}</option>`
+      }
+      body += `</select></label>`
+    }
+    body += `<label>Viewer State<select name="viewer_state">
+      <option value=""${feedReport.range.viewerState == null ? ' selected' : ''}>All</option>
+      <option value="anonymous"${feedReport.range.viewerState === 'anonymous' ? ' selected' : ''}>Anonymous</option>
+      <option value="authenticated"${feedReport.range.viewerState === 'authenticated' ? ' selected' : ''}>Authenticated</option>
+    </select></label>`
+    body += `</div>`
+    body += `<div style="display:flex; gap:10px; margin-top:10px; flex-wrap:wrap">`
+    body += `<button class="btn" type="submit">Apply</button>`
+    body += `<a class="btn" href="/admin/analytics?${escapeHtml(`${q.toString()}&format=csv`)}">Export CSV</a>`
+    body += `</div>`
+    body += `</form>`
+
+    body += `<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px; margin-bottom:12px">`
+    body += `<div class="section" style="margin:0"><div class="section-title">Sessions Started</div><div style="font-size:24px; font-weight:800">${feedReport.kpis.totals.sessionsStarted}</div><div class="field-hint">Ended: ${feedReport.kpis.totals.sessionsEnded}</div></div>`
+    body += `<div class="section" style="margin:0"><div class="section-title">Slide Impressions</div><div style="font-size:24px; font-weight:800">${feedReport.kpis.totals.slideImpressions}</div><div class="field-hint">Completes: ${feedReport.kpis.totals.slideCompletes}</div></div>`
+    body += `<div class="section" style="margin:0"><div class="section-title">Feed Completion Rate</div><div style="font-size:24px; font-weight:800">${pctText(feedReport.kpis.rates.completionRate)}</div><div class="field-hint">Watch sec: ${feedReport.kpis.totals.totalWatchSeconds}</div></div>`
+    body += `<div class="section" style="margin:0"><div class="section-title">Prompt Impressions</div><div style="font-size:24px; font-weight:800">${promptReport.kpis.totals.impressions}</div><div class="field-hint">Prompt Clicks: ${promptReport.kpis.totals.clicksTotal}</div></div>`
+    body += `<div class="section" style="margin:0"><div class="section-title">Prompt Auth Completions</div><div style="font-size:24px; font-weight:800">${promptReport.kpis.totals.authComplete}</div><div class="field-hint">Auth Starts: ${promptReport.kpis.totals.authStart}</div></div>`
+    body += `<div class="section" style="margin:0"><div class="section-title">Prompt Coverage</div><div style="font-size:24px; font-weight:800">${pctText(feedCoverage)}</div><div class="field-hint">Prompt impressions / slide impressions</div></div>`
+    body += `</div>`
+
+    const splitRows = [
+      { label: 'Anonymous', feed: feedAnonymous, prompt: promptAnonymous },
+      { label: 'Authenticated', feed: feedAuthenticated, prompt: promptAuthenticated },
+    ]
+    body += '<div class="section">'
+    body += '<div class="section-title">Viewer State Split</div>'
+    body += '<div class="field-hint" style="margin-bottom:8px">Always computed for both states within current date/surface scope.</div>'
+    body += '<table><thead><tr><th>Viewer State</th><th>Sessions</th><th>Slide Impressions</th><th>Slide Completes</th><th>Feed Completion</th><th>Prompt Impressions</th><th>Prompt CTR</th><th>Prompt Auth Complete</th><th>Prompt Coverage</th></tr></thead><tbody>'
+    for (const row of splitRows) {
+      const rowCoverage = row.feed.kpis.totals.slideImpressions > 0
+        ? row.prompt.kpis.totals.impressions / row.feed.kpis.totals.slideImpressions
+        : 0
+      body += `<tr>
+        <td>${escapeHtml(row.label)}</td>
+        <td>${row.feed.kpis.totals.sessionsStarted} <span class="field-hint">(ended: ${row.feed.kpis.totals.sessionsEnded})</span></td>
+        <td>${row.feed.kpis.totals.slideImpressions}</td>
+        <td>${row.feed.kpis.totals.slideCompletes}</td>
+        <td>${pctText(row.feed.kpis.rates.completionRate)}</td>
+        <td>${row.prompt.kpis.totals.impressions}</td>
+        <td>${pctText(row.prompt.kpis.rates.ctr)}</td>
+        <td>${row.prompt.kpis.totals.authComplete}</td>
+        <td>${pctText(rowCoverage)}</td>
+      </tr>`
+    }
+    body += '</tbody></table></div>'
+
+    if (!dailyRows.length) {
+      body += '<p>No analytics rows found in this range.</p>'
+    } else {
+      body += '<table><thead><tr><th>Date</th><th>Sessions</th><th>Slide Impressions</th><th>Slide Completes</th><th>Feed Completion</th><th>Watch Sec</th><th>Prompt Impressions</th><th>Prompt CTR</th><th>Prompt Auth Complete</th><th>Prompt Coverage</th></tr></thead><tbody>'
+      for (const row of dailyRows) {
+        const feedCompletionRate = row.feedSlideImpressions > 0 ? row.feedSlideCompletes / row.feedSlideImpressions : 0
+        const promptCtr = row.promptImpressions > 0 ? row.promptClicks / row.promptImpressions : 0
+        const promptCoverage = row.feedSlideImpressions > 0 ? row.promptImpressions / row.feedSlideImpressions : 0
+        body += `<tr>
+          <td>${escapeHtml(row.dateUtc)}</td>
+          <td>${row.feedSessionsStarted} <span class="field-hint">(ended: ${row.feedSessionsEnded})</span></td>
+          <td>${row.feedSlideImpressions}</td>
+          <td>${row.feedSlideCompletes}</td>
+          <td>${pctText(feedCompletionRate)}</td>
+          <td>${row.feedWatchSeconds}</td>
+          <td>${row.promptImpressions}</td>
+          <td>${pctText(promptCtr)}</td>
+          <td>${row.promptAuthComplete}</td>
+          <td>${pctText(promptCoverage)}</td>
+        </tr>`
+      }
+      body += '</tbody></table>'
+    }
+
+    const doc = renderAdminPage({ title: 'Analytics', bodyHtml: body, active: 'analytics' })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    return res.send(doc)
+  } catch (err) {
+    logError(req.log || pagesLogger, err, 'admin analytics failed', { path: req.path })
+    return res.status(500).send('Failed to load analytics')
+  }
+})
 
 pagesRouter.get('/admin/prompt-analytics', async (req: any, res: any) => {
   try {

@@ -238,7 +238,7 @@ export async function recordPromptEvent(input: RecordPromptEventInput): Promise<
       const identity = dedupeIdentity({ sessionId: canonical.sessionId, userId: canonical.userId })
       const key = dedupeKey({
         eventType,
-        surface: canonical.surface,
+        surface,
         promptId: canonical.promptId || promptId,
         ctaKind,
         identity,
@@ -259,7 +259,7 @@ export async function recordPromptEvent(input: RecordPromptEventInput): Promise<
 
       const inserted = await repo.insertEvent({
         eventType,
-        surface: canonical.surface,
+        surface,
         viewerState: canonical.viewerState,
         sessionId: canonical.sessionId,
         userId: canonical.userId,
@@ -277,7 +277,7 @@ export async function recordPromptEvent(input: RecordPromptEventInput): Promise<
       if (inserted.inserted && countInRollup) {
         await repo.upsertDailyCount({
           dateUtc: dayUtc,
-          surface: canonical.surface,
+          surface,
           promptId: canonical.promptId || promptId,
           promptKind,
           promptCategory,
@@ -299,7 +299,7 @@ export async function recordPromptEvent(input: RecordPromptEventInput): Promise<
       }
 
       span.setAttributes({
-        'app.surface': canonical.surface,
+        'app.surface': surface,
         'app.prompt_id': String(canonical.promptId || promptId),
         ...(promptKind ? { 'app.prompt_kind': promptKind } : {}),
         ...(promptCategory ? { 'app.prompt_category': promptCategory } : {}),
@@ -314,7 +314,7 @@ export async function recordPromptEvent(input: RecordPromptEventInput): Promise<
       analyticsLogger.info(
         {
           app_operation: 'prompt.analytics.ingest',
-          app_surface: canonical.surface,
+          app_surface: surface,
           app_prompt_id: canonical.promptId || promptId,
           app_prompt_kind: promptKind,
           app_prompt_category: promptCategory,
@@ -334,7 +334,7 @@ export async function recordPromptEvent(input: RecordPromptEventInput): Promise<
         countedInRollup: Boolean(inserted.inserted && countInRollup),
         inputEvent: event,
         eventType,
-        surface: canonical.surface,
+        surface,
         promptId: canonical.promptId || promptId,
         attributed,
       }

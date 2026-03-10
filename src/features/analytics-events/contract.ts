@@ -12,7 +12,7 @@ export type AnalyticsEventName =
   | 'auth_start_from_prompt'
   | 'auth_complete_from_prompt'
 
-export type AnalyticsSurface = 'global_feed'
+export type AnalyticsSurface = 'global_feed' | 'group_feed' | 'channel_feed' | 'my_feed'
 export type AnalyticsViewerState = 'anonymous' | 'authenticated'
 export type AnalyticsMetaPrimitive = string | number | boolean | null
 export type AnalyticsMeta = Record<string, AnalyticsMetaPrimitive>
@@ -41,6 +41,9 @@ function asDate(raw: any): Date {
 function asSurface(raw: any): AnalyticsSurface {
   const v = String(raw || '').trim().toLowerCase()
   if (v === 'global_feed') return 'global_feed'
+  if (v === 'group_feed') return 'group_feed'
+  if (v === 'channel_feed') return 'channel_feed'
+  if (v === 'my_feed') return 'my_feed'
   throw new DomainError('invalid_analytics_surface', 'invalid_analytics_surface', 400)
 }
 

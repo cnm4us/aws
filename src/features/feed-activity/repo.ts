@@ -5,6 +5,7 @@ export type FeedActivityQueryFilter = {
   fromDate: string
   toDate: string
   surface: FeedActivitySurface | null
+  spaceId: number | null
   viewerState: FeedActivityViewerState | null
 }
 
@@ -15,6 +16,7 @@ export async function insertEvent(input: {
   sessionId: string
   userId: number | null
   contentId: number | null
+  spaceId: number | null
   watchSeconds: number
   occurredAt: string
   dedupeKey: string
@@ -24,10 +26,10 @@ export async function insertEvent(input: {
     `INSERT IGNORE INTO feed_activity_events
       (
         event_type, surface, viewer_state,
-        session_id, user_id, content_id, watch_seconds,
+        session_id, user_id, content_id, space_id, watch_seconds,
         occurred_at, dedupe_key
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.eventType,
       input.surface,
@@ -35,6 +37,7 @@ export async function insertEvent(input: {
       input.sessionId,
       input.userId,
       input.contentId == null ? 0 : input.contentId,
+      input.spaceId == null ? 0 : input.spaceId,
       input.watchSeconds,
       input.occurredAt,
       input.dedupeKey,
@@ -82,6 +85,10 @@ function buildDailyWhere(filter: FeedActivityQueryFilter): { whereSql: string; a
   if (filter.surface) {
     where.push('surface = ?')
     args.push(filter.surface)
+  }
+  if (filter.spaceId != null) {
+    where.push('space_id = ?')
+    args.push(filter.spaceId)
   }
   if (filter.viewerState) {
     where.push('viewer_state = ?')
@@ -133,4 +140,90 @@ export async function purgeExpiredData(input?: { rawRetentionDays?: number; roll
   const rollupDays = Math.max(30, Math.min(3650, Number(input?.rollupRetentionDays || 365)))
   await db.query(`DELETE FROM feed_activity_events WHERE occurred_at < (UTC_TIMESTAMP() - INTERVAL ? DAY)`, [rawDays])
   await db.query(`DELETE FROM feed_activity_daily_stats WHERE date_utc < (UTC_DATE() - INTERVAL ? DAY)`, [rollupDays])
+}
+
+function buildEventsWhere(filter: FeedActivityQueryFilter): { whereSql: string; args: any[] } {
+  const where: string[] = ['occurred_at >= ?', 'occurred_at < DATE_ADD(?, INTERVAL 1 DAY)']
+  const args: any[] = [filter.fromDate, filter.toDate]
+  if (filter.surface) {
+    where.push('surface = ?')
+    args.push(filter.surface)
+  }
+  if (filter.spaceId != null) {
+    where.push('space_id = ?')
+    args.push(filter.spaceId)
+  }
+  if (filter.viewerState) {
+    where.push('viewer_state = ?')
+    args.push(filter.viewerState)
+  }
+  return { whereSql: where.join(' AND '), args }
+}
+
+export async function getTotalsFromEvents(filter: FeedActivityQueryFilter): Promise<any> {
+  const db = getPool()
+  const { whereSql, args } = buildEventsWhere(filter)
+  const [rows] = await db.query(
+    `SELECT
+      COALESCE(SUM(CASE WHEN event_type = 'feed_session_start' THEN 1 ELSE 0 END), 0) AS sessions_started,
+      COALESCE(SUM(CASE WHEN event_type = 'feed_session_end' THEN 1 ELSE 0 END), 0) AS sessions_ended,
+      COALESCE(SUM(CASE WHEN event_type = 'feed_slide_impression' THEN 1 ELSE 0 END), 0) AS slide_impressions,
+      COALESCE(SUM(CASE WHEN event_type = 'feed_slide_complete' THEN 1 ELSE 0 END), 0) AS slide_completes,
+      COALESCE(SUM(CASE WHEN event_type = 'feed_session_end' THEN watch_seconds ELSE 0 END), 0) AS total_watch_seconds
+     FROM feed_activity_events
+     WHERE ${whereSql}`,
+    args
+  )
+  return (rows as any[])[0] || {}
+}
+
+export async function getByDayFromEvents(filter: FeedActivityQueryFilter): Promise<any[]> {
+  const db = getPool()
+  const { whereSql, args } = buildEventsWhere(filter)
+  const [rows] = await db.query(
+    `SELECT
+      DATE(occurred_at) AS date_utc,
+      COALESCE(SUM(CASE WHEN event_type = 'feed_session_start' THEN 1 ELSE 0 END), 0) AS sessions_started,
+      COALESCE(SUM(CASE WHEN event_type = 'feed_session_end' THEN 1 ELSE 0 END), 0) AS sessions_ended,
+      COALESCE(SUM(CASE WHEN event_type = 'feed_slide_impression' THEN 1 ELSE 0 END), 0) AS slide_impressions,
+      COALESCE(SUM(CASE WHEN event_type = 'feed_slide_complete' THEN 1 ELSE 0 END), 0) AS slide_completes,
+      COALESCE(SUM(CASE WHEN event_type = 'feed_session_end' THEN watch_seconds ELSE 0 END), 0) AS total_watch_seconds
+     FROM feed_activity_events
+     WHERE ${whereSql}
+     GROUP BY DATE(occurred_at)
+     ORDER BY DATE(occurred_at) ASC`,
+    args
+  )
+  return rows as any[]
+}
+
+export async function listSurfaceSpacesByRange(input: {
+  fromDate: string
+  toDate: string
+  surface: 'group_feed' | 'channel_feed'
+}): Promise<Array<{ space_id: number; space_name: string; space_slug: string; space_type: string }>> {
+  const db = getPool()
+  const [rows] = await db.query(
+    `SELECT
+      e.space_id,
+      s.name AS space_name,
+      s.slug AS space_slug,
+      s.type AS space_type
+     FROM feed_activity_events e
+     JOIN spaces s ON s.id = e.space_id
+     WHERE e.space_id > 0
+       AND e.surface = ?
+       AND e.occurred_at >= ?
+       AND e.occurred_at < DATE_ADD(?, INTERVAL 1 DAY)
+       AND s.type IN ('group','channel')
+     GROUP BY e.space_id, s.name, s.slug, s.type
+     ORDER BY s.name ASC, e.space_id ASC`,
+    [input.surface, input.fromDate, input.toDate]
+  )
+  return (rows as any[]).map((r) => ({
+    space_id: Number(r.space_id),
+    space_name: String(r.space_name || ''),
+    space_slug: String(r.space_slug || ''),
+    space_type: String(r.space_type || ''),
+  }))
 }

@@ -843,11 +843,12 @@ export async function ensureSchema(db: DB) {
                 'feed_slide_complete',
                 'feed_session_end'
               ) NOT NULL,
-              surface ENUM('global_feed') NOT NULL DEFAULT 'global_feed',
+              surface ENUM('global_feed','group_feed','channel_feed','my_feed') NOT NULL DEFAULT 'global_feed',
               viewer_state ENUM('anonymous','authenticated') NOT NULL DEFAULT 'anonymous',
               session_id VARCHAR(120) NOT NULL,
               user_id BIGINT UNSIGNED NULL,
               content_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
+              space_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
               watch_seconds INT UNSIGNED NOT NULL DEFAULT 0,
               occurred_at DATETIME NOT NULL,
               dedupe_key CHAR(64) NOT NULL,
@@ -855,6 +856,7 @@ export async function ensureSchema(db: DB) {
               UNIQUE KEY uniq_feed_activity_events_dedupe_key (dedupe_key),
               KEY idx_feed_activity_events_occurred (occurred_at, id),
               KEY idx_feed_activity_events_surface_occurred (surface, occurred_at, id),
+              KEY idx_feed_activity_events_space_occurred (space_id, occurred_at, id),
               KEY idx_feed_activity_events_event_occurred (event_type, occurred_at, id),
               KEY idx_feed_activity_events_session_event (session_id, event_type, occurred_at, id),
               KEY idx_feed_activity_events_user_event (user_id, event_type, occurred_at, id),
@@ -862,28 +864,32 @@ export async function ensureSchema(db: DB) {
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
           `)
           await db.query(`ALTER TABLE feed_activity_events ADD COLUMN IF NOT EXISTS event_type ENUM('feed_session_start','feed_slide_impression','feed_slide_complete','feed_session_end') NOT NULL`)
-          await db.query(`ALTER TABLE feed_activity_events ADD COLUMN IF NOT EXISTS surface ENUM('global_feed') NOT NULL DEFAULT 'global_feed'`)
+          await db.query(`ALTER TABLE feed_activity_events ADD COLUMN IF NOT EXISTS surface ENUM('global_feed','group_feed','channel_feed','my_feed') NOT NULL DEFAULT 'global_feed'`)
+          await db.query(`ALTER TABLE feed_activity_events MODIFY COLUMN surface ENUM('global_feed','group_feed','channel_feed','my_feed') NOT NULL DEFAULT 'global_feed'`)
           await db.query(`ALTER TABLE feed_activity_events ADD COLUMN IF NOT EXISTS viewer_state ENUM('anonymous','authenticated') NOT NULL DEFAULT 'anonymous'`)
           await db.query(`ALTER TABLE feed_activity_events ADD COLUMN IF NOT EXISTS session_id VARCHAR(120) NOT NULL DEFAULT ''`)
           await db.query(`ALTER TABLE feed_activity_events ADD COLUMN IF NOT EXISTS user_id BIGINT UNSIGNED NULL`)
           await db.query(`ALTER TABLE feed_activity_events ADD COLUMN IF NOT EXISTS content_id BIGINT UNSIGNED NOT NULL DEFAULT 0`)
+          await db.query(`ALTER TABLE feed_activity_events ADD COLUMN IF NOT EXISTS space_id BIGINT UNSIGNED NOT NULL DEFAULT 0`)
           await db.query(`ALTER TABLE feed_activity_events ADD COLUMN IF NOT EXISTS watch_seconds INT UNSIGNED NOT NULL DEFAULT 0`)
           await db.query(`ALTER TABLE feed_activity_events ADD COLUMN IF NOT EXISTS occurred_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP`)
           await db.query(`ALTER TABLE feed_activity_events ADD COLUMN IF NOT EXISTS dedupe_key CHAR(64) NULL`)
           try { await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_feed_activity_events_dedupe_key ON feed_activity_events (dedupe_key)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_activity_events_occurred ON feed_activity_events (occurred_at, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_activity_events_surface_occurred ON feed_activity_events (surface, occurred_at, id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_activity_events_space_occurred ON feed_activity_events (space_id, occurred_at, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_activity_events_event_occurred ON feed_activity_events (event_type, occurred_at, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_activity_events_session_event ON feed_activity_events (session_id, event_type, occurred_at, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_activity_events_user_event ON feed_activity_events (user_id, event_type, occurred_at, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_activity_events_content_event ON feed_activity_events (content_id, event_type, occurred_at, id)`); } catch {}
           try { await db.query(`UPDATE feed_activity_events SET content_id = 0 WHERE content_id IS NULL`); } catch {}
+          try { await db.query(`UPDATE feed_activity_events SET space_id = 0 WHERE space_id IS NULL`); } catch {}
           try { await db.query(`UPDATE feed_activity_events SET dedupe_key = LPAD(HEX(id), 64, '0') WHERE dedupe_key IS NULL OR dedupe_key = ''`); } catch {}
 
           await db.query(`
             CREATE TABLE IF NOT EXISTS feed_activity_daily_stats (
               date_utc DATE NOT NULL,
-              surface ENUM('global_feed') NOT NULL DEFAULT 'global_feed',
+              surface ENUM('global_feed','group_feed','channel_feed','my_feed') NOT NULL DEFAULT 'global_feed',
               viewer_state ENUM('anonymous','authenticated') NOT NULL DEFAULT 'anonymous',
               event_type ENUM(
                 'feed_session_start',
@@ -903,7 +909,8 @@ export async function ensureSchema(db: DB) {
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
           `)
           await db.query(`ALTER TABLE feed_activity_daily_stats ADD COLUMN IF NOT EXISTS date_utc DATE NOT NULL`)
-          await db.query(`ALTER TABLE feed_activity_daily_stats ADD COLUMN IF NOT EXISTS surface ENUM('global_feed') NOT NULL DEFAULT 'global_feed'`)
+          await db.query(`ALTER TABLE feed_activity_daily_stats ADD COLUMN IF NOT EXISTS surface ENUM('global_feed','group_feed','channel_feed','my_feed') NOT NULL DEFAULT 'global_feed'`)
+          await db.query(`ALTER TABLE feed_activity_daily_stats MODIFY COLUMN surface ENUM('global_feed','group_feed','channel_feed','my_feed') NOT NULL DEFAULT 'global_feed'`)
           await db.query(`ALTER TABLE feed_activity_daily_stats ADD COLUMN IF NOT EXISTS viewer_state ENUM('anonymous','authenticated') NOT NULL DEFAULT 'anonymous'`)
           await db.query(`ALTER TABLE feed_activity_daily_stats ADD COLUMN IF NOT EXISTS event_type ENUM('feed_session_start','feed_slide_impression','feed_slide_complete','feed_session_end') NOT NULL`)
           await db.query(`ALTER TABLE feed_activity_daily_stats ADD COLUMN IF NOT EXISTS content_id BIGINT UNSIGNED NOT NULL DEFAULT 0`)

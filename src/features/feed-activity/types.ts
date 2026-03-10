@@ -1,4 +1,4 @@
-export type FeedActivitySurface = 'global_feed'
+export type FeedActivitySurface = 'global_feed' | 'group_feed' | 'channel_feed' | 'my_feed'
 export type FeedActivityViewerState = 'anonymous' | 'authenticated'
 
 export type FeedActivityInputEvent =
@@ -47,6 +47,7 @@ export type FeedActivityReport = {
     fromDate: string
     toDate: string
     surface: FeedActivitySurface | null
+    spaceId: number | null
     viewerState: FeedActivityViewerState | null
   }
   kpis: FeedActivityKpis

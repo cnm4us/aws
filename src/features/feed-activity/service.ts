@@ -50,6 +50,9 @@ function normalizeEvent(raw: any): FeedActivityInputEvent {
 function normalizeSurface(raw: any): FeedActivitySurface {
   const v = String(raw || '').trim().toLowerCase()
   if (v === 'global_feed') return 'global_feed'
+  if (v === 'group_feed') return 'group_feed'
+  if (v === 'channel_feed') return 'channel_feed'
+  if (v === 'my_feed') return 'my_feed'
   throw new DomainError('invalid_feed_activity_surface', 'invalid_feed_activity_surface', 400)
 }
 
@@ -81,6 +84,13 @@ function normalizeContentId(raw: any): number | null {
   return Math.round(n)
 }
 
+function normalizeSpaceId(raw: any): number | null {
+  if (raw == null || raw === '') return null
+  const n = Number(raw)
+  if (!Number.isFinite(n) || n <= 0) throw new DomainError('invalid_feed_activity_space_id', 'invalid_feed_activity_space_id', 400)
+  return Math.round(n)
+}
+
 function normalizeWatchSeconds(raw: any): number {
   if (raw == null || raw === '') return 0
   const n = Number(raw)
@@ -107,11 +117,12 @@ function dedupeKey(input: {
   surface: FeedActivitySurface
   identity: string
   contentId: number | null
+  spaceId: number | null
   dedupeBucket: string
 }): string {
   return crypto
     .createHash('sha256')
-    .update(`${input.eventType}|${input.surface}|${input.identity}|${input.contentId == null ? '-' : String(input.contentId)}|${input.dedupeBucket}`)
+    .update(`${input.eventType}|${input.surface}|${input.identity}|${input.contentId == null ? '-' : String(input.contentId)}|${input.spaceId == null ? '-' : String(input.spaceId)}|${input.dedupeBucket}`)
     .digest('hex')
 }
 
@@ -122,6 +133,7 @@ type RecordFeedActivityInput = {
   sessionId?: string | null
   userId?: number | string | null
   contentId?: number | string | null
+  spaceId?: number | string | null
   watchSeconds?: number | string | null
   occurredAt?: Date
 }
@@ -145,6 +157,7 @@ export async function recordFeedActivityEvent(input: RecordFeedActivityInput): P
         : normalizeViewerState(input.viewerState)
       const sessionId = normalizeSessionId(input.sessionId)
       const contentId = normalizeContentId(input.contentId)
+      const spaceId = normalizeSpaceId(input.spaceId)
       const watchSeconds = normalizeWatchSeconds(input.watchSeconds)
 
       if ((eventType === 'feed_slide_impression' || eventType === 'feed_slide_complete') && contentId == null) {
@@ -181,6 +194,7 @@ export async function recordFeedActivityEvent(input: RecordFeedActivityInput): P
         surface: canonical.surface,
         identity,
         contentId: canonical.contentId,
+        spaceId,
         dedupeBucket,
       })
 
@@ -191,6 +205,7 @@ export async function recordFeedActivityEvent(input: RecordFeedActivityInput): P
         sessionId: canonical.sessionId || sessionId,
         userId: canonical.userId,
         contentId: canonical.contentId,
+        spaceId,
         watchSeconds: eventType === 'feed_session_end' ? watchSeconds : 0,
         occurredAt,
         dedupeKey: key,
@@ -221,6 +236,7 @@ export async function recordFeedActivityEvent(input: RecordFeedActivityInput): P
         'app.event_name': canonical.eventName,
         'app.outcome': inserted.inserted ? 'success' : 'redirect',
         ...(canonical.contentId != null ? { 'app.content_id': String(canonical.contentId) } : {}),
+        ...(spaceId != null ? { 'app.space_id': String(spaceId) } : {}),
         'feed.activity.deduped': inserted.inserted ? false : true,
       })
       span.setStatus({ code: SpanStatusCode.OK })
@@ -231,6 +247,7 @@ export async function recordFeedActivityEvent(input: RecordFeedActivityInput): P
           app_surface: canonical.surface,
           app_event_name: canonical.eventName,
           app_content_id: canonical.contentId,
+          app_space_id: spaceId,
           feed_activity_event_type: eventType,
           feed_activity_deduped: !inserted.inserted,
           feed_activity_watch_seconds: eventType === 'feed_session_end' ? watchSeconds : 0,
@@ -264,11 +281,13 @@ function normalizeReportRange(input: {
   fromDate?: any
   toDate?: any
   surface?: any
+  spaceId?: any
   viewerState?: any
 }): {
   fromDate: string
   toDate: string
   surface: FeedActivitySurface | null
+  spaceId: number | null
   viewerState: FeedActivityViewerState | null
 } {
   const now = new Date()
@@ -286,6 +305,7 @@ function normalizeReportRange(input: {
     fromDate: toUtcDateString(from),
     toDate: toUtcDateString(to),
     surface: input.surface == null || input.surface === '' ? null : normalizeSurface(input.surface),
+    spaceId: input.spaceId == null || input.spaceId === '' ? null : normalizeSpaceId(input.spaceId),
     viewerState: input.viewerState == null || input.viewerState === '' ? null : normalizeViewerState(input.viewerState),
   }
 }
@@ -322,6 +342,7 @@ export async function getFeedActivityReportForAdmin(input: {
   fromDate?: any
   toDate?: any
   surface?: any
+  spaceId?: any
   viewerState?: any
 }): Promise<FeedActivityReport> {
   return tracer.startActiveSpan('feed.activity.query', { attributes: { 'app.operation': 'feed.activity.query' } }, async (span) => {
@@ -331,11 +352,12 @@ export async function getFeedActivityReportForAdmin(input: {
         fromDate: range.fromDate,
         toDate: range.toDate,
         surface: range.surface,
+        spaceId: range.spaceId,
         viewerState: range.viewerState,
       }
       const [totalsRaw, byDayRaw] = await Promise.all([
-        repo.getTotalsFromDaily(filter),
-        repo.getByDayFromDaily(filter),
+        range.spaceId != null ? repo.getTotalsFromEvents(filter) : repo.getTotalsFromDaily(filter),
+        range.spaceId != null ? repo.getByDayFromEvents(filter) : repo.getByDayFromDaily(filter),
       ])
 
       const kpis = buildKpis({
@@ -367,6 +389,7 @@ export async function getFeedActivityReportForAdmin(input: {
 
       span.setAttributes({
         ...(range.surface ? { 'app.surface': range.surface } : {}),
+        ...(range.spaceId != null ? { 'app.space_id': String(range.spaceId) } : {}),
         ...(range.viewerState ? { 'feed.activity.viewer_state': range.viewerState } : {}),
         'feed.activity.result_rows': byDay.length,
         'app.outcome': 'success',
@@ -377,6 +400,7 @@ export async function getFeedActivityReportForAdmin(input: {
         {
           app_operation: 'feed.activity.query',
           app_surface: range.surface,
+          app_space_id: range.spaceId,
           viewer_state: range.viewerState,
           from_date: range.fromDate,
           to_date: range.toDate,
@@ -390,6 +414,7 @@ export async function getFeedActivityReportForAdmin(input: {
           fromDate: range.fromDate,
           toDate: range.toDate,
           surface: range.surface,
+          spaceId: range.spaceId,
           viewerState: range.viewerState,
         },
         kpis,
@@ -404,4 +429,30 @@ export async function getFeedActivityReportForAdmin(input: {
       span.end()
     }
   })
+}
+
+export async function listSurfaceSpacesForAdmin(input: {
+  fromDate?: any
+  toDate?: any
+  surface?: any
+}): Promise<Array<{ id: number; name: string; slug: string; type: 'group' | 'channel' }>> {
+  const range = normalizeReportRange({
+    fromDate: input.fromDate,
+    toDate: input.toDate,
+    surface: input.surface,
+    spaceId: null,
+    viewerState: null,
+  })
+  if (range.surface !== 'group_feed' && range.surface !== 'channel_feed') return []
+  const rows = await repo.listSurfaceSpacesByRange({
+    fromDate: range.fromDate,
+    toDate: range.toDate,
+    surface: range.surface,
+  })
+  return rows.map((r) => ({
+    id: Number(r.space_id),
+    name: String(r.space_name || `#${r.space_id}`),
+    slug: String(r.space_slug || ''),
+    type: (range.surface === 'group_feed' ? 'group' : 'channel'),
+  }))
 }

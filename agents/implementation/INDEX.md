@@ -28,4 +28,4 @@ This file is a lightweight index for ongoing work and “what’s next”.
 - Program: `agents/implementation/plan_114.md`
   - Next: Prompt content registry (`plan_114A.md`) + decision service (`plan_114C.md`)
 - Program: `agents/implementation/plan_115.md`
-  - Next: Admin reporting (cross-metric view, Phase D)
+  - Next: Observability + guardrails (ingest/sink/rollup metrics + alerts, Phase E)

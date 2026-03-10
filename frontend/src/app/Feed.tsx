@@ -318,6 +318,8 @@ function ensureFeedActivitySessionId(): string {
 
 async function sendFeedActivityEvent(input: {
   event: 'session_start' | 'slide_impression' | 'slide_complete' | 'session_end'
+  surface: 'global_feed' | 'group_feed' | 'channel_feed' | 'my_feed'
+  spaceId?: number | null
   sessionId: string
   contentId?: number | null
   watchSeconds?: number
@@ -330,7 +332,8 @@ async function sendFeedActivityEvent(input: {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         event: input.event,
-        surface: 'global_feed',
+        surface: input.surface,
+        space_id: input.spaceId == null ? null : input.spaceId,
         session_id: input.sessionId,
         content_id: input.contentId == null ? null : input.contentId,
         watch_seconds: input.watchSeconds == null ? null : input.watchSeconds,
@@ -478,6 +481,7 @@ export default function Feed() {
   const [promptSessionId, setPromptSessionId] = useState<string | null>(null)
   const [feedActivitySessionId, setFeedActivitySessionId] = useState<string | null>(null)
   const feedActivitySessionIdRef = useRef<string | null>(null)
+  const feedActivitySessionContextRef = useRef<{ surface: 'global_feed' | 'group_feed' | 'channel_feed' | 'my_feed'; spaceId: number | null } | null>(null)
   const promptDecisionBusyRef = useRef<boolean>(false)
   const promptSeenImpressionRef = useRef<Set<number>>(new Set())
   const feedActivityStartedRef = useRef<boolean>(false)
@@ -518,6 +522,30 @@ export default function Feed() {
     } catch {
       return false
     }
+  }, [feedMode, spaceList])
+
+  const feedActivityContext = useMemo(() => {
+    if (feedMode.kind === 'global') return { surface: 'global_feed' as const, spaceId: null as number | null }
+    if (feedMode.kind !== 'space') return null
+
+    const activeSpace = flattenSpaces(spaceList).find((s) => s.id === feedMode.spaceId) || null
+    if (activeSpace) {
+      if (activeSpace.type === 'group') return { surface: 'group_feed' as const, spaceId: Number(activeSpace.id) }
+      if (activeSpace.type === 'channel') {
+        if (isGlobalFeedSlug(activeSpace.slug)) return { surface: 'global_feed' as const, spaceId: null as number | null }
+        return { surface: 'channel_feed' as const, spaceId: Number(activeSpace.id) }
+      }
+      if (activeSpace.type === 'personal') return { surface: 'my_feed' as const, spaceId: Number(activeSpace.id) }
+    }
+
+    try {
+      const p = typeof window !== 'undefined' ? (window.location.pathname || '') : ''
+      const m = p.match(/^\/channels\/([^\/]+)\/?$/)
+      if (!m) return null
+      const slug = decodeURIComponent(m[1] || '').trim()
+      if (isGlobalFeedSlug(slug)) return { surface: 'global_feed' as const, spaceId: null as number | null }
+    } catch {}
+    return null
   }, [feedMode, spaceList])
 
   // Optional per-component render tracing (DEBUG_RENDER)
@@ -1706,36 +1734,51 @@ export default function Feed() {
     if (feedActivityEndedRef.current) return
     const sid = feedActivitySessionIdRef.current
     if (!sid) return
+    const ctx = feedActivitySessionContextRef.current
+    if (!ctx) {
+      feedActivityEndedRef.current = true
+      feedActivityStartedRef.current = false
+      return
+    }
     feedActivityEndedRef.current = true
     void sendFeedActivityEvent({
       event: 'session_end',
+      surface: ctx.surface,
+      spaceId: ctx.spaceId,
       sessionId: sid,
       watchSeconds: Math.max(1, Math.round(feedActivityWatchSecondsRef.current || 0)),
     })
     feedActivityStartedRef.current = false
+    feedActivitySessionContextRef.current = null
     try { debug.log('feed', 'activity session end', { reason, sid }) } catch {}
   }, [])
 
   const startFeedActivitySession = useCallback(() => {
-    if (!isGlobalBillboard) return
+    if (!feedActivityContext) return
     if (!meLoaded) return
     if (feedActivityStartedRef.current && !feedActivityEndedRef.current) return
 
     const sid = ensureFeedActivitySessionId()
     feedActivitySessionIdRef.current = sid
+    feedActivitySessionContextRef.current = feedActivityContext
     setFeedActivitySessionId((prev) => (prev === sid ? prev : sid))
     feedActivityStartedRef.current = true
     feedActivityEndedRef.current = false
     feedActivityWatchSecondsRef.current = 0
     feedActivitySeenImpressionRef.current = new Set()
     feedActivitySeenCompleteRef.current = new Set()
-    void sendFeedActivityEvent({ event: 'session_start', sessionId: sid })
-    try { debug.log('feed', 'activity session start', { sid }) } catch {}
-  }, [isGlobalBillboard, meLoaded])
+    void sendFeedActivityEvent({
+      event: 'session_start',
+      surface: feedActivityContext.surface,
+      spaceId: feedActivityContext.spaceId,
+      sessionId: sid,
+    })
+    try { debug.log('feed', 'activity session start', { sid, surface: feedActivityContext.surface, spaceId: feedActivityContext.spaceId }) } catch {}
+  }, [feedActivityContext, meLoaded])
 
-  // Feed baseline activity: session lifecycle (global feed only).
+  // Feed baseline activity: session lifecycle (global/group/channel/my feed).
   useEffect(() => {
-    if (!isGlobalBillboard) {
+    if (!feedActivityContext) {
       closeFeedActivitySession('mode_change')
       return
     }
@@ -1766,14 +1809,15 @@ export default function Feed() {
       try { document.removeEventListener('visibilitychange', onVisibilityChange) } catch {}
       closeFeedActivitySession('unmount')
     }
-  }, [isGlobalBillboard, meLoaded, closeFeedActivitySession, startFeedActivitySession])
+  }, [feedActivityContext, meLoaded, closeFeedActivitySession, startFeedActivitySession])
 
-  // Prompt counters: increment watch-seconds while on the global feed.
+  // Prompt counters + feed activity watch seconds.
   useEffect(() => {
-    if (!isGlobalBillboard) return
     const timer = window.setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
-      promptCountersRef.current.watchSeconds += 1
+      if (isGlobalBillboard) {
+        promptCountersRef.current.watchSeconds += 1
+      }
       if (feedActivityStartedRef.current && !feedActivityEndedRef.current) {
         feedActivityWatchSecondsRef.current += 1
       }
@@ -1816,7 +1860,7 @@ export default function Feed() {
 
   // Feed baseline activity: emit slide impression once per session per publication.
   useEffect(() => {
-    if (!isGlobalBillboard) return
+    if (!feedActivityContext) return
     if (!feedActivitySessionId) return
     const current = items[index]
     if (!current || isPromptItem(current)) return
@@ -1826,10 +1870,12 @@ export default function Feed() {
     feedActivitySeenImpressionRef.current.add(publicationId)
     void sendFeedActivityEvent({
       event: 'slide_impression',
+      surface: feedActivityContext.surface,
+      spaceId: feedActivityContext.spaceId,
       sessionId: feedActivitySessionId,
       contentId: publicationId,
     })
-  }, [isGlobalBillboard, index, items, feedActivitySessionId])
+  }, [feedActivityContext, index, items, feedActivitySessionId])
 
   // Ask decision service whether to insert a prompt in the global anonymous feed.
   useEffect(() => {
@@ -1947,7 +1993,7 @@ export default function Feed() {
     const onPause = () => { if (playingIndexRef.current === index) setPlayingIndex(null) }
     const onEnded = onPause
     const onTimeUpdate = () => {
-      if (!isGlobalBillboard) return
+      if (!feedActivityContext) return
       if (!feedActivitySessionId) return
       if (!publicationId || !Number.isFinite(publicationId) || publicationId <= 0) return
       if (feedActivitySeenCompleteRef.current.has(publicationId)) return
@@ -1958,6 +2004,8 @@ export default function Feed() {
       feedActivitySeenCompleteRef.current.add(publicationId)
       void sendFeedActivityEvent({
         event: 'slide_complete',
+        surface: feedActivityContext.surface,
+        spaceId: feedActivityContext.spaceId,
         sessionId: feedActivitySessionId,
         contentId: publicationId,
       })
@@ -1976,7 +2024,7 @@ export default function Feed() {
         v.removeEventListener('timeupdate', onTimeUpdate)
       } catch {}
     }
-  }, [index, items, isGlobalBillboard, feedActivitySessionId])
+  }, [index, items, feedActivityContext, feedActivitySessionId])
 
   // Track fullscreen changes for the current video's element
   useEffect(() => {

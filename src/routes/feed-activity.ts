@@ -12,6 +12,7 @@ feedActivityRouter.post('/api/feed/activity-events', async (req: any, res: any, 
     const tracked = await feedActivitySvc.recordFeedActivityEvent({
       event: body.event,
       surface: body.surface || 'global_feed',
+      spaceId: body.space_id,
       sessionId: body.session_id,
       contentId: body.content_id,
       watchSeconds: body.watch_seconds,
@@ -35,6 +36,7 @@ feedActivityRouter.post('/api/feed/activity-events', async (req: any, res: any, 
     const span = trace.getSpan(context.active())
     if (span) {
       span.setAttribute('app.surface', tracked.surface)
+      if (body.space_id != null) span.setAttribute('app.space_id', String(body.space_id))
       span.setAttribute('app.operation', opByEvent[tracked.inputEvent] || 'feed.activity.event')
       if (tracked.contentId != null) span.setAttribute('app.content_id', String(tracked.contentId))
       span.setAttribute('app.outcome', outcomeByEvent[tracked.inputEvent] || 'success')
@@ -45,6 +47,7 @@ feedActivityRouter.post('/api/feed/activity-events', async (req: any, res: any, 
         app_surface: tracked.surface,
         app_operation: opByEvent[tracked.inputEvent] || 'feed.activity.event',
         app_outcome: outcomeByEvent[tracked.inputEvent] || 'success',
+        app_space_id: body.space_id == null ? null : Number(body.space_id),
         content_id: tracked.contentId,
         feed_activity_event_type: tracked.eventType,
         feed_activity_deduped: !tracked.inserted,
