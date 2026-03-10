@@ -3,6 +3,7 @@
 ## Status
 - Phase A: completed (canonical contract + prompt event mapping + validation)
 - Phase B: completed (baseline feed session/impression/complete telemetry + rollups + admin query endpoint)
+- Phase C: completed (optional analytics sink adapter + PostHog provider path + sink health counters)
 
 ## Goal
 Build a reliable analytics foundation that supports:

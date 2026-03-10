@@ -200,6 +200,7 @@ function classifyHttpOperation(methodRaw: string, pathname: string): string | nu
     { method: 'GET', re: /^\/api\/admin\/prompt-analytics$/, op: 'prompt.analytics.query' },
     { method: 'GET', re: /^\/api\/admin\/prompt-analytics\.csv$/, op: 'prompt.analytics.query' },
     { method: 'GET', re: /^\/api\/admin\/feed-analytics$/, op: 'feed.activity.query' },
+    { method: 'GET', re: /^\/api\/admin\/analytics-sink\/health$/, op: 'analytics.sink.health' },
 
     // Feed prompt decision (plan_114C)
     { method: 'GET', re: /^\/api\/feed\/global$/, op: 'feed.global.list' },
@@ -232,6 +233,7 @@ function classifySurface(pathname: string, req: any, operation: string | null): 
   if (operation?.startsWith('feed.prompt.')) return 'global_feed'
   if (operation?.startsWith('feed.activity.query')) return 'admin'
   if (operation?.startsWith('feed.activity.')) return 'global_feed'
+  if (operation?.startsWith('analytics.sink.')) return 'admin'
   const refPath = requestRefererPath(req)
   if (refPath && refPath.startsWith('/create-video')) return 'create_video'
   if (refPath && (refPath.startsWith('/assets') || refPath.startsWith('/library') || refPath.startsWith('/uploads'))) {

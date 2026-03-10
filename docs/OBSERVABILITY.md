@@ -48,6 +48,10 @@ High-value operation tags:
 - `mediajobs.attempt.process`
 - `prompt.analytics.ingest`
 - `prompt.analytics.query`
+- `feed.activity.ingest`
+- `feed.activity.query`
+- `analytics.sink.dispatch`
+- `analytics.sink.health`
 
 Surface tag:
 - `app.surface` (`create_video`, `assets`, `unknown`)
@@ -76,6 +80,12 @@ When troubleshooting mismatches:
 - `LOG_REQUEST_STATIC=0` (default) suppresses request logs for static assets and `/help/*` pages.
 - `LOG_REQUEST_PROBES=0` (default) suppresses request logs for probe/scanner paths (`/.env`, `/.git/*`, etc.).
 - `LOG_REQUEST_ROOT=0` (default) suppresses request logs for `GET /`.
+- Analytics sink controls:
+  - `ANALYTICS_SINK_ENABLED=0|1` enables optional secondary sink dispatch.
+  - `ANALYTICS_SINK_PROVIDER=none|posthog` selects sink provider.
+  - `ANALYTICS_SINK_SAMPLE_RATE=0..1` samples events before sink dispatch.
+  - `ANALYTICS_SINK_TIMEOUT_MS` dispatch timeout.
+  - `ANALYTICS_SINK_POSTHOG_HOST` and `ANALYTICS_SINK_POSTHOG_API_KEY` for PostHog mode.
 
 ## SPM Compatibility Lock (Phase A)
 

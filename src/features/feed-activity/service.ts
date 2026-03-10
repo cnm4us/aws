@@ -3,6 +3,7 @@ import { SpanStatusCode, trace } from '@opentelemetry/api'
 import { DomainError } from '../../core/errors'
 import { getLogger } from '../../lib/logger'
 import { buildCanonicalAnalyticsEvent } from '../analytics-events/contract'
+import { dispatchCanonicalAnalyticsEvent } from '../analytics-sink/service'
 import * as repo from './repo'
 import type {
   FeedActivityDayRow,
@@ -205,6 +206,10 @@ export async function recordFeedActivityEvent(input: RecordFeedActivityInput): P
           totalEventsDelta: 1,
           watchSecondsDelta: eventType === 'feed_session_end' ? watchSeconds : 0,
         })
+        void dispatchCanonicalAnalyticsEvent({
+          event: canonical,
+          source: 'feed.activity.ingest',
+        }).catch(() => {})
       }
 
       if (inserted.inserted && Math.random() < 0.02) {

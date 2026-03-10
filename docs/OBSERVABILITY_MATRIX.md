@@ -1,6 +1,6 @@
 # Observability Matrix
 
-Last updated: 2026-03-08
+Last updated: 2026-03-10
 
 This matrix is the canonical lookup for **application-defined observability tags** emitted by this codebase.
 
@@ -30,6 +30,8 @@ Scope notes:
 | `external.operation` | `transcript.create`, `transcript.status.get`, `transcript.vtt.get`, `transcript.turnaround`, `job.create`, `job.get`, `job.turnaround` | enum | Provider operation granularity. |
 | `external.system` | `http`, `aws_sdk` | enum | External transport/system type. |
 | `external.request_id` | non-empty string | string | Upstream request id when available. |
+| `sink_provider` | `none`, `posthog` | enum | Optional analytics sink provider. |
+| `sink_outcome` | `success`, `failure`, `dropped_disabled`, `dropped_sampled`, `dropped_provider`, `dropped_misconfigured`, `dropped_invalid_event` | enum | Dispatch/drop status for optional analytics sink. |
 | `subprocess.name` | `ffmpeg`, `ffprobe` | enum | Local subprocess command family. |
 | `subprocess.exec_mode` | `local`, `remote` | enum | Current code emits `local`; `remote` reserved for future worker offload. |
 | `subprocess.command_label` | non-empty string | string | Optional human label for ffmpeg command group. |
@@ -137,8 +139,13 @@ Scope notes:
 - `feed.prompt.decide`
 - `feed.prompt.fetch`
 - `feed.prompt.event`
+- `feed.activity.event`
+- `feed.activity.ingest`
+- `feed.activity.query`
 - `prompt.analytics.ingest`
 - `prompt.analytics.query`
+- `analytics.sink.dispatch`
+- `analytics.sink.health`
 
 ### Media job operations
 - `create_video.export.process`

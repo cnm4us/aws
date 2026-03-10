@@ -3,6 +3,7 @@ import { SpanStatusCode, trace } from '@opentelemetry/api'
 import { DomainError } from '../../core/errors'
 import { getLogger } from '../../lib/logger'
 import { buildCanonicalAnalyticsEvent } from '../analytics-events/contract'
+import { dispatchCanonicalAnalyticsEvent } from '../analytics-sink/service'
 import * as promptRepo from '../prompts/repo'
 import type {
   PromptAnalyticsCtaKind,
@@ -284,6 +285,13 @@ export async function recordPromptEvent(input: RecordPromptEventInput): Promise<
           eventType,
           totalDelta: 1,
         })
+      }
+
+      if (inserted.inserted) {
+        void dispatchCanonicalAnalyticsEvent({
+          event: canonical,
+          source: 'prompt.analytics.ingest',
+        }).catch(() => {})
       }
 
       if (inserted.inserted && Math.random() < 0.02) {

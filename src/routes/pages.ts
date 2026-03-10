@@ -20,6 +20,7 @@ import * as lowerThirdsSvc from '../features/lower-thirds/service'
 import * as promptsSvc from '../features/prompts/service'
 import * as promptRulesSvc from '../features/prompt-rules/service'
 import * as promptAnalyticsSvc from '../features/prompt-analytics/service'
+import { getAnalyticsSinkHealth } from '../features/analytics-sink/service'
 import { GetObjectCommand, DeleteObjectsCommand, ListObjectsV2Command } from '@aws-sdk/client-s3'
 import { s3 } from '../services/s3'
 import { pipeline } from 'stream/promises'
@@ -648,6 +649,7 @@ type AdminNavKey =
   | 'prompts'
   | 'prompt_rules'
   | 'prompt_analytics'
+  | 'analytics_sink'
 	| 'settings'
 	| 'dev';
 
@@ -670,6 +672,7 @@ const ADMIN_NAV_ITEMS: Array<{ key: AdminNavKey; label: string; href: string }> 
   { key: 'prompts', label: 'Prompts', href: '/admin/prompts' },
   { key: 'prompt_rules', label: 'Prompt Rules', href: '/admin/prompt-rules' },
   { key: 'prompt_analytics', label: 'Prompt Analytics', href: '/admin/prompt-analytics' },
+  { key: 'analytics_sink', label: 'Analytics Sink', href: '/admin/analytics-sink' },
   { key: 'settings', label: 'Settings', href: '/admin/settings' },
   { key: 'dev', label: 'Dev', href: '/admin/dev' },
 ];
@@ -2987,6 +2990,7 @@ pagesRouter.get('/admin', async (_req: any, res: any) => {
     { title: 'Prompts', href: '/admin/prompts', desc: 'In-feed registration/login prompt catalog and lifecycle controls' },
     { title: 'Prompt Rules', href: '/admin/prompt-rules', desc: 'Eligibility thresholds and pacing caps for prompt orchestration' },
     { title: 'Prompt Analytics', href: '/admin/prompt-analytics', desc: 'Funnel metrics, conversion rates, and overexposure detection for prompts' },
+    { title: 'Analytics Sink', href: '/admin/analytics-sink', desc: 'Optional external sink health and counters (secondary analytics path)' },
     { title: 'Settings', href: '/admin/settings', desc: 'Coming soon' },
     { title: 'Dev', href: '/admin/dev', desc: 'Dev stats and guarded tools' },
   ]
@@ -3649,6 +3653,53 @@ pagesRouter.get('/admin/prompt-analytics', async (req: any, res: any) => {
   } catch (err) {
     logError(req.log || pagesLogger, err, 'admin prompt analytics failed', { path: req.path })
     return res.status(500).send('Failed to load prompt analytics')
+  }
+})
+
+pagesRouter.get('/admin/analytics-sink', async (req: any, res: any) => {
+  try {
+    const health = getAnalyticsSinkHealth()
+    const cfg = health.config
+    const stats = health.stats
+
+    let body = '<h1>Analytics Sink</h1>'
+    body += '<div class="toolbar"><div><span class="pill">Optional External Sink</span></div><div></div></div>'
+    body += '<div class="section">'
+    body += '<div class="section-title">Configuration</div>'
+    body += '<table><tbody>'
+    body += `<tr><th>Enabled</th><td>${cfg.enabled ? 'Yes' : 'No'}</td></tr>`
+    body += `<tr><th>Provider</th><td>${escapeHtml(String(cfg.provider))}</td></tr>`
+    body += `<tr><th>Sample Rate</th><td>${escapeHtml(String(cfg.sampleRate))}</td></tr>`
+    body += `<tr><th>Timeout (ms)</th><td>${escapeHtml(String(cfg.timeoutMs))}</td></tr>`
+    body += `<tr><th>PostHog Host</th><td>${escapeHtml(String(cfg.posthogHost))}</td></tr>`
+    body += `<tr><th>PostHog API Key</th><td>${cfg.posthogConfigured ? 'Configured' : 'Not configured'}</td></tr>`
+    body += '</tbody></table>'
+    body += '</div>'
+
+    body += '<div class="section">'
+    body += '<div class="section-title">Dispatch Stats (process lifetime)</div>'
+    body += '<table><tbody>'
+    body += `<tr><th>Attempted</th><td>${escapeHtml(String(stats.attempted))}</td></tr>`
+    body += `<tr><th>Success</th><td>${escapeHtml(String(stats.success))}</td></tr>`
+    body += `<tr><th>Failure</th><td>${escapeHtml(String(stats.failure))}</td></tr>`
+    body += `<tr><th>Dropped: disabled</th><td>${escapeHtml(String(stats.droppedDisabled))}</td></tr>`
+    body += `<tr><th>Dropped: sampled</th><td>${escapeHtml(String(stats.droppedSampled))}</td></tr>`
+    body += `<tr><th>Dropped: provider</th><td>${escapeHtml(String(stats.droppedProvider))}</td></tr>`
+    body += `<tr><th>Dropped: misconfigured</th><td>${escapeHtml(String(stats.droppedMisconfigured))}</td></tr>`
+    body += `<tr><th>Dropped: invalid event</th><td>${escapeHtml(String(stats.droppedInvalidEvent))}</td></tr>`
+    body += '</tbody></table>'
+    body += `<div style="margin-top:10px; display:flex; gap:10px; flex-wrap:wrap">`
+    body += `<a class="btn" href="/admin/analytics-sink">Refresh</a>`
+    body += `<a class="btn" href="/api/admin/analytics-sink/health" target="_blank" rel="noopener">Open JSON</a>`
+    body += `</div>`
+    body += '</div>'
+
+    const doc = renderAdminPage({ title: 'Analytics Sink', bodyHtml: body, active: 'analytics_sink' })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    return res.send(doc)
+  } catch (err) {
+    logError(req.log || pagesLogger, err, 'admin analytics sink page failed', { path: req.path })
+    return res.status(500).send('Failed to load analytics sink health')
   }
 })
 
