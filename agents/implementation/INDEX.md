@@ -20,9 +20,12 @@ This file is a lightweight index for ongoing work and “what’s next”.
 - `agents/implementation/plan_112.md` — External provider telemetry (AssemblyAI + MediaConvert)
 - `agents/implementation/plan_113.md` — Create Video export progress + consistent post-export UX
 - `agents/implementation/plan_114.md` — Prompt orchestration program (global-feed registration prompts)
+- `agents/implementation/plan_115.md` — Hybrid analytics foundation (internal source of truth + optional external sink)
 
 ## In Progress / Next Up
 - Roadmap: `agents/roadmaps/roadmap_create_video.md`
   - Next: Timeline-first library (`plan_68.md`)
 - Program: `agents/implementation/plan_114.md`
   - Next: Prompt content registry (`plan_114A.md`) + decision service (`plan_114C.md`)
+- Program: `agents/implementation/plan_115.md`
+  - Next: Optional sink adapter (PostHog-first, Phase C)

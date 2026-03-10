@@ -832,6 +832,106 @@ export async function ensureSchema(db: DB) {
                ON DUPLICATE KEY UPDATE total_events = VALUES(total_events), updated_at = CURRENT_TIMESTAMP`
             )
           } catch {}
+
+          // --- Feed baseline activity analytics (plan_115 Phase B) ---
+          await db.query(`
+            CREATE TABLE IF NOT EXISTS feed_activity_events (
+              id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+              event_type ENUM(
+                'feed_session_start',
+                'feed_slide_impression',
+                'feed_slide_complete',
+                'feed_session_end'
+              ) NOT NULL,
+              surface ENUM('global_feed') NOT NULL DEFAULT 'global_feed',
+              viewer_state ENUM('anonymous','authenticated') NOT NULL DEFAULT 'anonymous',
+              session_id VARCHAR(120) NOT NULL,
+              user_id BIGINT UNSIGNED NULL,
+              content_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
+              watch_seconds INT UNSIGNED NOT NULL DEFAULT 0,
+              occurred_at DATETIME NOT NULL,
+              dedupe_key CHAR(64) NOT NULL,
+              created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              UNIQUE KEY uniq_feed_activity_events_dedupe_key (dedupe_key),
+              KEY idx_feed_activity_events_occurred (occurred_at, id),
+              KEY idx_feed_activity_events_surface_occurred (surface, occurred_at, id),
+              KEY idx_feed_activity_events_event_occurred (event_type, occurred_at, id),
+              KEY idx_feed_activity_events_session_event (session_id, event_type, occurred_at, id),
+              KEY idx_feed_activity_events_user_event (user_id, event_type, occurred_at, id),
+              KEY idx_feed_activity_events_content_event (content_id, event_type, occurred_at, id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+          `)
+          await db.query(`ALTER TABLE feed_activity_events ADD COLUMN IF NOT EXISTS event_type ENUM('feed_session_start','feed_slide_impression','feed_slide_complete','feed_session_end') NOT NULL`)
+          await db.query(`ALTER TABLE feed_activity_events ADD COLUMN IF NOT EXISTS surface ENUM('global_feed') NOT NULL DEFAULT 'global_feed'`)
+          await db.query(`ALTER TABLE feed_activity_events ADD COLUMN IF NOT EXISTS viewer_state ENUM('anonymous','authenticated') NOT NULL DEFAULT 'anonymous'`)
+          await db.query(`ALTER TABLE feed_activity_events ADD COLUMN IF NOT EXISTS session_id VARCHAR(120) NOT NULL DEFAULT ''`)
+          await db.query(`ALTER TABLE feed_activity_events ADD COLUMN IF NOT EXISTS user_id BIGINT UNSIGNED NULL`)
+          await db.query(`ALTER TABLE feed_activity_events ADD COLUMN IF NOT EXISTS content_id BIGINT UNSIGNED NOT NULL DEFAULT 0`)
+          await db.query(`ALTER TABLE feed_activity_events ADD COLUMN IF NOT EXISTS watch_seconds INT UNSIGNED NOT NULL DEFAULT 0`)
+          await db.query(`ALTER TABLE feed_activity_events ADD COLUMN IF NOT EXISTS occurred_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP`)
+          await db.query(`ALTER TABLE feed_activity_events ADD COLUMN IF NOT EXISTS dedupe_key CHAR(64) NULL`)
+          try { await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_feed_activity_events_dedupe_key ON feed_activity_events (dedupe_key)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_activity_events_occurred ON feed_activity_events (occurred_at, id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_activity_events_surface_occurred ON feed_activity_events (surface, occurred_at, id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_activity_events_event_occurred ON feed_activity_events (event_type, occurred_at, id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_activity_events_session_event ON feed_activity_events (session_id, event_type, occurred_at, id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_activity_events_user_event ON feed_activity_events (user_id, event_type, occurred_at, id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_activity_events_content_event ON feed_activity_events (content_id, event_type, occurred_at, id)`); } catch {}
+          try { await db.query(`UPDATE feed_activity_events SET content_id = 0 WHERE content_id IS NULL`); } catch {}
+          try { await db.query(`UPDATE feed_activity_events SET dedupe_key = LPAD(HEX(id), 64, '0') WHERE dedupe_key IS NULL OR dedupe_key = ''`); } catch {}
+
+          await db.query(`
+            CREATE TABLE IF NOT EXISTS feed_activity_daily_stats (
+              date_utc DATE NOT NULL,
+              surface ENUM('global_feed') NOT NULL DEFAULT 'global_feed',
+              viewer_state ENUM('anonymous','authenticated') NOT NULL DEFAULT 'anonymous',
+              event_type ENUM(
+                'feed_session_start',
+                'feed_slide_impression',
+                'feed_slide_complete',
+                'feed_session_end'
+              ) NOT NULL,
+              content_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
+              total_events BIGINT UNSIGNED NOT NULL DEFAULT 0,
+              total_watch_seconds BIGINT UNSIGNED NOT NULL DEFAULT 0,
+              created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              PRIMARY KEY (date_utc, surface, viewer_state, event_type, content_id),
+              KEY idx_feed_activity_daily_surface_date (surface, date_utc, event_type),
+              KEY idx_feed_activity_daily_viewer_date (viewer_state, date_utc, event_type),
+              KEY idx_feed_activity_daily_content_date (content_id, date_utc, event_type)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+          `)
+          await db.query(`ALTER TABLE feed_activity_daily_stats ADD COLUMN IF NOT EXISTS date_utc DATE NOT NULL`)
+          await db.query(`ALTER TABLE feed_activity_daily_stats ADD COLUMN IF NOT EXISTS surface ENUM('global_feed') NOT NULL DEFAULT 'global_feed'`)
+          await db.query(`ALTER TABLE feed_activity_daily_stats ADD COLUMN IF NOT EXISTS viewer_state ENUM('anonymous','authenticated') NOT NULL DEFAULT 'anonymous'`)
+          await db.query(`ALTER TABLE feed_activity_daily_stats ADD COLUMN IF NOT EXISTS event_type ENUM('feed_session_start','feed_slide_impression','feed_slide_complete','feed_session_end') NOT NULL`)
+          await db.query(`ALTER TABLE feed_activity_daily_stats ADD COLUMN IF NOT EXISTS content_id BIGINT UNSIGNED NOT NULL DEFAULT 0`)
+          await db.query(`ALTER TABLE feed_activity_daily_stats ADD COLUMN IF NOT EXISTS total_events BIGINT UNSIGNED NOT NULL DEFAULT 0`)
+          await db.query(`ALTER TABLE feed_activity_daily_stats ADD COLUMN IF NOT EXISTS total_watch_seconds BIGINT UNSIGNED NOT NULL DEFAULT 0`)
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_activity_daily_surface_date ON feed_activity_daily_stats (surface, date_utc, event_type)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_activity_daily_viewer_date ON feed_activity_daily_stats (viewer_state, date_utc, event_type)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_activity_daily_content_date ON feed_activity_daily_stats (content_id, date_utc, event_type)`); } catch {}
+          try {
+            await db.query(
+              `INSERT INTO feed_activity_daily_stats
+                (date_utc, surface, viewer_state, event_type, content_id, total_events, total_watch_seconds)
+               SELECT
+                 DATE(occurred_at) AS date_utc,
+                 surface,
+                 viewer_state,
+                 event_type,
+                 COALESCE(content_id, 0) AS content_id,
+                 COUNT(*) AS total_events,
+                 COALESCE(SUM(CASE WHEN event_type = 'feed_session_end' THEN watch_seconds ELSE 0 END), 0) AS total_watch_seconds
+               FROM feed_activity_events
+               GROUP BY DATE(occurred_at), surface, viewer_state, event_type, COALESCE(content_id, 0)
+               ON DUPLICATE KEY UPDATE
+                 total_events = VALUES(total_events),
+                 total_watch_seconds = VALUES(total_watch_seconds),
+                 updated_at = CURRENT_TIMESTAMP`
+            )
+          } catch {}
           try {
             const curatedOwnerUserId = 1
             const curatedPresetIds = [3, 4, 5, 6, 7, 8, 9, 10, 11]

@@ -22,6 +22,8 @@ import { adminPromptsRouter } from './routes/admin-prompts';
 import { adminPromptRulesRouter } from './routes/admin-prompt-rules';
 import { adminPromptAnalyticsRouter } from './routes/admin-prompt-analytics';
 import { feedPromptsRouter } from './routes/feed-prompts';
+import { feedActivityRouter } from './routes/feed-activity';
+import { adminFeedAnalyticsRouter } from './routes/admin-feed-analytics';
 import { productionDraftsRouter } from './routes/production-drafts';
 import { createVideoRouter } from './routes/create-video';
 import { libraryRouter } from './routes/library';
@@ -87,7 +89,9 @@ export function buildServer(): express.Application {
   app.use(adminPromptsRouter);
   app.use(adminPromptRulesRouter);
   app.use(adminPromptAnalyticsRouter);
+  app.use(adminFeedAnalyticsRouter);
   app.use(feedPromptsRouter);
+  app.use(feedActivityRouter);
   app.use(productionDraftsRouter);
   app.use(createVideoRouter);
   app.use(libraryRouter);

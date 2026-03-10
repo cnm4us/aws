@@ -12,6 +12,8 @@ export function csrfProtect(req: Request, res: Response, next: NextFunction) {
   if (req.path === '/api/feed/prompt-decision') return next();
   // Prompt telemetry endpoint accepts both anonymous and authenticated events.
   if (req.path === '/api/feed/prompt-events') return next();
+  // Feed activity telemetry endpoint accepts both anonymous and authenticated events.
+  if (req.path === '/api/feed/activity-events') return next();
   if (!req.session || !req.user) return next();
   if (SAFE_METHODS.has(req.method.toUpperCase())) return next();
 

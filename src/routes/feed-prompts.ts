@@ -141,27 +141,18 @@ feedPromptsRouter.get('/api/feed/prompts/:id', async (req: any, res: any, next: 
 feedPromptsRouter.post('/api/feed/prompt-events', async (req: any, res: any, next: any) => {
   try {
     const body = (req.body || {}) as any
-    const event = String(body.event || '').trim().toLowerCase()
-    const promptId = Number(body.prompt_id)
     const promptKind = body.prompt_kind ? String(body.prompt_kind) : null
     const promptCategory = body.prompt_category ? String(body.prompt_category) : null
     const ctaKind = body.cta_kind ? String(body.cta_kind) : null
-    const surface = String(body.surface || 'global_feed').trim().toLowerCase() || 'global_feed'
     const sessionId = body.session_id ? String(body.session_id).trim() : null
 
-    if (!['impression', 'click', 'dismiss', 'auth_start', 'auth_complete'].includes(event)) {
-      return res.status(400).json({ error: 'bad_event' })
-    }
-    if (!Number.isFinite(promptId) || promptId <= 0) return res.status(400).json({ error: 'bad_prompt_id' })
-    if (surface !== 'global_feed') return res.status(400).json({ error: 'bad_surface' })
-
     const tracked = await promptAnalyticsSvc.recordPromptEvent({
-      event: event as any,
-      promptId,
+      event: body.event,
+      promptId: body.prompt_id,
       promptKind,
       promptCategory,
       ctaKind,
-      surface: 'global_feed',
+      surface: body.surface || 'global_feed',
       sessionId,
       viewerState: req.user?.id ? 'authenticated' : 'anonymous',
       userId: req.user?.id ? Number(req.user.id) : null,
@@ -184,20 +175,20 @@ feedPromptsRouter.post('/api/feed/prompt-events', async (req: any, res: any, nex
 
     const span = trace.getSpan(context.active())
     if (span) {
-      span.setAttribute('app.surface', surface)
-      span.setAttribute('app.operation', opByEvent[event] || 'feed.prompt.event')
-      span.setAttribute('app.prompt_id', String(promptId))
+      span.setAttribute('app.surface', tracked.surface)
+      span.setAttribute('app.operation', opByEvent[tracked.inputEvent] || 'feed.prompt.event')
+      span.setAttribute('app.prompt_id', String(tracked.promptId))
       if (promptKind) span.setAttribute('app.prompt_kind', promptKind)
-      span.setAttribute('app.outcome', outcomeByEvent[event] || 'shown')
+      span.setAttribute('app.outcome', outcomeByEvent[tracked.inputEvent] || 'shown')
       if (sessionId) span.setAttribute('app.prompt_session_id', sessionId)
     }
 
     ;(req.log || feedPromptsLogger).info(
       {
-        app_surface: surface,
-        app_operation: opByEvent[event] || 'feed.prompt.event',
-        app_outcome: outcomeByEvent[event] || 'shown',
-        prompt_id: promptId,
+        app_surface: tracked.surface,
+        app_operation: opByEvent[tracked.inputEvent] || 'feed.prompt.event',
+        app_outcome: outcomeByEvent[tracked.inputEvent] || 'shown',
+        prompt_id: tracked.promptId,
         prompt_kind: promptKind,
         prompt_category: promptCategory,
         cta_kind: ctaKind,

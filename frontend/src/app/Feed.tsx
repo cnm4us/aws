@@ -299,6 +299,46 @@ async function sendPromptEvent(input: {
   } catch {}
 }
 
+function ensureFeedActivitySessionId(): string {
+  const key = 'feed:activity:session:v1'
+  try {
+    const existing = window.sessionStorage.getItem(key)
+    if (existing && /^[a-zA-Z0-9:_-]{8,120}$/.test(existing)) return existing
+    const random = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+      ? crypto.randomUUID()
+      : `${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`
+    const next = `fas_${String(random).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 96)}`
+    window.sessionStorage.setItem(key, next)
+    return next
+  } catch {
+    const fallback = `${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`
+    return `fas_${fallback.slice(0, 96)}`
+  }
+}
+
+async function sendFeedActivityEvent(input: {
+  event: 'session_start' | 'slide_impression' | 'slide_complete' | 'session_end'
+  sessionId: string
+  contentId?: number | null
+  watchSeconds?: number
+}) {
+  try {
+    await fetch('/api/feed/activity-events', {
+      method: 'POST',
+      credentials: 'same-origin',
+      keepalive: true,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        event: input.event,
+        surface: 'global_feed',
+        session_id: input.sessionId,
+        content_id: input.contentId == null ? null : input.contentId,
+        watch_seconds: input.watchSeconds == null ? null : input.watchSeconds,
+      }),
+    })
+  } catch {}
+}
+
 function applyMineFilter(items: UploadItem[], mineOnly: boolean, myUserId: number | null): UploadItem[] {
   if (!mineOnly) return items
   if (myUserId == null) return []
@@ -436,8 +476,15 @@ export default function Feed() {
   const indexReasonRef = useRef<string>('initial')
   const [commentsSortOpen, setCommentsSortOpen] = useState(false)
   const [promptSessionId, setPromptSessionId] = useState<string | null>(null)
+  const [feedActivitySessionId, setFeedActivitySessionId] = useState<string | null>(null)
+  const feedActivitySessionIdRef = useRef<string | null>(null)
   const promptDecisionBusyRef = useRef<boolean>(false)
   const promptSeenImpressionRef = useRef<Set<number>>(new Set())
+  const feedActivityStartedRef = useRef<boolean>(false)
+  const feedActivityEndedRef = useRef<boolean>(false)
+  const feedActivitySeenImpressionRef = useRef<Set<number>>(new Set())
+  const feedActivitySeenCompleteRef = useRef<Set<number>>(new Set())
+  const feedActivityWatchSecondsRef = useRef<number>(0)
   const promptCountersRef = useRef<{
     slidesViewed: number
     watchSeconds: number
@@ -1654,12 +1701,82 @@ export default function Feed() {
     window.location.href = targetHref
   }, [promptSessionId])
 
+  const closeFeedActivitySession = useCallback((reason: 'pagehide' | 'beforeunload' | 'unmount' | 'mode_change' | 'visibility_hidden') => {
+    if (!feedActivityStartedRef.current) return
+    if (feedActivityEndedRef.current) return
+    const sid = feedActivitySessionIdRef.current
+    if (!sid) return
+    feedActivityEndedRef.current = true
+    void sendFeedActivityEvent({
+      event: 'session_end',
+      sessionId: sid,
+      watchSeconds: Math.max(1, Math.round(feedActivityWatchSecondsRef.current || 0)),
+    })
+    feedActivityStartedRef.current = false
+    try { debug.log('feed', 'activity session end', { reason, sid }) } catch {}
+  }, [])
+
+  const startFeedActivitySession = useCallback(() => {
+    if (!isGlobalBillboard) return
+    if (!meLoaded) return
+    if (feedActivityStartedRef.current && !feedActivityEndedRef.current) return
+
+    const sid = ensureFeedActivitySessionId()
+    feedActivitySessionIdRef.current = sid
+    setFeedActivitySessionId((prev) => (prev === sid ? prev : sid))
+    feedActivityStartedRef.current = true
+    feedActivityEndedRef.current = false
+    feedActivityWatchSecondsRef.current = 0
+    feedActivitySeenImpressionRef.current = new Set()
+    feedActivitySeenCompleteRef.current = new Set()
+    void sendFeedActivityEvent({ event: 'session_start', sessionId: sid })
+    try { debug.log('feed', 'activity session start', { sid }) } catch {}
+  }, [isGlobalBillboard, meLoaded])
+
+  // Feed baseline activity: session lifecycle (global feed only).
+  useEffect(() => {
+    if (!isGlobalBillboard) {
+      closeFeedActivitySession('mode_change')
+      return
+    }
+    if (!meLoaded) return
+
+    startFeedActivitySession()
+
+    const onPageHide = () => closeFeedActivitySession('pagehide')
+    const onBeforeUnload = () => closeFeedActivitySession('beforeunload')
+    const onVisibilityChange = () => {
+      try {
+        if (document.visibilityState === 'hidden') {
+          closeFeedActivitySession('visibility_hidden')
+          return
+        }
+        if (document.visibilityState === 'visible') {
+          startFeedActivitySession()
+        }
+      } catch {}
+    }
+    try { window.addEventListener('pagehide', onPageHide) } catch {}
+    try { window.addEventListener('beforeunload', onBeforeUnload) } catch {}
+    try { document.addEventListener('visibilitychange', onVisibilityChange) } catch {}
+
+    return () => {
+      try { window.removeEventListener('pagehide', onPageHide) } catch {}
+      try { window.removeEventListener('beforeunload', onBeforeUnload) } catch {}
+      try { document.removeEventListener('visibilitychange', onVisibilityChange) } catch {}
+      closeFeedActivitySession('unmount')
+    }
+  }, [isGlobalBillboard, meLoaded, closeFeedActivitySession, startFeedActivitySession])
+
   // Prompt counters: increment watch-seconds while on the global feed.
   useEffect(() => {
     if (!isGlobalBillboard) return
     const timer = window.setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
       promptCountersRef.current.watchSeconds += 1
+      if (feedActivityStartedRef.current && !feedActivityEndedRef.current) {
+        feedActivityWatchSecondsRef.current += 1
+      }
     }, 1000)
     return () => window.clearInterval(timer)
   }, [isGlobalBillboard])
@@ -1696,6 +1813,23 @@ export default function Feed() {
       sessionId: promptSessionId,
     })
   }, [index, items, promptSessionId])
+
+  // Feed baseline activity: emit slide impression once per session per publication.
+  useEffect(() => {
+    if (!isGlobalBillboard) return
+    if (!feedActivitySessionId) return
+    const current = items[index]
+    if (!current || isPromptItem(current)) return
+    const publicationId = current.publicationId != null ? Number(current.publicationId) : null
+    if (!publicationId || !Number.isFinite(publicationId) || publicationId <= 0) return
+    if (feedActivitySeenImpressionRef.current.has(publicationId)) return
+    feedActivitySeenImpressionRef.current.add(publicationId)
+    void sendFeedActivityEvent({
+      event: 'slide_impression',
+      sessionId: feedActivitySessionId,
+      contentId: publicationId,
+    })
+  }, [isGlobalBillboard, index, items, feedActivitySessionId])
 
   // Ask decision service whether to insert a prompt in the global anonymous feed.
   useEffect(() => {
@@ -1801,6 +1935,8 @@ export default function Feed() {
   useEffect(() => {
     const v = getVideoEl(index)
     if (!v) return
+    const current = items[index]
+    const publicationId = current?.publicationId != null ? Number(current.publicationId) : null
     const onPlaying = () => {
       playingIndexRef.current = index
       setPlayingIndex(index)
@@ -1810,19 +1946,37 @@ export default function Feed() {
     }
     const onPause = () => { if (playingIndexRef.current === index) setPlayingIndex(null) }
     const onEnded = onPause
+    const onTimeUpdate = () => {
+      if (!isGlobalBillboard) return
+      if (!feedActivitySessionId) return
+      if (!publicationId || !Number.isFinite(publicationId) || publicationId <= 0) return
+      if (feedActivitySeenCompleteRef.current.has(publicationId)) return
+      const dur = Number(v.duration || 0)
+      const cur = Number(v.currentTime || 0)
+      if (!Number.isFinite(dur) || dur <= 0 || !Number.isFinite(cur) || cur < 0) return
+      if (cur / dur < 0.95) return
+      feedActivitySeenCompleteRef.current.add(publicationId)
+      void sendFeedActivityEvent({
+        event: 'slide_complete',
+        sessionId: feedActivitySessionId,
+        contentId: publicationId,
+      })
+    }
     try {
       v.addEventListener('playing', onPlaying)
       v.addEventListener('pause', onPause)
       v.addEventListener('ended', onEnded)
+      v.addEventListener('timeupdate', onTimeUpdate)
     } catch {}
     return () => {
       try {
         v.removeEventListener('playing', onPlaying)
         v.removeEventListener('pause', onPause)
         v.removeEventListener('ended', onEnded)
+        v.removeEventListener('timeupdate', onTimeUpdate)
       } catch {}
     }
-  }, [index, items])
+  }, [index, items, isGlobalBillboard, feedActivitySessionId])
 
   // Track fullscreen changes for the current video's element
   useEffect(() => {

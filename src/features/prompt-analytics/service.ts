@@ -2,6 +2,7 @@ import crypto from 'crypto'
 import { SpanStatusCode, trace } from '@opentelemetry/api'
 import { DomainError } from '../../core/errors'
 import { getLogger } from '../../lib/logger'
+import { buildCanonicalAnalyticsEvent } from '../analytics-events/contract'
 import * as promptRepo from '../prompts/repo'
 import type {
   PromptAnalyticsCtaKind,
@@ -91,14 +92,14 @@ function normalizePromptKind(raw: any): PromptAnalyticsPromptKind {
 function normalizeEvent(raw: any): PromptAnalyticsInputEvent {
   const v = String(raw || '').trim().toLowerCase()
   if (v === 'impression' || v === 'click' || v === 'dismiss' || v === 'auth_start' || v === 'auth_complete') return v
-  throw new DomainError('bad_event', 'bad_event', 400)
+  throw new DomainError('invalid_prompt_event', 'invalid_prompt_event', 400)
 }
 
 function normalizeCtaKind(raw: any): PromptAnalyticsCtaKind {
   if (raw == null || raw === '') return null
   const v = String(raw).trim().toLowerCase()
   if (v === 'primary' || v === 'secondary') return v
-  throw new DomainError('bad_cta_kind', 'bad_cta_kind', 400)
+  throw new DomainError('invalid_prompt_cta_kind', 'invalid_prompt_cta_kind', 400)
 }
 
 function mapToEventType(event: PromptAnalyticsInputEvent, ctaKind: PromptAnalyticsCtaKind) {
@@ -164,8 +165,8 @@ type RecordPromptEventInput = {
   surface?: PromptAnalyticsSurface | string | null
   viewerState?: PromptAnalyticsViewerState | string | null
   sessionId?: string | null
-  userId?: number | null
-  promptId: number
+  userId?: number | string | null
+  promptId: number | string | null | undefined
   promptKind?: PromptAnalyticsPromptKind | string | null
   promptCategory?: string | null
   ctaKind?: PromptAnalyticsCtaKind | string | null
@@ -175,7 +176,10 @@ type RecordPromptEventInput = {
 export async function recordPromptEvent(input: RecordPromptEventInput): Promise<{
   inserted: boolean
   countedInRollup: boolean
+  inputEvent: PromptAnalyticsInputEvent
   eventType: string
+  surface: PromptAnalyticsSurface
+  promptId: number
   attributed: boolean
 }> {
   return tracer.startActiveSpan('prompt.analytics.ingest', { attributes: { 'app.operation': 'prompt.analytics.ingest' } }, async (span) => {
@@ -184,7 +188,7 @@ export async function recordPromptEvent(input: RecordPromptEventInput): Promise<
       const surface = input.surface == null || input.surface === '' ? 'global_feed' : normalizeSurface(input.surface)
       if (!surface) throw new DomainError('invalid_surface', 'invalid_surface', 400)
       const promptId = normalizePromptId(input.promptId)
-      if (promptId == null) throw new DomainError('bad_prompt_id', 'bad_prompt_id', 400)
+      if (promptId == null) throw new DomainError('invalid_prompt_id', 'invalid_prompt_id', 400)
 
       const viewerState = input.viewerState == null || input.viewerState === ''
         ? (input.userId != null && Number(input.userId) > 0 ? 'authenticated' : 'anonymous')
@@ -209,15 +213,32 @@ export async function recordPromptEvent(input: RecordPromptEventInput): Promise<
       }
 
       const nowDate = input.occurredAt instanceof Date && Number.isFinite(input.occurredAt.getTime()) ? input.occurredAt : new Date()
+      const canonical = buildCanonicalAnalyticsEvent({
+        eventName: eventType,
+        occurredAt: nowDate,
+        surface,
+        viewerState,
+        sessionId,
+        userId,
+        promptId,
+        meta: {
+          input_event: event,
+          ...(promptKind ? { prompt_kind: promptKind } : {}),
+          ...(promptCategory ? { prompt_category: promptCategory } : {}),
+          ...(ctaKind ? { cta_kind: ctaKind } : {}),
+          source_route: 'feed_prompt_events',
+        },
+      })
+
       const nowMs = nowDate.getTime()
-      const occurredAt = toUtcDateTimeString(nowDate)
-      const dayUtc = toUtcDateString(nowDate)
+      const occurredAt = toUtcDateTimeString(canonical.occurredAt)
+      const dayUtc = toUtcDateString(canonical.occurredAt)
       const bucket = dedupeBucket(nowMs)
-      const identity = dedupeIdentity({ sessionId, userId })
+      const identity = dedupeIdentity({ sessionId: canonical.sessionId, userId: canonical.userId })
       const key = dedupeKey({
         eventType,
-        surface,
-        promptId,
+        surface: canonical.surface,
+        promptId: canonical.promptId || promptId,
         ctaKind,
         identity,
         bucketStartMs: bucket.bucketStartMs,
@@ -227,9 +248,9 @@ export async function recordPromptEvent(input: RecordPromptEventInput): Promise<
       if (eventType === 'auth_complete_from_prompt') {
         const sinceMs = nowMs - AUTH_ATTRIBUTION_WINDOW_HOURS * 60 * 60 * 1000
         const hasStart = await repo.hasRecentAuthStart({
-          sessionId,
-          userId,
-          promptId,
+          sessionId: canonical.sessionId,
+          userId: canonical.userId,
+          promptId: canonical.promptId || promptId,
           sinceDateTimeUtc: toUtcDateTimeString(new Date(sinceMs)),
         })
         attributed = hasStart
@@ -237,11 +258,11 @@ export async function recordPromptEvent(input: RecordPromptEventInput): Promise<
 
       const inserted = await repo.insertEvent({
         eventType,
-        surface,
-        viewerState,
-        sessionId,
-        userId,
-        promptId,
+        surface: canonical.surface,
+        viewerState: canonical.viewerState,
+        sessionId: canonical.sessionId,
+        userId: canonical.userId,
+        promptId: canonical.promptId || promptId,
         promptKind,
         promptCategory,
         ctaKind,
@@ -255,11 +276,11 @@ export async function recordPromptEvent(input: RecordPromptEventInput): Promise<
       if (inserted.inserted && countInRollup) {
         await repo.upsertDailyCount({
           dateUtc: dayUtc,
-          surface,
-          promptId,
+          surface: canonical.surface,
+          promptId: canonical.promptId || promptId,
           promptKind,
           promptCategory,
-          viewerState,
+          viewerState: canonical.viewerState,
           eventType,
           totalDelta: 1,
         })
@@ -270,11 +291,12 @@ export async function recordPromptEvent(input: RecordPromptEventInput): Promise<
       }
 
       span.setAttributes({
-        'app.surface': surface,
-        'app.prompt_id': String(promptId),
+        'app.surface': canonical.surface,
+        'app.prompt_id': String(canonical.promptId || promptId),
         ...(promptKind ? { 'app.prompt_kind': promptKind } : {}),
         ...(promptCategory ? { 'app.prompt_category': promptCategory } : {}),
         'app.outcome': inserted.inserted ? 'success' : 'redirect',
+        'app.event_name': canonical.eventName,
         'prompt.analytics.event_type': eventType,
         'prompt.analytics.deduped': inserted.inserted ? false : true,
         'prompt.analytics.attributed': attributed,
@@ -284,16 +306,17 @@ export async function recordPromptEvent(input: RecordPromptEventInput): Promise<
       analyticsLogger.info(
         {
           app_operation: 'prompt.analytics.ingest',
-          app_surface: surface,
-          app_prompt_id: promptId,
+          app_surface: canonical.surface,
+          app_prompt_id: canonical.promptId || promptId,
           app_prompt_kind: promptKind,
           app_prompt_category: promptCategory,
+          app_event_name: canonical.eventName,
           prompt_event_type: eventType,
           prompt_event_deduped: !inserted.inserted,
           prompt_event_attributed: attributed,
-          viewer_state: viewerState,
-          user_id: userId,
-          session_id: sessionId,
+          viewer_state: canonical.viewerState,
+          user_id: canonical.userId,
+          session_id: canonical.sessionId,
         },
         'prompt.analytics.ingest'
       )
@@ -301,7 +324,10 @@ export async function recordPromptEvent(input: RecordPromptEventInput): Promise<
       return {
         inserted: inserted.inserted,
         countedInRollup: Boolean(inserted.inserted && countInRollup),
+        inputEvent: event,
         eventType,
+        surface: canonical.surface,
+        promptId: canonical.promptId || promptId,
         attributed,
       }
     } catch (err: any) {
