@@ -67,14 +67,12 @@ async function handleDecision(req: any, res: any, next: any) {
       span.setAttribute('app.rule_reason', decision.reasonCode)
       span.setAttribute('app.outcome', decision.shouldInsert ? 'shown' : 'blocked')
       if (decision.promptId != null) span.setAttribute('app.prompt_id', String(decision.promptId))
-      if (decision.promptKind) span.setAttribute('app.prompt_kind', decision.promptKind)
       if (decision.ruleId != null) span.setAttribute('app.rule_id', String(decision.ruleId))
     }
 
     return res.json({
       should_insert: decision.shouldInsert,
       prompt_id: decision.promptId,
-      prompt_kind: decision.promptKind,
       insert_after_index: decision.insertAfterIndex,
       reason_code: decision.reasonCode,
       session_id: decision.sessionId,
@@ -96,14 +94,39 @@ feedPromptsRouter.get('/api/feed/prompts/:id', async (req: any, res: any, next: 
     const prompt = await promptsSvc.getActiveForFeedById(id)
 
     let media: any = null
-    if (prompt.mediaUploadId != null) {
+    const backgroundMode = String(prompt.creative?.background?.mode || 'none').toLowerCase()
+    const creativeMediaUploadId =
+      prompt.creative?.background?.uploadId != null
+        ? Number(prompt.creative.background.uploadId)
+        : null
+    const mediaUploadId = creativeMediaUploadId != null && Number.isFinite(creativeMediaUploadId) && creativeMediaUploadId > 0
+      ? creativeMediaUploadId
+      : prompt.mediaUploadId
+    if (mediaUploadId != null) {
       try {
-        const upload = await uploadsSvc.get(Number(prompt.mediaUploadId), {}, { userId: req.user?.id ? Number(req.user.id) : null })
+        const upload = await uploadsSvc.get(Number(mediaUploadId), {}, { userId: req.user?.id ? Number(req.user.id) : null })
+        let publicBackgroundUrl: string | null = null
+        if (backgroundMode === 'image' || backgroundMode === 'video') {
+          try {
+            const signed = await uploadsSvc.getUploadPublicPromptBackgroundCdnUrl(Number(upload.id), {
+              mode: backgroundMode as 'image' | 'video',
+            })
+            publicBackgroundUrl = signed.url
+          } catch {
+            publicBackgroundUrl = null
+          }
+        }
         media = {
           upload_id: Number(upload.id),
-          master: upload.cdn_master || upload.s3_master || null,
-          poster_portrait: upload.poster_portrait_cdn || upload.poster_portrait_s3 || upload.poster_cdn || upload.poster_s3 || null,
-          poster_landscape: upload.poster_landscape_cdn || upload.poster_landscape_s3 || null,
+          master: publicBackgroundUrl || upload.cdn_master || upload.s3_master || null,
+          poster_portrait:
+            publicBackgroundUrl ||
+            upload.poster_portrait_cdn ||
+            upload.poster_portrait_s3 ||
+            upload.poster_cdn ||
+            upload.poster_s3 ||
+            null,
+          poster_landscape: publicBackgroundUrl || upload.poster_landscape_cdn || upload.poster_landscape_s3 || null,
         }
       } catch {
         media = null
@@ -115,14 +138,12 @@ feedPromptsRouter.get('/api/feed/prompts/:id', async (req: any, res: any, next: 
       span.setAttribute('app.surface', 'global_feed')
       span.setAttribute('app.operation', 'feed.prompt.fetch')
       span.setAttribute('app.prompt_id', String(prompt.id))
-      span.setAttribute('app.prompt_kind', String(prompt.kind))
       span.setAttribute('app.outcome', 'shown')
     }
 
     return res.json({
       prompt: {
         id: prompt.id,
-        kind: prompt.kind,
         category: prompt.category,
         headline: prompt.headline,
         body: prompt.body,
@@ -130,6 +151,7 @@ feedPromptsRouter.get('/api/feed/prompts/:id', async (req: any, res: any, next: 
         cta_primary_href: prompt.ctaPrimaryHref,
         cta_secondary_label: prompt.ctaSecondaryLabel,
         cta_secondary_href: prompt.ctaSecondaryHref,
+        creative: prompt.creative,
         media,
       },
     })
@@ -141,7 +163,6 @@ feedPromptsRouter.get('/api/feed/prompts/:id', async (req: any, res: any, next: 
 feedPromptsRouter.post('/api/feed/prompt-events', async (req: any, res: any, next: any) => {
   try {
     const body = (req.body || {}) as any
-    const promptKind = body.prompt_kind ? String(body.prompt_kind) : null
     const promptCategory = body.prompt_category ? String(body.prompt_category) : null
     const ctaKind = body.cta_kind ? String(body.cta_kind) : null
     const sessionId = body.session_id ? String(body.session_id).trim() : null
@@ -149,7 +170,6 @@ feedPromptsRouter.post('/api/feed/prompt-events', async (req: any, res: any, nex
     const tracked = await promptAnalyticsSvc.recordPromptEvent({
       event: body.event,
       promptId: body.prompt_id,
-      promptKind,
       promptCategory,
       ctaKind,
       surface: body.surface || 'global_feed',
@@ -176,9 +196,9 @@ feedPromptsRouter.post('/api/feed/prompt-events', async (req: any, res: any, nex
     const span = trace.getSpan(context.active())
     if (span) {
       span.setAttribute('app.surface', tracked.surface)
-      span.setAttribute('app.operation', opByEvent[tracked.inputEvent] || 'feed.prompt.event')
+      span.setAttribute('app.operation', 'analytics.ingest')
+      span.setAttribute('app.operation_detail', opByEvent[tracked.inputEvent] || 'feed.prompt.event')
       span.setAttribute('app.prompt_id', String(tracked.promptId))
-      if (promptKind) span.setAttribute('app.prompt_kind', promptKind)
       span.setAttribute('app.outcome', outcomeByEvent[tracked.inputEvent] || 'shown')
       if (sessionId) span.setAttribute('app.prompt_session_id', sessionId)
     }
@@ -186,10 +206,10 @@ feedPromptsRouter.post('/api/feed/prompt-events', async (req: any, res: any, nex
     ;(req.log || feedPromptsLogger).info(
       {
         app_surface: tracked.surface,
-        app_operation: opByEvent[tracked.inputEvent] || 'feed.prompt.event',
+        app_operation: 'analytics.ingest',
+        app_operation_detail: opByEvent[tracked.inputEvent] || 'feed.prompt.event',
         app_outcome: outcomeByEvent[tracked.inputEvent] || 'shown',
         prompt_id: tracked.promptId,
-        prompt_kind: promptKind,
         prompt_category: promptCategory,
         cta_kind: ctaKind,
         prompt_session_id: sessionId,

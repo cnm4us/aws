@@ -35,22 +35,41 @@ type UploadItem = {
   hasStory?: boolean | null
   storyPreview?: string | null
   hasCaptions?: boolean | null
-  itemType?: 'video' | 'prompt_full' | 'prompt_overlay'
+  itemType?: 'video' | 'prompt'
   prompt?: FeedPromptPayload | null
 }
 
-type FeedPromptKind = 'prompt_full' | 'prompt_overlay'
-
 type FeedPromptPayload = {
   id: number
-  kind: FeedPromptKind
   category: string
+  backgroundMode: 'none' | 'image' | 'video'
+  overlayColor: string
+  overlayOpacity: number
   headline: string
   body: string | null
   ctaPrimaryLabel: string
   ctaPrimaryHref: string
   ctaSecondaryLabel: string | null
   ctaSecondaryHref: string | null
+  widgets: {
+    message: {
+      enabled: boolean
+      position: 'top' | 'middle' | 'bottom'
+      yOffsetPct: number
+      bgColor: string
+      bgOpacity: number
+      textColor: string
+      label: string
+    }
+    auth: {
+      enabled: boolean
+      position: 'top' | 'middle' | 'bottom'
+      yOffsetPct: number
+      bgColor: string
+      bgOpacity: number
+      textColor: string
+    }
+  }
   media: {
     uploadId: number
     master: string | null
@@ -134,6 +153,36 @@ function swapOrientation(url: string): { portrait?: string; landscape?: string }
     return { landscape: url, portrait: url.replace('/landscape/', '/portrait/') }
   }
   return { portrait: url }
+}
+
+function parseHexColor(value: any, fallback: string): string {
+  const v = String(value || '').trim()
+  return /^#[0-9a-fA-F]{6}$/.test(v) ? v.toUpperCase() : fallback
+}
+
+function parseOpacity(value: any, fallback: number): number {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return fallback
+  return Math.max(0, Math.min(1, n))
+}
+
+function toRgba(hex: string, opacity: number): string {
+  const c = parseHexColor(hex, '#000000').slice(1)
+  const r = Number.parseInt(c.slice(0, 2), 16)
+  const g = Number.parseInt(c.slice(2, 4), 16)
+  const b = Number.parseInt(c.slice(4, 6), 16)
+  const a = parseOpacity(opacity, 1)
+  return `rgba(${r}, ${g}, ${b}, ${a})`
+}
+
+function promptWidgetTop(position: 'top' | 'middle' | 'bottom', offsetPct: number, mode: 'message' | 'auth'): number {
+  const base = mode === 'message'
+    ? (position === 'top' ? 8 : position === 'middle' ? 42 : 74)
+    : (position === 'top' ? 8 : position === 'middle' ? 56 : 84)
+  const next = base + Number(offsetPct || 0)
+  return mode === 'message'
+    ? Math.max(2, Math.min(92, next))
+    : Math.max(2, Math.min(94, next))
 }
 
 function buildUploadItem(raw: any, owner?: { id: number | null; displayName?: string | null; email?: string | null; avatarUrl?: string | null } | null, publication?: any | null): UploadItem {
@@ -250,17 +299,50 @@ async function fetchPromptById(promptId: number): Promise<FeedPromptPayload> {
   const payload = await res.json()
   const p = payload?.prompt
   if (!p) throw new Error('missing_prompt_payload')
-  const kind: FeedPromptKind = p.kind === 'prompt_overlay' ? 'prompt_overlay' : 'prompt_full'
+  const creative = (p.creative && typeof p.creative === 'object') ? p.creative : {}
+  const background = (creative.background && typeof creative.background === 'object') ? creative.background : {}
+  const widgets = (creative.widgets && typeof creative.widgets === 'object') ? creative.widgets : {}
+  const messageWidget = (widgets.message && typeof widgets.message === 'object') ? widgets.message : {}
+  const authWidget = (widgets.auth && typeof widgets.auth === 'object') ? widgets.auth : {}
+  const messagePosRaw = String(messageWidget.position || 'middle').toLowerCase()
+  const authPosRaw = String(authWidget.position || 'bottom').toLowerCase()
+  const messagePos: 'top' | 'middle' | 'bottom' = messagePosRaw === 'top' ? 'top' : (messagePosRaw === 'bottom' ? 'bottom' : 'middle')
+  const authPos: 'top' | 'middle' | 'bottom' = authPosRaw === 'top' ? 'top' : (authPosRaw === 'bottom' ? 'bottom' : 'middle')
+  const messageOffset = Math.max(-40, Math.min(40, Math.round(Number(messageWidget.yOffsetPct ?? 0) || 0)))
+  const authOffset = Math.max(-40, Math.min(40, Math.round(Number(authWidget.yOffsetPct ?? 0) || 0)))
   return {
     id: Number(p.id),
-    kind,
     category: String(p.category || ''),
+    backgroundMode: (String(p?.creative?.background?.mode || 'none').toLowerCase() === 'video'
+      ? 'video'
+      : (String(p?.creative?.background?.mode || 'none').toLowerCase() === 'image' ? 'image' : 'none')),
+    overlayColor: parseHexColor(background.overlayColor, '#000000'),
+    overlayOpacity: parseOpacity(background.overlayOpacity, 0.35),
     headline: String(p.headline || ''),
     body: p.body == null ? null : String(p.body),
     ctaPrimaryLabel: String(p.cta_primary_label || 'Register'),
     ctaPrimaryHref: String(p.cta_primary_href || '/register?return=/'),
     ctaSecondaryLabel: p.cta_secondary_label == null ? null : String(p.cta_secondary_label),
     ctaSecondaryHref: p.cta_secondary_href == null ? null : String(p.cta_secondary_href),
+    widgets: {
+      message: {
+        enabled: !(String(messageWidget.enabled).toLowerCase() === 'false' || Number(messageWidget.enabled) === 0),
+        position: messagePos,
+        yOffsetPct: messageOffset,
+        bgColor: parseHexColor(messageWidget.bgColor, '#0B1320'),
+        bgOpacity: parseOpacity(messageWidget.bgOpacity, 0.55),
+        textColor: parseHexColor(messageWidget.textColor, '#FFFFFF'),
+        label: String(messageWidget.label || 'Join the Community'),
+      },
+      auth: {
+        enabled: String(authWidget.enabled).toLowerCase() === 'true' || Number(authWidget.enabled) === 1,
+        position: authPos,
+        yOffsetPct: authOffset,
+        bgColor: parseHexColor(authWidget.bgColor, '#0B1320'),
+        bgOpacity: parseOpacity(authWidget.bgOpacity, 0.55),
+        textColor: parseHexColor(authWidget.textColor, '#FFFFFF'),
+      },
+    },
     media: p.media
       ? {
           uploadId: Number(p.media.upload_id),
@@ -275,7 +357,6 @@ async function fetchPromptById(promptId: number): Promise<FeedPromptPayload> {
 async function sendPromptEvent(input: {
   event: 'impression' | 'click' | 'dismiss' | 'auth_start' | 'auth_complete'
   promptId: number
-  promptKind: FeedPromptKind
   promptCategory: string | null
   sessionId: string | null
   ctaKind?: 'primary' | 'secondary'
@@ -290,7 +371,6 @@ async function sendPromptEvent(input: {
         event: input.event,
         surface: 'global_feed',
         prompt_id: input.promptId,
-        prompt_kind: input.promptKind,
         prompt_category: input.promptCategory,
         session_id: input.sessionId,
         cta_kind: input.ctaKind || null,
@@ -356,7 +436,7 @@ function applyMineFilter(items: UploadItem[], mineOnly: boolean, myUserId: numbe
 
 function isPromptItem(it: UploadItem | null | undefined): boolean {
   if (!it) return false
-  return Boolean(it.prompt && (it.itemType === 'prompt_full' || it.itemType === 'prompt_overlay'))
+  return Boolean(it.prompt && it.itemType === 'prompt')
 }
 
 function flattenSpaces(list: MySpacesResponse | null): SpaceSummary[] {
@@ -1745,7 +1825,6 @@ export default function Feed() {
     void sendPromptEvent({
       event: 'dismiss',
       promptId: prompt.id,
-      promptKind: prompt.kind,
       promptCategory: prompt.category || null,
       sessionId: promptSessionId,
     })
@@ -1757,7 +1836,6 @@ export default function Feed() {
     void sendPromptEvent({
       event: 'click',
       promptId: prompt.id,
-      promptKind: prompt.kind,
       promptCategory: prompt.category || null,
       sessionId: promptSessionId,
       ctaKind,
@@ -1767,7 +1845,6 @@ export default function Feed() {
       void sendPromptEvent({
         event: 'auth_start',
         promptId: prompt.id,
-        promptKind: prompt.kind,
         promptCategory: prompt.category || null,
         sessionId: promptSessionId,
       })
@@ -1776,7 +1853,6 @@ export default function Feed() {
       const url = new URL(targetHref, window.location.origin)
       if (url.origin === window.location.origin) {
         url.searchParams.set('prompt_id', String(prompt.id))
-        url.searchParams.set('prompt_kind', prompt.kind)
         if (prompt.category) url.searchParams.set('prompt_category', prompt.category)
         if (promptSessionId) url.searchParams.set('prompt_session_id', promptSessionId)
         url.searchParams.set('prompt_cta_kind', ctaKind)
@@ -1916,7 +1992,6 @@ export default function Feed() {
     void sendPromptEvent({
       event: 'impression',
       promptId: prompt.id,
-      promptKind: prompt.kind,
       promptCategory: prompt.category || null,
       sessionId: promptSessionId,
     })
@@ -1996,7 +2071,7 @@ export default function Feed() {
           const promptItem: UploadItem = {
             id: syntheticUploadId,
             url: '',
-            itemType: prompt.kind,
+            itemType: 'prompt',
             prompt,
           }
           return [...prev.slice(0, insertAt), promptItem, ...prev.slice(insertAt)]
@@ -2228,21 +2303,26 @@ export default function Feed() {
         const prompt = it.prompt
         if (prompt && isPromptItem(it)) {
           const slideId = `prompt-${prompt.id}-${it.id}`
-          const promptPoster =
+          const promptPosterByOrientation =
             (isPortrait ? (prompt.media?.posterPortrait || prompt.media?.posterLandscape) : (prompt.media?.posterLandscape || prompt.media?.posterPortrait)) ||
             prompt.media?.posterPortrait ||
             prompt.media?.posterLandscape ||
             null
+          const promptPoster =
+            prompt.backgroundMode === 'image'
+              ? (prompt.media?.master || promptPosterByOrientation || null)
+              : (promptPosterByOrientation || null)
           const panelBg = promptPoster
-            ? `linear-gradient(180deg, rgba(0,0,0,.45) 0%, rgba(0,0,0,.72) 100%), url(${promptPoster}) center/cover no-repeat`
+            ? `url(${promptPoster}) center/cover no-repeat`
             : 'linear-gradient(180deg, rgba(8,12,18,0.95) 0%, rgba(6,8,12,0.98) 100%)'
+          const messageTop = promptWidgetTop(prompt.widgets.message.position, prompt.widgets.message.yOffsetPct, 'message')
+          const authTop = promptWidgetTop(prompt.widgets.auth.position, prompt.widgets.auth.yOffsetPct, 'auth')
           return (
             <div
               key={slideId}
               className={styles.slide}
               id={slideId}
               data-prompt-id={String(prompt.id)}
-              data-prompt-kind={prompt.kind}
               data-upload-id={String(it.id)}
             >
               <div className={styles.holder}>
@@ -2314,58 +2394,49 @@ export default function Feed() {
                     style={{
                       position: 'absolute',
                       inset: 0,
-                      display: 'grid',
-                      alignContent: 'center',
-                      justifyItems: 'center',
-                      padding: '18px 16px',
-                      textAlign: 'center',
-                      color: '#fff',
+                      background: toRgba(prompt.overlayColor, prompt.overlayOpacity),
+                    }}
+                  />
+                  <div
+                    style={{
+                      position: 'absolute',
+                      inset: 0,
+                      padding: '18px 14px',
+                      boxSizing: 'border-box',
                     }}
                   >
-                    <div
-                      style={{
-                        width: 'min(100%, 560px)',
-                        maxWidth: '100%',
-                        borderRadius: 16,
-                        border: '1px solid rgba(255,255,255,0.26)',
-                        background: 'rgba(5,8,12,0.48)',
-                        padding: '16px 14px',
-                        backdropFilter: 'blur(6px)',
-                        boxSizing: 'border-box',
-                      }}
-                    >
-                      <div style={{ fontSize: 13, opacity: 0.85, marginBottom: 6 }}>
-                        {prompt.kind === 'prompt_overlay' ? 'Featured' : 'Join the Community'}
-                      </div>
-                      <div style={{ fontSize: 24, lineHeight: 1.18, fontWeight: 800, marginBottom: 8 }}>{prompt.headline}</div>
-                      {prompt.body ? (
-                        <div style={{ fontSize: 16, lineHeight: 1.35, opacity: 0.95, whiteSpace: 'pre-wrap', marginBottom: 14 }}>
-                          {prompt.body}
+                    {prompt.widgets.message.enabled ? (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          left: 14,
+                          right: 14,
+                          top: `${messageTop}%`,
+                          borderRadius: 12,
+                          border: '1px solid rgba(255,255,255,0.26)',
+                          background: toRgba(prompt.widgets.message.bgColor, prompt.widgets.message.bgOpacity),
+                          backdropFilter: 'blur(6px)',
+                          color: prompt.widgets.message.textColor,
+                          padding: '14px 12px',
+                          textAlign: 'center',
+                        }}
+                      >
+                        <div style={{ fontSize: 12, opacity: 0.9, marginBottom: 4 }}>
+                          {prompt.widgets.message.label || 'Join the Community'}
                         </div>
-                      ) : null}
-                      <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
-                        <button
-                          type="button"
-                          onClick={() => handlePromptCtaClick(prompt, prompt.ctaPrimaryHref, 'primary')}
-                          style={{
-                            border: '1px solid rgba(10,132,255,0.8)',
-                            background: 'rgba(10,132,255,0.45)',
-                            color: '#fff',
-                            borderRadius: 11,
-                            padding: '9px 13px',
-                            fontWeight: 700,
-                            cursor: 'pointer',
-                          }}
-                        >
-                          {prompt.ctaPrimaryLabel}
-                        </button>
-                        {prompt.ctaSecondaryLabel && prompt.ctaSecondaryHref ? (
+                        <div style={{ fontSize: 24, lineHeight: 1.18, fontWeight: 800, marginBottom: 8 }}>{prompt.headline}</div>
+                        {prompt.body ? (
+                          <div style={{ fontSize: 16, lineHeight: 1.35, opacity: 0.95, whiteSpace: 'pre-wrap', marginBottom: 14 }}>
+                            {prompt.body}
+                          </div>
+                        ) : null}
+                        <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
                           <button
                             type="button"
-                            onClick={() => handlePromptCtaClick(prompt, prompt.ctaSecondaryHref || '', 'secondary')}
+                            onClick={() => handlePromptCtaClick(prompt, prompt.ctaPrimaryHref, 'primary')}
                             style={{
-                              border: '1px solid rgba(255,255,255,0.45)',
-                              background: 'rgba(6,10,16,0.65)',
+                              border: '1px solid rgba(10,132,255,0.8)',
+                              background: 'rgba(10,132,255,0.45)',
                               color: '#fff',
                               borderRadius: 11,
                               padding: '9px 13px',
@@ -2373,9 +2444,102 @@ export default function Feed() {
                               cursor: 'pointer',
                             }}
                           >
-                            {prompt.ctaSecondaryLabel}
+                            {prompt.ctaPrimaryLabel}
                           </button>
-                        ) : null}
+                          {prompt.ctaSecondaryLabel && prompt.ctaSecondaryHref ? (
+                            <button
+                              type="button"
+                              onClick={() => handlePromptCtaClick(prompt, prompt.ctaSecondaryHref || '', 'secondary')}
+                              style={{
+                                border: '1px solid rgba(255,255,255,0.45)',
+                                background: 'rgba(6,10,16,0.65)',
+                                color: '#fff',
+                                borderRadius: 11,
+                                padding: '9px 13px',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                              }}
+                            >
+                              {prompt.ctaSecondaryLabel}
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+                    ) : null}
+                    {prompt.widgets.auth.enabled ? (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          left: 14,
+                          right: 14,
+                          top: `${authTop}%`,
+                          borderRadius: 12,
+                          border: '1px solid rgba(255,255,255,0.26)',
+                          background: toRgba(prompt.widgets.auth.bgColor, prompt.widgets.auth.bgOpacity),
+                          backdropFilter: 'blur(6px)',
+                          color: prompt.widgets.auth.textColor,
+                          padding: '10px 10px',
+                        }}
+                      >
+                        <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+                          <button
+                            type="button"
+                            onClick={() => handlePromptCtaClick(prompt, '/register?return=/', 'primary')}
+                            style={{
+                              border: '1px solid rgba(10,132,255,0.8)',
+                              background: 'rgba(10,132,255,0.45)',
+                              color: '#fff',
+                              borderRadius: 11,
+                              padding: '8px 12px',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            Register
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handlePromptCtaClick(prompt, '/login?return=/', 'secondary')}
+                            style={{
+                              border: '1px solid rgba(255,255,255,0.45)',
+                              background: 'rgba(6,10,16,0.65)',
+                              color: '#fff',
+                              borderRadius: 11,
+                              padding: '8px 12px',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            Login
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => dismissPromptSlide(it.id, prompt)}
+                            style={{
+                              border: '1px solid rgba(255,255,255,0.26)',
+                              background: 'rgba(0,0,0,0.38)',
+                              color: '#fff',
+                              borderRadius: 11,
+                              padding: '8px 12px',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            Dismiss
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          left: 0,
+                          right: 0,
+                          bottom: 18,
+                          display: 'flex',
+                          justifyContent: 'center',
+                        }}
+                      >
                         <button
                           type="button"
                           onClick={() => dismissPromptSlide(it.id, prompt)}
@@ -2384,7 +2548,7 @@ export default function Feed() {
                             background: 'rgba(0,0,0,0.38)',
                             color: '#fff',
                             borderRadius: 11,
-                            padding: '9px 13px',
+                            padding: '8px 12px',
                             fontWeight: 600,
                             cursor: 'pointer',
                           }}
@@ -2392,7 +2556,7 @@ export default function Feed() {
                           Dismiss
                         </button>
                       </div>
-                    </div>
+                    )}
                   </div>
                 </div>
               </div>

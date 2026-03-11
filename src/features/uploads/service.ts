@@ -421,6 +421,43 @@ export async function getUploadSignedCdnUrl(
   return signUploadsCdnUrl(key)
 }
 
+export async function getUploadPublicPromptBackgroundCdnUrl(
+  uploadId: number,
+  params: { mode: 'image' | 'video' }
+): Promise<{ url: string; expiresAt: number }> {
+  if (!uploadsCdnConfigured()) throw new DomainError('cdn_not_configured')
+  const row = await repo.getById(uploadId)
+  if (!row) throw new NotFoundError('not_found')
+
+  const mode = String(params?.mode || '').toLowerCase()
+  const rowKind = String(row.kind || 'video').toLowerCase()
+
+  if (mode === 'image') {
+    const key = String(row.s3_key || '')
+    if (!key) throw new NotFoundError('not_found')
+    return signUploadsCdnUrl(key)
+  }
+
+  if (mode === 'video') {
+    if (rowKind !== 'video') throw new NotFoundError('not_found')
+    const proxyKey = buildUploadEditProxyKey(uploadId)
+    const proxyExists = await s3ObjectExists({
+      s3,
+      bucket: String(UPLOAD_BUCKET),
+      key: proxyKey,
+      objectKind: 'upload_edit_proxy',
+      attrs: { 'app.operation': 'uploads.edit_proxy.get' },
+    })
+    if (proxyExists.exists) return signUploadsCdnUrl(proxyKey)
+
+    const sourceKey = String(row.s3_key || '')
+    if (!sourceKey) throw new NotFoundError('not_found')
+    return signUploadsCdnUrl(sourceKey)
+  }
+
+  throw new DomainError('bad_request')
+}
+
 async function readBodyText(body: any): Promise<string> {
   const chunks: Buffer[] = []
   for await (const chunk of body as any) {
