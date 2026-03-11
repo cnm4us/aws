@@ -206,7 +206,6 @@ export async function decidePrompt(input: PromptDecisionInput, opts?: { includeD
 
   let reasonCode: PromptDecisionReasonCode = 'no_enabled_rule'
   let promptId: number | null = null
-  let promptKind: 'prompt_full' | 'prompt_overlay' | null = null
   let ruleId: number | null = null
   let ruleName: string | null = null
 
@@ -220,79 +219,106 @@ export async function decidePrompt(input: PromptDecisionInput, opts?: { includeD
       limit: 100,
     })
 
-    const rule = rules[0] || null
-
-    if (!rule) {
+    if (!rules.length) {
       reasonCode = 'no_enabled_rule'
     } else {
-      ruleId = rule.id
-      ruleName = rule.name
+      let matched = false
+      let lastBlockedReason: PromptDecisionReasonCode = 'no_enabled_rule'
+      let lastBlockedRuleId: number | null = null
+      let lastBlockedRuleName: string | null = null
 
-      if (merged.promptsShownThisSession >= rule.maxPromptsPerSession) {
-        reasonCode = 'cap_reached'
-      } else {
-        const lastDismissedMs = dateToMs(merged.lastPromptDismissedAt)
-        if (
-          lastDismissedMs != null &&
-          rule.cooldownSecondsAfterDismiss > 0 &&
-          nowMs() - lastDismissedMs < rule.cooldownSecondsAfterDismiss * 1000
-        ) {
-          reasonCode = 'cooldown_active'
-        } else if (
-          merged.slidesViewed < rule.minSlidesViewed ||
-          merged.watchSeconds < rule.minWatchSeconds ||
-          (merged.promptsShownThisSession > 0 && merged.slidesSinceLastPrompt < rule.minSlidesBetweenPrompts)
-        ) {
-          reasonCode = 'below_threshold'
+      for (const rule of rules) {
+        const currentRuleId = Number(rule.id)
+        const currentRuleName = String(rule.name || '')
+        let currentReason: PromptDecisionReasonCode = 'eligible'
+        let currentPromptId: number | null = null
+
+        if (merged.promptsShownThisSession >= rule.maxPromptsPerSession) {
+          currentReason = 'cap_reached'
         } else {
-          let prompts = await promptsSvc.listActiveForFeed({ limit: 300 })
-          if (rule.promptCategoryAllowlist.length) {
-            const allowed = new Set(rule.promptCategoryAllowlist.map((x) => String(x).trim().toLowerCase()))
-            prompts = prompts.filter((p: any) => allowed.has(String(p.category || '').trim().toLowerCase()))
-          }
-
-          if (!prompts.length) {
-            reasonCode = 'no_candidate'
+          const lastDismissedMs = dateToMs(merged.lastPromptDismissedAt)
+          if (
+            lastDismissedMs != null &&
+            rule.cooldownSecondsAfterDismiss > 0 &&
+            nowMs() - lastDismissedMs < rule.cooldownSecondsAfterDismiss * 1000
+          ) {
+            currentReason = 'cooldown_active'
+          } else if (
+            merged.slidesViewed < rule.minSlidesViewed ||
+            merged.watchSeconds < rule.minWatchSeconds ||
+            (merged.promptsShownThisSession > 0 && merged.slidesSinceLastPrompt < rule.minSlidesBetweenPrompts)
+          ) {
+            currentReason = 'below_threshold'
           } else {
-            const byPriority = new Map<number, typeof prompts>()
-            for (const prompt of prompts) {
-              const pr = Number(prompt.priority || 0)
-              const group = byPriority.get(pr) || []
-              group.push(prompt)
-              byPriority.set(pr, group)
+            let prompts = await promptsSvc.listActiveForFeed({ limit: 300 })
+            if (rule.promptCategoryAllowlist.length) {
+              const allowed = new Set(rule.promptCategoryAllowlist.map((x) => String(x).trim().toLowerCase()))
+              prompts = prompts.filter((p: any) => allowed.has(String(p.category || '').trim().toLowerCase()))
             }
 
-            const priorities = Array.from(byPriority.keys()).sort((a, b) => a - b)
-            const lastPromptId = merged.lastPromptId
-            let selected: any = null
-
-            for (const pr of priorities) {
-              const group = (byPriority.get(pr) || []).slice()
-              group.sort((a: any, b: any) => {
-                const sa = deterministicScore(`${input.sessionId}:${rule.id}:${a.id}`)
-                const sb = deterministicScore(`${input.sessionId}:${rule.id}:${b.id}`)
-                if (sa < sb) return -1
-                if (sa > sb) return 1
-                return Number(a.id) - Number(b.id)
-              })
-              const candidate = group.find((p: any) => Number(p.id) !== Number(lastPromptId || 0)) || null
-              if (candidate) {
-                selected = candidate
-                break
-              }
-            }
-
-            if (!selected) {
-              reasonCode = prompts.some((p: any) => Number(p.id) === Number(lastPromptId || 0))
-                ? 'back_to_back_blocked'
-                : 'no_candidate'
+            if (!prompts.length) {
+              currentReason = 'no_candidate'
             } else {
-              reasonCode = 'eligible'
-              promptId = Number(selected.id)
-              promptKind = selected.kind
+              const byPriority = new Map<number, typeof prompts>()
+              for (const prompt of prompts) {
+                const pr = Number(prompt.priority || 0)
+                const group = byPriority.get(pr) || []
+                group.push(prompt)
+                byPriority.set(pr, group)
+              }
+
+              const priorities = Array.from(byPriority.keys()).sort((a, b) => a - b)
+              const lastPromptId = merged.lastPromptId
+              let selected: any = null
+              let fallbackSelected: any = null
+
+              for (const pr of priorities) {
+                const group = (byPriority.get(pr) || []).slice()
+                group.sort((a: any, b: any) => {
+                  const sa = deterministicScore(`${input.sessionId}:${rule.id}:${a.id}`)
+                  const sb = deterministicScore(`${input.sessionId}:${rule.id}:${b.id}`)
+                  if (sa < sb) return -1
+                  if (sa > sb) return 1
+                  return Number(a.id) - Number(b.id)
+                })
+                if (!fallbackSelected && group.length) fallbackSelected = group[0]
+                const candidate = group.find((p: any) => Number(p.id) !== Number(lastPromptId || 0)) || null
+                if (candidate) {
+                  selected = candidate
+                  break
+                }
+              }
+
+              if (!selected && fallbackSelected) selected = fallbackSelected
+
+              if (!selected) {
+                currentReason = 'no_candidate'
+              } else {
+                currentPromptId = Number(selected.id)
+                currentReason = 'eligible'
+              }
             }
           }
         }
+
+        if (currentReason === 'eligible' && currentPromptId != null) {
+          matched = true
+          reasonCode = 'eligible'
+          promptId = currentPromptId
+          ruleId = currentRuleId
+          ruleName = currentRuleName
+          break
+        }
+
+        lastBlockedReason = currentReason
+        lastBlockedRuleId = currentRuleId
+        lastBlockedRuleName = currentRuleName
+      }
+
+      if (!matched) {
+        reasonCode = lastBlockedReason
+        ruleId = lastBlockedRuleId
+        ruleName = lastBlockedRuleName
       }
     }
   }
@@ -305,7 +331,6 @@ export async function decidePrompt(input: PromptDecisionInput, opts?: { includeD
   const result: PromptDecisionResult = {
     shouldInsert: reasonCode === 'eligible' && promptId != null,
     promptId,
-    promptKind,
     insertAfterIndex: null,
     reasonCode,
     ruleId,
