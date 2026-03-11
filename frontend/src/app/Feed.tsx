@@ -2324,9 +2324,17 @@ export default function Feed() {
             prompt.backgroundMode === 'image'
               ? (prompt.media?.master || promptPosterByOrientation || null)
               : (promptPosterByOrientation || null)
-          const panelBg = promptPoster
-            ? `url(${promptPoster}) center/cover no-repeat`
-            : 'linear-gradient(180deg, rgba(8,12,18,0.95) 0%, rgba(6,8,12,0.98) 100%)'
+          const panelStyle = promptPoster
+            ? {
+                backgroundImage: `url("${promptPoster}")`,
+                backgroundSize: 'cover',
+                backgroundPosition: 'center',
+                backgroundRepeat: 'no-repeat',
+                backgroundColor: '#000',
+              }
+            : {
+                background: 'linear-gradient(180deg, rgba(8,12,18,0.95) 0%, rgba(6,8,12,0.98) 100%)',
+              }
           const messagePlacement = promptWidgetPlacement(prompt.widgets.message.position, prompt.widgets.message.yOffsetPct, 'message')
           const authPlacement = promptWidgetPlacement(prompt.widgets.auth.position, prompt.widgets.auth.yOffsetPct, 'auth')
           return (
@@ -2400,7 +2408,7 @@ export default function Feed() {
                       dragThresholdPassedRef.current = false
                     } catch {}
                   }}
-                  style={{ background: panelBg }}
+                  style={panelStyle}
                 >
                   <div
                     style={{
