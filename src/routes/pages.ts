@@ -3029,8 +3029,190 @@ function toDateTimeLocalValue(raw: any): string {
   return `${datePart}T${hhmm}`
 }
 
+function toDateOnlyValue(raw: any): string {
+  const dt = toDateTimeLocalValue(raw)
+  return dt ? dt.slice(0, 10) : ''
+}
+
+function toTimeOnlyValue(raw: any): string {
+  const dt = toDateTimeLocalValue(raw)
+  return dt ? dt.slice(11, 16) : ''
+}
+
 function renderPromptKindBadge(kind: string): string {
   return kind === 'prompt_overlay' ? 'Overlay' : 'Full'
+}
+
+const PROMPT_CATEGORY_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'register_prompt', label: 'Register Prompt' },
+  { value: 'fund_drive', label: 'Fund Drive' },
+  { value: 'sponsor', label: 'Sponsor' },
+  { value: 'house_message', label: 'House Message' },
+]
+
+function parseBoolLoose(raw: any, fallback = false): boolean {
+  if (raw == null || raw === '') return fallback
+  if (typeof raw === 'boolean') return raw
+  const v = String(raw).trim().toLowerCase()
+  if (['1', 'true', 'yes', 'on'].includes(v)) return true
+  if (['0', 'false', 'no', 'off'].includes(v)) return false
+  return fallback
+}
+
+function parseNumLoose(raw: any, fallback: number): number {
+  const n = Number(raw)
+  return Number.isFinite(n) ? n : fallback
+}
+
+function parseColorLoose(raw: any, fallback: string): string {
+  const value = String(raw || '').trim()
+  if (!/^#[0-9a-fA-F]{6}$/.test(value)) return fallback
+  return value.toUpperCase()
+}
+
+function hexToRgba(hex: string, opacity: number): string {
+  const color = parseColorLoose(hex, '#000000').replace('#', '')
+  const r = Number.parseInt(color.slice(0, 2), 16)
+  const g = Number.parseInt(color.slice(2, 4), 16)
+  const b = Number.parseInt(color.slice(4, 6), 16)
+  const a = Math.min(1, Math.max(0, Number.isFinite(opacity) ? opacity : 1))
+  return `rgba(${r}, ${g}, ${b}, ${a})`
+}
+
+function extractPromptCreativeForm(values: any): {
+  backgroundMode: 'none' | 'image' | 'video'
+  backgroundUploadId: string
+  backgroundOverlayColor: string
+  backgroundOverlayOpacity: number
+  messageEnabled: boolean
+  messagePosition: 'top' | 'middle' | 'bottom'
+  messageOffsetPct: number
+  messageLabel: string
+  messageBgColor: string
+  messageBgOpacity: number
+  messageTextColor: string
+  authEnabled: boolean
+  authPosition: 'top' | 'middle' | 'bottom'
+  authOffsetPct: number
+  authBgColor: string
+  authBgOpacity: number
+  authTextColor: string
+} {
+  const creative = values?.creative && typeof values.creative === 'object'
+    ? values.creative
+    : (() => {
+      const raw = values?.creative_json
+      if (!raw) return null
+      try { return typeof raw === 'string' ? JSON.parse(raw) : raw } catch { return null }
+    })()
+
+  const kind = String(values?.kind || 'prompt_full')
+  const defaultMessageLabel = kind === 'prompt_overlay' ? 'Featured' : 'Join the Community'
+  const defaultUploadId = values?.mediaUploadId ?? values?.media_upload_id ?? ''
+
+  const base = {
+    backgroundMode: String(creative?.background?.mode || (defaultUploadId ? 'image' : 'none')).toLowerCase() as 'none' | 'image' | 'video',
+    backgroundUploadId: String(creative?.background?.uploadId ?? defaultUploadId ?? ''),
+    backgroundOverlayColor: String(creative?.background?.overlayColor || '#000000'),
+    backgroundOverlayOpacity: parseNumLoose(creative?.background?.overlayOpacity, 0.35),
+    messageEnabled: parseBoolLoose(creative?.widgets?.message?.enabled, true),
+    messagePosition: String(creative?.widgets?.message?.position || 'middle').toLowerCase() as 'top' | 'middle' | 'bottom',
+    messageOffsetPct: parseNumLoose(creative?.widgets?.message?.yOffsetPct, 0),
+    messageLabel: String(creative?.widgets?.message?.label || defaultMessageLabel),
+    messageBgColor: String(creative?.widgets?.message?.bgColor || '#0B1320'),
+    messageBgOpacity: parseNumLoose(creative?.widgets?.message?.bgOpacity, 0.55),
+    messageTextColor: String(creative?.widgets?.message?.textColor || '#FFFFFF'),
+    authEnabled: parseBoolLoose(creative?.widgets?.auth?.enabled, false),
+    authPosition: String(creative?.widgets?.auth?.position || 'bottom').toLowerCase() as 'top' | 'middle' | 'bottom',
+    authOffsetPct: parseNumLoose(creative?.widgets?.auth?.yOffsetPct, 0),
+    authBgColor: String(creative?.widgets?.auth?.bgColor || '#0B1320'),
+    authBgOpacity: parseNumLoose(creative?.widgets?.auth?.bgOpacity, 0.55),
+    authTextColor: String(creative?.widgets?.auth?.textColor || '#FFFFFF'),
+  }
+
+  const hasMessageEnabledInput = Object.prototype.hasOwnProperty.call(values || {}, 'creativeMessageEnabled')
+  const hasAuthEnabledInput = Object.prototype.hasOwnProperty.call(values || {}, 'creativeAuthEnabled')
+
+  return {
+    backgroundMode: (String(values?.creativeBgMode || base.backgroundMode).toLowerCase() === 'video'
+      ? 'video'
+      : (String(values?.creativeBgMode || base.backgroundMode).toLowerCase() === 'image' ? 'image' : 'none')),
+    backgroundUploadId: String(values?.creativeBgUploadId ?? base.backgroundUploadId ?? ''),
+    backgroundOverlayColor: parseColorLoose(values?.creativeBgOverlayColor ?? base.backgroundOverlayColor, '#000000'),
+    backgroundOverlayOpacity: Math.min(1, Math.max(0, parseNumLoose(values?.creativeBgOverlayOpacity ?? base.backgroundOverlayOpacity, 0.35))),
+    messageEnabled: hasMessageEnabledInput ? parseBoolLoose(values?.creativeMessageEnabled, false) : base.messageEnabled,
+    messagePosition: (String(values?.creativeMessagePosition || base.messagePosition).toLowerCase() === 'top'
+      ? 'top'
+      : (String(values?.creativeMessagePosition || base.messagePosition).toLowerCase() === 'bottom' ? 'bottom' : 'middle')),
+    messageOffsetPct: Math.round(Math.min(40, Math.max(-40, parseNumLoose(values?.creativeMessageOffsetPct ?? base.messageOffsetPct, 0)))),
+    messageLabel: String(values?.creativeMessageLabel ?? base.messageLabel ?? defaultMessageLabel),
+    messageBgColor: parseColorLoose(values?.creativeMessageBgColor ?? base.messageBgColor, '#0B1320'),
+    messageBgOpacity: Math.min(1, Math.max(0, parseNumLoose(values?.creativeMessageBgOpacity ?? base.messageBgOpacity, 0.55))),
+    messageTextColor: parseColorLoose(values?.creativeMessageTextColor ?? base.messageTextColor, '#FFFFFF'),
+    authEnabled: hasAuthEnabledInput ? parseBoolLoose(values?.creativeAuthEnabled, false) : base.authEnabled,
+    authPosition: (String(values?.creativeAuthPosition || base.authPosition).toLowerCase() === 'top'
+      ? 'top'
+      : (String(values?.creativeAuthPosition || base.authPosition).toLowerCase() === 'bottom' ? 'bottom' : 'middle')),
+    authOffsetPct: Math.round(Math.min(40, Math.max(-40, parseNumLoose(values?.creativeAuthOffsetPct ?? base.authOffsetPct, 0)))),
+    authBgColor: parseColorLoose(values?.creativeAuthBgColor ?? base.authBgColor, '#0B1320'),
+    authBgOpacity: Math.min(1, Math.max(0, parseNumLoose(values?.creativeAuthBgOpacity ?? base.authBgOpacity, 0.55))),
+    authTextColor: parseColorLoose(values?.creativeAuthTextColor ?? base.authTextColor, '#FFFFFF'),
+  }
+}
+
+function buildPromptCreateOrUpdatePayload(body: any): any {
+  const creativeForm = extractPromptCreativeForm(body || {})
+  const messageEnabled = parseBoolLoose(body?.creativeMessageEnabled, false)
+  const authEnabled = parseBoolLoose(body?.creativeAuthEnabled, false)
+  const primaryLabel = String(body?.ctaPrimaryLabel ?? body?.cta_primary_label ?? 'Register')
+  const primaryHref = String(body?.ctaPrimaryHref ?? body?.cta_primary_href ?? '/register?return=/')
+  const secondaryLabelRaw = String(body?.ctaSecondaryLabel ?? body?.cta_secondary_label ?? '').trim()
+  const secondaryHrefRaw = String(body?.ctaSecondaryHref ?? body?.cta_secondary_href ?? '').trim()
+  const secondaryLabel = secondaryLabelRaw || null
+  const secondaryHref = secondaryHrefRaw || null
+  const mediaUploadId = String(creativeForm.backgroundUploadId || '').trim()
+  return {
+    ...(body || {}),
+    mediaUploadId: mediaUploadId || null,
+    ctaPrimaryLabel: primaryLabel,
+    ctaPrimaryHref: primaryHref,
+    ctaSecondaryLabel: secondaryLabel,
+    ctaSecondaryHref: secondaryHref,
+    creative: {
+      version: 1,
+      background: {
+        mode: creativeForm.backgroundMode,
+        uploadId: mediaUploadId ? Number(mediaUploadId) : null,
+        overlayColor: creativeForm.backgroundOverlayColor,
+        overlayOpacity: creativeForm.backgroundOverlayOpacity,
+      },
+      widgets: {
+        message: {
+          enabled: messageEnabled,
+          position: creativeForm.messagePosition,
+          yOffsetPct: creativeForm.messageOffsetPct,
+          bgColor: creativeForm.messageBgColor,
+          bgOpacity: creativeForm.messageBgOpacity,
+          textColor: creativeForm.messageTextColor,
+          label: creativeForm.messageLabel,
+          headline: String(body?.headline || ''),
+          body: String(body?.body || '').trim() || null,
+          primaryLabel,
+          primaryHref,
+          secondaryLabel,
+          secondaryHref,
+        },
+        auth: {
+          enabled: authEnabled,
+          position: creativeForm.authPosition,
+          yOffsetPct: creativeForm.authOffsetPct,
+          bgColor: creativeForm.authBgColor,
+          bgOpacity: creativeForm.authBgOpacity,
+          textColor: creativeForm.authTextColor,
+        },
+      },
+    },
+  }
 }
 
 function renderAdminPromptForm(opts: {
@@ -3046,78 +3228,575 @@ function renderAdminPromptForm(opts: {
   const csrfToken = opts.csrfToken ? String(opts.csrfToken) : ''
   const values = opts.values || {}
   const id = values.id ? Number(values.id) : null
+  const draftKey = id ? `admin_prompt_editor_draft_${id}` : 'admin_prompt_editor_draft_new'
+  const creativeForm = extractPromptCreativeForm(values)
+  const creativeWarnings: string[] = []
+  if (creativeForm.messageEnabled && creativeForm.authEnabled) {
+    const samePos = creativeForm.messagePosition === creativeForm.authPosition
+    const closeOffset = Math.abs(creativeForm.messageOffsetPct - creativeForm.authOffsetPct) < 10
+    if (samePos && closeOffset) creativeWarnings.push('Message and Auth widgets are very close and may overlap.')
+  }
+  if (creativeForm.messageEnabled && creativeForm.messageBgOpacity < 0.2) {
+    creativeWarnings.push('Message widget background opacity is very low; contrast may be poor on bright media.')
+  }
+  if (creativeForm.authEnabled && creativeForm.authBgOpacity < 0.2) {
+    creativeWarnings.push('Auth widget background opacity is very low; contrast may be poor on bright media.')
+  }
+  const previewUploadIdRaw = String(creativeForm.backgroundUploadId || '').trim()
+  const previewUploadId = /^\d+$/.test(previewUploadIdRaw) ? previewUploadIdRaw : ''
+  const previewBaseStyle =
+    previewUploadId && creativeForm.backgroundMode !== 'none'
+      ? (creativeForm.backgroundMode === 'image'
+        ? `background-image:url('/api/uploads/${encodeURIComponent(previewUploadId)}/file'); background-size:contain; background-position:center; background-repeat:no-repeat; background-color:#0B1320;`
+        : `background-image:url('/api/uploads/${encodeURIComponent(previewUploadId)}/thumb'); background-size:cover; background-position:center; background-repeat:no-repeat; background-color:#0B1320;`)
+      : (creativeForm.backgroundMode === 'video'
+        ? 'background:linear-gradient(135deg,#0a1930,#1e3a8a);'
+        : (creativeForm.backgroundMode === 'image'
+          ? 'background:linear-gradient(135deg,#1f2937,#4b5563);'
+          : 'background:linear-gradient(130deg,#101828,#1f2937);'))
 
   let body = `<h1>${escapeHtml(opts.title)}</h1>`
   body += `<div class="toolbar"><div><a href="${escapeHtml(opts.backHref)}">← Back to prompts</a></div><div></div></div>`
   if (opts.error) body += `<div class="error">${escapeHtml(String(opts.error))}</div>`
   if (opts.notice) body += `<div class="notice">${escapeHtml(String(opts.notice))}</div>`
+  body += `<style>
+    #prompt-editor-form {
+      max-width: 560px;
+      margin: 0 auto;
+      box-sizing: border-box;
+    }
+    #prompt-editor-form .section {
+      border: 1px solid rgba(96,165,250,0.4);
+      background: linear-gradient(180deg, rgba(28,45,58,0.72) 0%, rgba(12,16,20,0.72) 100%);
+      border-radius: 12px;
+      padding: 12px;
+      margin: 10px 0;
+    }
+    #prompt-editor-form .section-title {
+      color: #fff;
+      font-size: 18px;
+      font-weight: 900;
+      margin-bottom: 10px;
+    }
+    #prompt-editor-form .field-hint {
+      color: #bbb;
+      font-size: 12px;
+      font-weight: 800;
+    }
+    #prompt-editor-form label {
+      display: grid;
+      gap: 6px;
+      min-width: 0;
+      color: #e9eef5;
+      font-weight: 800;
+      font-size: 13px;
+    }
+    #prompt-editor-form input,
+    #prompt-editor-form select,
+    #prompt-editor-form textarea {
+      width: 100%;
+      max-width: 100%;
+      box-sizing: border-box;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.18);
+      background: #0b0b0b;
+      color: #fff;
+      padding: 10px 12px;
+      font-size: 14px;
+      font-weight: 900;
+    }
+    #prompt-editor-form input[type="checkbox"] {
+      width: auto;
+      max-width: none;
+      padding: 0;
+      border: 0;
+      background: transparent;
+    }
+    #prompt-editor-form input.color-swatch-input {
+      width: 48px;
+      min-width: 48px;
+      height: 36px;
+      padding: 2px;
+      border-radius: 8px;
+      background: transparent;
+      border: 1px solid rgba(255,255,255,0.3);
+    }
+    #prompt-editor-form .mini-field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 0;
+      align-items: flex-start;
+    }
+    #prompt-editor-form .mini-field-label {
+      color: #e9eef5;
+      font-weight: 800;
+      font-size: 13px;
+      line-height: 1.2;
+      margin: 0;
+    }
+    #prompt-editor-form .picker-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+    }
+    #prompt-editor-form .picker-row > input {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+    #prompt-editor-form .picker-btn {
+      width: 40px;
+      min-width: 40px;
+      height: 40px;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      line-height: 1;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.22);
+      background: rgba(255,255,255,0.06);
+      color: #fff;
+      cursor: pointer;
+    }
+    #prompt-editor-form .btn {
+      border: 1px solid rgba(255,255,255,0.18);
+      background: rgba(255,255,255,0.06);
+      color: #fff;
+      font-weight: 800;
+    }
+    #prompt-editor-form .btn.btn-primary-accent {
+      border: 1px solid rgba(96,165,250,0.95);
+      background: rgba(96,165,250,0.14);
+      color: #fff;
+      font-weight: 900;
+    }
+  </style>`
 
-  body += `<form method="post" action="${escapeHtml(opts.action)}">`
+  body += `<form id="prompt-editor-form" data-draft-key="${escapeHtml(draftKey)}" method="post" action="${escapeHtml(opts.action)}">`
   if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
+  const categoryValue = String(values.category || 'register_prompt').trim().toLowerCase() || 'register_prompt'
+  const categoryOptions = PROMPT_CATEGORY_OPTIONS.slice()
+  if (!categoryOptions.some((opt) => opt.value === categoryValue)) {
+    categoryOptions.unshift({ value: categoryValue, label: `Custom (${categoryValue})` })
+  }
 
-  body += `<div class="section"><div class="section-title">Identity</div>`
+  body += `<div class="section-title" style="margin:10px 0 6px">Identity</div>`
+  body += `<div class="section">`
   body += `<label>Name<input type="text" name="name" value="${escapeHtml(String(values.name || ''))}" required maxlength="120" /></label>`
-  body += `<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px">`
-  body += `<label>Kind<select name="kind">
+  body += `<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px; margin-top:10px">`
+  body += `<div class="mini-field"><div class="mini-field-label">Kind</div><select name="kind">
     <option value="prompt_full"${String(values.kind || '') === 'prompt_full' ? ' selected' : ''}>Prompt Full</option>
     <option value="prompt_overlay"${String(values.kind || '') === 'prompt_overlay' ? ' selected' : ''}>Prompt Overlay</option>
-  </select></label>`
-  body += `<label>Category<input type="text" name="category" value="${escapeHtml(String(values.category || 'register_prompt'))}" required maxlength="64" /></label>`
-  body += `<label>Priority<input type="number" name="priority" value="${escapeHtml(String(values.priority ?? 100))}" /></label>`
-  body += `<label>Status<select name="status">
+  </select></div>`
+  body += `<div class="mini-field"><div class="mini-field-label">Category</div><select name="category">`
+  for (const opt of categoryOptions) {
+    body += `<option value="${escapeHtml(opt.value)}"${opt.value === categoryValue ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+  }
+  body += `</select></div>`
+  body += `<div class="mini-field"><div class="mini-field-label">Priority</div><input type="number" name="priority" value="${escapeHtml(String(values.priority ?? 100))}" /></div>`
+  body += `<div class="mini-field"><div class="mini-field-label">Status</div><select name="status">
     <option value="draft"${String(values.status || '') === 'draft' ? ' selected' : ''}>Draft</option>
     <option value="active"${String(values.status || '') === 'active' ? ' selected' : ''}>Active</option>
     <option value="paused"${String(values.status || '') === 'paused' ? ' selected' : ''}>Paused</option>
     <option value="archived"${String(values.status || '') === 'archived' ? ' selected' : ''}>Archived</option>
+  </select></div>`
+  body += `</div>`
+  body += `</div>`
+
+  body += `<div class="section-title" style="margin:10px 0 6px">Background Media</div>`
+  body += `<div class="section">`
+  body += `<input type="hidden" name="creativeBgUploadId" value="${escapeHtml(String(creativeForm.backgroundUploadId || ''))}" />`
+  body += `<div style="display:grid; grid-template-columns:1fr; gap:10px">`
+  body += `<label>Mode<select name="creativeBgMode">
+    <option value="none"${creativeForm.backgroundMode === 'none' ? ' selected' : ''}>None</option>
+    <option value="image"${creativeForm.backgroundMode === 'image' ? ' selected' : ''}>Image</option>
+    <option value="video"${creativeForm.backgroundMode === 'video' ? ' selected' : ''}>Video</option>
   </select></label>`
   body += `</div>`
+  body += `<div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:10px; align-items:start">`
+  body += `<div class="mini-field"><div class="mini-field-label">Overlay Color</div><input class="color-swatch-input" type="color" name="creativeBgOverlayColor" value="${escapeHtml(String(creativeForm.backgroundOverlayColor || '#000000'))}" /></div>`
+  body += `<div class="mini-field"><div class="mini-field-label">Overlay Opacity</div><input type="number" name="creativeBgOverlayOpacity" min="0" max="1" step="0.05" value="${escapeHtml(String(creativeForm.backgroundOverlayOpacity))}" /></div>`
+  body += `</div>`
+  body += `<div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px">`
+  body += `<button class="btn" type="button" id="prompt-pick-bg-image">Select Image</button>`
+  body += `<button class="btn" type="button" id="prompt-pick-bg-video">Select Video</button>`
+  body += `</div>`
   body += `</div>`
 
-  body += `<div class="section"><div class="section-title">Content</div>`
+  body += `<div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin:10px 0 6px">`
+  body += `<div class="section-title" style="margin:0">Message Widget Content</div>`
+  body += `<input type="checkbox" name="creativeMessageEnabled" value="1"${creativeForm.messageEnabled ? ' checked' : ''} />`
+  body += `</div>`
+  body += `<div id="message-widget-content-section" class="section"${creativeForm.messageEnabled ? '' : ' style="display:none"'}>`
+  body += `<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px">`
+  body += `<label>Message Label<input type="text" name="creativeMessageLabel" value="${escapeHtml(String(creativeForm.messageLabel || 'Join the Community'))}" required maxlength="100" /></label>`
   body += `<label>Headline<input type="text" name="headline" value="${escapeHtml(String(values.headline || ''))}" required maxlength="280" /></label>`
-  body += `<label>Body<textarea name="body" rows="4">${escapeHtml(String(values.body || ''))}</textarea></label>`
   body += `</div>`
-
-  body += `<div class="section"><div class="section-title">Calls to Action</div>`
+  body += `<label>Body<textarea name="body" rows="4">${escapeHtml(String(values.body || ''))}</textarea></label>`
   body += `<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px">`
   body += `<label>Primary Label<input type="text" name="ctaPrimaryLabel" value="${escapeHtml(String(values.ctaPrimaryLabel || values.cta_primary_label || ''))}" required maxlength="100" /></label>`
   body += `<label>Primary Href<input type="text" name="ctaPrimaryHref" value="${escapeHtml(String(values.ctaPrimaryHref || values.cta_primary_href || '/register?return=/'))}" required maxlength="1200" /></label>`
   body += `<label>Secondary Label<input type="text" name="ctaSecondaryLabel" value="${escapeHtml(String(values.ctaSecondaryLabel || values.cta_secondary_label || ''))}" maxlength="100" /></label>`
   body += `<label>Secondary Href<input type="text" name="ctaSecondaryHref" value="${escapeHtml(String(values.ctaSecondaryHref || values.cta_secondary_href || ''))}" maxlength="1200" /></label>`
   body += `</div>`
-  body += `<div class="field-hint">V1 supports internal paths only, e.g. <code>/register?return=/</code> or <code>/login?return=/</code>.</div>`
+  body += `<div class="field-hint">Internal paths only (e.g. <code>/register?return=/</code>, <code>/login?return=/</code>).</div>`
+  body += `<label>Position<select name="creativeMessagePosition">
+    <option value="top"${creativeForm.messagePosition === 'top' ? ' selected' : ''}>Top</option>
+    <option value="middle"${creativeForm.messagePosition === 'middle' ? ' selected' : ''}>Middle</option>
+    <option value="bottom"${creativeForm.messagePosition === 'bottom' ? ' selected' : ''}>Bottom</option>
+  </select></label>`
+  body += `<div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:10px; align-items:start">`
+  body += `<div class="mini-field"><div class="mini-field-label">Y Offset (%)</div><input type="number" name="creativeMessageOffsetPct" min="-40" max="40" value="${escapeHtml(String(creativeForm.messageOffsetPct))}" /></div>`
+  body += `<div class="mini-field"><div class="mini-field-label">Text Color</div><input class="color-swatch-input" type="color" name="creativeMessageTextColor" value="${escapeHtml(String(creativeForm.messageTextColor || '#FFFFFF'))}" /></div>`
+  body += `</div>`
+  body += `<div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:10px; align-items:start">`
+  body += `<div class="mini-field"><div class="mini-field-label">Background Color</div><input class="color-swatch-input" type="color" name="creativeMessageBgColor" value="${escapeHtml(String(creativeForm.messageBgColor || '#0B1320'))}" /></div>`
+  body += `<div class="mini-field"><div class="mini-field-label">Background Opacity</div><input type="number" name="creativeMessageBgOpacity" min="0" max="1" step="0.05" value="${escapeHtml(String(creativeForm.messageBgOpacity))}" /></div>`
+  body += `</div>`
   body += `</div>`
 
-  body += `<div class="section"><div class="section-title">Scheduling</div>`
-  body += `<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px">`
-  body += `<label>Starts At (UTC)<input type="datetime-local" name="startsAt" value="${escapeHtml(toDateTimeLocalValue(values.startsAt || values.starts_at))}" /></label>`
-  body += `<label>Ends At (UTC)<input type="datetime-local" name="endsAt" value="${escapeHtml(toDateTimeLocalValue(values.endsAt || values.ends_at))}" /></label>`
-  body += `<label>Media Upload ID (optional)<input type="number" name="mediaUploadId" value="${escapeHtml(String(values.mediaUploadId || values.media_upload_id || ''))}" min="1" /></label>`
+  body += `<div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin:10px 0 6px">`
+  body += `<div class="section-title" style="margin:0">Auth Widget</div>`
+  body += `<input type="checkbox" name="creativeAuthEnabled" value="1"${creativeForm.authEnabled ? ' checked' : ''} />`
+  body += `</div>`
+  body += `<div id="auth-widget-style-section" class="section"${creativeForm.authEnabled ? '' : ' style="display:none"'}>`
+  body += `<label>Position<select name="creativeAuthPosition">
+    <option value="top"${creativeForm.authPosition === 'top' ? ' selected' : ''}>Top</option>
+    <option value="middle"${creativeForm.authPosition === 'middle' ? ' selected' : ''}>Middle</option>
+    <option value="bottom"${creativeForm.authPosition === 'bottom' ? ' selected' : ''}>Bottom</option>
+  </select></label>`
+  body += `<div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:10px; align-items:start">`
+  body += `<div class="mini-field"><div class="mini-field-label">Y Offset (%)</div><input type="number" name="creativeAuthOffsetPct" min="-40" max="40" value="${escapeHtml(String(creativeForm.authOffsetPct))}" /></div>`
+  body += `<div class="mini-field"><div class="mini-field-label">Text Color</div><input class="color-swatch-input" type="color" name="creativeAuthTextColor" value="${escapeHtml(String(creativeForm.authTextColor || '#FFFFFF'))}" /></div>`
+  body += `</div>`
+  body += `<div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:10px; align-items:start">`
+  body += `<div class="mini-field"><div class="mini-field-label">Background Color</div><input class="color-swatch-input" type="color" name="creativeAuthBgColor" value="${escapeHtml(String(creativeForm.authBgColor || '#0B1320'))}" /></div>`
+  body += `<div class="mini-field"><div class="mini-field-label">Background Opacity</div><input type="number" name="creativeAuthBgOpacity" min="0" max="1" step="0.05" value="${escapeHtml(String(creativeForm.authBgOpacity))}" /></div>`
   body += `</div>`
   body += `</div>`
 
-  body += `<div class="section"><div class="section-title">Preview</div>`
-  body += `<div style="border:1px solid rgba(255,255,255,0.2); border-radius:12px; background:rgba(255,255,255,0.04); overflow:hidden">`
-  if (String(values.kind || '') === 'prompt_overlay') {
-    body += `<div style="height:180px; background:linear-gradient(130deg,#101828,#1f2937); position:relative">`
-    body += `<div style="position:absolute; left:14px; right:14px; bottom:14px; border:1px solid rgba(255,255,255,0.25); border-radius:10px; background:rgba(0,0,0,0.45); padding:12px">`
-    body += `<div style="font-weight:700; margin-bottom:6px">${escapeHtml(String(values.headline || 'Prompt headline'))}</div>`
-    if (values.body) body += `<div style="opacity:0.9; margin-bottom:10px">${escapeHtml(String(values.body || ''))}</div>`
-    body += `<div style="display:flex; gap:8px; flex-wrap:wrap"><span class="btn">${escapeHtml(String(values.ctaPrimaryLabel || values.cta_primary_label || 'Primary'))}</span>`
-    if (values.ctaSecondaryLabel || values.cta_secondary_label) body += `<span class="btn" style="background:rgba(255,255,255,0.06)">${escapeHtml(String(values.ctaSecondaryLabel || values.cta_secondary_label || 'Secondary'))}</span>`
-    body += `</div></div></div>`
-  } else {
-    body += `<div style="padding:18px; min-height:180px; display:flex; align-items:center; justify-content:center">`
-    body += `<div style="width:min(420px,100%); border:1px solid rgba(255,255,255,0.22); border-radius:14px; background:rgba(0,0,0,0.48); padding:16px">`
-    body += `<div style="font-size:22px; font-weight:800; margin-bottom:8px">${escapeHtml(String(values.headline || 'Prompt headline'))}</div>`
-    if (values.body) body += `<div style="opacity:0.92; margin-bottom:12px">${escapeHtml(String(values.body || ''))}</div>`
-    body += `<div style="display:flex; gap:8px; flex-wrap:wrap"><span class="btn">${escapeHtml(String(values.ctaPrimaryLabel || values.cta_primary_label || 'Primary'))}</span>`
-    if (values.ctaSecondaryLabel || values.cta_secondary_label) body += `<span class="btn" style="background:rgba(255,255,255,0.06)">${escapeHtml(String(values.ctaSecondaryLabel || values.cta_secondary_label || 'Secondary'))}</span>`
-    body += `</div></div></div>`
-  }
+  body += `<div class="section-title" style="margin:10px 0 6px">Scheduling</div>`
+  body += `<div class="section">`
+  const startsAtBase = values.startsAtDate || values.startsAtTime ? '' : toDateTimeLocalValue(values.startsAt || values.starts_at)
+  const endsAtBase = values.endsAtDate || values.endsAtTime ? '' : toDateTimeLocalValue(values.endsAt || values.ends_at)
+  const startsAtDateValue = String(values.startsAtDate || toDateOnlyValue(startsAtBase))
+  const startsAtTimeValue = String(values.startsAtTime || toTimeOnlyValue(startsAtBase))
+  const endsAtDateValue = String(values.endsAtDate || toDateOnlyValue(endsAtBase))
+  const endsAtTimeValue = String(values.endsAtTime || toTimeOnlyValue(endsAtBase))
+  body += `<input type="hidden" name="startsAt" value="${escapeHtml(startsAtDateValue && startsAtTimeValue ? `${startsAtDateValue}T${startsAtTimeValue}` : '')}" />`
+  body += `<input type="hidden" name="endsAt" value="${escapeHtml(endsAtDateValue && endsAtTimeValue ? `${endsAtDateValue}T${endsAtTimeValue}` : '')}" />`
+  body += `<div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px">`
+  body += `<div class="mini-field"><div class="mini-field-label">Starts Date (UTC)</div><div class="picker-row"><input id="startsAtDate" type="date" name="startsAtDate" value="${escapeHtml(startsAtDateValue)}" /><button type="button" class="picker-btn" data-picker-target="startsAtDate" aria-label="Open starts date picker">📅</button></div></div>`
+  body += `<div class="mini-field"><div class="mini-field-label">Starts Time (UTC)</div><div class="picker-row"><input id="startsAtTime" type="time" name="startsAtTime" step="60" value="${escapeHtml(startsAtTimeValue)}" /><button type="button" class="picker-btn" data-picker-target="startsAtTime" aria-label="Open starts time picker">🕒</button></div></div>`
+  body += `<div class="mini-field"><div class="mini-field-label">Ends Date (UTC)</div><div class="picker-row"><input id="endsAtDate" type="date" name="endsAtDate" value="${escapeHtml(endsAtDateValue)}" /><button type="button" class="picker-btn" data-picker-target="endsAtDate" aria-label="Open ends date picker">📅</button></div></div>`
+  body += `<div class="mini-field"><div class="mini-field-label">Ends Time (UTC)</div><div class="picker-row"><input id="endsAtTime" type="time" name="endsAtTime" step="60" value="${escapeHtml(endsAtTimeValue)}" /><button type="button" class="picker-btn" data-picker-target="endsAtTime" aria-label="Open ends time picker">🕒</button></div></div>`
+  body += `</div>`
+  body += `</div>`
+
+  body += `<div class="section-title" style="margin:10px 0 6px">Preview</div>`
+  body += `<div style="border:1px solid rgba(96,165,250,0.6); border-radius:12px; background:linear-gradient(180deg, rgba(28,45,58,0.72) 0%, rgba(12,16,20,0.72) 100%); overflow:hidden">`
+  body += `<div id="prompt-preview-device" style="width:100%; max-width:100%; aspect-ratio:9/16; margin:0; ${previewBaseStyle} position:relative">`
+  body += `<div id="prompt-preview-overlay" style="position:absolute; inset:0; background:${hexToRgba(creativeForm.backgroundOverlayColor, creativeForm.backgroundOverlayOpacity)}"></div>`
+  body += `<div id="prompt-preview-mode-badge" style="position:absolute; top:10px; right:10px; z-index:2; border:1px solid rgba(255,255,255,0.25); border-radius:999px; padding:3px 8px; font-size:11px; background:rgba(0,0,0,0.45)">Mode: ${escapeHtml(String(creativeForm.backgroundMode))}</div>`
+  const msgBasePct = creativeForm.messagePosition === 'top' ? 8 : (creativeForm.messagePosition === 'middle' ? 42 : 74)
+  const msgTopPct = Math.max(2, Math.min(92, msgBasePct + creativeForm.messageOffsetPct))
+  body += `<div id="prompt-preview-message" style="display:${creativeForm.messageEnabled ? 'block' : 'none'}; position:absolute; left:14px; right:14px; top:${msgTopPct}%; z-index:2; border:1px solid rgba(255,255,255,0.24); border-radius:10px; background:${hexToRgba(creativeForm.messageBgColor, creativeForm.messageBgOpacity)}; color:${escapeHtml(creativeForm.messageTextColor)}; padding:10px">`
+  body += `<div id="prompt-preview-message-label" style="font-size:12px; opacity:0.9; margin-bottom:4px">${escapeHtml(String(creativeForm.messageLabel || 'Message'))}</div>`
+  body += `<div id="prompt-preview-message-headline" style="font-weight:700; margin-bottom:6px">${escapeHtml(String(values.headline || 'Prompt headline'))}</div>`
+  body += `<div id="prompt-preview-message-body"${values.body ? '' : ' hidden'} style="opacity:0.9; margin-bottom:8px">${escapeHtml(String(values.body || ''))}</div>`
+  body += `<div style="display:flex; gap:8px; flex-wrap:wrap"><span id="prompt-preview-primary-btn" class="btn">${escapeHtml(String(values.ctaPrimaryLabel || values.cta_primary_label || 'Primary'))}</span>`
+  body += `<span id="prompt-preview-secondary-btn" class="btn" style="background:rgba(255,255,255,0.06); display:${(values.ctaSecondaryLabel || values.cta_secondary_label) ? 'inline-flex' : 'none'}">${escapeHtml(String(values.ctaSecondaryLabel || values.cta_secondary_label || 'Secondary'))}</span>`
   body += `</div></div>`
+  const authBasePct = creativeForm.authPosition === 'top' ? 8 : (creativeForm.authPosition === 'middle' ? 56 : 84)
+  const authTopPct = Math.max(2, Math.min(94, authBasePct + creativeForm.authOffsetPct))
+  body += `<div id="prompt-preview-auth" style="display:${creativeForm.authEnabled ? 'block' : 'none'}; position:absolute; left:14px; right:14px; top:${authTopPct}%; z-index:2; border:1px solid rgba(255,255,255,0.24); border-radius:10px; background:${hexToRgba(creativeForm.authBgColor, creativeForm.authBgOpacity)}; color:${escapeHtml(creativeForm.authTextColor)}; padding:8px">`
+  body += `<div style="display:flex; gap:8px; flex-wrap:wrap"><span class="btn">Register</span><span class="btn" style="background:rgba(255,255,255,0.06)">Login</span><span class="btn" style="background:rgba(0,0,0,0.24)">Dismiss</span></div>`
+  body += `</div>`
+  body += `</div>`
+  if (creativeWarnings.length) {
+    body += `<div style="margin-top:10px; display:grid; gap:6px">`
+    for (const warning of creativeWarnings) body += `<div class="field-hint" style="color:#facc15">${escapeHtml(warning)}</div>`
+    body += `</div>`
+  }
+  body += `</div>`
+  body += `<script>
+    (function () {
+      const form = document.getElementById('prompt-editor-form');
+      if (!form) return;
+      const draftKey = form.getAttribute('data-draft-key') || 'admin_prompt_editor_draft_new';
+      const q = (name) => form.querySelector('[name="' + name + '"]');
+      const v = (name, fallback = '') => {
+        const el = q(name);
+        if (!el) return fallback;
+        const value = el.value == null ? '' : String(el.value);
+        return value === '' ? fallback : value;
+      };
+      const vb = (name, fallback = false) => {
+        const el = q(name);
+        if (!el) return fallback;
+        return Boolean(el.checked);
+      };
+      const vn = (name, fallback = 0) => {
+        const n = Number(v(name, ''));
+        return Number.isFinite(n) ? n : fallback;
+      };
+      const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
+      const hex = (s, fallback) => /^#[0-9a-fA-F]{6}$/.test(String(s || '')) ? String(s).toUpperCase() : fallback;
+      const hexToRgba = (h, a) => {
+        const c = hex(h, '#000000').slice(1);
+        const r = parseInt(c.slice(0, 2), 16);
+        const g = parseInt(c.slice(2, 4), 16);
+        const b = parseInt(c.slice(4, 6), 16);
+        return 'rgba(' + r + ', ' + g + ', ' + b + ', ' + clamp(a, 0, 1) + ')';
+      };
+      const preview = {
+        messageSection: document.getElementById('message-widget-content-section'),
+        authSection: document.getElementById('auth-widget-style-section'),
+        device: document.getElementById('prompt-preview-device'),
+        overlay: document.getElementById('prompt-preview-overlay'),
+        modeBadge: document.getElementById('prompt-preview-mode-badge'),
+        message: document.getElementById('prompt-preview-message'),
+        auth: document.getElementById('prompt-preview-auth'),
+        messageLabel: document.getElementById('prompt-preview-message-label'),
+        messageHeadline: document.getElementById('prompt-preview-message-headline'),
+        messageBody: document.getElementById('prompt-preview-message-body'),
+        primaryBtn: document.getElementById('prompt-preview-primary-btn'),
+        secondaryBtn: document.getElementById('prompt-preview-secondary-btn'),
+      };
+      const pickImageBtn = document.getElementById('prompt-pick-bg-image');
+      const pickVideoBtn = document.getElementById('prompt-pick-bg-video');
+      if (!preview.device || !preview.message || !preview.auth) return;
+      let lastBgMode = String(v('creativeBgMode', 'none')).toLowerCase();
 
-  body += `<div class="toolbar"><div></div><div style="display:flex; gap:8px"><button class="btn" type="submit">Save</button></div></div>`
+      function serializeForm() {
+        const out = {};
+        const fields = form.querySelectorAll('input[name], select[name], textarea[name]');
+        fields.forEach(function (el) {
+          const name = el.name;
+          if (!name || name === 'csrf') return;
+          if (el.type === 'checkbox') out[name] = el.checked ? '1' : '0';
+          else out[name] = el.value == null ? '' : String(el.value);
+        });
+        return out;
+      }
+
+      function applyDraft(data) {
+        if (!data || typeof data !== 'object') return;
+        Object.keys(data).forEach(function (name) {
+          const el = q(name);
+          if (!el) return;
+          if (el.type === 'checkbox') el.checked = String(data[name] || '') === '1';
+          else el.value = String(data[name] == null ? '' : data[name]);
+        });
+      }
+
+      function saveDraft() {
+        try {
+          sessionStorage.setItem(draftKey, JSON.stringify(serializeForm()));
+        } catch {}
+      }
+
+      function restoreDraftIfAny() {
+        try {
+          const raw = sessionStorage.getItem(draftKey);
+          if (!raw) return;
+          const parsed = JSON.parse(raw);
+          applyDraft(parsed);
+        } catch {}
+      }
+
+      function handlePickedAssetFromQuery() {
+        try {
+          const url = new URL(window.location.href);
+          const pickedUploadId = String(url.searchParams.get('cvPickUploadId') || '').trim();
+          const pickedType = String(url.searchParams.get('cvPickType') || '').trim().toLowerCase();
+          if (!pickedUploadId) return;
+          const uploadInput = q('creativeBgUploadId');
+          if (uploadInput) uploadInput.value = pickedUploadId;
+          const modeInput = q('creativeBgMode');
+          if (modeInput) {
+            if (pickedType === 'video' || pickedType === 'videooverlay') modeInput.value = 'video';
+            else modeInput.value = 'image';
+          }
+          url.searchParams.delete('cvPickUploadId');
+          url.searchParams.delete('cvPickType');
+          const next = url.pathname + (url.search || '') + (url.hash || '');
+          window.history.replaceState(window.history.state, '', next);
+        } catch {}
+      }
+
+      function openAssetPicker(kind) {
+        saveDraft();
+        try {
+          const here = new URL(window.location.href);
+          here.searchParams.delete('cvPickUploadId');
+          here.searchParams.delete('cvPickType');
+          const returnHref = here.pathname + (here.search || '');
+          const target = kind === 'video'
+            ? ('/assets/video?mode=pick&pickType=video&return=' + encodeURIComponent(returnHref))
+            : ('/assets/graphic?mode=pick&pickType=graphic&return=' + encodeURIComponent(returnHref));
+          window.location.href = target;
+        } catch {}
+      }
+
+      function syncScheduleDateTimeFields() {
+        const pairs = [
+          { hidden: 'startsAt', date: 'startsAtDate', time: 'startsAtTime' },
+          { hidden: 'endsAt', date: 'endsAtDate', time: 'endsAtTime' },
+        ];
+        for (const p of pairs) {
+          const hidden = q(p.hidden);
+          if (!hidden) continue;
+          const d = String(v(p.date, '') || '').trim();
+          const t = String(v(p.time, '') || '').trim();
+          hidden.value = d && t ? (d + 'T' + t) : '';
+        }
+      }
+
+      function updatePreview() {
+        const bgMode = String(v('creativeBgMode', 'none')).toLowerCase();
+        const bgUploadId = String(v('creativeBgUploadId', '')).trim();
+        const bgOverlayColor = hex(v('creativeBgOverlayColor', '#000000'), '#000000');
+        const bgOverlayOpacity = clamp(vn('creativeBgOverlayOpacity', 0.35), 0, 1);
+
+        const msgEnabled = vb('creativeMessageEnabled', false);
+        const msgPos = String(v('creativeMessagePosition', 'middle')).toLowerCase();
+        const msgOffset = clamp(vn('creativeMessageOffsetPct', 0), -40, 40);
+        const msgBg = hex(v('creativeMessageBgColor', '#0B1320'), '#0B1320');
+        const msgBgOpacity = clamp(vn('creativeMessageBgOpacity', 0.55), 0, 1);
+        const msgText = hex(v('creativeMessageTextColor', '#FFFFFF'), '#FFFFFF');
+
+        const authEnabled = vb('creativeAuthEnabled', false);
+        const authPos = String(v('creativeAuthPosition', 'bottom')).toLowerCase();
+        const authOffset = clamp(vn('creativeAuthOffsetPct', 0), -40, 40);
+        const authBg = hex(v('creativeAuthBgColor', '#0B1320'), '#0B1320');
+        const authBgOpacity = clamp(vn('creativeAuthBgOpacity', 0.55), 0, 1);
+        const authText = hex(v('creativeAuthTextColor', '#FFFFFF'), '#FFFFFF');
+
+        const msgBase = msgPos === 'top' ? 8 : (msgPos === 'bottom' ? 74 : 42);
+        const authBase = authPos === 'top' ? 8 : (authPos === 'bottom' ? 84 : 56);
+        preview.message.style.top = clamp(msgBase + msgOffset, 2, 92) + '%';
+        preview.auth.style.top = clamp(authBase + authOffset, 2, 94) + '%';
+
+        preview.message.style.display = msgEnabled ? 'block' : 'none';
+        preview.auth.style.display = authEnabled ? 'block' : 'none';
+        if (preview.messageSection) preview.messageSection.style.display = msgEnabled ? '' : 'none';
+        if (preview.authSection) preview.authSection.style.display = authEnabled ? '' : 'none';
+
+        preview.message.style.background = hexToRgba(msgBg, msgBgOpacity);
+        preview.message.style.color = msgText;
+        preview.auth.style.background = hexToRgba(authBg, authBgOpacity);
+        preview.auth.style.color = authText;
+
+        const label = v('creativeMessageLabel', 'Message');
+        const headline = v('headline', 'Prompt headline');
+        const body = String(v('body', '') || '').trim();
+        const primary = v('ctaPrimaryLabel', 'Primary');
+        const secondary = String(v('ctaSecondaryLabel', '') || '').trim();
+
+        if (preview.messageLabel) preview.messageLabel.textContent = label;
+        if (preview.messageHeadline) preview.messageHeadline.textContent = headline;
+        if (preview.messageBody) {
+          preview.messageBody.textContent = body;
+          preview.messageBody.hidden = !body;
+        }
+        if (preview.primaryBtn) preview.primaryBtn.textContent = primary;
+        if (preview.secondaryBtn) {
+          preview.secondaryBtn.textContent = secondary || 'Secondary';
+          preview.secondaryBtn.style.display = secondary ? 'inline-flex' : 'none';
+        }
+
+        if (preview.overlay) preview.overlay.style.background = hexToRgba(bgOverlayColor, bgOverlayOpacity);
+        if (preview.modeBadge) {
+          preview.modeBadge.textContent = 'Mode: ' + (bgMode || 'none') + (bgUploadId ? (' #' + bgUploadId) : '');
+        }
+        if (pickImageBtn) pickImageBtn.style.display = bgMode === 'image' ? '' : 'none';
+        if (pickVideoBtn) pickVideoBtn.style.display = bgMode === 'video' ? '' : 'none';
+        if (preview.device) {
+          const mediaUrl = bgUploadId
+            ? (bgMode === 'image'
+              ? ('/api/uploads/' + encodeURIComponent(String(bgUploadId)) + '/file')
+              : ('/api/uploads/' + encodeURIComponent(String(bgUploadId)) + '/thumb'))
+            : '';
+          if ((bgMode === 'image' || bgMode === 'video') && mediaUrl) {
+            preview.device.style.backgroundImage = 'url("' + mediaUrl + '")';
+            preview.device.style.backgroundSize = bgMode === 'image' ? 'contain' : 'cover';
+            preview.device.style.backgroundPosition = 'center';
+            preview.device.style.backgroundRepeat = 'no-repeat';
+            preview.device.style.backgroundColor = '#0B1320';
+          } else if (bgMode === 'video') {
+            preview.device.style.backgroundImage = '';
+            preview.device.style.backgroundSize = '';
+            preview.device.style.backgroundPosition = '';
+            preview.device.style.backgroundRepeat = '';
+            preview.device.style.background = 'linear-gradient(135deg,#0a1930,#1e3a8a)';
+          } else if (bgMode === 'image') {
+            preview.device.style.backgroundImage = '';
+            preview.device.style.backgroundSize = '';
+            preview.device.style.backgroundPosition = '';
+            preview.device.style.backgroundRepeat = '';
+            preview.device.style.background = 'linear-gradient(135deg,#1f2937,#4b5563)';
+          } else {
+            preview.device.style.backgroundImage = '';
+            preview.device.style.backgroundSize = '';
+            preview.device.style.backgroundPosition = '';
+            preview.device.style.backgroundRepeat = '';
+            preview.device.style.background = 'linear-gradient(130deg,#101828,#1f2937)';
+          }
+        }
+      }
+
+      try {
+        const url = new URL(window.location.href);
+        if (url.searchParams.has('notice')) sessionStorage.removeItem(draftKey);
+      } catch {}
+
+      restoreDraftIfAny();
+      handlePickedAssetFromQuery();
+      syncScheduleDateTimeFields();
+      lastBgMode = String(v('creativeBgMode', 'none')).toLowerCase();
+
+      form.addEventListener('input', function () { syncScheduleDateTimeFields(); updatePreview(); saveDraft(); });
+      form.addEventListener('change', function (event) {
+        const target = event && event.target ? event.target : null;
+        if (target && target.name === 'creativeBgMode') {
+          const nextBgMode = String(v('creativeBgMode', 'none')).toLowerCase();
+          if (nextBgMode !== lastBgMode) {
+            const bgUploadInput = q('creativeBgUploadId');
+            if (bgUploadInput) bgUploadInput.value = '';
+            lastBgMode = nextBgMode;
+          }
+        }
+        syncScheduleDateTimeFields();
+        updatePreview();
+        saveDraft();
+      });
+      form.addEventListener('click', function (event) {
+        const source = event && event.target && event.target.closest ? event.target.closest('[data-picker-target]') : null;
+        if (!source) return;
+        const targetName = source.getAttribute('data-picker-target');
+        if (!targetName) return;
+        const input = q(targetName);
+        if (!input) return;
+        try {
+          if (typeof input.showPicker === 'function') input.showPicker();
+          else input.focus();
+        } catch {
+          try { input.focus(); } catch {}
+        }
+      });
+      form.addEventListener('submit', function () { syncScheduleDateTimeFields(); try { sessionStorage.removeItem(draftKey); } catch {} });
+
+      if (pickImageBtn) pickImageBtn.addEventListener('click', function () { openAssetPicker('image'); });
+      if (pickVideoBtn) pickVideoBtn.addEventListener('click', function () { openAssetPicker('video'); });
+      updatePreview();
+    })();
+  </script>`
+
+  body += `<div class="toolbar"><div></div><div style="display:flex; gap:8px"><button class="btn btn-primary-accent" type="submit">Save</button></div></div>`
   body += `</form>`
 
   if (opts.showClone && id) {
@@ -3233,8 +3912,9 @@ pagesRouter.get('/admin/prompts/new', async (req: any, res: any) => {
 pagesRouter.post('/admin/prompts', async (req: any, res: any) => {
   const cookies = parseCookies(req.headers.cookie)
   const csrfToken = cookies['csrf'] || ''
+  const payload = buildPromptCreateOrUpdatePayload(req.body || {})
   try {
-    const created = await promptsSvc.createForAdmin(req.body || {}, Number(req.user?.id || 0))
+    const created = await promptsSvc.createForAdmin(payload, Number(req.user?.id || 0))
     res.redirect(`/admin/prompts/${created.id}?notice=${encodeURIComponent('Prompt created.')}`)
   } catch (err: any) {
     const doc = renderAdminPromptForm({
@@ -3242,7 +3922,7 @@ pagesRouter.post('/admin/prompts', async (req: any, res: any) => {
       action: '/admin/prompts',
       csrfToken,
       backHref: '/admin/prompts',
-      values: req.body || {},
+      values: payload,
       error: String(err?.message || 'Failed to create prompt'),
     })
     res.status(400).set('Content-Type', 'text/html; charset=utf-8').send(doc)
@@ -3279,8 +3959,9 @@ pagesRouter.post('/admin/prompts/:id', async (req: any, res: any) => {
   if (!Number.isFinite(id) || id <= 0) return res.status(400).send('Bad prompt id')
   const cookies = parseCookies(req.headers.cookie)
   const csrfToken = cookies['csrf'] || ''
+  const payload = buildPromptCreateOrUpdatePayload(req.body || {})
   try {
-    await promptsSvc.updateForAdmin(id, req.body || {}, Number(req.user?.id || 0))
+    await promptsSvc.updateForAdmin(id, payload, Number(req.user?.id || 0))
     res.redirect(`/admin/prompts/${id}?notice=${encodeURIComponent('Saved.')}`)
   } catch (err: any) {
     const doc = renderAdminPromptForm({
@@ -3288,7 +3969,7 @@ pagesRouter.post('/admin/prompts/:id', async (req: any, res: any) => {
       action: `/admin/prompts/${id}`,
       csrfToken,
       backHref: '/admin/prompts',
-      values: { ...(req.body || {}), id },
+      values: { ...payload, id },
       error: String(err?.message || 'Failed to save prompt'),
       showClone: true,
     })
