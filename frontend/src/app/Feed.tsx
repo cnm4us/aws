@@ -175,14 +175,26 @@ function toRgba(hex: string, opacity: number): string {
   return `rgba(${r}, ${g}, ${b}, ${a})`
 }
 
-function promptWidgetTop(position: 'top' | 'middle' | 'bottom', offsetPct: number, mode: 'message' | 'auth'): number {
+function clampNum(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value))
+}
+
+function promptWidgetPlacement(
+  position: 'top' | 'middle' | 'bottom',
+  offsetPct: number,
+  mode: 'message' | 'auth'
+): { top?: string; bottom?: string } {
+  const offset = Number(offsetPct || 0)
+  const clampedInset = clampNum(offset, 0, 80)
+  if (position === 'bottom') {
+    const bottom = clampNum(2 + clampedInset, 2, mode === 'message' ? 92 : 94)
+    return { bottom: `${bottom}%` }
+  }
   const base = mode === 'message'
-    ? (position === 'top' ? 8 : position === 'middle' ? 42 : 74)
-    : (position === 'top' ? 8 : position === 'middle' ? 56 : 84)
-  const next = base + Number(offsetPct || 0)
-  return mode === 'message'
-    ? Math.max(2, Math.min(92, next))
-    : Math.max(2, Math.min(94, next))
+    ? (position === 'top' ? 2 : 42)
+    : (position === 'top' ? 2 : 56)
+  const top = clampNum(base + clampedInset, 2, mode === 'message' ? 92 : 94)
+  return { top: `${top}%` }
 }
 
 function buildUploadItem(raw: any, owner?: { id: number | null; displayName?: string | null; email?: string | null; avatarUrl?: string | null } | null, publication?: any | null): UploadItem {
@@ -308,8 +320,8 @@ async function fetchPromptById(promptId: number): Promise<FeedPromptPayload> {
   const authPosRaw = String(authWidget.position || 'bottom').toLowerCase()
   const messagePos: 'top' | 'middle' | 'bottom' = messagePosRaw === 'top' ? 'top' : (messagePosRaw === 'bottom' ? 'bottom' : 'middle')
   const authPos: 'top' | 'middle' | 'bottom' = authPosRaw === 'top' ? 'top' : (authPosRaw === 'bottom' ? 'bottom' : 'middle')
-  const messageOffset = Math.max(-40, Math.min(40, Math.round(Number(messageWidget.yOffsetPct ?? 0) || 0)))
-  const authOffset = Math.max(-40, Math.min(40, Math.round(Number(authWidget.yOffsetPct ?? 0) || 0)))
+  const messageOffset = Math.max(0, Math.min(80, Math.round(Number(messageWidget.yOffsetPct ?? 0) || 0)))
+  const authOffset = Math.max(0, Math.min(80, Math.round(Number(authWidget.yOffsetPct ?? 0) || 0)))
   return {
     id: Number(p.id),
     category: String(p.category || ''),
@@ -2315,8 +2327,8 @@ export default function Feed() {
           const panelBg = promptPoster
             ? `url(${promptPoster}) center/cover no-repeat`
             : 'linear-gradient(180deg, rgba(8,12,18,0.95) 0%, rgba(6,8,12,0.98) 100%)'
-          const messageTop = promptWidgetTop(prompt.widgets.message.position, prompt.widgets.message.yOffsetPct, 'message')
-          const authTop = promptWidgetTop(prompt.widgets.auth.position, prompt.widgets.auth.yOffsetPct, 'auth')
+          const messagePlacement = promptWidgetPlacement(prompt.widgets.message.position, prompt.widgets.message.yOffsetPct, 'message')
+          const authPlacement = promptWidgetPlacement(prompt.widgets.auth.position, prompt.widgets.auth.yOffsetPct, 'auth')
           return (
             <div
               key={slideId}
@@ -2411,14 +2423,14 @@ export default function Feed() {
                           position: 'absolute',
                           left: 14,
                           right: 14,
-                          top: `${messageTop}%`,
+                          ...messagePlacement,
                           borderRadius: 12,
                           border: '1px solid rgba(255,255,255,0.26)',
                           background: toRgba(prompt.widgets.message.bgColor, prompt.widgets.message.bgOpacity),
                           backdropFilter: 'blur(6px)',
                           color: prompt.widgets.message.textColor,
                           padding: '14px 12px',
-                          textAlign: 'center',
+                          textAlign: 'left',
                         }}
                       >
                         <div style={{ fontSize: 12, opacity: 0.9, marginBottom: 4 }}>
@@ -2430,16 +2442,17 @@ export default function Feed() {
                             {prompt.body}
                           </div>
                         ) : null}
-                        <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', gap: 10, justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
                           <button
                             type="button"
                             onClick={() => handlePromptCtaClick(prompt, prompt.ctaPrimaryHref, 'primary')}
                             style={{
-                              border: '1px solid rgba(10,132,255,0.8)',
-                              background: 'rgba(10,132,255,0.45)',
+                              border: '1px solid rgba(255,255,255,0.45)',
+                              background: 'rgba(0,0,0,0.5)',
                               color: '#fff',
                               borderRadius: 11,
                               padding: '9px 13px',
+                              fontSize: 15,
                               fontWeight: 700,
                               cursor: 'pointer',
                             }}
@@ -2449,16 +2462,17 @@ export default function Feed() {
                           {prompt.ctaSecondaryLabel && prompt.ctaSecondaryHref ? (
                             <button
                               type="button"
-                              onClick={() => handlePromptCtaClick(prompt, prompt.ctaSecondaryHref || '', 'secondary')}
-                              style={{
-                                border: '1px solid rgba(255,255,255,0.45)',
-                                background: 'rgba(6,10,16,0.65)',
-                                color: '#fff',
-                                borderRadius: 11,
-                                padding: '9px 13px',
-                                fontWeight: 700,
-                                cursor: 'pointer',
-                              }}
+                            onClick={() => handlePromptCtaClick(prompt, prompt.ctaSecondaryHref || '', 'secondary')}
+                            style={{
+                              border: '1px solid rgba(255,255,255,0.45)',
+                              background: 'rgba(0,0,0,0.5)',
+                              color: '#fff',
+                              borderRadius: 11,
+                              padding: '9px 13px',
+                              fontSize: 15,
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                            }}
                             >
                               {prompt.ctaSecondaryLabel}
                             </button>
@@ -2472,7 +2486,7 @@ export default function Feed() {
                           position: 'absolute',
                           left: 14,
                           right: 14,
-                          top: `${authTop}%`,
+                          ...authPlacement,
                           borderRadius: 12,
                           border: '1px solid rgba(255,255,255,0.26)',
                           background: toRgba(prompt.widgets.auth.bgColor, prompt.widgets.auth.bgOpacity),
@@ -2481,16 +2495,26 @@ export default function Feed() {
                           padding: '10px 10px',
                         }}
                       >
-                        <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+                        <div
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: '1fr 1fr 1fr',
+                            alignItems: 'center',
+                            width: '100%',
+                            gap: 8,
+                          }}
+                        >
                           <button
                             type="button"
                             onClick={() => handlePromptCtaClick(prompt, '/register?return=/', 'primary')}
                             style={{
-                              border: '1px solid rgba(10,132,255,0.8)',
-                              background: 'rgba(10,132,255,0.45)',
+                              justifySelf: 'start',
+                              border: '1px solid rgba(255,255,255,0.45)',
+                              background: 'rgba(0,0,0,0.5)',
                               color: '#fff',
                               borderRadius: 11,
                               padding: '8px 12px',
+                              fontSize: 15,
                               fontWeight: 700,
                               cursor: 'pointer',
                             }}
@@ -2501,11 +2525,13 @@ export default function Feed() {
                             type="button"
                             onClick={() => handlePromptCtaClick(prompt, '/login?return=/', 'secondary')}
                             style={{
+                              justifySelf: 'center',
                               border: '1px solid rgba(255,255,255,0.45)',
-                              background: 'rgba(6,10,16,0.65)',
+                              background: 'rgba(0,0,0,0.5)',
                               color: '#fff',
                               borderRadius: 11,
                               padding: '8px 12px',
+                              fontSize: 15,
                               fontWeight: 700,
                               cursor: 'pointer',
                             }}
@@ -2516,11 +2542,13 @@ export default function Feed() {
                             type="button"
                             onClick={() => dismissPromptSlide(it.id, prompt)}
                             style={{
+                              justifySelf: 'end',
                               border: '1px solid rgba(255,255,255,0.26)',
-                              background: 'rgba(0,0,0,0.38)',
+                              background: 'rgba(0,0,0,0.5)',
                               color: '#fff',
                               borderRadius: 11,
                               padding: '8px 12px',
+                              fontSize: 15,
                               fontWeight: 600,
                               cursor: 'pointer',
                             }}
@@ -2545,10 +2573,11 @@ export default function Feed() {
                           onClick={() => dismissPromptSlide(it.id, prompt)}
                           style={{
                             border: '1px solid rgba(255,255,255,0.26)',
-                            background: 'rgba(0,0,0,0.38)',
+                            background: 'rgba(0,0,0,0.5)',
                             color: '#fff',
                             borderRadius: 11,
                             padding: '8px 12px',
+                            fontSize: 15,
                             fontWeight: 600,
                             cursor: 'pointer',
                           }}

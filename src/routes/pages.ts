@@ -3039,10 +3039,6 @@ function toTimeOnlyValue(raw: any): string {
   return dt ? dt.slice(11, 16) : ''
 }
 
-function renderPromptKindBadge(kind: string): string {
-  return kind === 'prompt_overlay' ? 'Overlay' : 'Full'
-}
-
 const PROMPT_CATEGORY_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'register_prompt', label: 'Register Prompt' },
   { value: 'fund_drive', label: 'Fund Drive' },
@@ -3106,8 +3102,7 @@ function extractPromptCreativeForm(values: any): {
       try { return typeof raw === 'string' ? JSON.parse(raw) : raw } catch { return null }
     })()
 
-  const kind = String(values?.kind || 'prompt_full')
-  const defaultMessageLabel = kind === 'prompt_overlay' ? 'Featured' : 'Join the Community'
+  const defaultMessageLabel = 'Join the Community'
   const defaultUploadId = values?.mediaUploadId ?? values?.media_upload_id ?? ''
 
   const base = {
@@ -3144,7 +3139,7 @@ function extractPromptCreativeForm(values: any): {
     messagePosition: (String(values?.creativeMessagePosition || base.messagePosition).toLowerCase() === 'top'
       ? 'top'
       : (String(values?.creativeMessagePosition || base.messagePosition).toLowerCase() === 'bottom' ? 'bottom' : 'middle')),
-    messageOffsetPct: Math.round(Math.min(40, Math.max(-40, parseNumLoose(values?.creativeMessageOffsetPct ?? base.messageOffsetPct, 0)))),
+    messageOffsetPct: Math.round(Math.min(80, Math.max(0, parseNumLoose(values?.creativeMessageOffsetPct ?? base.messageOffsetPct, 0)))),
     messageLabel: String(values?.creativeMessageLabel ?? base.messageLabel ?? defaultMessageLabel),
     messageBgColor: parseColorLoose(values?.creativeMessageBgColor ?? base.messageBgColor, '#0B1320'),
     messageBgOpacity: Math.min(1, Math.max(0, parseNumLoose(values?.creativeMessageBgOpacity ?? base.messageBgOpacity, 0.55))),
@@ -3153,7 +3148,7 @@ function extractPromptCreativeForm(values: any): {
     authPosition: (String(values?.creativeAuthPosition || base.authPosition).toLowerCase() === 'top'
       ? 'top'
       : (String(values?.creativeAuthPosition || base.authPosition).toLowerCase() === 'bottom' ? 'bottom' : 'middle')),
-    authOffsetPct: Math.round(Math.min(40, Math.max(-40, parseNumLoose(values?.creativeAuthOffsetPct ?? base.authOffsetPct, 0)))),
+    authOffsetPct: Math.round(Math.min(80, Math.max(0, parseNumLoose(values?.creativeAuthOffsetPct ?? base.authOffsetPct, 0)))),
     authBgColor: parseColorLoose(values?.creativeAuthBgColor ?? base.authBgColor, '#0B1320'),
     authBgOpacity: Math.min(1, Math.max(0, parseNumLoose(values?.creativeAuthBgOpacity ?? base.authBgOpacity, 0.55))),
     authTextColor: parseColorLoose(values?.creativeAuthTextColor ?? base.authTextColor, '#FFFFFF'),
@@ -3247,7 +3242,7 @@ function renderAdminPromptForm(opts: {
   const previewBaseStyle =
     previewUploadId && creativeForm.backgroundMode !== 'none'
       ? (creativeForm.backgroundMode === 'image'
-        ? `background-image:url('/api/uploads/${encodeURIComponent(previewUploadId)}/file'); background-size:contain; background-position:center; background-repeat:no-repeat; background-color:#0B1320;`
+        ? `background-image:url('/api/uploads/${encodeURIComponent(previewUploadId)}/file'); background-size:cover; background-position:center; background-repeat:no-repeat; background-color:#0B1320;`
         : `background-image:url('/api/uploads/${encodeURIComponent(previewUploadId)}/thumb'); background-size:cover; background-position:center; background-repeat:no-repeat; background-color:#0B1320;`)
       : (creativeForm.backgroundMode === 'video'
         ? 'background:linear-gradient(135deg,#0a1930,#1e3a8a);'
@@ -3387,10 +3382,6 @@ function renderAdminPromptForm(opts: {
   body += `<div class="section">`
   body += `<label>Name<input type="text" name="name" value="${escapeHtml(String(values.name || ''))}" required maxlength="120" /></label>`
   body += `<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px; margin-top:10px">`
-  body += `<div class="mini-field"><div class="mini-field-label">Kind</div><select name="kind">
-    <option value="prompt_full"${String(values.kind || '') === 'prompt_full' ? ' selected' : ''}>Prompt Full</option>
-    <option value="prompt_overlay"${String(values.kind || '') === 'prompt_overlay' ? ' selected' : ''}>Prompt Overlay</option>
-  </select></div>`
   body += `<div class="mini-field"><div class="mini-field-label">Category</div><select name="category">`
   for (const opt of categoryOptions) {
     body += `<option value="${escapeHtml(opt.value)}"${opt.value === categoryValue ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
@@ -3449,7 +3440,7 @@ function renderAdminPromptForm(opts: {
     <option value="bottom"${creativeForm.messagePosition === 'bottom' ? ' selected' : ''}>Bottom</option>
   </select></label>`
   body += `<div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:10px; align-items:start">`
-  body += `<div class="mini-field"><div class="mini-field-label">Y Offset (%)</div><input type="number" name="creativeMessageOffsetPct" min="-40" max="40" value="${escapeHtml(String(creativeForm.messageOffsetPct))}" /></div>`
+  body += `<div class="mini-field"><div class="mini-field-label">Y Inset (%)</div><input type="number" name="creativeMessageOffsetPct" min="0" max="80" value="${escapeHtml(String(creativeForm.messageOffsetPct))}" /></div>`
   body += `<div class="mini-field"><div class="mini-field-label">Text Color</div><input class="color-swatch-input" type="color" name="creativeMessageTextColor" value="${escapeHtml(String(creativeForm.messageTextColor || '#FFFFFF'))}" /></div>`
   body += `</div>`
   body += `<div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:10px; align-items:start">`
@@ -3469,7 +3460,7 @@ function renderAdminPromptForm(opts: {
     <option value="bottom"${creativeForm.authPosition === 'bottom' ? ' selected' : ''}>Bottom</option>
   </select></label>`
   body += `<div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:10px; align-items:start">`
-  body += `<div class="mini-field"><div class="mini-field-label">Y Offset (%)</div><input type="number" name="creativeAuthOffsetPct" min="-40" max="40" value="${escapeHtml(String(creativeForm.authOffsetPct))}" /></div>`
+  body += `<div class="mini-field"><div class="mini-field-label">Y Inset (%)</div><input type="number" name="creativeAuthOffsetPct" min="0" max="80" value="${escapeHtml(String(creativeForm.authOffsetPct))}" /></div>`
   body += `<div class="mini-field"><div class="mini-field-label">Text Color</div><input class="color-swatch-input" type="color" name="creativeAuthTextColor" value="${escapeHtml(String(creativeForm.authTextColor || '#FFFFFF'))}" /></div>`
   body += `</div>`
   body += `<div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:10px; align-items:start">`
@@ -3501,19 +3492,25 @@ function renderAdminPromptForm(opts: {
   body += `<div id="prompt-preview-device" style="width:100%; max-width:100%; aspect-ratio:9/16; margin:0; ${previewBaseStyle} position:relative">`
   body += `<div id="prompt-preview-overlay" style="position:absolute; inset:0; background:${hexToRgba(creativeForm.backgroundOverlayColor, creativeForm.backgroundOverlayOpacity)}"></div>`
   body += `<div id="prompt-preview-mode-badge" style="position:absolute; top:10px; right:10px; z-index:2; border:1px solid rgba(255,255,255,0.25); border-radius:999px; padding:3px 8px; font-size:11px; background:rgba(0,0,0,0.45)">Mode: ${escapeHtml(String(creativeForm.backgroundMode))}</div>`
-  const msgBasePct = creativeForm.messagePosition === 'top' ? 8 : (creativeForm.messagePosition === 'middle' ? 42 : 74)
-  const msgTopPct = Math.max(2, Math.min(92, msgBasePct + creativeForm.messageOffsetPct))
-  body += `<div id="prompt-preview-message" style="display:${creativeForm.messageEnabled ? 'block' : 'none'}; position:absolute; left:14px; right:14px; top:${msgTopPct}%; z-index:2; border:1px solid rgba(255,255,255,0.24); border-radius:10px; background:${hexToRgba(creativeForm.messageBgColor, creativeForm.messageBgOpacity)}; color:${escapeHtml(creativeForm.messageTextColor)}; padding:10px">`
+  const msgInset = Math.max(0, Math.min(80, Number(creativeForm.messageOffsetPct || 0)))
+  const msgTopPct = Math.max(2, Math.min(92, (creativeForm.messagePosition === 'top' ? 2 : 42) + msgInset))
+  const msgPosStyle = creativeForm.messagePosition === 'bottom'
+    ? `bottom:${Math.max(2, Math.min(92, 2 + msgInset))}%`
+    : `top:${msgTopPct}%`
+  body += `<div id="prompt-preview-message" style="display:${creativeForm.messageEnabled ? 'block' : 'none'}; position:absolute; left:14px; right:14px; ${msgPosStyle}; z-index:2; border:1px solid rgba(255,255,255,0.24); border-radius:10px; background:${hexToRgba(creativeForm.messageBgColor, creativeForm.messageBgOpacity)}; color:${escapeHtml(creativeForm.messageTextColor)}; padding:10px">`
   body += `<div id="prompt-preview-message-label" style="font-size:12px; opacity:0.9; margin-bottom:4px">${escapeHtml(String(creativeForm.messageLabel || 'Message'))}</div>`
-  body += `<div id="prompt-preview-message-headline" style="font-weight:700; margin-bottom:6px">${escapeHtml(String(values.headline || 'Prompt headline'))}</div>`
+  body += `<div id="prompt-preview-message-headline" style="font-size:24px; line-height:1.18; font-weight:800; margin-bottom:8px">${escapeHtml(String(values.headline || 'Prompt headline'))}</div>`
   body += `<div id="prompt-preview-message-body"${values.body ? '' : ' hidden'} style="opacity:0.9; margin-bottom:8px">${escapeHtml(String(values.body || ''))}</div>`
-  body += `<div style="display:flex; gap:8px; flex-wrap:wrap"><span id="prompt-preview-primary-btn" class="btn">${escapeHtml(String(values.ctaPrimaryLabel || values.cta_primary_label || 'Primary'))}</span>`
-  body += `<span id="prompt-preview-secondary-btn" class="btn" style="background:rgba(255,255,255,0.06); display:${(values.ctaSecondaryLabel || values.cta_secondary_label) ? 'inline-flex' : 'none'}">${escapeHtml(String(values.ctaSecondaryLabel || values.cta_secondary_label || 'Secondary'))}</span>`
+  body += `<div style="display:flex; gap:8px; justify-content:space-between; align-items:center"><span id="prompt-preview-primary-btn" class="btn" style="border:1px solid rgba(255,255,255,0.45); border-radius:11px; background:rgba(0,0,0,0.5); padding:8px 12px">${escapeHtml(String(values.ctaPrimaryLabel || values.cta_primary_label || 'Primary'))}</span>`
+  body += `<span id="prompt-preview-secondary-btn" class="btn" style="border:1px solid rgba(255,255,255,0.45); border-radius:11px; background:rgba(0,0,0,0.5); padding:8px 12px; display:${(values.ctaSecondaryLabel || values.cta_secondary_label) ? 'inline-flex' : 'none'}">${escapeHtml(String(values.ctaSecondaryLabel || values.cta_secondary_label || 'Secondary'))}</span>`
   body += `</div></div>`
-  const authBasePct = creativeForm.authPosition === 'top' ? 8 : (creativeForm.authPosition === 'middle' ? 56 : 84)
-  const authTopPct = Math.max(2, Math.min(94, authBasePct + creativeForm.authOffsetPct))
-  body += `<div id="prompt-preview-auth" style="display:${creativeForm.authEnabled ? 'block' : 'none'}; position:absolute; left:14px; right:14px; top:${authTopPct}%; z-index:2; border:1px solid rgba(255,255,255,0.24); border-radius:10px; background:${hexToRgba(creativeForm.authBgColor, creativeForm.authBgOpacity)}; color:${escapeHtml(creativeForm.authTextColor)}; padding:8px">`
-  body += `<div style="display:flex; gap:8px; flex-wrap:wrap"><span class="btn">Register</span><span class="btn" style="background:rgba(255,255,255,0.06)">Login</span><span class="btn" style="background:rgba(0,0,0,0.24)">Dismiss</span></div>`
+  const authInset = Math.max(0, Math.min(80, Number(creativeForm.authOffsetPct || 0)))
+  const authTopPct = Math.max(2, Math.min(94, (creativeForm.authPosition === 'top' ? 2 : 56) + authInset))
+  const authPosStyle = creativeForm.authPosition === 'bottom'
+    ? `bottom:${Math.max(2, Math.min(94, 2 + authInset))}%`
+    : `top:${authTopPct}%`
+  body += `<div id="prompt-preview-auth" style="display:${creativeForm.authEnabled ? 'block' : 'none'}; position:absolute; left:14px; right:14px; ${authPosStyle}; z-index:2; border:1px solid rgba(255,255,255,0.24); border-radius:10px; background:${hexToRgba(creativeForm.authBgColor, creativeForm.authBgOpacity)}; color:${escapeHtml(creativeForm.authTextColor)}; padding:8px">`
+  body += `<div style="display:grid; grid-template-columns:1fr 1fr 1fr; align-items:center; gap:8px"><span class="btn" style="justify-self:start; border:1px solid rgba(255,255,255,0.45); border-radius:11px; background:rgba(0,0,0,0.5); padding:8px 12px">Register</span><span class="btn" style="justify-self:center; border:1px solid rgba(255,255,255,0.45); border-radius:11px; background:rgba(0,0,0,0.5); padding:8px 12px">Login</span><span class="btn" style="justify-self:end; border:1px solid rgba(255,255,255,0.45); border-radius:11px; background:rgba(0,0,0,0.5); padding:8px 12px">Dismiss</span></div>`
   body += `</div>`
   body += `</div>`
   if (creativeWarnings.length) {
@@ -3664,22 +3661,36 @@ function renderAdminPromptForm(opts: {
 
         const msgEnabled = vb('creativeMessageEnabled', false);
         const msgPos = String(v('creativeMessagePosition', 'middle')).toLowerCase();
-        const msgOffset = clamp(vn('creativeMessageOffsetPct', 0), -40, 40);
+        const msgOffset = clamp(vn('creativeMessageOffsetPct', 0), 0, 80);
         const msgBg = hex(v('creativeMessageBgColor', '#0B1320'), '#0B1320');
         const msgBgOpacity = clamp(vn('creativeMessageBgOpacity', 0.55), 0, 1);
         const msgText = hex(v('creativeMessageTextColor', '#FFFFFF'), '#FFFFFF');
 
         const authEnabled = vb('creativeAuthEnabled', false);
         const authPos = String(v('creativeAuthPosition', 'bottom')).toLowerCase();
-        const authOffset = clamp(vn('creativeAuthOffsetPct', 0), -40, 40);
+        const authOffset = clamp(vn('creativeAuthOffsetPct', 0), 0, 80);
         const authBg = hex(v('creativeAuthBgColor', '#0B1320'), '#0B1320');
         const authBgOpacity = clamp(vn('creativeAuthBgOpacity', 0.55), 0, 1);
         const authText = hex(v('creativeAuthTextColor', '#FFFFFF'), '#FFFFFF');
 
-        const msgBase = msgPos === 'top' ? 8 : (msgPos === 'bottom' ? 74 : 42);
-        const authBase = authPos === 'top' ? 8 : (authPos === 'bottom' ? 84 : 56);
-        preview.message.style.top = clamp(msgBase + msgOffset, 2, 92) + '%';
-        preview.auth.style.top = clamp(authBase + authOffset, 2, 94) + '%';
+        const msgTop = (msgPos === 'top' ? 2 : 42) + msgOffset;
+        const authTop = (authPos === 'top' ? 2 : 56) + authOffset;
+        const msgBottom = 2 + msgOffset;
+        const authBottom = 2 + authOffset;
+        if (msgPos === 'bottom') {
+          preview.message.style.top = '';
+          preview.message.style.bottom = clamp(msgBottom, 2, 92) + '%';
+        } else {
+          preview.message.style.bottom = '';
+          preview.message.style.top = clamp(msgTop, 2, 92) + '%';
+        }
+        if (authPos === 'bottom') {
+          preview.auth.style.top = '';
+          preview.auth.style.bottom = clamp(authBottom, 2, 94) + '%';
+        } else {
+          preview.auth.style.bottom = '';
+          preview.auth.style.top = clamp(authTop, 2, 94) + '%';
+        }
 
         preview.message.style.display = msgEnabled ? 'block' : 'none';
         preview.auth.style.display = authEnabled ? 'block' : 'none';
@@ -3723,7 +3734,7 @@ function renderAdminPromptForm(opts: {
             : '';
           if ((bgMode === 'image' || bgMode === 'video') && mediaUrl) {
             preview.device.style.backgroundImage = 'url("' + mediaUrl + '")';
-            preview.device.style.backgroundSize = bgMode === 'image' ? 'contain' : 'cover';
+            preview.device.style.backgroundSize = 'cover';
             preview.device.style.backgroundPosition = 'center';
             preview.device.style.backgroundRepeat = 'no-repeat';
             preview.device.style.backgroundColor = '#0B1320';
@@ -3822,11 +3833,10 @@ pagesRouter.get('/admin/prompts', async (req: any, res: any) => {
   try {
     const includeArchived = String(req.query?.include_archived || '0') === '1'
     const status = req.query?.status ? String(req.query.status) : ''
-    const kind = req.query?.kind ? String(req.query.kind) : ''
     const category = req.query?.category ? String(req.query.category) : ''
     const notice = req.query?.notice ? String(req.query.notice) : ''
     const error = req.query?.error ? String(req.query.error) : ''
-    const items = await promptsSvc.listForAdmin({ includeArchived, limit: 500, status, kind, category })
+    const items = await promptsSvc.listForAdmin({ includeArchived, limit: 500, status, category })
 
     let body = '<h1>Prompts</h1>'
     body += '<div class="toolbar"><div><span class="pill">Prompt Registry</span></div><div><a href="/admin/prompts/new">New prompt</a></div></div>'
@@ -3841,11 +3851,6 @@ pagesRouter.get('/admin/prompts', async (req: any, res: any) => {
       <option value="paused"${status === 'paused' ? ' selected' : ''}>Paused</option>
       <option value="archived"${status === 'archived' ? ' selected' : ''}>Archived</option>
     </select></label>`
-    body += `<label style="min-width:180px">Kind<select name="kind">
-      <option value="">All</option>
-      <option value="prompt_full"${kind === 'prompt_full' ? ' selected' : ''}>Prompt Full</option>
-      <option value="prompt_overlay"${kind === 'prompt_overlay' ? ' selected' : ''}>Prompt Overlay</option>
-    </select></label>`
     body += `<label style="min-width:180px">Category<input type="text" name="category" value="${escapeHtml(category)}" /></label>`
     body += `<label><input type="checkbox" name="include_archived" value="1"${includeArchived ? ' checked' : ''} /> Include archived</label>`
     body += `<button class="btn" type="submit">Apply</button>`
@@ -3854,13 +3859,12 @@ pagesRouter.get('/admin/prompts', async (req: any, res: any) => {
     if (!items.length) {
       body += '<p>No prompts found for current filters.</p>'
     } else {
-      body += '<table><thead><tr><th>ID</th><th>Name</th><th>Kind</th><th>Category</th><th>Priority</th><th>Status</th><th>Window</th><th>Updated</th></tr></thead><tbody>'
+      body += '<table><thead><tr><th>ID</th><th>Name</th><th>Category</th><th>Priority</th><th>Status</th><th>Window</th><th>Updated</th></tr></thead><tbody>'
       for (const item of items) {
         const windowLabel = item.startsAt || item.endsAt ? `${item.startsAt || '—'} → ${item.endsAt || '—'}` : 'Always'
         body += `<tr>
           <td>${item.id}</td>
           <td><a href="/admin/prompts/${item.id}">${escapeHtml(item.name)}</a></td>
-          <td>${escapeHtml(renderPromptKindBadge(item.kind))}</td>
           <td>${escapeHtml(item.category)}</td>
           <td>${item.priority}</td>
           <td>${escapeHtml(item.status)}</td>
@@ -3890,7 +3894,6 @@ pagesRouter.get('/admin/prompts/new', async (req: any, res: any) => {
     backHref: '/admin/prompts',
     values: {
       name: '',
-      kind: 'prompt_full',
       headline: '',
       body: '',
       ctaPrimaryLabel: 'Register',
@@ -3999,10 +4002,15 @@ pagesRouter.post('/admin/prompts/:id/status', async (req: any, res: any) => {
   }
 })
 
-function promptRuleAllowlistCsv(values: any): string {
+function promptRuleSelectedCategory(values: any): string {
   const raw = values?.promptCategoryAllowlist ?? values?.prompt_category_allowlist ?? []
-  if (Array.isArray(raw)) return raw.map((x) => String(x || '').trim()).filter(Boolean).join(', ')
-  return String(raw || '').trim()
+  const list = Array.isArray(raw)
+    ? raw.map((x) => String(x || '').trim().toLowerCase()).filter(Boolean)
+    : String(raw || '')
+        .split(',')
+        .map((x) => x.trim().toLowerCase())
+        .filter(Boolean)
+  return list.length ? list[0] : ''
 }
 
 function renderAdminPromptRuleForm(opts: {
@@ -4016,6 +4024,11 @@ function renderAdminPromptRuleForm(opts: {
 }): string {
   const csrfToken = opts.csrfToken ? String(opts.csrfToken) : ''
   const values = opts.values || {}
+  const selectedCategory = promptRuleSelectedCategory(values)
+  const categoryOptions = PROMPT_CATEGORY_OPTIONS.slice()
+  if (selectedCategory && !categoryOptions.some((opt) => opt.value === selectedCategory)) {
+    categoryOptions.unshift({ value: selectedCategory, label: `Custom (${selectedCategory})` })
+  }
 
   let body = `<h1>${escapeHtml(opts.title)}</h1>`
   body += `<div class="toolbar"><div><a href="${escapeHtml(opts.backHref)}">← Back to prompt rules</a></div><div></div></div>`
@@ -4049,8 +4062,13 @@ function renderAdminPromptRuleForm(opts: {
   body += `</div></div>`
 
   body += `<div class="section"><div class="section-title">Selection Filters</div>`
-  body += `<label>Prompt Category Allowlist (comma-separated)<input type="text" name="promptCategoryAllowlist" value="${escapeHtml(promptRuleAllowlistCsv(values))}" /></label>`
-  body += `<div class="field-hint">Example: <code>register_prompt</code>. Leave empty to allow all categories.</div>`
+  body += `<label>Prompt Category<select name="promptCategoryAllowlist">`
+  body += `<option value=""${selectedCategory === '' ? ' selected' : ''}>All Categories</option>`
+  for (const opt of categoryOptions) {
+    body += `<option value="${escapeHtml(opt.value)}"${opt.value === selectedCategory ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+  }
+  body += `</select></label>`
+  body += `<div class="field-hint">Matches prompt categories from <code>/admin/prompts</code>.</div>`
   body += `</div>`
 
   body += `<div class="toolbar"><div></div><div style="display:flex; gap:8px"><button class="btn" type="submit">Save</button></div></div>`
@@ -4618,14 +4636,13 @@ pagesRouter.get('/admin/prompt-analytics', async (req: any, res: any) => {
     if (!report.byPrompt.length) {
       body += '<p>No prompt analytics events found in this range.</p>'
     } else {
-      body += '<table><thead><tr><th>Prompt</th><th>Category</th><th>Kind</th><th>Impressions</th><th>Clicks</th><th>CTR</th><th>Dismiss</th><th>Dismiss Rate</th><th>Auth Start</th><th>Auth Complete</th><th>Auth Completion Rate</th><th>Status</th></tr></thead><tbody>'
+      body += '<table><thead><tr><th>Prompt</th><th>Category</th><th>Impressions</th><th>Clicks</th><th>CTR</th><th>Dismiss</th><th>Dismiss Rate</th><th>Auth Start</th><th>Auth Complete</th><th>Auth Completion Rate</th><th>Status</th></tr></thead><tbody>'
       for (const row of report.byPrompt) {
         const status = row.rates.dismissRate >= 0.5 && row.rates.authCompletionRate < 0.01 ? 'Overexposed' : 'Healthy'
         const label = row.promptName ? `${row.promptName} (#${row.promptId})` : `#${row.promptId}`
         body += `<tr>
           <td>${escapeHtml(label)}</td>
           <td>${escapeHtml(row.promptCategory || '—')}</td>
-          <td>${escapeHtml(row.promptKind || '—')}</td>
           <td>${row.totals.impressions} <span class="field-hint">(u:${row.uniqueSessions.impressions})</span></td>
           <td>${row.totals.clicksTotal} <span class="field-hint">(u:${row.uniqueSessions.clicksTotal})</span></td>
           <td>${pctText(row.rates.ctr)}</td>

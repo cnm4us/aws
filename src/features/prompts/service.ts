@@ -1,12 +1,20 @@
 import { DomainError, ForbiddenError, NotFoundError } from '../../core/errors'
 import { getLogger } from '../../lib/logger'
 import * as repo from './repo'
-import type { PromptDto, PromptKind, PromptRow, PromptStatus } from './types'
+import type {
+  PromptBackgroundMode,
+  PromptCreative,
+  PromptDto,
+  PromptRow,
+  PromptStatus,
+  PromptWidgetPosition,
+} from './types'
 
 const promptsLogger = getLogger({ component: 'features.prompts' })
 
-const KINDS: readonly PromptKind[] = ['prompt_full', 'prompt_overlay']
 const STATUSES: readonly PromptStatus[] = ['draft', 'active', 'paused', 'archived']
+const BACKGROUND_MODES: readonly PromptBackgroundMode[] = ['none', 'image', 'video']
+const WIDGET_POSITIONS: readonly PromptWidgetPosition[] = ['top', 'middle', 'bottom']
 
 function isEnumValue<T extends string>(value: any, allowed: readonly T[]): value is T {
   return typeof value === 'string' && (allowed as readonly string[]).includes(value)
@@ -16,12 +24,6 @@ function normalizeName(raw: any): string {
   const value = String(raw ?? '').trim()
   if (!value) throw new DomainError('invalid_name', 'invalid_name', 400)
   if (value.length > 120) throw new DomainError('invalid_name', 'invalid_name', 400)
-  return value
-}
-
-function normalizeKind(raw: any): PromptKind {
-  const value = String(raw ?? '').trim().toLowerCase()
-  if (!isEnumValue(value, KINDS)) throw new DomainError('invalid_kind', 'invalid_kind', 400)
   return value
 }
 
@@ -122,11 +124,179 @@ function normalizeDateWindow(startsAtRaw: any, endsAtRaw: any): { startsAt: stri
   return { startsAt, endsAt }
 }
 
-function mapRow(row: PromptRow): PromptDto {
+type PromptLegacyFields = {
+  headline: string
+  body: string | null
+  ctaPrimaryLabel: string
+  ctaPrimaryHref: string
+  ctaSecondaryLabel: string | null
+  ctaSecondaryHref: string | null
+  mediaUploadId: number | null
+}
+
+function normalizeHexColor(raw: any, key: string, fallback: string): string {
+  const value = String(raw ?? '').trim()
+  if (!value) return fallback
+  if (!/^#[0-9a-fA-F]{6}$/.test(value)) throw new DomainError(`invalid_${key}`, `invalid_${key}`, 400)
+  return value.toUpperCase()
+}
+
+function normalizeOpacity(raw: any, key: string, fallback: number): number {
+  const value = raw == null || raw === '' ? fallback : Number(raw)
+  if (!Number.isFinite(value)) throw new DomainError(`invalid_${key}`, `invalid_${key}`, 400)
+  const clipped = Math.min(1, Math.max(0, value))
+  return Math.round(clipped * 100) / 100
+}
+
+function normalizeWidgetPosition(raw: any, key: string, fallback: PromptWidgetPosition): PromptWidgetPosition {
+  const value = String(raw ?? '').trim().toLowerCase()
+  if (!value) return fallback
+  if (!isEnumValue(value, WIDGET_POSITIONS)) throw new DomainError(`invalid_${key}`, `invalid_${key}`, 400)
+  return value
+}
+
+function normalizeBackgroundMode(raw: any, key: string, fallback: PromptBackgroundMode): PromptBackgroundMode {
+  const value = String(raw ?? '').trim().toLowerCase()
+  if (!value) return fallback
+  if (!isEnumValue(value, BACKGROUND_MODES)) throw new DomainError(`invalid_${key}`, `invalid_${key}`, 400)
+  return value
+}
+
+function normalizeOffsetPct(raw: any, key: string, fallback: number): number {
+  const value = raw == null || raw === '' ? fallback : Number(raw)
+  if (!Number.isFinite(value)) throw new DomainError(`invalid_${key}`, `invalid_${key}`, 400)
+  const rounded = Math.round(value)
+  // New semantics: offsets are downward-only from the anchor point.
+  // Clamp to preserve backward compatibility with existing saved negatives.
+  return Math.min(80, Math.max(0, rounded))
+}
+
+function normalizeBoolLoose(raw: any, fallback: boolean): boolean {
+  if (raw == null || raw === '') return fallback
+  if (typeof raw === 'boolean') return raw
+  const value = String(raw).trim().toLowerCase()
+  if (['1', 'true', 'yes', 'on'].includes(value)) return true
+  if (['0', 'false', 'no', 'off'].includes(value)) return false
+  return fallback
+}
+
+function parseCreativeRaw(raw: any): any | null {
+  if (raw == null || raw === '') return null
+  if (typeof raw === 'string') {
+    try {
+      return JSON.parse(raw)
+    } catch {
+      throw new DomainError('invalid_creative_json', 'invalid_creative_json', 400)
+    }
+  }
+  if (typeof raw === 'object') return raw
+  throw new DomainError('invalid_creative_json', 'invalid_creative_json', 400)
+}
+
+function buildLegacyCreative(legacy: PromptLegacyFields): PromptCreative {
   return {
-    id: Number(row.id),
-    name: String(row.name || ''),
-    kind: row.kind,
+    version: 1,
+    background: {
+      mode: legacy.mediaUploadId ? 'image' : 'none',
+      uploadId: legacy.mediaUploadId,
+      overlayColor: '#000000',
+      overlayOpacity: 0.35,
+    },
+    widgets: {
+      message: {
+        enabled: true,
+        position: 'middle',
+        yOffsetPct: 0,
+        bgColor: '#0B1320',
+        bgOpacity: 0.55,
+        textColor: '#FFFFFF',
+        label: 'Join the Community',
+        headline: legacy.headline,
+        body: legacy.body,
+        primaryLabel: legacy.ctaPrimaryLabel,
+        primaryHref: legacy.ctaPrimaryHref,
+        secondaryLabel: legacy.ctaSecondaryLabel,
+        secondaryHref: legacy.ctaSecondaryHref,
+      },
+      auth: {
+        enabled: false,
+        position: 'bottom',
+        yOffsetPct: 0,
+        bgColor: '#0B1320',
+        bgOpacity: 0.55,
+        textColor: '#FFFFFF',
+      },
+    },
+  }
+}
+
+function normalizeCreative(raw: any, legacy: PromptLegacyFields): PromptCreative {
+  const parsed = parseCreativeRaw(raw)
+  const base = buildLegacyCreative(legacy)
+  if (!parsed) return base
+
+  const src = parsed && typeof parsed === 'object' ? parsed : {}
+  const backgroundSrc = src.background && typeof src.background === 'object' ? src.background : {}
+  const widgetsSrc = src.widgets && typeof src.widgets === 'object' ? src.widgets : {}
+  const messageSrc = widgetsSrc.message && typeof widgetsSrc.message === 'object' ? widgetsSrc.message : {}
+  const authSrc = widgetsSrc.auth && typeof widgetsSrc.auth === 'object' ? widgetsSrc.auth : {}
+
+  const msgEnabled = normalizeBoolLoose(messageSrc.enabled, base.widgets.message.enabled)
+  const authEnabled = normalizeBoolLoose(authSrc.enabled, base.widgets.auth.enabled)
+  if (!msgEnabled && !authEnabled) throw new DomainError('invalid_creative_widgets', 'invalid_creative_widgets', 400)
+
+  const messageSecondaryLabel = normalizeLabel(
+    messageSrc.secondaryLabel ?? messageSrc.secondary_label ?? base.widgets.message.secondaryLabel,
+    'creative_message_secondary_label',
+    false
+  )
+  const messageSecondaryHref = normalizeInternalHref(
+    messageSrc.secondaryHref ?? messageSrc.secondary_href ?? base.widgets.message.secondaryHref,
+    'creative_message_secondary_href',
+    false
+  )
+  if ((messageSecondaryLabel && !messageSecondaryHref) || (!messageSecondaryLabel && messageSecondaryHref)) {
+    throw new DomainError('invalid_creative_message_secondary_cta', 'invalid_creative_message_secondary_cta', 400)
+  }
+
+  return {
+    version: 1,
+    background: {
+      mode: normalizeBackgroundMode(backgroundSrc.mode, 'creative_background_mode', base.background.mode),
+      uploadId: normalizeMediaUploadId(backgroundSrc.uploadId ?? backgroundSrc.upload_id ?? base.background.uploadId),
+      overlayColor: normalizeHexColor(backgroundSrc.overlayColor ?? backgroundSrc.overlay_color, 'creative_background_overlay_color', base.background.overlayColor),
+      overlayOpacity: normalizeOpacity(backgroundSrc.overlayOpacity ?? backgroundSrc.overlay_opacity, 'creative_background_overlay_opacity', base.background.overlayOpacity),
+    },
+    widgets: {
+      message: {
+        enabled: msgEnabled,
+        position: normalizeWidgetPosition(messageSrc.position, 'creative_message_position', base.widgets.message.position),
+        yOffsetPct: normalizeOffsetPct(messageSrc.yOffsetPct ?? messageSrc.y_offset_pct, 'creative_message_y_offset_pct', base.widgets.message.yOffsetPct),
+        bgColor: normalizeHexColor(messageSrc.bgColor ?? messageSrc.bg_color, 'creative_message_bg_color', base.widgets.message.bgColor),
+        bgOpacity: normalizeOpacity(messageSrc.bgOpacity ?? messageSrc.bg_opacity, 'creative_message_bg_opacity', base.widgets.message.bgOpacity),
+        textColor: normalizeHexColor(messageSrc.textColor ?? messageSrc.text_color, 'creative_message_text_color', base.widgets.message.textColor),
+        label: String(normalizeLabel(messageSrc.label ?? base.widgets.message.label, 'creative_message_label', true) || ''),
+        headline: normalizeHeadline(messageSrc.headline ?? base.widgets.message.headline),
+        body: normalizeBody(messageSrc.body ?? base.widgets.message.body),
+        primaryLabel: String(normalizeLabel(messageSrc.primaryLabel ?? messageSrc.primary_label ?? base.widgets.message.primaryLabel, 'creative_message_primary_label', true) || ''),
+        primaryHref: String(normalizeInternalHref(messageSrc.primaryHref ?? messageSrc.primary_href ?? base.widgets.message.primaryHref, 'creative_message_primary_href', true) || ''),
+        secondaryLabel: messageSecondaryLabel,
+        secondaryHref: messageSecondaryHref,
+      },
+      auth: {
+        enabled: authEnabled,
+        position: normalizeWidgetPosition(authSrc.position, 'creative_auth_position', base.widgets.auth.position),
+        yOffsetPct: normalizeOffsetPct(authSrc.yOffsetPct ?? authSrc.y_offset_pct, 'creative_auth_y_offset_pct', base.widgets.auth.yOffsetPct),
+        bgColor: normalizeHexColor(authSrc.bgColor ?? authSrc.bg_color, 'creative_auth_bg_color', base.widgets.auth.bgColor),
+        bgOpacity: normalizeOpacity(authSrc.bgOpacity ?? authSrc.bg_opacity, 'creative_auth_bg_opacity', base.widgets.auth.bgOpacity),
+        textColor: normalizeHexColor(authSrc.textColor ?? authSrc.text_color, 'creative_auth_text_color', base.widgets.auth.textColor),
+      },
+    },
+  }
+}
+
+function resolveCreativeFromRow(row: PromptRow): PromptCreative {
+  const legacy: PromptLegacyFields = {
     headline: String(row.headline || ''),
     body: row.body == null ? null : String(row.body),
     ctaPrimaryLabel: String(row.cta_primary_label || ''),
@@ -134,6 +304,27 @@ function mapRow(row: PromptRow): PromptDto {
     ctaSecondaryLabel: row.cta_secondary_label == null ? null : String(row.cta_secondary_label),
     ctaSecondaryHref: row.cta_secondary_href == null ? null : String(row.cta_secondary_href),
     mediaUploadId: row.media_upload_id == null ? null : Number(row.media_upload_id),
+  }
+  try {
+    return normalizeCreative((row as any).creative_json, legacy)
+  } catch (err: any) {
+    promptsLogger.warn({ event: 'prompts.creative.fallback', prompt_id: Number(row.id || 0), reason: String(err?.message || 'invalid_creative') }, 'prompts.creative.fallback')
+    return buildLegacyCreative(legacy)
+  }
+}
+
+function mapRow(row: PromptRow): PromptDto {
+  return {
+    id: Number(row.id),
+    name: String(row.name || ''),
+    headline: String(row.headline || ''),
+    body: row.body == null ? null : String(row.body),
+    ctaPrimaryLabel: String(row.cta_primary_label || ''),
+    ctaPrimaryHref: String(row.cta_primary_href || ''),
+    ctaSecondaryLabel: row.cta_secondary_label == null ? null : String(row.cta_secondary_label),
+    ctaSecondaryHref: row.cta_secondary_href == null ? null : String(row.cta_secondary_href),
+    mediaUploadId: row.media_upload_id == null ? null : Number(row.media_upload_id),
+    creative: resolveCreativeFromRow(row),
     category: String(row.category || ''),
     priority: Number(row.priority || 0),
     status: row.status,
@@ -150,18 +341,15 @@ export async function listForAdmin(params: {
   includeArchived?: boolean
   limit?: number
   status?: any
-  kind?: any
   category?: any
 }): Promise<PromptDto[]> {
   const status = params.status == null || params.status === '' ? null : normalizeStatus(params.status)
-  const kind = params.kind == null || params.kind === '' ? null : normalizeKind(params.kind)
   const category = params.category == null || params.category === '' ? null : normalizeCategory(params.category)
 
   const rows = await repo.list({
     includeArchived: Boolean(params.includeArchived),
     limit: params.limit,
     status,
-    kind,
     category,
   })
   return rows.map(mapRow)
@@ -177,7 +365,6 @@ export async function createForAdmin(input: any, actorUserId: number): Promise<P
   if (!actorUserId) throw new ForbiddenError()
 
   const name = normalizeName(input?.name)
-  const kind = normalizeKind(input?.kind)
   const headline = normalizeHeadline(input?.headline)
   const body = normalizeBody(input?.body)
   const ctaPrimaryLabel = String(normalizeLabel(input?.ctaPrimaryLabel ?? input?.cta_primary_label, 'cta_primary_label', true) || '')
@@ -190,14 +377,7 @@ export async function createForAdmin(input: any, actorUserId: number): Promise<P
   }
 
   const mediaUploadId = normalizeMediaUploadId(input?.mediaUploadId ?? input?.media_upload_id)
-  const category = normalizeCategory(input?.category)
-  const priority = normalizePriority(input?.priority, 100)
-  const status = normalizeStatus(input?.status, 'draft')
-  const { startsAt, endsAt } = normalizeDateWindow(input?.startsAt ?? input?.starts_at, input?.endsAt ?? input?.ends_at)
-
-  const row = await repo.create({
-    name,
-    kind,
+  const creative = normalizeCreative(input?.creative ?? input?.creative_json, {
     headline,
     body,
     ctaPrimaryLabel,
@@ -205,6 +385,22 @@ export async function createForAdmin(input: any, actorUserId: number): Promise<P
     ctaSecondaryLabel,
     ctaSecondaryHref,
     mediaUploadId,
+  })
+  const category = normalizeCategory(input?.category)
+  const priority = normalizePriority(input?.priority, 100)
+  const status = normalizeStatus(input?.status, 'draft')
+  const { startsAt, endsAt } = normalizeDateWindow(input?.startsAt ?? input?.starts_at, input?.endsAt ?? input?.ends_at)
+
+  const row = await repo.create({
+    name,
+    headline,
+    body,
+    ctaPrimaryLabel,
+    ctaPrimaryHref,
+    ctaSecondaryLabel,
+    ctaSecondaryHref,
+    mediaUploadId,
+    creativeJson: JSON.stringify(creative),
     category,
     priority,
     status,
@@ -224,7 +420,6 @@ export async function updateForAdmin(id: number, patch: any, actorUserId: number
   if (!existing) throw new NotFoundError('prompt_not_found')
 
   const nextName = patch?.name !== undefined ? normalizeName(patch.name) : existing.name
-  const nextKind = patch?.kind !== undefined ? normalizeKind(patch.kind) : existing.kind
   const nextHeadline = patch?.headline !== undefined ? normalizeHeadline(patch.headline) : existing.headline
   const nextBody = patch?.body !== undefined ? normalizeBody(patch.body) : (existing.body == null ? null : String(existing.body))
 
@@ -259,6 +454,18 @@ export async function updateForAdmin(id: number, patch: any, actorUserId: number
     patch?.mediaUploadId !== undefined || patch?.media_upload_id !== undefined
       ? normalizeMediaUploadId(patch?.mediaUploadId ?? patch?.media_upload_id)
       : (existing.media_upload_id == null ? null : Number(existing.media_upload_id))
+  const nextCreativeJson =
+    patch?.creative !== undefined || patch?.creative_json !== undefined
+      ? JSON.stringify(normalizeCreative(patch?.creative ?? patch?.creative_json, {
+        headline: nextHeadline,
+        body: nextBody,
+        ctaPrimaryLabel: nextCtaPrimaryLabel,
+        ctaPrimaryHref: nextCtaPrimaryHref,
+        ctaSecondaryLabel: nextCtaSecondaryLabel,
+        ctaSecondaryHref: nextCtaSecondaryHref,
+        mediaUploadId: nextMediaUploadId,
+      }))
+      : ((existing as any).creative_json == null ? null : String((existing as any).creative_json))
 
   const nextCategory = patch?.category !== undefined ? normalizeCategory(patch.category) : String(existing.category)
   const nextPriority = patch?.priority !== undefined ? normalizePriority(patch.priority, Number(existing.priority)) : Number(existing.priority)
@@ -280,7 +487,6 @@ export async function updateForAdmin(id: number, patch: any, actorUserId: number
 
   const row = await repo.update(id, {
     name: nextName,
-    kind: nextKind,
     headline: nextHeadline,
     body: nextBody,
     ctaPrimaryLabel: nextCtaPrimaryLabel,
@@ -288,6 +494,7 @@ export async function updateForAdmin(id: number, patch: any, actorUserId: number
     ctaSecondaryLabel: nextCtaSecondaryLabel,
     ctaSecondaryHref: nextCtaSecondaryHref,
     mediaUploadId: nextMediaUploadId,
+    creativeJson: nextCreativeJson,
     category: nextCategory,
     priority: nextPriority,
     status: nextStatus,
@@ -307,7 +514,6 @@ export async function cloneForAdmin(id: number, actorUserId: number): Promise<Pr
 
   const row = await repo.create({
     name: `${String(existing.name || 'Prompt')} (Copy)`,
-    kind: existing.kind,
     headline: existing.headline,
     body: existing.body == null ? null : String(existing.body),
     ctaPrimaryLabel: String(existing.cta_primary_label || ''),
@@ -315,6 +521,7 @@ export async function cloneForAdmin(id: number, actorUserId: number): Promise<Pr
     ctaSecondaryLabel: existing.cta_secondary_label == null ? null : String(existing.cta_secondary_label),
     ctaSecondaryHref: existing.cta_secondary_href == null ? null : String(existing.cta_secondary_href),
     mediaUploadId: existing.media_upload_id == null ? null : Number(existing.media_upload_id),
+    creativeJson: (existing as any).creative_json == null ? null : String((existing as any).creative_json),
     category: String(existing.category || ''),
     priority: Number(existing.priority || 100),
     status: 'draft',
@@ -345,12 +552,10 @@ export async function updateStatusForAdmin(id: number, statusRaw: any, actorUser
 
 export async function listActiveForFeed(params?: {
   category?: any
-  kind?: any
   limit?: number
 }): Promise<PromptDto[]> {
   const category = params?.category == null || params?.category === '' ? null : normalizeCategory(params.category)
-  const kind = params?.kind == null || params?.kind === '' ? null : normalizeKind(params.kind)
-  const rows = await repo.listActiveForFeed({ category, kind, limit: params?.limit })
+  const rows = await repo.listActiveForFeed({ category, limit: params?.limit })
   return rows.map(mapRow)
 }
 
