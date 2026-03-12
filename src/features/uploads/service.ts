@@ -12,6 +12,7 @@ import { getPool } from '../../db'
 import { s3 } from '../../services/s3'
 import { createPresignedPost } from '@aws-sdk/s3-presigned-post'
 import { randomUUID } from 'crypto'
+import { SpanStatusCode, trace } from '@opentelemetry/api'
 import {
   MEDIA_JOBS_ENABLED,
   OUTPUT_BUCKET,
@@ -39,8 +40,26 @@ import { UPLOADS_CDN_DOMAIN, UPLOADS_CDN_SIGNED_URL_TTL_SECONDS, UPLOADS_CLOUDFR
 import { buildCloudFrontSignedUrl } from '../../utils/cloudfrontSignedUrl'
 import { librarySourceValueSet } from '../../config/librarySources'
 import { s3ObjectExists } from '../../services/s3ObjectExists'
+import { getLogger } from '../../lib/logger'
 
 export type ServiceContext = { userId?: number | null; ip?: string | null; userAgent?: string | null }
+
+const uploadVariantsTracer = trace.getTracer('aws.uploads.image_variants')
+const uploadVariantsLogger = getLogger({ component: 'features.uploads.image_variants' })
+
+function variantReductionOutcomeBucket(originalBytes: number | null, variantBytes: number | null): string {
+  const original = Number(originalBytes)
+  const variant = Number(variantBytes)
+  if (!Number.isFinite(original) || !Number.isFinite(variant) || original <= 0 || variant <= 0) return 'success'
+  const reductionPct = (1 - (variant / original)) * 100
+  if (!Number.isFinite(reductionPct)) return 'success'
+  if (reductionPct < 20) return 'success_red_00_20'
+  if (reductionPct < 40) return 'success_red_20_40'
+  if (reductionPct < 60) return 'success_red_40_60'
+  if (reductionPct < 80) return 'success_red_60_80'
+  if (reductionPct < 95) return 'success_red_80_95'
+  return 'success_red_95_100'
+}
 
 export async function list(
   params: { status?: string; kind?: 'video' | 'logo' | 'audio' | 'image'; imageRole?: string; userId?: number; spaceId?: number; cursorId?: number; limit?: number; includePublications?: boolean; includeProductions?: boolean },
@@ -479,21 +498,116 @@ export async function getUploadPublicPromptBackgroundCdnUrl(
           ? Boolean(IMAGE_VARIANTS_ASSETS_ENABLED)
           : false
     if (usage && variantsEnabledForUsage) {
-      try {
-        const selected = await uploadImageVariantsSvc.selectBestVariantForUsage({
-          uploadId: Number(uploadId),
-          usage,
-          orientation,
-          dpr,
-        })
-        const variantKey = selected?.variant?.s3Key ? String(selected.variant.s3Key) : ''
-        if (variantKey) return signUploadsCdnUrl(variantKey)
-        await ensureImageDerivativesEnqueuedForRead(row, { priority: 50 })
-        if (IMAGE_VARIANTS_REQUIRE_READY) throw new NotFoundError('not_found')
-      } catch {
-        await ensureImageDerivativesEnqueuedForRead(row, { priority: 50 })
-        if (IMAGE_VARIANTS_REQUIRE_READY) throw new NotFoundError('not_found')
-      }
+      return uploadVariantsTracer.startActiveSpan(
+        'uploads.image_variant.select',
+        {
+          attributes: {
+            'app.operation': 'uploads.image_variant.select',
+            upload_id: Number(uploadId),
+            variant_usage: usage,
+            variant_orientation: orientation || 'unknown',
+            variant_requested_dpr: dpr ?? 1,
+            variant_require_ready: IMAGE_VARIANTS_REQUIRE_READY ? 1 : 0,
+          },
+        },
+        async (span) => {
+          const sourceSizeBytes = row?.size_bytes != null && Number.isFinite(Number(row.size_bytes))
+            ? Number(row.size_bytes)
+            : null
+          let selectedProfileKey: string | null = null
+          let selectedSizeBytes: number | null = null
+          let fallbackReason: string | null = null
+          try {
+            const selected = await uploadImageVariantsSvc.selectBestVariantForUsage({
+              uploadId: Number(uploadId),
+              usage,
+              orientation,
+              dpr,
+            })
+            const variantKey = selected?.variant?.s3Key ? String(selected.variant.s3Key) : ''
+            selectedProfileKey = selected?.variant?.profileKey ? String(selected.variant.profileKey) : null
+            selectedSizeBytes =
+              selected?.variant?.sizeBytes != null && Number.isFinite(Number(selected.variant.sizeBytes))
+                ? Number(selected.variant.sizeBytes)
+                : null
+            if (variantKey) {
+              const appOutcome = variantReductionOutcomeBucket(sourceSizeBytes, selectedSizeBytes)
+              span.setAttributes({
+                app_outcome: appOutcome,
+                variant_selected: true,
+                variant_profile_key: selectedProfileKey || '',
+                variant_size_bytes: selectedSizeBytes ?? 0,
+              })
+              if (
+                sourceSizeBytes != null &&
+                sourceSizeBytes > 0 &&
+                selectedSizeBytes != null &&
+                selectedSizeBytes > 0
+              ) {
+                const reductionPct = (1 - (selectedSizeBytes / sourceSizeBytes)) * 100
+                const reductionRatio = sourceSizeBytes / selectedSizeBytes
+                span.setAttributes({
+                  upload_source_size_bytes: sourceSizeBytes,
+                  variant_reduction_pct: Number(reductionPct.toFixed(3)),
+                  variant_reduction_ratio: Number(reductionRatio.toFixed(4)),
+                })
+              }
+              span.setStatus({ code: SpanStatusCode.OK })
+              return signUploadsCdnUrl(variantKey)
+            }
+
+            fallbackReason = 'missing_variant'
+            await ensureImageDerivativesEnqueuedForRead(row, { priority: 50 })
+            if (IMAGE_VARIANTS_REQUIRE_READY) {
+              span.setAttributes({
+                app_outcome: 'client_error',
+                variant_selected: false,
+                variant_fallback_reason: fallbackReason,
+              })
+              span.setStatus({ code: SpanStatusCode.ERROR, message: 'variant_not_ready' })
+              throw new NotFoundError('not_found')
+            }
+            span.setAttributes({
+              app_outcome: 'redirect',
+              variant_selected: false,
+              variant_fallback_reason: fallbackReason,
+            })
+            span.setStatus({ code: SpanStatusCode.OK })
+            return signUploadsCdnUrl(key)
+          } catch (err: any) {
+            if (err instanceof NotFoundError) throw err
+            fallbackReason = fallbackReason || 'select_error'
+            await ensureImageDerivativesEnqueuedForRead(row, { priority: 50 })
+
+            span.recordException(err)
+            span.setAttributes({
+              app_outcome: IMAGE_VARIANTS_REQUIRE_READY ? 'server_error' : 'redirect',
+              variant_selected: false,
+              variant_fallback_reason: fallbackReason,
+            })
+            if (IMAGE_VARIANTS_REQUIRE_READY) {
+              span.setStatus({ code: SpanStatusCode.ERROR, message: String(err?.message || 'variant_select_failed') })
+              throw new NotFoundError('not_found')
+            }
+
+            uploadVariantsLogger.warn(
+              {
+                upload_id: Number(uploadId),
+                variant_usage: usage,
+                variant_orientation: orientation || 'unknown',
+                variant_requested_dpr: dpr ?? 1,
+                variant_fallback_reason: fallbackReason,
+                err: String(err?.message || err || 'variant_select_failed'),
+              },
+              'uploads.image_variant.select.fallback'
+            )
+            span.setStatus({ code: SpanStatusCode.OK })
+            return signUploadsCdnUrl(key)
+          } finally {
+            span.end()
+          }
+        }
+      )
     }
     return signUploadsCdnUrl(key)
   }

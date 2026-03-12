@@ -45,6 +45,9 @@ High-value operation tags:
 - `create_video.export.process` (media job execution)
 - `uploads.file.get`
 - `uploads.edit_proxy.get`
+- `uploads.image.get`
+- `uploads.image_variant.select`
+- `uploads.image_variant.generate`
 - `mediajobs.attempt.process`
 - `analytics.ingest`
 - `analytics.query`
@@ -231,6 +234,14 @@ Recording rules (minimal baseline):
 - `external:error_rate:5m`
 - `external:p95_latency_ms:30m`
 - `external:job_turnaround_p95_ms:30m`
+- `image_variants:generate_attempts_per_second:5m`
+- `image_variants:generate_errors_per_second:5m`
+- `image_variants:generate_error_rate:5m`
+- `image_variants:generate_p95_latency_ms:5m`
+- `image_variants:select_calls_per_second:5m`
+- `image_variants:select_fallback_rate:5m`
+- `image_variants:select_payload_reduction_pct_est:5m`
+- `image_variants:select_payload_ratio_est:5m`
 - `analytics:ingest_requests_per_second:5m`
 - `analytics:ingest_error_rate:5m`
 - `analytics:query_requests_per_second:5m`
@@ -245,6 +256,8 @@ Alert rules (minimal baseline):
 - `AppHttpErrorRateHigh` (error rate > 2% for 5m with traffic floor)
 - `ExternalProviderErrorRateHigh` (error rate > 5% for 10m with traffic floor)
 - `ExternalProviderTurnaroundHigh` (turnaround p95 > 15m for 10m)
+- `ImageVariantGenerateErrorRateHigh` (error rate > 10% for 10m with generation traffic floor)
+- `ImageVariantSelectFallbackRateHigh` (fallback rate > 40% for 10m with select traffic floor)
 - `AnalyticsIngestErrorRateHigh` (error rate > 5% for 10m with traffic floor)
 - `AnalyticsSinkFailureRateHigh` (failure rate > 5% for 10m with dispatch floor)
 - `AnalyticsSinkDropRateHigh` (drop rate > 90% for 15m with dispatch floor)
@@ -263,6 +276,16 @@ External-provider query starters:
 - `external:job_turnaround_p95_ms:30m`
 - Example filter:
   - `external:p95_latency_ms:30m{app_operation="external.mediaconvert.job.get"}`
+
+Image-variants query starters:
+- `image_variants:generate_attempts_per_second:5m`
+- `image_variants:generate_error_rate:5m`
+- `image_variants:generate_p95_latency_ms:5m`
+- `image_variants:select_calls_per_second:5m`
+- `image_variants:select_fallback_rate:5m`
+- `image_variants:select_payload_reduction_pct_est:5m`
+- `image_variants:select_payload_ratio_est:5m`
+- `image_variants:select_payload_*` are bucket-based estimates derived from `app.outcome` reduction buckets.
 
 Analytics query starters:
 - `analytics:ingest_requests_per_second:5m`

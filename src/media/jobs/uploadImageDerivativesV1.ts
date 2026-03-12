@@ -4,10 +4,15 @@ import {
   type ImageVariantProfile,
   type ImageVariantUsage,
 } from '../../config'
+import { SpanStatusCode, trace } from '@opentelemetry/api'
 import type { UploadImageDerivativesV1Input } from '../../features/media-jobs/types'
 import * as uploadImageVariants from '../../features/upload-image-variants/service'
 import { createUploadImageVariant } from '../../services/ffmpeg/imageVariantPipeline'
 import { buildUploadImageVariantKey } from '../../utils/uploadImageVariant'
+import { getLogger } from '../../lib/logger'
+
+const imageVariantTracer = trace.getTracer('aws.uploads.image_variants')
+const imageVariantLogger = getLogger({ component: 'mediajobs.upload_image_derivatives' })
 
 function normalizeKind(raw: unknown): 'image' | 'logo' {
   return String(raw || '').trim().toLowerCase() === 'logo' ? 'logo' : 'image'
@@ -82,65 +87,156 @@ export async function runUploadImageDerivativesV1Job(
 
   for (const profile of profiles) {
     const outKey = buildUploadImageVariantKey(uploadId, profile.key, profile.format)
+    await imageVariantTracer.startActiveSpan(
+      'uploads.image_variant.generate',
+      {
+        attributes: {
+          'app.operation': 'uploads.image_variant.generate',
+          upload_id: uploadId,
+          variant_profile_key: profile.key,
+          variant_usage: profile.usage,
+          variant_format: profile.format,
+          variant_force: force ? 1 : 0,
+        },
+      },
+      async (span) => {
+        const t0 = Date.now()
+        try {
+          imageVariantLogger.info(
+            {
+              upload_id: uploadId,
+              profile_key: profile.key,
+              usage: profile.usage,
+              format: profile.format,
+              source_bucket: sourceBucket,
+              source_key: sourceKey,
+              output_bucket: outputBucket,
+              output_key: outKey,
+              force,
+            },
+            'uploads.image_variant.generate.start'
+          )
 
-    if (!force) {
-      try {
-        const existing = await uploadImageVariants.getVariantByProfile(uploadId, profile.key)
-        if (existing && existing.status === 'ready') {
-          skipped.push({ profileKey: profile.key, usage: profile.usage, key: existing.s3Key || outKey })
-          continue
+          if (!force) {
+            try {
+              const existing = await uploadImageVariants.getVariantByProfile(uploadId, profile.key)
+              if (existing && existing.status === 'ready') {
+                skipped.push({ profileKey: profile.key, usage: profile.usage, key: existing.s3Key || outKey })
+                span.setAttributes({
+                  app_outcome: 'redirect',
+                  variant_skipped: true,
+                  variant_skip_reason: 'already_ready',
+                  variant_size_bytes: existing.sizeBytes ?? 0,
+                })
+                span.setStatus({ code: SpanStatusCode.OK })
+                imageVariantLogger.info(
+                  {
+                    upload_id: uploadId,
+                    profile_key: profile.key,
+                    usage: profile.usage,
+                    output_key: existing.s3Key || outKey,
+                    duration_ms: Date.now() - t0,
+                  },
+                  'uploads.image_variant.generate.skipped'
+                )
+                return
+              }
+            } catch {}
+          }
+
+          const result = await createUploadImageVariant({
+            source: { bucket: sourceBucket, key: sourceKey },
+            output: { bucket: outputBucket, key: outKey },
+            profile,
+            logPaths: logPaths ? { ...logPaths, commandLog: ffmpegCommands } : undefined,
+          })
+          if (!metricsInput && result.metricsInput) metricsInput = result.metricsInput
+          await uploadImageVariants.upsertVariant({
+            uploadId,
+            profileKey: profile.key,
+            usage: profile.usage,
+            format: profile.format,
+            width: result.width,
+            height: result.height,
+            sizeBytes: result.sizeBytes,
+            s3Bucket: result.output.bucket,
+            s3Key: result.output.key,
+            etag: result.output.etag,
+            status: 'ready',
+            errorCode: null,
+          })
+          generated.push({
+            profileKey: profile.key,
+            usage: profile.usage,
+            key: result.output.key,
+            sizeBytes: result.sizeBytes,
+          })
+          span.setAttributes({
+            app_outcome: 'success',
+            variant_skipped: false,
+            variant_width: result.width ?? undefined,
+            variant_height: result.height ?? undefined,
+            variant_size_bytes: result.sizeBytes ?? 0,
+          })
+          span.setStatus({ code: SpanStatusCode.OK })
+          imageVariantLogger.info(
+            {
+              upload_id: uploadId,
+              profile_key: profile.key,
+              usage: profile.usage,
+              format: profile.format,
+              output_key: result.output.key,
+              width: result.width,
+              height: result.height,
+              size_bytes: result.sizeBytes,
+              duration_ms: Date.now() - t0,
+            },
+            'uploads.image_variant.generate.finish'
+          )
+        } catch (err) {
+          const errorCode = errorCodeFor(err)
+          try {
+            await uploadImageVariants.upsertVariant({
+              uploadId,
+              profileKey: profile.key,
+              usage: profile.usage,
+              format: profile.format,
+              width: null,
+              height: null,
+              sizeBytes: null,
+              s3Bucket: outputBucket,
+              s3Key: outKey,
+              etag: null,
+              status: 'failed',
+              errorCode,
+            })
+          } catch {}
+          failed.push({ profileKey: profile.key, usage: profile.usage, key: outKey, errorCode })
+          span.recordException(err as any)
+          span.setAttributes({
+            app_outcome: 'server_error',
+            error_class: errorCode,
+            variant_skipped: false,
+          })
+          span.setStatus({ code: SpanStatusCode.ERROR, message: String((err as any)?.message || err || errorCode) })
+          imageVariantLogger.warn(
+            {
+              upload_id: uploadId,
+              profile_key: profile.key,
+              usage: profile.usage,
+              format: profile.format,
+              output_key: outKey,
+              error_code: errorCode,
+              duration_ms: Date.now() - t0,
+              err: String((err as any)?.message || err || errorCode),
+            },
+            'uploads.image_variant.generate.failed'
+          )
+        } finally {
+          span.end()
         }
-      } catch {}
-    }
-
-    try {
-      const result = await createUploadImageVariant({
-        source: { bucket: sourceBucket, key: sourceKey },
-        output: { bucket: outputBucket, key: outKey },
-        profile,
-        logPaths: logPaths ? { ...logPaths, commandLog: ffmpegCommands } : undefined,
-      })
-      if (!metricsInput && result.metricsInput) metricsInput = result.metricsInput
-      await uploadImageVariants.upsertVariant({
-        uploadId,
-        profileKey: profile.key,
-        usage: profile.usage,
-        format: profile.format,
-        width: result.width,
-        height: result.height,
-        sizeBytes: result.sizeBytes,
-        s3Bucket: result.output.bucket,
-        s3Key: result.output.key,
-        etag: result.output.etag,
-        status: 'ready',
-        errorCode: null,
-      })
-      generated.push({
-        profileKey: profile.key,
-        usage: profile.usage,
-        key: result.output.key,
-        sizeBytes: result.sizeBytes,
-      })
-    } catch (err) {
-      const errorCode = errorCodeFor(err)
-      try {
-        await uploadImageVariants.upsertVariant({
-          uploadId,
-          profileKey: profile.key,
-          usage: profile.usage,
-          format: profile.format,
-          width: null,
-          height: null,
-          sizeBytes: null,
-          s3Bucket: outputBucket,
-          s3Key: outKey,
-          etag: null,
-          status: 'failed',
-          errorCode,
-        })
-      } catch {}
-      failed.push({ profileKey: profile.key, usage: profile.usage, key: outKey, errorCode })
-    }
+      }
+    )
   }
 
   if (!generated.length && !skipped.length) {

@@ -17,7 +17,7 @@ Scope notes:
 | `app.operation_detail` | See detail catalog below | enum/string | Secondary operation detail used when `app.operation` is normalized (for example analytics ingest/query/rollup). |
 | `app.operation_family` | `mediajobs.attempt.process` | enum | Grouping for media job operation families. |
 | `app.surface` | `create_video`, `assets`, `admin`, `global_feed`, `group_feed`, `channel_feed`, `my_feed`, `unknown` | enum | User surface derived from route/referer context. |
-| `app.outcome` | `success`, `redirect`, `client_error`, `server_error` | enum | Derived from HTTP status or explicit span outcome. |
+| `app.outcome` | `success`, `redirect`, `client_error`, `server_error`, `success_red_00_20`, `success_red_20_40`, `success_red_40_60`, `success_red_60_80`, `success_red_80_95`, `success_red_95_100` | enum | Derived from HTTP status or explicit span outcome. Reduction buckets are emitted by `uploads.image_variant.select`. |
 | `app.request.class` | `static_asset`, `probe`, `root` | enum | Set only when trace toggles include those classes. |
 | `error.class` | `validation`, `auth`, `forbidden`, `not_found`, `conflict`, `rate_limit`, `upstream`, `internal`, `client`, `timeout`, `network` | enum | Some values are route-status-derived; others from external error classification. |
 | `http.status_code` | `100..599` | integer | Set by HTTP/external spans. |
@@ -95,6 +95,9 @@ Scope notes:
 - `uploads.edit_proxy.get`
 - `uploads.audio_envelope.get`
 - `uploads.thumb.get`
+- `uploads.image.get`
+- `uploads.image_variant.select`
+- `uploads.image_variant.generate`
 - `uploads.thumb.refresh`
 - `uploads.publish_options.get`
 - `uploads.delete_source`

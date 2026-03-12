@@ -144,6 +144,8 @@ function classifyHttpOperation(methodRaw: string, pathname: string): string | nu
     { method: 'GET', re: /^\/api\/uploads\/[^/]+\/edit-proxy$/, op: 'uploads.edit_proxy.get' },
     { method: 'GET', re: /^\/api\/uploads\/[^/]+\/audio-envelope$/, op: 'uploads.audio_envelope.get' },
     { method: 'GET', re: /^\/api\/uploads\/[^/]+\/thumb$/, op: 'uploads.thumb.get' },
+    { method: 'GET', re: /^\/api\/uploads\/[^/]+\/image$/, op: 'uploads.image.get' },
+    { method: 'GET', re: /^\/api\/uploads\/[^/]+\/prompt-bg$/, op: 'uploads.image.get' },
     { method: 'POST', re: /^\/api\/uploads\/[^/]+\/thumb$/, op: 'uploads.thumb.refresh' },
     { method: 'GET', re: /^\/api\/uploads\/[^/]+\/publish-options$/, op: 'uploads.publish_options.get' },
     { method: 'POST', re: /^\/api\/uploads\/[^/]+\/delete-source$/, op: 'uploads.delete_source' },

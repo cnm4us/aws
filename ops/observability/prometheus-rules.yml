@@ -342,3 +342,175 @@ groups:
         annotations:
           summary: "High external turnaround p95 for {{ $labels.app_operation }}"
           description: "p95 turnaround is {{ $value }} ms for at least 10m."
+
+  - name: image-variants-spanmetrics-recording
+    interval: 30s
+    rules:
+      - record: image_variants:generate_attempts_per_second:5m
+        expr: |
+          sum(
+            rate(
+              traces_span_metrics_calls_total{
+                service_name="aws-mediaconvert-service",
+                span_kind="SPAN_KIND_INTERNAL",
+                app_operation="uploads.image_variant.generate",
+                app_outcome=~"success|server_error"
+              }[5m]
+            )
+          )
+
+      - record: image_variants:generate_errors_per_second:5m
+        expr: |
+          sum(
+            rate(
+              traces_span_metrics_calls_total{
+                service_name="aws-mediaconvert-service",
+                span_kind="SPAN_KIND_INTERNAL",
+                app_operation="uploads.image_variant.generate",
+                app_outcome="server_error"
+              }[5m]
+            )
+          )
+
+      - record: image_variants:generate_skips_per_second:5m
+        expr: |
+          sum(
+            rate(
+              traces_span_metrics_calls_total{
+                service_name="aws-mediaconvert-service",
+                span_kind="SPAN_KIND_INTERNAL",
+                app_operation="uploads.image_variant.generate",
+                app_outcome="redirect"
+              }[5m]
+            )
+          )
+
+      - record: image_variants:generate_error_rate:5m
+        expr: |
+          image_variants:generate_errors_per_second:5m
+          /
+          clamp_min(image_variants:generate_attempts_per_second:5m, 0.001)
+
+      - record: image_variants:generate_p95_latency_ms:5m
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (
+              rate(
+                traces_span_metrics_duration_milliseconds_bucket{
+                  service_name="aws-mediaconvert-service",
+                  span_kind="SPAN_KIND_INTERNAL",
+                  app_operation="uploads.image_variant.generate",
+                  app_outcome=~"success|server_error"
+                }[5m]
+              )
+            )
+          )
+
+      - record: image_variants:select_calls_per_second:5m
+        expr: |
+          sum(
+            rate(
+              traces_span_metrics_calls_total{
+                service_name="aws-mediaconvert-service",
+                span_kind="SPAN_KIND_INTERNAL",
+                app_operation="uploads.image_variant.select"
+              }[5m]
+            )
+          )
+
+      - record: image_variants:select_success_per_second:5m
+        expr: |
+          sum(
+            rate(
+              traces_span_metrics_calls_total{
+                service_name="aws-mediaconvert-service",
+                span_kind="SPAN_KIND_INTERNAL",
+                app_operation="uploads.image_variant.select",
+                app_outcome=~"success.*"
+              }[5m]
+            )
+          )
+
+      - record: image_variants:select_fallback_per_second:5m
+        expr: |
+          sum(
+            rate(
+              traces_span_metrics_calls_total{
+                service_name="aws-mediaconvert-service",
+                span_kind="SPAN_KIND_INTERNAL",
+                app_operation="uploads.image_variant.select",
+                app_outcome="redirect"
+              }[5m]
+            )
+          )
+
+      - record: image_variants:select_errors_per_second:5m
+        expr: |
+          sum(
+            rate(
+              traces_span_metrics_calls_total{
+                service_name="aws-mediaconvert-service",
+                span_kind="SPAN_KIND_INTERNAL",
+                app_operation="uploads.image_variant.select",
+                app_outcome=~"client_error|server_error"
+              }[5m]
+            )
+          )
+
+      - record: image_variants:select_fallback_rate:5m
+        expr: |
+          image_variants:select_fallback_per_second:5m
+          /
+          clamp_min(image_variants:select_calls_per_second:5m, 0.001)
+
+      - record: image_variants:select_payload_reduction_pct_est:5m
+        expr: |
+          (
+            (0.10 * sum(rate(traces_span_metrics_calls_total{service_name="aws-mediaconvert-service",span_kind="SPAN_KIND_INTERNAL",app_operation="uploads.image_variant.select",app_outcome="success_red_00_20"}[5m])))
+            +
+            (0.30 * sum(rate(traces_span_metrics_calls_total{service_name="aws-mediaconvert-service",span_kind="SPAN_KIND_INTERNAL",app_operation="uploads.image_variant.select",app_outcome="success_red_20_40"}[5m])))
+            +
+            (0.50 * sum(rate(traces_span_metrics_calls_total{service_name="aws-mediaconvert-service",span_kind="SPAN_KIND_INTERNAL",app_operation="uploads.image_variant.select",app_outcome="success_red_40_60"}[5m])))
+            +
+            (0.70 * sum(rate(traces_span_metrics_calls_total{service_name="aws-mediaconvert-service",span_kind="SPAN_KIND_INTERNAL",app_operation="uploads.image_variant.select",app_outcome="success_red_60_80"}[5m])))
+            +
+            (0.875 * sum(rate(traces_span_metrics_calls_total{service_name="aws-mediaconvert-service",span_kind="SPAN_KIND_INTERNAL",app_operation="uploads.image_variant.select",app_outcome="success_red_80_95"}[5m])))
+            +
+            (0.975 * sum(rate(traces_span_metrics_calls_total{service_name="aws-mediaconvert-service",span_kind="SPAN_KIND_INTERNAL",app_operation="uploads.image_variant.select",app_outcome="success_red_95_100"}[5m])))
+          )
+          /
+          clamp_min(image_variants:select_success_per_second:5m, 0.001)
+
+      - record: image_variants:select_payload_ratio_est:5m
+        expr: |
+          1 / clamp_min(1 - image_variants:select_payload_reduction_pct_est:5m, 0.01)
+
+  - name: image-variants-spanmetrics-alerts
+    interval: 30s
+    rules:
+      - alert: ImageVariantGenerateErrorRateHigh
+        expr: |
+          image_variants:generate_error_rate:5m > 0.10
+          and
+          image_variants:generate_attempts_per_second:5m > 0.01
+        for: 10m
+        labels:
+          severity: warning
+          team: app
+        annotations:
+          summary: "High image variant generation error rate"
+          description: "image variant generation error rate is {{ $value }} over 5m with sustained traffic."
+
+      - alert: ImageVariantSelectFallbackRateHigh
+        expr: |
+          image_variants:select_fallback_rate:5m > 0.40
+          and
+          image_variants:select_calls_per_second:5m > 0.02
+        for: 10m
+        labels:
+          severity: warning
+          team: app
+        annotations:
+          summary: "High image variant fallback rate"
+          description: "image variant fallback rate is {{ $value }} over 5m with sustained traffic."
