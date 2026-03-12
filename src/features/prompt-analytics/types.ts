@@ -1,6 +1,5 @@
 export type PromptAnalyticsSurface = 'global_feed'
 export type PromptAnalyticsViewerState = 'anonymous' | 'authenticated'
-export type PromptAnalyticsPromptKind = 'prompt_full' | 'prompt_overlay' | null
 export type PromptAnalyticsCtaKind = 'primary' | 'secondary' | null
 
 export type PromptAnalyticsInputEvent = 'impression' | 'click' | 'dismiss' | 'auth_start' | 'auth_complete'
@@ -21,7 +20,6 @@ export type PromptAnalyticsEventRow = {
   session_id: string | null
   user_id: number | null
   prompt_id: number
-  prompt_kind: string | null
   prompt_category: string | null
   cta_kind: string | null
   attributed: number
@@ -60,7 +58,6 @@ export type PromptAnalyticsKpis = {
 export type PromptAnalyticsPromptRow = {
   promptId: number
   promptName: string | null
-  promptKind: string | null
   promptCategory: string | null
   totals: {
     impressions: number

@@ -12,7 +12,16 @@ import { getPool } from '../../db'
 import { s3 } from '../../services/s3'
 import { createPresignedPost } from '@aws-sdk/s3-presigned-post'
 import { randomUUID } from 'crypto'
-import { MEDIA_JOBS_ENABLED, OUTPUT_BUCKET, UPLOAD_BUCKET, MAX_UPLOAD_MB, UPLOAD_PREFIX } from '../../config'
+import {
+  MEDIA_JOBS_ENABLED,
+  OUTPUT_BUCKET,
+  UPLOAD_BUCKET,
+  MAX_UPLOAD_MB,
+  UPLOAD_PREFIX,
+  IMAGE_VARIANTS_ENABLED,
+  IMAGE_VARIANTS_PROMPT_ENABLED,
+  IMAGE_VARIANTS_REQUIRE_READY,
+} from '../../config'
 import { sanitizeFilename, pickExtension, nowDateYmd, buildUploadKey } from '../../utils/naming'
 import { DeleteObjectsCommand, GetObjectCommand, ListObjectsV2Command, type ListObjectsV2CommandOutput, type _Object } from '@aws-sdk/client-s3'
 import { clampLimit } from '../../core/pagination'
@@ -22,6 +31,7 @@ import * as audioTagsRepo from '../audio-tags/repo'
 import * as audioFavoritesRepo from '../audio-favorites/repo'
 import * as uploadPrefsRepo from '../upload-prefs/repo'
 import { TERMS_UPLOAD_KEY, TERMS_UPLOAD_VERSION } from '../../config'
+import * as uploadImageVariantsSvc from '../upload-image-variants/service'
 import { buildUploadAudioEnvelopeKey } from '../../utils/uploadAudioEnvelope'
 import { buildUploadFreezeFrameKey } from '../../utils/uploadFreezeFrame'
 import { UPLOADS_CDN_DOMAIN, UPLOADS_CDN_SIGNED_URL_TTL_SECONDS, UPLOADS_CLOUDFRONT_KEY_PAIR_ID, UPLOADS_CLOUDFRONT_PRIVATE_KEY_PEM_BASE64 } from '../../config'
@@ -423,7 +433,7 @@ export async function getUploadSignedCdnUrl(
 
 export async function getUploadPublicPromptBackgroundCdnUrl(
   uploadId: number,
-  params: { mode: 'image' | 'video' }
+  params: { mode: 'image' | 'video'; orientation?: 'portrait' | 'landscape' | null; dpr?: number | null }
 ): Promise<{ url: string; expiresAt: number }> {
   if (!uploadsCdnConfigured()) throw new DomainError('cdn_not_configured')
   const row = await repo.getById(uploadId)
@@ -431,10 +441,30 @@ export async function getUploadPublicPromptBackgroundCdnUrl(
 
   const mode = String(params?.mode || '').toLowerCase()
   const rowKind = String(row.kind || 'video').toLowerCase()
+  const orientation = params?.orientation === 'portrait' || params?.orientation === 'landscape'
+    ? params.orientation
+    : null
+  const dprRaw = Number(params?.dpr)
+  const dpr = Number.isFinite(dprRaw) && dprRaw > 0 ? Math.max(1, Math.min(3, dprRaw)) : null
 
   if (mode === 'image') {
     const key = String(row.s3_key || '')
     if (!key) throw new NotFoundError('not_found')
+    if (IMAGE_VARIANTS_PROMPT_ENABLED && rowKind === 'image') {
+      try {
+        const selected = await uploadImageVariantsSvc.selectBestVariantForUsage({
+          uploadId: Number(uploadId),
+          usage: 'prompt_bg',
+          orientation,
+          dpr,
+        })
+        const variantKey = selected?.variant?.s3Key ? String(selected.variant.s3Key) : ''
+        if (variantKey) return signUploadsCdnUrl(variantKey)
+        if (IMAGE_VARIANTS_REQUIRE_READY) throw new NotFoundError('not_found')
+      } catch {
+        if (IMAGE_VARIANTS_REQUIRE_READY) throw new NotFoundError('not_found')
+      }
+    }
     return signUploadsCdnUrl(key)
   }
 
@@ -2125,6 +2155,39 @@ export async function markComplete(input: { id: number; etag?: string; sizeBytes
           outputKey: buildUploadAudioEnvelopeKey(Number(prev.id)),
           intervalSeconds: 0.1,
         })
+      }
+    } catch {
+      // best-effort
+    }
+
+    // Plan 116: auto-generate optimized image variants for assets/images + logos.
+    try {
+      const isImageLike = kind === 'image' || kind === 'logo'
+      if (IMAGE_VARIANTS_ENABLED && isImageLike && !sourceDeletedAt && prevStatus !== 'uploaded') {
+        let alreadyQueued = false
+        try {
+          const [rows] = await db.query(
+            `SELECT id
+               FROM media_jobs
+              WHERE type = 'upload_image_derivatives_v1'
+                AND status IN ('pending','processing')
+                AND JSON_UNQUOTE(JSON_EXTRACT(input_json, '$.uploadId')) = ?
+              ORDER BY id DESC
+              LIMIT 1`,
+            [String(Number(prev.id))]
+          )
+          alreadyQueued = (rows as any[]).length > 0
+        } catch {}
+        if (!alreadyQueued) {
+          await enqueueJob('upload_image_derivatives_v1', {
+            uploadId: Number(prev.id),
+            userId: ownerUserId ?? null,
+            image: { bucket: String((prev as any).s3_bucket || ''), key: String((prev as any).s3_key || '') },
+            kind: kind === 'logo' ? 'logo' : 'image',
+            imageRole: (prev as any).image_role != null ? String((prev as any).image_role) : null,
+            outputBucket: String(UPLOAD_BUCKET),
+          })
+        }
       }
     } catch {
       // best-effort

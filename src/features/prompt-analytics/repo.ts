@@ -24,7 +24,6 @@ export async function insertEvent(input: {
   sessionId: string | null
   userId: number | null
   promptId: number
-  promptKind: string | null
   promptCategory: string | null
   ctaKind: PromptAnalyticsCtaKind
   attributed: boolean
@@ -38,11 +37,11 @@ export async function insertEvent(input: {
       (
         event_type, surface, viewer_state,
         session_id, user_id,
-        prompt_id, prompt_kind, prompt_category,
+        prompt_id, prompt_category,
         cta_kind, attributed,
         occurred_at, dedupe_bucket_start, dedupe_key
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.eventType,
       input.surface,
@@ -50,7 +49,6 @@ export async function insertEvent(input: {
       input.sessionId,
       input.userId,
       input.promptId,
-      input.promptKind,
       input.promptCategory,
       input.ctaKind,
       input.attributed ? 1 : 0,
@@ -67,7 +65,6 @@ export async function upsertDailyCount(input: {
   dateUtc: string
   surface: PromptAnalyticsSurface
   promptId: number
-  promptKind: string | null
   promptCategory: string | null
   viewerState: PromptAnalyticsViewerState
   eventType: PromptAnalyticsEventType
@@ -77,10 +74,10 @@ export async function upsertDailyCount(input: {
   await db.query(
     `INSERT INTO feed_prompt_daily_stats
       (
-        date_utc, surface, prompt_id, prompt_kind, prompt_category,
+        date_utc, surface, prompt_id, prompt_category,
         viewer_state, event_type, total_events
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
       ON DUPLICATE KEY UPDATE
         total_events = total_events + VALUES(total_events),
         updated_at = CURRENT_TIMESTAMP`,
@@ -88,7 +85,6 @@ export async function upsertDailyCount(input: {
       input.dateUtc,
       input.surface,
       input.promptId,
-      input.promptKind || '',
       input.promptCategory || '',
       input.viewerState,
       input.eventType,
@@ -206,7 +202,6 @@ export async function getByPromptFromDaily(filter: PromptAnalyticsQueryFilter): 
   const [rows] = await db.query(
     `SELECT
         s.prompt_id,
-        MAX(NULLIF(s.prompt_kind, '')) AS prompt_kind,
         MAX(NULLIF(s.prompt_category, '')) AS prompt_category,
         MAX(p.name) AS prompt_name,
         COALESCE(SUM(CASE WHEN s.event_type = 'prompt_impression' THEN s.total_events ELSE 0 END), 0) AS impressions,

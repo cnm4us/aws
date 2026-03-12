@@ -90,6 +90,10 @@ feedPromptsRouter.get('/api/feed/prompts/:id', async (req: any, res: any, next: 
   try {
     const id = Number(req.params.id)
     if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'bad_id' })
+    const orientationRaw = String(req.query?.orientation || '').toLowerCase()
+    const orientation: 'portrait' | 'landscape' = orientationRaw === 'landscape' ? 'landscape' : 'portrait'
+    const dprRaw = Number(req.query?.dpr)
+    const dpr = Number.isFinite(dprRaw) && dprRaw > 0 ? dprRaw : null
 
     const prompt = await promptsSvc.getActiveForFeedById(id)
 
@@ -106,10 +110,39 @@ feedPromptsRouter.get('/api/feed/prompts/:id', async (req: any, res: any, next: 
       try {
         const upload = await uploadsSvc.get(Number(mediaUploadId), {}, { userId: req.user?.id ? Number(req.user.id) : null })
         let publicBackgroundUrl: string | null = null
-        if (backgroundMode === 'image' || backgroundMode === 'video') {
+        let portraitBackgroundUrl: string | null = null
+        let landscapeBackgroundUrl: string | null = null
+        if (backgroundMode === 'image') {
+          try {
+            const [signedCurrent, signedPortrait, signedLandscape] = await Promise.all([
+              uploadsSvc.getUploadPublicPromptBackgroundCdnUrl(Number(upload.id), {
+                mode: 'image',
+                orientation,
+                dpr,
+              }),
+              uploadsSvc.getUploadPublicPromptBackgroundCdnUrl(Number(upload.id), {
+                mode: 'image',
+                orientation: 'portrait',
+                dpr,
+              }),
+              uploadsSvc.getUploadPublicPromptBackgroundCdnUrl(Number(upload.id), {
+                mode: 'image',
+                orientation: 'landscape',
+                dpr,
+              }),
+            ])
+            publicBackgroundUrl = signedCurrent.url
+            portraitBackgroundUrl = signedPortrait.url
+            landscapeBackgroundUrl = signedLandscape.url
+          } catch {
+            publicBackgroundUrl = null
+            portraitBackgroundUrl = null
+            landscapeBackgroundUrl = null
+          }
+        } else if (backgroundMode === 'video') {
           try {
             const signed = await uploadsSvc.getUploadPublicPromptBackgroundCdnUrl(Number(upload.id), {
-              mode: backgroundMode as 'image' | 'video',
+              mode: 'video',
             })
             publicBackgroundUrl = signed.url
           } catch {
@@ -120,13 +153,13 @@ feedPromptsRouter.get('/api/feed/prompts/:id', async (req: any, res: any, next: 
           upload_id: Number(upload.id),
           master: publicBackgroundUrl || upload.cdn_master || upload.s3_master || null,
           poster_portrait:
-            publicBackgroundUrl ||
+            portraitBackgroundUrl ||
             upload.poster_portrait_cdn ||
             upload.poster_portrait_s3 ||
             upload.poster_cdn ||
             upload.poster_s3 ||
             null,
-          poster_landscape: publicBackgroundUrl || upload.poster_landscape_cdn || upload.poster_landscape_s3 || null,
+          poster_landscape: landscapeBackgroundUrl || upload.poster_landscape_cdn || upload.poster_landscape_s3 || null,
         }
       } catch {
         media = null

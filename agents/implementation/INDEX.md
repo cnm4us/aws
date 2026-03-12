@@ -20,12 +20,16 @@ This file is a lightweight index for ongoing work and “what’s next”.
 - `agents/implementation/plan_112.md` — External provider telemetry (AssemblyAI + MediaConvert)
 - `agents/implementation/plan_113.md` — Create Video export progress + consistent post-export UX
 - `agents/implementation/plan_114.md` — Prompt orchestration program (global-feed registration prompts)
+- `agents/implementation/plan_114F.md` — Prompt Creative v2 (dual widgets + image/video background + styling controls)
 - `agents/implementation/plan_115.md` — Hybrid analytics foundation (internal source of truth + optional external sink)
+- `agents/implementation/plan_116.md` — Automatic image derivatives for prompt/graphics/logo performance
 
 ## In Progress / Next Up
 - Roadmap: `agents/roadmaps/roadmap_create_video.md`
   - Next: Timeline-first library (`plan_68.md`)
 - Program: `agents/implementation/plan_114.md`
-  - Next: Prompt content registry (`plan_114A.md`) + decision service (`plan_114C.md`)
+  - Next: Prompt Creative v2 (`plan_114F.md`)
 - Program: `agents/implementation/plan_115.md`
-  - Next: Observability + guardrails (ingest/sink/rollup metrics + alerts, Phase E)
+  - Next: Hardening + privacy controls (retention/PII/DSAR, Phase F)
+- Program: `agents/implementation/plan_116.md`
+  - Next: Phase A (profile registry + schema)

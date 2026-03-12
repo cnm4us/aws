@@ -46,10 +46,9 @@ High-value operation tags:
 - `uploads.file.get`
 - `uploads.edit_proxy.get`
 - `mediajobs.attempt.process`
-- `prompt.analytics.ingest`
-- `prompt.analytics.query`
-- `feed.activity.ingest`
-- `feed.activity.query`
+- `analytics.ingest`
+- `analytics.query`
+- `analytics.rollup`
 - `analytics.sink.dispatch`
 - `analytics.sink.health`
 
@@ -232,12 +231,24 @@ Recording rules (minimal baseline):
 - `external:error_rate:5m`
 - `external:p95_latency_ms:30m`
 - `external:job_turnaround_p95_ms:30m`
+- `analytics:ingest_requests_per_second:5m`
+- `analytics:ingest_error_rate:5m`
+- `analytics:query_requests_per_second:5m`
+- `analytics:sink_dispatch_per_second:5m`
+- `analytics:sink_dispatch_failure_rate:5m`
+- `analytics:sink_dispatch_drop_rate:5m`
+- `analytics:rollup_calls_per_second:5m`
+- `analytics:rollup_lag_ratio:5m`
 
 Alert rules (minimal baseline):
 - `AppHttpP95LatencyHigh` (p95 > 1500ms for 10m)
 - `AppHttpErrorRateHigh` (error rate > 2% for 5m with traffic floor)
 - `ExternalProviderErrorRateHigh` (error rate > 5% for 10m with traffic floor)
 - `ExternalProviderTurnaroundHigh` (turnaround p95 > 15m for 10m)
+- `AnalyticsIngestErrorRateHigh` (error rate > 5% for 10m with traffic floor)
+- `AnalyticsSinkFailureRateHigh` (failure rate > 5% for 10m with dispatch floor)
+- `AnalyticsSinkDropRateHigh` (drop rate > 90% for 15m with dispatch floor)
+- `AnalyticsRollupStale` (ingest traffic present but rollup calls near zero for 10m)
 
 Where to view:
 - Prometheus UI alerts page: `http://127.0.0.1:9090/alerts`
@@ -252,6 +263,14 @@ External-provider query starters:
 - `external:job_turnaround_p95_ms:30m`
 - Example filter:
   - `external:p95_latency_ms:30m{app_operation="external.mediaconvert.job.get"}`
+
+Analytics query starters:
+- `analytics:ingest_requests_per_second:5m`
+- `analytics:ingest_error_rate:5m`
+- `analytics:query_requests_per_second:5m`
+- `analytics:sink_dispatch_failure_rate:5m`
+- `analytics:sink_dispatch_drop_rate:5m`
+- `analytics:rollup_lag_ratio:5m`
 
 Environment overrides for script:
 - `PROM_CONFIG_FILE`

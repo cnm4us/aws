@@ -128,3 +128,141 @@ export const TERMS_UPLOAD_VERSION = process.env.TERMS_UPLOAD_VERSION || '2026-01
 
 // Create Video export (ffmpeg)
 export const CREATE_VIDEO_BG_COLOR = process.env.CREATE_VIDEO_BG_COLOR || '#000000'
+
+export type ImageVariantFormat = 'webp' | 'png'
+export type ImageVariantUsage = 'prompt_bg' | 'logo' | 'lower_third'
+export type ImageVariantFit = 'cover' | 'contain' | 'inside'
+
+export type ImageVariantProfile = {
+  key: string
+  usage: ImageVariantUsage
+  orientation: 'portrait' | 'landscape' | null
+  dpr: 1 | 2 | null
+  width: number | null
+  height: number | null
+  fit: ImageVariantFit
+  format: ImageVariantFormat
+  quality: number | null
+  alpha: boolean
+}
+
+function envEnum<T extends string>(name: string, allowed: readonly T[], defaultValue: T): T {
+  const raw = process.env[name]
+  if (raw == null || String(raw).trim() === '') return defaultValue
+  const v = String(raw).trim().toLowerCase() as T
+  return (allowed as readonly string[]).includes(v) ? v : defaultValue
+}
+
+// Plan 116: automatic image derivatives for UI surfaces.
+export const IMAGE_VARIANTS_ENABLED = envBool('IMAGE_VARIANTS_ENABLED', false)
+export const IMAGE_VARIANTS_PROMPT_ENABLED = envBool('IMAGE_VARIANTS_PROMPT_ENABLED', IMAGE_VARIANTS_ENABLED)
+export const IMAGE_VARIANTS_ASSETS_ENABLED = envBool('IMAGE_VARIANTS_ASSETS_ENABLED', IMAGE_VARIANTS_ENABLED)
+export const IMAGE_VARIANTS_REQUIRE_READY = envBool('IMAGE_VARIANTS_REQUIRE_READY', false)
+export const IMAGE_VARIANTS_WITHOUT_ENLARGEMENT = envBool('IMAGE_VARIANTS_WITHOUT_ENLARGEMENT', true)
+export const IMAGE_VARIANTS_STORAGE_PREFIX = (process.env.IMAGE_VARIANTS_STORAGE_PREFIX ?? 'derived/uploads/').replace(/^\/+/, '').replace(/\/+/g, '/')
+
+const IMAGE_VARIANTS_FORMAT_DEFAULT = envEnum('IMAGE_VARIANTS_FORMAT', ['webp', 'png'] as const, 'webp')
+const IMAGE_VARIANTS_QUALITY_PROMPT_BG = envInt('IMAGE_VARIANTS_QUALITY_PROMPT_BG', 80, { min: 1, max: 100 })
+const IMAGE_VARIANTS_QUALITY_LOGO = envInt('IMAGE_VARIANTS_QUALITY_LOGO', 82, { min: 1, max: 100 })
+const IMAGE_VARIANTS_QUALITY_LOWER_THIRD = envInt('IMAGE_VARIANTS_QUALITY_LOWER_THIRD', 84, { min: 1, max: 100 })
+
+export const IMAGE_VARIANT_PROFILES: readonly ImageVariantProfile[] = [
+  {
+    key: 'prompt_bg_p_1x',
+    usage: 'prompt_bg',
+    orientation: 'portrait',
+    dpr: 1,
+    width: 720,
+    height: 1280,
+    fit: 'cover',
+    format: IMAGE_VARIANTS_FORMAT_DEFAULT,
+    quality: IMAGE_VARIANTS_QUALITY_PROMPT_BG,
+    alpha: false,
+  },
+  {
+    key: 'prompt_bg_p_2x',
+    usage: 'prompt_bg',
+    orientation: 'portrait',
+    dpr: 2,
+    width: 1080,
+    height: 1920,
+    fit: 'cover',
+    format: IMAGE_VARIANTS_FORMAT_DEFAULT,
+    quality: IMAGE_VARIANTS_QUALITY_PROMPT_BG,
+    alpha: false,
+  },
+  {
+    key: 'prompt_bg_l_1x',
+    usage: 'prompt_bg',
+    orientation: 'landscape',
+    dpr: 1,
+    width: 1280,
+    height: 720,
+    fit: 'cover',
+    format: IMAGE_VARIANTS_FORMAT_DEFAULT,
+    quality: IMAGE_VARIANTS_QUALITY_PROMPT_BG,
+    alpha: false,
+  },
+  {
+    key: 'prompt_bg_l_2x',
+    usage: 'prompt_bg',
+    orientation: 'landscape',
+    dpr: 2,
+    width: 1920,
+    height: 1080,
+    fit: 'cover',
+    format: IMAGE_VARIANTS_FORMAT_DEFAULT,
+    quality: IMAGE_VARIANTS_QUALITY_PROMPT_BG,
+    alpha: false,
+  },
+  {
+    key: 'logo_512',
+    usage: 'logo',
+    orientation: null,
+    dpr: 1,
+    width: 512,
+    height: 512,
+    fit: 'inside',
+    format: IMAGE_VARIANTS_FORMAT_DEFAULT === 'png' ? 'png' : 'webp',
+    quality: IMAGE_VARIANTS_FORMAT_DEFAULT === 'png' ? null : IMAGE_VARIANTS_QUALITY_LOGO,
+    alpha: true,
+  },
+  {
+    key: 'logo_1024',
+    usage: 'logo',
+    orientation: null,
+    dpr: 2,
+    width: 1024,
+    height: 1024,
+    fit: 'inside',
+    format: IMAGE_VARIANTS_FORMAT_DEFAULT === 'png' ? 'png' : 'webp',
+    quality: IMAGE_VARIANTS_FORMAT_DEFAULT === 'png' ? null : IMAGE_VARIANTS_QUALITY_LOGO,
+    alpha: true,
+  },
+  {
+    key: 'lt_1280',
+    usage: 'lower_third',
+    orientation: null,
+    dpr: 1,
+    width: 1280,
+    height: null,
+    fit: 'contain',
+    format: IMAGE_VARIANTS_FORMAT_DEFAULT === 'png' ? 'png' : 'webp',
+    quality: IMAGE_VARIANTS_FORMAT_DEFAULT === 'png' ? null : IMAGE_VARIANTS_QUALITY_LOWER_THIRD,
+    alpha: true,
+  },
+  {
+    key: 'lt_1920',
+    usage: 'lower_third',
+    orientation: null,
+    dpr: 2,
+    width: 1920,
+    height: null,
+    fit: 'contain',
+    format: IMAGE_VARIANTS_FORMAT_DEFAULT === 'png' ? 'png' : 'webp',
+    quality: IMAGE_VARIANTS_FORMAT_DEFAULT === 'png' ? null : IMAGE_VARIANTS_QUALITY_LOWER_THIRD,
+    alpha: true,
+  },
+]
+
+export const IMAGE_VARIANT_PROFILE_BY_KEY = new Map(IMAGE_VARIANT_PROFILES.map((p) => [p.key, p] as const))

@@ -10,7 +10,6 @@ import type {
   PromptAnalyticsDayRow,
   PromptAnalyticsInputEvent,
   PromptAnalyticsKpis,
-  PromptAnalyticsPromptKind,
   PromptAnalyticsPromptRow,
   PromptAnalyticsReport,
   PromptAnalyticsSurface,
@@ -83,13 +82,6 @@ function normalizeSessionId(raw: any): string | null {
   return v
 }
 
-function normalizePromptKind(raw: any): PromptAnalyticsPromptKind {
-  if (raw == null || raw === '') return null
-  const v = String(raw).trim().toLowerCase()
-  if (v === 'prompt_full' || v === 'prompt_overlay') return v
-  throw new DomainError('invalid_prompt_kind', 'invalid_prompt_kind', 400)
-}
-
 function normalizeEvent(raw: any): PromptAnalyticsInputEvent {
   const v = String(raw || '').trim().toLowerCase()
   if (v === 'impression' || v === 'click' || v === 'dismiss' || v === 'auth_start' || v === 'auth_complete') return v
@@ -153,12 +145,11 @@ function dedupeKey(input: {
     .digest('hex')
 }
 
-async function maybeLookupPromptMeta(promptId: number): Promise<{ promptKind: PromptAnalyticsPromptKind; promptCategory: string | null }> {
+async function maybeLookupPromptMeta(promptId: number): Promise<{ promptCategory: string | null }> {
   const row = await promptRepo.getById(promptId)
-  if (!row) return { promptKind: null, promptCategory: null }
-  const promptKind = row.kind === 'prompt_overlay' ? 'prompt_overlay' : 'prompt_full'
+  if (!row) return { promptCategory: null }
   const promptCategory = row.category ? String(row.category).trim().toLowerCase() : null
-  return { promptKind, promptCategory }
+  return { promptCategory }
 }
 
 type RecordPromptEventInput = {
@@ -168,7 +159,6 @@ type RecordPromptEventInput = {
   sessionId?: string | null
   userId?: number | string | null
   promptId: number | string | null | undefined
-  promptKind?: PromptAnalyticsPromptKind | string | null
   promptCategory?: string | null
   ctaKind?: PromptAnalyticsCtaKind | string | null
   occurredAt?: Date
@@ -183,7 +173,7 @@ export async function recordPromptEvent(input: RecordPromptEventInput): Promise<
   promptId: number
   attributed: boolean
 }> {
-  return tracer.startActiveSpan('prompt.analytics.ingest', { attributes: { 'app.operation': 'prompt.analytics.ingest' } }, async (span) => {
+  return tracer.startActiveSpan('prompt.analytics.ingest', { attributes: { 'app.operation': 'analytics.ingest', 'app.operation_detail': 'prompt.analytics.ingest' } }, async (span) => {
     try {
       const event = normalizeEvent(input.event)
       const surface = input.surface == null || input.surface === '' ? 'global_feed' : normalizeSurface(input.surface)
@@ -200,15 +190,13 @@ export async function recordPromptEvent(input: RecordPromptEventInput): Promise<
         ? Math.round(Number(input.userId))
         : null
 
-      let promptKind = normalizePromptKind(input.promptKind)
       let promptCategory = normalizeCategory(input.promptCategory)
       const ctaKind = normalizeCtaKind(input.ctaKind)
       const eventType = mapToEventType(event, ctaKind)
 
-      if (!promptKind || !promptCategory) {
+      if (!promptCategory) {
         try {
           const looked = await maybeLookupPromptMeta(promptId)
-          if (!promptKind) promptKind = looked.promptKind
           if (!promptCategory) promptCategory = looked.promptCategory
         } catch {}
       }
@@ -224,7 +212,6 @@ export async function recordPromptEvent(input: RecordPromptEventInput): Promise<
         promptId,
         meta: {
           input_event: event,
-          ...(promptKind ? { prompt_kind: promptKind } : {}),
           ...(promptCategory ? { prompt_category: promptCategory } : {}),
           ...(ctaKind ? { cta_kind: ctaKind } : {}),
           source_route: 'feed_prompt_events',
@@ -264,7 +251,6 @@ export async function recordPromptEvent(input: RecordPromptEventInput): Promise<
         sessionId: canonical.sessionId,
         userId: canonical.userId,
         promptId: canonical.promptId || promptId,
-        promptKind,
         promptCategory,
         ctaKind,
         attributed,
@@ -275,16 +261,39 @@ export async function recordPromptEvent(input: RecordPromptEventInput): Promise<
 
       const countInRollup = eventType !== 'auth_complete_from_prompt' || attributed
       if (inserted.inserted && countInRollup) {
-        await repo.upsertDailyCount({
-          dateUtc: dayUtc,
-          surface,
-          promptId: canonical.promptId || promptId,
-          promptKind,
-          promptCategory,
-          viewerState: canonical.viewerState,
-          eventType,
-          totalDelta: 1,
-        })
+        await tracer.startActiveSpan(
+          'analytics.rollup',
+          {
+            attributes: {
+              'app.operation': 'analytics.rollup',
+              'app.operation_detail': 'prompt.analytics.rollup',
+              'app.surface': surface,
+              'analytics.rollup.table': 'feed_prompt_daily_stats',
+            },
+          },
+          async (rollupSpan) => {
+            try {
+              await repo.upsertDailyCount({
+                dateUtc: dayUtc,
+                surface,
+                promptId: canonical.promptId || promptId,
+                promptCategory,
+                viewerState: canonical.viewerState,
+                eventType,
+                totalDelta: 1,
+              })
+              rollupSpan.setAttributes({ 'app.outcome': 'success' })
+              rollupSpan.setStatus({ code: SpanStatusCode.OK })
+            } catch (err: any) {
+              rollupSpan.recordException(err)
+              rollupSpan.setAttributes({ 'app.outcome': 'server_error' })
+              rollupSpan.setStatus({ code: SpanStatusCode.ERROR, message: String(err?.message || err || 'analytics_rollup_failed') })
+              throw err
+            } finally {
+              rollupSpan.end()
+            }
+          }
+        )
       }
 
       if (inserted.inserted) {
@@ -301,7 +310,6 @@ export async function recordPromptEvent(input: RecordPromptEventInput): Promise<
       span.setAttributes({
         'app.surface': surface,
         'app.prompt_id': String(canonical.promptId || promptId),
-        ...(promptKind ? { 'app.prompt_kind': promptKind } : {}),
         ...(promptCategory ? { 'app.prompt_category': promptCategory } : {}),
         'app.outcome': inserted.inserted ? 'success' : 'redirect',
         'app.event_name': canonical.eventName,
@@ -313,10 +321,10 @@ export async function recordPromptEvent(input: RecordPromptEventInput): Promise<
 
       analyticsLogger.info(
         {
-          app_operation: 'prompt.analytics.ingest',
+          app_operation: 'analytics.ingest',
+          app_operation_detail: 'prompt.analytics.ingest',
           app_surface: surface,
           app_prompt_id: canonical.promptId || promptId,
-          app_prompt_kind: promptKind,
           app_prompt_category: promptCategory,
           app_event_name: canonical.eventName,
           prompt_event_type: eventType,
@@ -450,7 +458,7 @@ export async function getPromptAnalyticsReportForAdmin(input: {
   promptCategory?: any
   viewerState?: any
 }): Promise<PromptAnalyticsReport> {
-  return tracer.startActiveSpan('prompt.analytics.query', { attributes: { 'app.operation': 'prompt.analytics.query' } }, async (span) => {
+  return tracer.startActiveSpan('prompt.analytics.query', { attributes: { 'app.operation': 'analytics.query', 'app.operation_detail': 'prompt.analytics.query' } }, async (span) => {
     try {
       const range = normalizeReportRange(input)
       const [totalsRaw, byPromptRaw, byDayRaw, uniqueTotalsRaw, uniqueByPromptRaw] = await Promise.all([
@@ -501,7 +509,6 @@ export async function getPromptAnalyticsReportForAdmin(input: {
         return {
           promptId,
           promptName: (row as any).prompt_name ? String((row as any).prompt_name) : null,
-          promptKind: (row as any).prompt_kind ? String((row as any).prompt_kind) : null,
           promptCategory: (row as any).prompt_category ? String((row as any).prompt_category) : null,
           totals: {
             impressions,
@@ -565,7 +572,8 @@ export async function getPromptAnalyticsReportForAdmin(input: {
 
       analyticsLogger.info(
         {
-          app_operation: 'prompt.analytics.query',
+          app_operation: 'analytics.query',
+          app_operation_detail: 'prompt.analytics.query',
           app_surface: range.surface,
           app_prompt_id: range.promptId,
           app_prompt_category: range.promptCategory,
@@ -605,7 +613,6 @@ export function buildPromptAnalyticsCsv(report: PromptAnalyticsReport): string {
   const header = [
     'prompt_id',
     'prompt_name',
-    'prompt_kind',
     'prompt_category',
     'impressions',
     'clicks_primary',
@@ -631,7 +638,6 @@ export function buildPromptAnalyticsCsv(report: PromptAnalyticsReport): string {
     rows.push([
       String(row.promptId),
       row.promptName || '',
-      row.promptKind || '',
       row.promptCategory || '',
       String(row.totals.impressions),
       String(row.totals.clicksPrimary),

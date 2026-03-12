@@ -172,7 +172,7 @@ export async function recordFeedActivityEvent(input: RecordFeedActivityInput): P
   surface: FeedActivitySurface
   contentId: number | null
 }> {
-  return tracer.startActiveSpan('feed.activity.ingest', { attributes: { 'app.operation': 'feed.activity.ingest' } }, async (span) => {
+  return tracer.startActiveSpan('feed.activity.ingest', { attributes: { 'app.operation': 'analytics.ingest', 'app.operation_detail': 'feed.activity.ingest' } }, async (span) => {
     try {
       const inputEvent = normalizeEvent(input.event)
       const eventType = mapEvent(inputEvent)
@@ -245,15 +245,39 @@ export async function recordFeedActivityEvent(input: RecordFeedActivityInput): P
       })
 
       if (inserted.inserted) {
-        await repo.upsertDailyCount({
-          dateUtc: dayUtc,
-          surface: canonical.surface,
-          viewerState: canonical.viewerState,
-          eventType,
-          contentId: canonical.contentId,
-          totalEventsDelta: 1,
-          watchSecondsDelta: eventType === 'feed_session_end' ? watchSeconds : 0,
-        })
+        await tracer.startActiveSpan(
+          'analytics.rollup',
+          {
+            attributes: {
+              'app.operation': 'analytics.rollup',
+              'app.operation_detail': 'feed.activity.rollup',
+              'app.surface': canonical.surface,
+              'analytics.rollup.table': 'feed_activity_daily_stats',
+            },
+          },
+          async (rollupSpan) => {
+            try {
+              await repo.upsertDailyCount({
+                dateUtc: dayUtc,
+                surface: canonical.surface,
+                viewerState: canonical.viewerState,
+                eventType,
+                contentId: canonical.contentId,
+                totalEventsDelta: 1,
+                watchSecondsDelta: eventType === 'feed_session_end' ? watchSeconds : 0,
+              })
+              rollupSpan.setAttributes({ 'app.outcome': 'success' })
+              rollupSpan.setStatus({ code: SpanStatusCode.OK })
+            } catch (err: any) {
+              rollupSpan.recordException(err)
+              rollupSpan.setAttributes({ 'app.outcome': 'server_error' })
+              rollupSpan.setStatus({ code: SpanStatusCode.ERROR, message: String(err?.message || err || 'analytics_rollup_failed') })
+              throw err
+            } finally {
+              rollupSpan.end()
+            }
+          }
+        )
         void dispatchCanonicalAnalyticsEvent({
           event: canonical,
           source: 'feed.activity.ingest',
@@ -276,7 +300,8 @@ export async function recordFeedActivityEvent(input: RecordFeedActivityInput): P
 
       activityLogger.info(
         {
-          app_operation: 'feed.activity.ingest',
+          app_operation: 'analytics.ingest',
+          app_operation_detail: 'feed.activity.ingest',
           app_surface: canonical.surface,
           app_event_name: canonical.eventName,
           app_content_id: canonical.contentId,
@@ -381,7 +406,7 @@ export async function getFeedActivityReportForAdmin(input: {
   spaceId?: any
   viewerState?: any
 }): Promise<FeedActivityReport> {
-  return tracer.startActiveSpan('feed.activity.query', { attributes: { 'app.operation': 'feed.activity.query' } }, async (span) => {
+  return tracer.startActiveSpan('feed.activity.query', { attributes: { 'app.operation': 'analytics.query', 'app.operation_detail': 'feed.activity.query' } }, async (span) => {
     try {
       const range = normalizeReportRange(input)
       const filter = {
@@ -434,7 +459,8 @@ export async function getFeedActivityReportForAdmin(input: {
 
       activityLogger.info(
         {
-          app_operation: 'feed.activity.query',
+          app_operation: 'analytics.query',
+          app_operation_detail: 'feed.activity.query',
           app_surface: range.surface,
           app_space_id: range.spaceId,
           viewer_state: range.viewerState,

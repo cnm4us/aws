@@ -33,7 +33,7 @@ export type CanonicalAnalyticsEvent = {
   meta: AnalyticsMeta
 }
 
-const META_ALLOWLIST = new Set(['input_event', 'prompt_kind', 'prompt_category', 'cta_kind', 'source_route'])
+const META_ALLOWLIST = new Set(['input_event', 'prompt_category', 'cta_kind', 'source_route'])
 
 function asDate(raw: any): Date {
   if (raw instanceof Date && Number.isFinite(raw.getTime())) return raw

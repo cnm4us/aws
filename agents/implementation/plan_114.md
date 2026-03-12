@@ -75,6 +75,7 @@ Component plans:
 3. `agents/implementation/plan_114C.md` — Prompt Decision Service (eligibility + selection)
 4. `agents/implementation/plan_114D.md` — Feed Inserter + Client Rendering
 5. `agents/implementation/plan_114E.md` — Prompt Analytics + Reporting
+6. `agents/implementation/plan_114F.md` — Prompt Creative v2 (dual widgets, media backgrounds, style controls)
 
 ## Milestones
 ### V1 (Simple, shippable)

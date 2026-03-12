@@ -1,5 +1,3 @@
-import type { PromptKind } from '../prompts/types'
-
 export type PromptDecisionSurface = 'global_feed'
 export type PromptViewerState = 'anonymous' | 'authenticated'
 
@@ -46,7 +44,6 @@ export type PromptDecisionInput = {
 export type PromptDecisionResult = {
   shouldInsert: boolean
   promptId: number | null
-  promptKind: PromptKind | null
   insertAfterIndex: number | null
   reasonCode: PromptDecisionReasonCode
   ruleId: number | null

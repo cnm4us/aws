@@ -11,6 +11,7 @@ import { runAssemblyAiTranscriptV1Job } from '../../media/jobs/assemblyAiTranscr
 import { runAssemblyAiUploadTranscriptV1Job } from '../../media/jobs/assemblyAiUploadTranscriptV1'
 import { runUploadAudioEnvelopeV1Job } from '../../media/jobs/uploadAudioEnvelopeV1'
 import { runUploadEditProxyV1Job } from '../../media/jobs/uploadEditProxyV1'
+import { runUploadImageDerivativesV1Job } from '../../media/jobs/uploadImageDerivativesV1'
 import { runUploadFreezeFrameV1Job } from '../../media/jobs/uploadFreezeFrameV1'
 import { runUploadThumbV1Job } from '../../media/jobs/uploadThumbV1'
 import { runVideoMasterV1Job } from '../../media/jobs/videoMasterV1'
@@ -369,6 +370,18 @@ async function runOne(job: any, attempt: any, workerId: string) {
               traceId: input?.traceId ?? null,
             }
           }
+          if (t === 'upload_image_derivatives_v1') {
+            return {
+              uploadId: input?.uploadId ?? null,
+              kind: input?.kind ?? null,
+              imageRole: input?.imageRole ?? null,
+              bucket: input?.image?.bucket ?? null,
+              key: input?.image?.key ?? null,
+              outputBucket: input?.outputBucket ?? null,
+              profileCount: Array.isArray(input?.profileKeys) ? input.profileKeys.length : null,
+              traceId: input?.traceId ?? null,
+            }
+          }
           return { keys: Object.keys(input || {}) }
         }
         inputSummary = summarizeInput(jobType, job.input_json)
@@ -576,6 +589,15 @@ async function runOne(job: any, attempt: any, workerId: string) {
           }
         }
       } catch {}
+      return
+    }
+
+    if (jobType === 'upload_image_derivatives_v1') {
+      const input = job.input_json as any
+      const result = await runStage('execute', async () => runUploadImageDerivativesV1Job(input, { stdoutPath, stderrPath }))
+      metricsInput = (result as any)?.metricsInput || null
+      const ffmpegCommands = Array.isArray((result as any)?.ffmpegCommands) ? (result as any).ffmpegCommands : null
+      await persistSuccess(result, { ffmpegCommands: ffmpegCommands || undefined })
       return
     }
 

@@ -6,6 +6,7 @@ export type MediaJobType =
   | 'create_video_export_v1'
   | 'upload_thumb_v1'
   | 'upload_edit_proxy_v1'
+  | 'upload_image_derivatives_v1'
   | 'upload_audio_envelope_v1'
   | 'upload_freeze_frame_v1'
   | 'assemblyai_transcript_v1'
@@ -232,6 +233,17 @@ export type UploadEditProxyV1Input = {
   gop: number
 }
 
+export type UploadImageDerivativesV1Input = {
+  uploadId: number
+  userId?: number | null
+  image: S3Pointer
+  kind?: 'image' | 'logo'
+  imageRole?: string | null
+  outputBucket: string
+  profileKeys?: string[] | null
+  force?: boolean
+}
+
 export type UploadAudioEnvelopeV1Input = {
   uploadId: number
   userId: number
@@ -266,6 +278,7 @@ export type MediaJobInputByType = {
   video_master_v1: VideoMasterV1Input
   upload_thumb_v1: UploadThumbV1Input
   upload_edit_proxy_v1: UploadEditProxyV1Input
+  upload_image_derivatives_v1: UploadImageDerivativesV1Input
   upload_audio_envelope_v1: UploadAudioEnvelopeV1Input
   upload_freeze_frame_v1: UploadFreezeFrameV1Input
   assemblyai_transcript_v1: AssemblyAiTranscriptV1Input

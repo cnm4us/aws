@@ -301,7 +301,6 @@ export function buildServer(): express.Application {
         event: 'auth_complete',
         surface: 'global_feed',
         promptId: promptIdRaw,
-        promptKind: req?.body?.prompt_kind,
         promptCategory: req?.body?.prompt_category,
         sessionId: req?.body?.prompt_session_id,
         ctaKind: req?.body?.prompt_cta_kind,

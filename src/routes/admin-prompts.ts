@@ -14,7 +14,6 @@ adminPromptsRouter.get('/api/admin/prompts', async (req, res, next) => {
       includeArchived,
       limit: limitRaw,
       status: req.query?.status,
-      kind: req.query?.kind,
       category: req.query?.category,
     })
     return res.json({ items })

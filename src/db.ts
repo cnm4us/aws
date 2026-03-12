@@ -104,6 +104,50 @@ export async function ensureSchema(db: DB) {
 		  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_video_role_production ON uploads (video_role, create_video_production_id, id)`); } catch {}
 		  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_system_library ON uploads (is_system_library, source_org, status, id)`); } catch {}
 
+      // Plan 116: upload image variants (profiled derivatives for prompt/background/logo/lower-third usage).
+      await db.query(`
+        CREATE TABLE IF NOT EXISTS upload_image_variants (
+          id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+          upload_id BIGINT UNSIGNED NOT NULL,
+          profile_key VARCHAR(80) NOT NULL,
+          variant_usage VARCHAR(32) NOT NULL,
+          format ENUM('webp','png','jpeg','avif') NOT NULL DEFAULT 'webp',
+          width INT UNSIGNED NULL,
+          height INT UNSIGNED NULL,
+          size_bytes BIGINT UNSIGNED NULL,
+          s3_bucket VARCHAR(255) NOT NULL,
+          s3_key VARCHAR(1024) NOT NULL,
+          etag VARCHAR(128) NULL,
+          status ENUM('ready','failed') NOT NULL DEFAULT 'ready',
+          error_code VARCHAR(64) NULL,
+          last_generated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          UNIQUE KEY uniq_upload_image_variants_upload_profile (upload_id, profile_key),
+          KEY idx_upload_image_variants_upload_status (upload_id, status, profile_key),
+          KEY idx_upload_image_variants_variant_usage_status (variant_usage, status, profile_key),
+          KEY idx_upload_image_variants_profile_status (profile_key, status)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      `)
+      // Prefer non-reserved column name; keep back-compat for earlier "usage" attempts.
+      try { await db.query(`ALTER TABLE upload_image_variants CHANGE COLUMN \`usage\` variant_usage VARCHAR(32) NOT NULL`) } catch {}
+      try { await db.query(`ALTER TABLE upload_image_variants ADD COLUMN IF NOT EXISTS variant_usage VARCHAR(32) NOT NULL DEFAULT 'prompt_bg'`) } catch {}
+      try { await db.query(`UPDATE upload_image_variants SET variant_usage = \`usage\` WHERE (variant_usage IS NULL OR variant_usage = '')`) } catch {}
+      try { await db.query(`ALTER TABLE upload_image_variants ADD COLUMN IF NOT EXISTS format ENUM('webp','png','jpeg','avif') NOT NULL DEFAULT 'webp'`) } catch {}
+      try { await db.query(`ALTER TABLE upload_image_variants ADD COLUMN IF NOT EXISTS width INT UNSIGNED NULL`) } catch {}
+      try { await db.query(`ALTER TABLE upload_image_variants ADD COLUMN IF NOT EXISTS height INT UNSIGNED NULL`) } catch {}
+      try { await db.query(`ALTER TABLE upload_image_variants ADD COLUMN IF NOT EXISTS size_bytes BIGINT UNSIGNED NULL`) } catch {}
+      try { await db.query(`ALTER TABLE upload_image_variants ADD COLUMN IF NOT EXISTS s3_bucket VARCHAR(255) NOT NULL`) } catch {}
+      try { await db.query(`ALTER TABLE upload_image_variants ADD COLUMN IF NOT EXISTS s3_key VARCHAR(1024) NOT NULL`) } catch {}
+      try { await db.query(`ALTER TABLE upload_image_variants ADD COLUMN IF NOT EXISTS etag VARCHAR(128) NULL`) } catch {}
+      try { await db.query(`ALTER TABLE upload_image_variants ADD COLUMN IF NOT EXISTS status ENUM('ready','failed') NOT NULL DEFAULT 'ready'`) } catch {}
+      try { await db.query(`ALTER TABLE upload_image_variants ADD COLUMN IF NOT EXISTS error_code VARCHAR(64) NULL`) } catch {}
+      try { await db.query(`ALTER TABLE upload_image_variants ADD COLUMN IF NOT EXISTS last_generated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP`) } catch {}
+      try { await db.query(`CREATE INDEX IF NOT EXISTS idx_upload_image_variants_upload_status ON upload_image_variants (upload_id, status, profile_key)`) } catch {}
+      try { await db.query(`CREATE INDEX IF NOT EXISTS idx_upload_image_variants_variant_usage_status ON upload_image_variants (variant_usage, status, profile_key)`) } catch {}
+      try { await db.query(`CREATE INDEX IF NOT EXISTS idx_upload_image_variants_profile_status ON upload_image_variants (profile_key, status)`) } catch {}
+      try { await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_upload_image_variants_upload_profile ON upload_image_variants (upload_id, profile_key)`) } catch {}
+
 		  // Plan 51: audio tag taxonomy (genres/moods) + join table for system audio uploads
 		  await db.query(`
 		    CREATE TABLE IF NOT EXISTS audio_tags (
@@ -588,7 +632,6 @@ export async function ensureSchema(db: DB) {
             CREATE TABLE IF NOT EXISTS feed_prompts (
               id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
               name VARCHAR(120) NOT NULL,
-              kind ENUM('prompt_full','prompt_overlay') NOT NULL DEFAULT 'prompt_full',
               headline VARCHAR(280) NOT NULL,
               body TEXT NULL,
               cta_primary_label VARCHAR(100) NOT NULL,
@@ -596,6 +639,7 @@ export async function ensureSchema(db: DB) {
               cta_secondary_label VARCHAR(100) NULL,
               cta_secondary_href VARCHAR(1200) NULL,
               media_upload_id BIGINT UNSIGNED NULL,
+              creative_json JSON NULL,
               category VARCHAR(64) NOT NULL,
               priority INT NOT NULL DEFAULT 100,
               status ENUM('draft','active','paused','archived') NOT NULL DEFAULT 'draft',
@@ -606,12 +650,10 @@ export async function ensureSchema(db: DB) {
               created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
               updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
               KEY idx_feed_prompts_status_category (status, category, priority, id),
-              KEY idx_feed_prompts_kind_status (kind, status, priority, id),
               KEY idx_feed_prompts_active_window (status, starts_at, ends_at, priority, id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
           `)
           await db.query(`ALTER TABLE feed_prompts ADD COLUMN IF NOT EXISTS name VARCHAR(120) NOT NULL`)
-          await db.query(`ALTER TABLE feed_prompts ADD COLUMN IF NOT EXISTS kind ENUM('prompt_full','prompt_overlay') NOT NULL DEFAULT 'prompt_full'`)
           await db.query(`ALTER TABLE feed_prompts ADD COLUMN IF NOT EXISTS headline VARCHAR(280) NOT NULL`)
           await db.query(`ALTER TABLE feed_prompts ADD COLUMN IF NOT EXISTS body TEXT NULL`)
           await db.query(`ALTER TABLE feed_prompts ADD COLUMN IF NOT EXISTS cta_primary_label VARCHAR(100) NOT NULL`)
@@ -619,6 +661,7 @@ export async function ensureSchema(db: DB) {
           await db.query(`ALTER TABLE feed_prompts ADD COLUMN IF NOT EXISTS cta_secondary_label VARCHAR(100) NULL`)
           await db.query(`ALTER TABLE feed_prompts ADD COLUMN IF NOT EXISTS cta_secondary_href VARCHAR(1200) NULL`)
           await db.query(`ALTER TABLE feed_prompts ADD COLUMN IF NOT EXISTS media_upload_id BIGINT UNSIGNED NULL`)
+          await db.query(`ALTER TABLE feed_prompts ADD COLUMN IF NOT EXISTS creative_json JSON NULL`)
           await db.query(`ALTER TABLE feed_prompts ADD COLUMN IF NOT EXISTS category VARCHAR(64) NOT NULL`)
           await db.query(`ALTER TABLE feed_prompts ADD COLUMN IF NOT EXISTS priority INT NOT NULL DEFAULT 100`)
           await db.query(`ALTER TABLE feed_prompts ADD COLUMN IF NOT EXISTS status ENUM('draft','active','paused','archived') NOT NULL DEFAULT 'draft'`)
@@ -626,8 +669,9 @@ export async function ensureSchema(db: DB) {
           await db.query(`ALTER TABLE feed_prompts ADD COLUMN IF NOT EXISTS ends_at DATETIME NULL`)
           await db.query(`ALTER TABLE feed_prompts ADD COLUMN IF NOT EXISTS created_by BIGINT UNSIGNED NOT NULL DEFAULT 0`)
           await db.query(`ALTER TABLE feed_prompts ADD COLUMN IF NOT EXISTS updated_by BIGINT UNSIGNED NOT NULL DEFAULT 0`)
+          try { await db.query(`ALTER TABLE feed_prompts DROP INDEX idx_feed_prompts_kind_status`); } catch {}
+          try { await db.query(`ALTER TABLE feed_prompts DROP COLUMN kind`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_prompts_status_category ON feed_prompts (status, category, priority, id)`); } catch {}
-          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_prompts_kind_status ON feed_prompts (kind, status, priority, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_prompts_active_window ON feed_prompts (status, starts_at, ends_at, priority, id)`); } catch {}
 
           // --- Prompt rules (plan_114B) ---
@@ -734,7 +778,6 @@ export async function ensureSchema(db: DB) {
               session_id VARCHAR(120) NULL,
               user_id BIGINT UNSIGNED NULL,
               prompt_id BIGINT UNSIGNED NOT NULL,
-              prompt_kind ENUM('prompt_full','prompt_overlay') NULL,
               prompt_category VARCHAR(64) NULL,
               cta_kind ENUM('primary','secondary') NULL,
               attributed TINYINT(1) NOT NULL DEFAULT 1,
@@ -758,13 +801,13 @@ export async function ensureSchema(db: DB) {
           await db.query(`ALTER TABLE feed_prompt_events ADD COLUMN IF NOT EXISTS session_id VARCHAR(120) NULL`)
           await db.query(`ALTER TABLE feed_prompt_events ADD COLUMN IF NOT EXISTS user_id BIGINT UNSIGNED NULL`)
           await db.query(`ALTER TABLE feed_prompt_events ADD COLUMN IF NOT EXISTS prompt_id BIGINT UNSIGNED NOT NULL DEFAULT 0`)
-          await db.query(`ALTER TABLE feed_prompt_events ADD COLUMN IF NOT EXISTS prompt_kind ENUM('prompt_full','prompt_overlay') NULL`)
           await db.query(`ALTER TABLE feed_prompt_events ADD COLUMN IF NOT EXISTS prompt_category VARCHAR(64) NULL`)
           await db.query(`ALTER TABLE feed_prompt_events ADD COLUMN IF NOT EXISTS cta_kind ENUM('primary','secondary') NULL`)
           await db.query(`ALTER TABLE feed_prompt_events ADD COLUMN IF NOT EXISTS attributed TINYINT(1) NOT NULL DEFAULT 1`)
           await db.query(`ALTER TABLE feed_prompt_events ADD COLUMN IF NOT EXISTS occurred_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP`)
           await db.query(`ALTER TABLE feed_prompt_events ADD COLUMN IF NOT EXISTS dedupe_bucket_start DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP`)
           await db.query(`ALTER TABLE feed_prompt_events ADD COLUMN IF NOT EXISTS dedupe_key CHAR(64) NULL`)
+          try { await db.query(`ALTER TABLE feed_prompt_events DROP COLUMN prompt_kind`); } catch {}
           try { await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_feed_prompt_events_dedupe_key ON feed_prompt_events (dedupe_key)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_prompt_events_occurred ON feed_prompt_events (occurred_at, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_prompt_events_surface_occurred ON feed_prompt_events (surface, occurred_at, id)`); } catch {}
@@ -780,7 +823,6 @@ export async function ensureSchema(db: DB) {
               date_utc DATE NOT NULL,
               surface ENUM('global_feed') NOT NULL DEFAULT 'global_feed',
               prompt_id BIGINT UNSIGNED NOT NULL,
-              prompt_kind VARCHAR(24) NOT NULL DEFAULT '',
               prompt_category VARCHAR(64) NOT NULL DEFAULT '',
               viewer_state ENUM('anonymous','authenticated') NOT NULL DEFAULT 'anonymous',
               event_type ENUM(
@@ -795,7 +837,7 @@ export async function ensureSchema(db: DB) {
               created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
               updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
               PRIMARY KEY (
-                date_utc, surface, prompt_id, prompt_kind, prompt_category, viewer_state, event_type
+                date_utc, surface, prompt_id, prompt_category, viewer_state, event_type
               ),
               KEY idx_feed_prompt_daily_stats_surface_date (surface, date_utc, event_type),
               KEY idx_feed_prompt_daily_stats_prompt_date (prompt_id, date_utc, event_type),
@@ -805,30 +847,34 @@ export async function ensureSchema(db: DB) {
           await db.query(`ALTER TABLE feed_prompt_daily_stats ADD COLUMN IF NOT EXISTS date_utc DATE NOT NULL`)
           await db.query(`ALTER TABLE feed_prompt_daily_stats ADD COLUMN IF NOT EXISTS surface ENUM('global_feed') NOT NULL DEFAULT 'global_feed'`)
           await db.query(`ALTER TABLE feed_prompt_daily_stats ADD COLUMN IF NOT EXISTS prompt_id BIGINT UNSIGNED NOT NULL DEFAULT 0`)
-          await db.query(`ALTER TABLE feed_prompt_daily_stats ADD COLUMN IF NOT EXISTS prompt_kind VARCHAR(24) NOT NULL DEFAULT ''`)
           await db.query(`ALTER TABLE feed_prompt_daily_stats ADD COLUMN IF NOT EXISTS prompt_category VARCHAR(64) NOT NULL DEFAULT ''`)
           await db.query(`ALTER TABLE feed_prompt_daily_stats ADD COLUMN IF NOT EXISTS viewer_state ENUM('anonymous','authenticated') NOT NULL DEFAULT 'anonymous'`)
           await db.query(`ALTER TABLE feed_prompt_daily_stats ADD COLUMN IF NOT EXISTS event_type ENUM('prompt_impression','prompt_click_primary','prompt_click_secondary','prompt_dismiss','auth_start_from_prompt','auth_complete_from_prompt') NOT NULL`)
           await db.query(`ALTER TABLE feed_prompt_daily_stats ADD COLUMN IF NOT EXISTS total_events BIGINT UNSIGNED NOT NULL DEFAULT 0`)
+          try {
+            await db.query(`ALTER TABLE feed_prompt_daily_stats DROP PRIMARY KEY, DROP COLUMN prompt_kind, ADD PRIMARY KEY (date_utc, surface, prompt_id, prompt_category, viewer_state, event_type)`)
+          } catch {
+            try { await db.query(`ALTER TABLE feed_prompt_daily_stats DROP COLUMN prompt_kind`); } catch {}
+            try { await db.query(`ALTER TABLE feed_prompt_daily_stats ADD PRIMARY KEY (date_utc, surface, prompt_id, prompt_category, viewer_state, event_type)`); } catch {}
+          }
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_prompt_daily_stats_surface_date ON feed_prompt_daily_stats (surface, date_utc, event_type)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_prompt_daily_stats_prompt_date ON feed_prompt_daily_stats (prompt_id, date_utc, event_type)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_prompt_daily_stats_category_date ON feed_prompt_daily_stats (prompt_category, date_utc, event_type)`); } catch {}
           try {
             await db.query(
               `INSERT INTO feed_prompt_daily_stats
-                (date_utc, surface, prompt_id, prompt_kind, prompt_category, viewer_state, event_type, total_events)
+                (date_utc, surface, prompt_id, prompt_category, viewer_state, event_type, total_events)
                SELECT
                  DATE(occurred_at) AS date_utc,
                  surface,
                  prompt_id,
-                 COALESCE(prompt_kind, '') AS prompt_kind,
                  COALESCE(prompt_category, '') AS prompt_category,
                  viewer_state,
                  event_type,
                  COUNT(*) AS total_events
                FROM feed_prompt_events
                WHERE event_type <> 'auth_complete_from_prompt' OR attributed = 1
-               GROUP BY DATE(occurred_at), surface, prompt_id, COALESCE(prompt_kind, ''), COALESCE(prompt_category, ''), viewer_state, event_type
+               GROUP BY DATE(occurred_at), surface, prompt_id, COALESCE(prompt_category, ''), viewer_state, event_type
                ON DUPLICATE KEY UPDATE total_events = VALUES(total_events), updated_at = CURRENT_TIMESTAMP`
             )
           } catch {}

@@ -3,7 +3,6 @@ import type { PromptRow } from './types'
 
 type PromptCreateInput = {
   name: string
-  kind: string
   headline: string
   body: string | null
   ctaPrimaryLabel: string
@@ -11,6 +10,7 @@ type PromptCreateInput = {
   ctaSecondaryLabel: string | null
   ctaSecondaryHref: string | null
   mediaUploadId: number | null
+  creativeJson: string | null
   category: string
   priority: number
   status: string
@@ -26,7 +26,6 @@ export async function list(params?: {
   limit?: number
   includeArchived?: boolean
   status?: string | null
-  kind?: string | null
   category?: string | null
 }): Promise<PromptRow[]> {
   const db = getPool()
@@ -40,10 +39,6 @@ export async function list(params?: {
   if (params?.status) {
     where.push('status = ?')
     args.push(params.status)
-  }
-  if (params?.kind) {
-    where.push('kind = ?')
-    args.push(params.kind)
   }
   if (params?.category) {
     where.push('category = ?')
@@ -72,16 +67,15 @@ export async function create(input: PromptCreateInput): Promise<PromptRow> {
   const [result] = await db.query(
     `INSERT INTO feed_prompts
       (
-        name, kind, headline, body,
+        name, headline, body,
         cta_primary_label, cta_primary_href,
         cta_secondary_label, cta_secondary_href,
-        media_upload_id, category, priority, status,
+        media_upload_id, creative_json, category, priority, status,
         starts_at, ends_at, created_by, updated_by
       )
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.name,
-      input.kind,
       input.headline,
       input.body,
       input.ctaPrimaryLabel,
@@ -89,6 +83,7 @@ export async function create(input: PromptCreateInput): Promise<PromptRow> {
       input.ctaSecondaryLabel,
       input.ctaSecondaryHref,
       input.mediaUploadId,
+      input.creativeJson,
       input.category,
       input.priority,
       input.status,
@@ -111,7 +106,6 @@ export async function update(id: number, patch: PromptUpdateInput): Promise<Prom
   const args: any[] = []
 
   if (patch.name !== undefined) { sets.push('name = ?'); args.push(patch.name) }
-  if (patch.kind !== undefined) { sets.push('kind = ?'); args.push(patch.kind) }
   if (patch.headline !== undefined) { sets.push('headline = ?'); args.push(patch.headline) }
   if (patch.body !== undefined) { sets.push('body = ?'); args.push(patch.body) }
   if (patch.ctaPrimaryLabel !== undefined) { sets.push('cta_primary_label = ?'); args.push(patch.ctaPrimaryLabel) }
@@ -119,6 +113,7 @@ export async function update(id: number, patch: PromptUpdateInput): Promise<Prom
   if (patch.ctaSecondaryLabel !== undefined) { sets.push('cta_secondary_label = ?'); args.push(patch.ctaSecondaryLabel) }
   if (patch.ctaSecondaryHref !== undefined) { sets.push('cta_secondary_href = ?'); args.push(patch.ctaSecondaryHref) }
   if (patch.mediaUploadId !== undefined) { sets.push('media_upload_id = ?'); args.push(patch.mediaUploadId) }
+  if (patch.creativeJson !== undefined) { sets.push('creative_json = ?'); args.push(patch.creativeJson) }
   if (patch.category !== undefined) { sets.push('category = ?'); args.push(patch.category) }
   if (patch.priority !== undefined) { sets.push('priority = ?'); args.push(patch.priority) }
   if (patch.status !== undefined) { sets.push('status = ?'); args.push(patch.status) }
@@ -140,7 +135,6 @@ export async function update(id: number, patch: PromptUpdateInput): Promise<Prom
 
 export async function listActiveForFeed(params?: {
   category?: string | null
-  kind?: string | null
   limit?: number
 }): Promise<PromptRow[]> {
   const db = getPool()
@@ -156,11 +150,6 @@ export async function listActiveForFeed(params?: {
     where.push('category = ?')
     args.push(params.category)
   }
-  if (params?.kind) {
-    where.push('kind = ?')
-    args.push(params.kind)
-  }
-
   const [rows] = await db.query(
     `SELECT *
        FROM feed_prompts

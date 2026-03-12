@@ -306,7 +306,11 @@ async function fetchGlobalFeed(opts: { cursor?: string | null; limit?: number } 
 async function fetchPromptById(promptId: number): Promise<FeedPromptPayload> {
   const id = Number(promptId)
   if (!Number.isFinite(id) || id <= 0) throw new Error('bad_prompt_id')
-  const res = await fetch(`/api/feed/prompts/${encodeURIComponent(String(id))}`, { credentials: 'same-origin' })
+  const orientation: 'portrait' | 'landscape' =
+    typeof window !== 'undefined' && window.innerWidth > window.innerHeight ? 'landscape' : 'portrait'
+  const dpr = typeof window !== 'undefined' && Number.isFinite(window.devicePixelRatio) ? window.devicePixelRatio : 1
+  const promptUrl = `/api/feed/prompts/${encodeURIComponent(String(id))}?orientation=${encodeURIComponent(orientation)}&dpr=${encodeURIComponent(String(dpr))}`
+  const res = await fetch(promptUrl, { credentials: 'same-origin' })
   if (!res.ok) throw new Error('failed_to_fetch_prompt')
   const payload = await res.json()
   const p = payload?.prompt

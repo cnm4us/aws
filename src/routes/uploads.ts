@@ -303,6 +303,35 @@ uploadsRouter.get('/api/uploads/:id/file', requireAuth, async (req, res) => {
   }
 })
 
+// Authenticated prompt background URL resolver (returns signed CDN URL; variant-aware for image mode).
+uploadsRouter.get('/api/uploads/:id/prompt-bg', requireAuth, async (req, res) => {
+  try {
+    const id = Number(req.params.id)
+    if (!Number.isFinite(id) || id <= 0) return res.status(400).send('bad_id')
+    const modeRaw = String(req.query?.mode || '').toLowerCase()
+    const mode: 'image' | 'video' = modeRaw === 'video' ? 'video' : 'image'
+    const orientationRaw = String(req.query?.orientation || '').toLowerCase()
+    const orientation: 'portrait' | 'landscape' | null =
+      orientationRaw === 'landscape' ? 'landscape' : (orientationRaw === 'portrait' ? 'portrait' : null)
+    const dprRaw = Number(req.query?.dpr)
+    const dpr = Number.isFinite(dprRaw) && dprRaw > 0 ? dprRaw : null
+
+    // Permission gate mirrors other authenticated upload endpoints.
+    await uploadsSvc.get(id, {}, { userId: Number(req.user!.id) })
+
+    const signed = await uploadsSvc.getUploadPublicPromptBackgroundCdnUrl(id, { mode, orientation, dpr })
+    res.set('Cache-Control', 'no-store')
+    res.status(302).set('Location', signed.url)
+    return res.end()
+  } catch (err: any) {
+    const status = err?.status || 500
+    if (status === 403) return res.status(403).send('forbidden')
+    if (status === 404) return res.status(404).send('not_found')
+    logError(req.log || uploadsLogger, err, 'uploads_route_error', { path: req.path })
+    return res.status(status).send('failed')
+  }
+})
+
 uploadsRouter.get('/api/uploads/:id/edit-proxy', requireAuth, async (req, res) => {
   try {
     const id = Number(req.params.id)

@@ -1,4 +1,173 @@
 groups:
+  - name: analytics-core-recording
+    interval: 30s
+    rules:
+      - record: analytics:ingest_requests_per_second:5m
+        expr: |
+          sum(
+            rate(
+              traces_span_metrics_calls_total{
+                service_name="aws-mediaconvert-service",
+                span_kind="SPAN_KIND_INTERNAL",
+                app_operation="analytics.ingest"
+              }[5m]
+            )
+          )
+
+      - record: analytics:ingest_errors_per_second:5m
+        expr: |
+          sum(
+            rate(
+              traces_span_metrics_calls_total{
+                service_name="aws-mediaconvert-service",
+                span_kind="SPAN_KIND_INTERNAL",
+                app_operation="analytics.ingest",
+                app_outcome=~"client_error|server_error"
+              }[5m]
+            )
+          )
+
+      - record: analytics:ingest_error_rate:5m
+        expr: |
+          analytics:ingest_errors_per_second:5m
+          /
+          clamp_min(analytics:ingest_requests_per_second:5m, 0.001)
+
+      - record: analytics:query_requests_per_second:5m
+        expr: |
+          sum(
+            rate(
+              traces_span_metrics_calls_total{
+                service_name="aws-mediaconvert-service",
+                span_kind="SPAN_KIND_INTERNAL",
+                app_operation="analytics.query"
+              }[5m]
+            )
+          )
+
+      - record: analytics:sink_dispatch_per_second:5m
+        expr: |
+          sum(
+            rate(
+              traces_span_metrics_calls_total{
+                service_name="aws-mediaconvert-service",
+                span_kind="SPAN_KIND_INTERNAL",
+                app_operation="analytics.sink.dispatch"
+              }[5m]
+            )
+          )
+
+      - record: analytics:sink_dispatch_failures_per_second:5m
+        expr: |
+          sum(
+            rate(
+              traces_span_metrics_calls_total{
+                service_name="aws-mediaconvert-service",
+                span_kind="SPAN_KIND_INTERNAL",
+                app_operation="analytics.sink.dispatch",
+                app_outcome="server_error"
+              }[5m]
+            )
+          )
+
+      - record: analytics:sink_dispatch_drops_per_second:5m
+        expr: |
+          sum(
+            rate(
+              traces_span_metrics_calls_total{
+                service_name="aws-mediaconvert-service",
+                span_kind="SPAN_KIND_INTERNAL",
+                app_operation="analytics.sink.dispatch",
+                app_outcome="redirect"
+              }[5m]
+            )
+          )
+
+      - record: analytics:sink_dispatch_failure_rate:5m
+        expr: |
+          analytics:sink_dispatch_failures_per_second:5m
+          /
+          clamp_min(analytics:sink_dispatch_per_second:5m, 0.001)
+
+      - record: analytics:sink_dispatch_drop_rate:5m
+        expr: |
+          analytics:sink_dispatch_drops_per_second:5m
+          /
+          clamp_min(analytics:sink_dispatch_per_second:5m, 0.001)
+
+      - record: analytics:rollup_calls_per_second:5m
+        expr: |
+          sum(
+            rate(
+              traces_span_metrics_calls_total{
+                service_name="aws-mediaconvert-service",
+                span_kind="SPAN_KIND_INTERNAL",
+                app_operation="analytics.rollup"
+              }[5m]
+            )
+          )
+
+      - record: analytics:rollup_lag_ratio:5m
+        expr: |
+          analytics:ingest_requests_per_second:5m
+          /
+          clamp_min(analytics:rollup_calls_per_second:5m, 0.001)
+
+  - name: analytics-core-alerts
+    interval: 30s
+    rules:
+      - alert: AnalyticsIngestErrorRateHigh
+        expr: |
+          analytics:ingest_error_rate:5m > 0.05
+          and
+          analytics:ingest_requests_per_second:5m > 0.02
+        for: 10m
+        labels:
+          severity: warning
+          team: app
+        annotations:
+          summary: "High analytics ingest error rate"
+          description: "analytics ingest error rate is {{ $value }} over 5m with sustained traffic."
+
+      - alert: AnalyticsSinkFailureRateHigh
+        expr: |
+          analytics:sink_dispatch_failure_rate:5m > 0.05
+          and
+          analytics:sink_dispatch_per_second:5m > 0.01
+        for: 10m
+        labels:
+          severity: warning
+          team: app
+        annotations:
+          summary: "High analytics sink failure rate"
+          description: "analytics sink dispatch failure rate is {{ $value }} over 5m."
+
+      - alert: AnalyticsSinkDropRateHigh
+        expr: |
+          analytics:sink_dispatch_drop_rate:5m > 0.90
+          and
+          analytics:sink_dispatch_per_second:5m > 0.01
+        for: 15m
+        labels:
+          severity: warning
+          team: app
+        annotations:
+          summary: "High analytics sink drop rate"
+          description: "analytics sink drop rate is {{ $value }} over 5m."
+
+      - alert: AnalyticsRollupStale
+        expr: |
+          analytics:ingest_requests_per_second:5m > 0.02
+          and
+          analytics:rollup_calls_per_second:5m < 0.001
+        for: 10m
+        labels:
+          severity: warning
+          team: app
+        annotations:
+          summary: "Analytics rollup appears stale"
+          description: "ingest traffic is present but analytics rollup calls are near zero for at least 10m."
+
   - name: app-spanmetrics-recording
     interval: 30s
     rules:
