@@ -130,7 +130,7 @@ export const TERMS_UPLOAD_VERSION = process.env.TERMS_UPLOAD_VERSION || '2026-01
 export const CREATE_VIDEO_BG_COLOR = process.env.CREATE_VIDEO_BG_COLOR || '#000000'
 
 export type ImageVariantFormat = 'webp' | 'png'
-export type ImageVariantUsage = 'prompt_bg' | 'logo' | 'lower_third'
+export type ImageVariantUsage = 'prompt_bg' | 'graphic_overlay' | 'logo' | 'lower_third'
 export type ImageVariantFit = 'cover' | 'contain' | 'inside'
 
 export type ImageVariantProfile = {
@@ -163,6 +163,7 @@ export const IMAGE_VARIANTS_STORAGE_PREFIX = (process.env.IMAGE_VARIANTS_STORAGE
 
 const IMAGE_VARIANTS_FORMAT_DEFAULT = envEnum('IMAGE_VARIANTS_FORMAT', ['webp', 'png'] as const, 'webp')
 const IMAGE_VARIANTS_QUALITY_PROMPT_BG = envInt('IMAGE_VARIANTS_QUALITY_PROMPT_BG', 80, { min: 1, max: 100 })
+const IMAGE_VARIANTS_QUALITY_GRAPHIC_OVERLAY = envInt('IMAGE_VARIANTS_QUALITY_GRAPHIC_OVERLAY', 82, { min: 1, max: 100 })
 const IMAGE_VARIANTS_QUALITY_LOGO = envInt('IMAGE_VARIANTS_QUALITY_LOGO', 82, { min: 1, max: 100 })
 const IMAGE_VARIANTS_QUALITY_LOWER_THIRD = envInt('IMAGE_VARIANTS_QUALITY_LOWER_THIRD', 84, { min: 1, max: 100 })
 
@@ -225,6 +226,54 @@ export const IMAGE_VARIANT_PROFILES: readonly ImageVariantProfile[] = [
     fit: 'inside',
     format: IMAGE_VARIANTS_FORMAT_DEFAULT === 'png' ? 'png' : 'webp',
     quality: IMAGE_VARIANTS_FORMAT_DEFAULT === 'png' ? null : IMAGE_VARIANTS_QUALITY_LOGO,
+    alpha: true,
+  },
+  {
+    key: 'graphic_overlay_p_1x',
+    usage: 'graphic_overlay',
+    orientation: 'portrait',
+    dpr: 1,
+    width: 720,
+    height: 1280,
+    fit: 'contain',
+    format: IMAGE_VARIANTS_FORMAT_DEFAULT,
+    quality: IMAGE_VARIANTS_QUALITY_GRAPHIC_OVERLAY,
+    alpha: true,
+  },
+  {
+    key: 'graphic_overlay_p_2x',
+    usage: 'graphic_overlay',
+    orientation: 'portrait',
+    dpr: 2,
+    width: 1080,
+    height: 1920,
+    fit: 'contain',
+    format: IMAGE_VARIANTS_FORMAT_DEFAULT,
+    quality: IMAGE_VARIANTS_QUALITY_GRAPHIC_OVERLAY,
+    alpha: true,
+  },
+  {
+    key: 'graphic_overlay_l_1x',
+    usage: 'graphic_overlay',
+    orientation: 'landscape',
+    dpr: 1,
+    width: 1280,
+    height: 720,
+    fit: 'contain',
+    format: IMAGE_VARIANTS_FORMAT_DEFAULT,
+    quality: IMAGE_VARIANTS_QUALITY_GRAPHIC_OVERLAY,
+    alpha: true,
+  },
+  {
+    key: 'graphic_overlay_l_2x',
+    usage: 'graphic_overlay',
+    orientation: 'landscape',
+    dpr: 2,
+    width: 1920,
+    height: 1080,
+    fit: 'contain',
+    format: IMAGE_VARIANTS_FORMAT_DEFAULT,
+    quality: IMAGE_VARIANTS_QUALITY_GRAPHIC_OVERLAY,
     alpha: true,
   },
   {

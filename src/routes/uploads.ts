@@ -303,8 +303,8 @@ uploadsRouter.get('/api/uploads/:id/file', requireAuth, async (req, res) => {
   }
 })
 
-// Authenticated prompt background URL resolver (returns signed CDN URL; variant-aware for image mode).
-uploadsRouter.get('/api/uploads/:id/prompt-bg', requireAuth, async (req, res) => {
+// Authenticated image URL resolver (returns signed CDN URL; variant-aware by usage/mode).
+async function handleImageVariantUrl(req: any, res: any) {
   try {
     const id = Number(req.params.id)
     if (!Number.isFinite(id) || id <= 0) return res.status(400).send('bad_id')
@@ -313,13 +313,19 @@ uploadsRouter.get('/api/uploads/:id/prompt-bg', requireAuth, async (req, res) =>
     const orientationRaw = String(req.query?.orientation || '').toLowerCase()
     const orientation: 'portrait' | 'landscape' | null =
       orientationRaw === 'landscape' ? 'landscape' : (orientationRaw === 'portrait' ? 'portrait' : null)
+    const usageRaw = String(req.query?.usage || '').toLowerCase().trim()
+    const usage: 'prompt_bg' | 'graphic_overlay' | 'logo' | 'lower_third' | null =
+      usageRaw === 'prompt_bg' || usageRaw === 'graphic_overlay' || usageRaw === 'logo' || usageRaw === 'lower_third'
+        ? (usageRaw as 'prompt_bg' | 'graphic_overlay' | 'logo' | 'lower_third')
+        : null
+    if (usageRaw && !usage) return res.status(400).send('bad_usage')
     const dprRaw = Number(req.query?.dpr)
     const dpr = Number.isFinite(dprRaw) && dprRaw > 0 ? dprRaw : null
 
     // Permission gate mirrors other authenticated upload endpoints.
     await uploadsSvc.get(id, {}, { userId: Number(req.user!.id) })
 
-    const signed = await uploadsSvc.getUploadPublicPromptBackgroundCdnUrl(id, { mode, orientation, dpr })
+    const signed = await uploadsSvc.getUploadPublicPromptBackgroundCdnUrl(id, { mode, usage, orientation, dpr })
     res.set('Cache-Control', 'no-store')
     res.status(302).set('Location', signed.url)
     return res.end()
@@ -330,7 +336,11 @@ uploadsRouter.get('/api/uploads/:id/prompt-bg', requireAuth, async (req, res) =>
     logError(req.log || uploadsLogger, err, 'uploads_route_error', { path: req.path })
     return res.status(status).send('failed')
   }
-})
+}
+
+uploadsRouter.get('/api/uploads/:id/image', requireAuth, handleImageVariantUrl)
+// Backward-compatible alias; prefer `/api/uploads/:id/image`.
+uploadsRouter.get('/api/uploads/:id/prompt-bg', requireAuth, handleImageVariantUrl)
 
 uploadsRouter.get('/api/uploads/:id/edit-proxy', requireAuth, async (req, res) => {
   try {

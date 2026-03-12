@@ -20,6 +20,7 @@ import {
   UPLOAD_PREFIX,
   IMAGE_VARIANTS_ENABLED,
   IMAGE_VARIANTS_PROMPT_ENABLED,
+  IMAGE_VARIANTS_ASSETS_ENABLED,
   IMAGE_VARIANTS_REQUIRE_READY,
 } from '../../config'
 import { sanitizeFilename, pickExtension, nowDateYmd, buildUploadKey } from '../../utils/naming'
@@ -433,7 +434,12 @@ export async function getUploadSignedCdnUrl(
 
 export async function getUploadPublicPromptBackgroundCdnUrl(
   uploadId: number,
-  params: { mode: 'image' | 'video'; orientation?: 'portrait' | 'landscape' | null; dpr?: number | null }
+  params: {
+    mode: 'image' | 'video'
+    usage?: 'prompt_bg' | 'graphic_overlay' | 'logo' | 'lower_third' | null
+    orientation?: 'portrait' | 'landscape' | null
+    dpr?: number | null
+  }
 ): Promise<{ url: string; expiresAt: number }> {
   if (!uploadsCdnConfigured()) throw new DomainError('cdn_not_configured')
   const row = await repo.getById(uploadId)
@@ -450,11 +456,33 @@ export async function getUploadPublicPromptBackgroundCdnUrl(
   if (mode === 'image') {
     const key = String(row.s3_key || '')
     if (!key) throw new NotFoundError('not_found')
-    if (IMAGE_VARIANTS_PROMPT_ENABLED && rowKind === 'image') {
+    const imageRole = String((row as any).image_role || '').trim().toLowerCase()
+    const requestedUsageRaw = String(params?.usage || '').trim().toLowerCase()
+    const requestedUsage =
+      requestedUsageRaw === 'prompt_bg' ||
+      requestedUsageRaw === 'graphic_overlay' ||
+      requestedUsageRaw === 'logo' ||
+      requestedUsageRaw === 'lower_third'
+        ? (requestedUsageRaw as 'prompt_bg' | 'graphic_overlay' | 'logo' | 'lower_third')
+        : null
+    const inferredUsage: 'prompt_bg' | 'graphic_overlay' | 'logo' | 'lower_third' | null =
+      rowKind === 'logo'
+        ? 'logo'
+        : rowKind === 'image'
+          ? (imageRole === 'lower_third' ? 'lower_third' : 'prompt_bg')
+          : null
+    const usage = requestedUsage || inferredUsage
+    const variantsEnabledForUsage =
+      usage === 'prompt_bg'
+        ? Boolean(IMAGE_VARIANTS_PROMPT_ENABLED || IMAGE_VARIANTS_ASSETS_ENABLED)
+        : usage === 'graphic_overlay' || usage === 'logo' || usage === 'lower_third'
+          ? Boolean(IMAGE_VARIANTS_ASSETS_ENABLED)
+          : false
+    if (usage && variantsEnabledForUsage) {
       try {
         const selected = await uploadImageVariantsSvc.selectBestVariantForUsage({
           uploadId: Number(uploadId),
-          usage: 'prompt_bg',
+          usage,
           orientation,
           dpr,
         })

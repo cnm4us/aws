@@ -396,6 +396,23 @@ function getCsrfToken(): string | null {
   }
 }
 
+function getPreviewDpr(): number {
+  if (typeof window === 'undefined') return 1
+  const raw = Number(window.devicePixelRatio || 1)
+  if (!Number.isFinite(raw) || raw <= 0) return 1
+  return Math.max(1, Math.min(3, Math.round(raw * 100) / 100))
+}
+
+function buildImagePreviewUrl(
+  uploadId: number,
+  usage: 'prompt_bg' | 'graphic_overlay' | 'logo' | 'lower_third',
+  orientation: 'portrait' | 'landscape' = 'portrait'
+): string {
+  const id = encodeURIComponent(String(uploadId))
+  const dpr = encodeURIComponent(String(getPreviewDpr()))
+  return `/api/uploads/${id}/image?mode=image&usage=${encodeURIComponent(usage)}&orientation=${orientation}&dpr=${dpr}`
+}
+
 const YellowModal: React.FC<{ title: string; body: string; onClose: () => void }> = ({ title, body, onClose }) => {
   return (
     <div
@@ -708,10 +725,14 @@ const AssetUploadsListPage: React.FC<{
     void load()
   }, [load])
 
-	  const thumbOrFile = (u: UploadListItem): string => {
-	    if (kind === 'video') return `/api/uploads/${encodeURIComponent(String(u.id))}/thumb`
-	    return `/api/uploads/${encodeURIComponent(String(u.id))}/file`
-	  }
+  const thumbOrFile = (u: UploadListItem): string => {
+    if (kind === 'video') return `/api/uploads/${encodeURIComponent(String(u.id))}/thumb`
+    if (kind === 'logo') return buildImagePreviewUrl(Number(u.id), 'logo', 'portrait')
+    if (kind === 'image' && String(imageRole || '').toLowerCase() === 'lower_third') {
+      return buildImagePreviewUrl(Number(u.id), 'lower_third', 'portrait')
+    }
+    return buildImagePreviewUrl(Number(u.id), 'graphic_overlay', 'portrait')
+  }
 
   return (
     <div style={{ ...nebulaShellBaseStyle }}>
@@ -2138,7 +2159,7 @@ const GraphicAssetsListPage: React.FC<{
     const dims = u.width && u.height ? `${u.width}px × ${u.height}px` : ''
     const meta = [date, size, dims].filter(Boolean).join(' · ')
     const fileLine = originalName ? `File: ${originalName}` : ''
-    const thumbSrc = `/api/uploads/${encodeURIComponent(String(u.id))}/file`
+    const thumbSrc = buildImagePreviewUrl(Number(u.id), 'graphic_overlay', 'portrait')
     const fav = Boolean(u.is_favorite)
     const isPick = mode === 'pick'
     return (

@@ -117,16 +117,19 @@ feedPromptsRouter.get('/api/feed/prompts/:id', async (req: any, res: any, next: 
             const [signedCurrent, signedPortrait, signedLandscape] = await Promise.all([
               uploadsSvc.getUploadPublicPromptBackgroundCdnUrl(Number(upload.id), {
                 mode: 'image',
+                usage: 'prompt_bg',
                 orientation,
                 dpr,
               }),
               uploadsSvc.getUploadPublicPromptBackgroundCdnUrl(Number(upload.id), {
                 mode: 'image',
+                usage: 'prompt_bg',
                 orientation: 'portrait',
                 dpr,
               }),
               uploadsSvc.getUploadPublicPromptBackgroundCdnUrl(Number(upload.id), {
                 mode: 'image',
+                usage: 'prompt_bg',
                 orientation: 'landscape',
                 dpr,
               }),

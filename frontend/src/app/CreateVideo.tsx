@@ -1309,6 +1309,20 @@ export default function CreateVideo() {
   }>({})
   const [iconReadyTick, setIconReadyTick] = useState(0)
   const [graphicFileUrlByUploadId, setGraphicFileUrlByUploadId] = useState<Record<number, string>>({})
+  const imagePreviewDpr = useMemo(() => {
+    if (typeof window === 'undefined') return 1
+    const raw = Number(window.devicePixelRatio || 1)
+    if (!Number.isFinite(raw) || raw <= 0) return 1
+    return Math.max(1, Math.min(3, Math.round(raw * 100) / 100))
+  }, [])
+  const buildImagePreviewUrl = useCallback(
+    (
+      uploadId: number,
+      usage: 'prompt_bg' | 'graphic_overlay' | 'logo' | 'lower_third' = 'graphic_overlay'
+    ) =>
+      `/api/uploads/${encodeURIComponent(String(uploadId))}/image?mode=image&usage=${encodeURIComponent(usage)}&orientation=portrait&dpr=${encodeURIComponent(String(imagePreviewDpr))}`,
+    [imagePreviewDpr]
+  )
   const [audioEnvelopeByUploadId, setAudioEnvelopeByUploadId] = useState<Record<number, any>>({})
   const [audioEnvelopeStatusByUploadId, setAudioEnvelopeStatusByUploadId] = useState<Record<number, 'idle' | 'pending' | 'ready' | 'error'>>({})
   const [audioEnvelopeErrorByUploadId, setAudioEnvelopeErrorByUploadId] = useState<Record<number, string>>({})
@@ -3928,11 +3942,8 @@ export default function CreateVideo() {
 
   const timelineBackgroundImageUrl = useMemo(() => {
     if (!timelineBackgroundUploadId) return null
-    return (
-      graphicFileUrlByUploadId[timelineBackgroundUploadId] ||
-      `/api/uploads/${encodeURIComponent(String(timelineBackgroundUploadId))}/file`
-    )
-  }, [graphicFileUrlByUploadId, timelineBackgroundUploadId])
+    return buildImagePreviewUrl(timelineBackgroundUploadId, 'prompt_bg')
+  }, [buildImagePreviewUrl, timelineBackgroundUploadId])
 
   const hasTimelineBackgroundPreview =
     timelineBackgroundMode === 'color' || (timelineBackgroundMode === 'image' && !!timelineBackgroundImageUrl)
@@ -4070,11 +4081,11 @@ export default function CreateVideo() {
       const uploadId = Number((clip as any).bgFillImageUploadId)
       if (!(Number.isFinite(uploadId) && uploadId > 0)) return null
       const id = Math.round(uploadId)
-      const url = graphicFileUrlByUploadId[id] || `/api/uploads/${encodeURIComponent(String(id))}/file`
+      const url = buildImagePreviewUrl(id, 'prompt_bg')
       return { kind: 'image', url }
     }
     return null
-  }, [activeClipAtPlayhead, graphicFileUrlByUploadId])
+  }, [activeClipAtPlayhead, buildImagePreviewUrl])
 
   const activeStillBgStatic = useMemo<null | { kind: 'color'; color: string } | { kind: 'image'; url: string }>(() => {
     const s: any = previewStillAtPlayhead as any
@@ -4089,11 +4100,11 @@ export default function CreateVideo() {
       const uploadId = Number((clip as any).bgFillImageUploadId)
       if (!(Number.isFinite(uploadId) && uploadId > 0)) return null
       const id = Math.round(uploadId)
-      const url = graphicFileUrlByUploadId[id] || `/api/uploads/${encodeURIComponent(String(id))}/file`
+      const url = buildImagePreviewUrl(id, 'prompt_bg')
       return { kind: 'image', url }
     }
     return null
-  }, [graphicFileUrlByUploadId, previewStillAtPlayhead, resolveClipForStill])
+  }, [buildImagePreviewUrl, previewStillAtPlayhead, resolveClipForStill])
 
   const activeLogoUploadId = useMemo(() => {
     const l = activeLogoAtPlayhead
@@ -4117,8 +4128,8 @@ export default function CreateVideo() {
   }, [activeScreenTitleAtPlayhead])
   const activeGraphicUrl = useMemo(() => {
     if (!activeGraphicUploadId) return null
-    return graphicFileUrlByUploadId[activeGraphicUploadId] || `/api/uploads/${encodeURIComponent(String(activeGraphicUploadId))}/file`
-  }, [activeGraphicUploadId, graphicFileUrlByUploadId])
+    return buildImagePreviewUrl(activeGraphicUploadId, 'graphic_overlay')
+  }, [activeGraphicUploadId, buildImagePreviewUrl])
 
   const activeGraphicPreviewStyle = useMemo<React.CSSProperties | null>(() => {
     const g: any = activeGraphicAtPlayhead as any
@@ -4336,34 +4347,28 @@ export default function CreateVideo() {
 
   const activeStillUrl = useMemo(() => {
     if (!activeStillUploadId) return null
-    return graphicFileUrlByUploadId[activeStillUploadId] || `/api/uploads/${encodeURIComponent(String(activeStillUploadId))}/file`
-  }, [activeStillUploadId, graphicFileUrlByUploadId])
+    return buildImagePreviewUrl(activeStillUploadId, 'graphic_overlay')
+  }, [activeStillUploadId, buildImagePreviewUrl])
 
   const activeVideoOverlayStillUrl = useMemo(() => {
     if (!activeVideoOverlayStillUploadId) return null
-    return (
-      graphicFileUrlByUploadId[activeVideoOverlayStillUploadId] ||
-      `/api/uploads/${encodeURIComponent(String(activeVideoOverlayStillUploadId))}/file`
-    )
-  }, [activeVideoOverlayStillUploadId, graphicFileUrlByUploadId])
+    return buildImagePreviewUrl(activeVideoOverlayStillUploadId, 'graphic_overlay')
+  }, [activeVideoOverlayStillUploadId, buildImagePreviewUrl])
 
   const activeLogoUrl = useMemo(() => {
     if (!activeLogoUploadId) return null
-    return graphicFileUrlByUploadId[activeLogoUploadId] || `/api/uploads/${encodeURIComponent(String(activeLogoUploadId))}/file`
-  }, [activeLogoUploadId, graphicFileUrlByUploadId])
+    return buildImagePreviewUrl(activeLogoUploadId, 'logo')
+  }, [activeLogoUploadId, buildImagePreviewUrl])
 
   const activeLowerThirdUrl = useMemo(() => {
     if (!activeLowerThirdUploadId) return null
-    return graphicFileUrlByUploadId[activeLowerThirdUploadId] || `/api/uploads/${encodeURIComponent(String(activeLowerThirdUploadId))}/file`
-  }, [activeLowerThirdUploadId, graphicFileUrlByUploadId])
+    return buildImagePreviewUrl(activeLowerThirdUploadId, 'lower_third')
+  }, [activeLowerThirdUploadId, buildImagePreviewUrl])
 
   const activeScreenTitleUrl = useMemo(() => {
     if (!activeScreenTitleRenderUploadId) return null
-    return (
-      graphicFileUrlByUploadId[activeScreenTitleRenderUploadId] ||
-      `/api/uploads/${encodeURIComponent(String(activeScreenTitleRenderUploadId))}/file`
-    )
-  }, [activeScreenTitleRenderUploadId, graphicFileUrlByUploadId])
+    return buildImagePreviewUrl(activeScreenTitleRenderUploadId, 'graphic_overlay')
+  }, [activeScreenTitleRenderUploadId, buildImagePreviewUrl])
 
   const activeLogoPreview = useMemo(() => {
     const seg: any = activeLogoAtPlayhead as any
@@ -8473,7 +8478,7 @@ export default function CreateVideo() {
             nextTimeline = { ...(nextTimeline as any), screenTitles: out }
           }
 
-          const url = `/api/uploads/${encodeURIComponent(String(uploadId))}/file`
+          const url = buildImagePreviewUrl(uploadId, 'graphic_overlay')
           setGraphicFileUrlByUploadId((prev) => (prev[uploadId] ? prev : { ...prev, [uploadId]: url }))
         } catch {}
       }
@@ -8491,6 +8496,7 @@ export default function CreateVideo() {
       } catch {}
     })()
   }, [
+    buildImagePreviewUrl,
     buildScreenTitlePresetOverride,
     forceReloadScreenTitlePresets,
     outputFrame.height,
@@ -9214,7 +9220,7 @@ export default function CreateVideo() {
       const batchSize = 8
       for (let i = 0; i < missing.length; i += batchSize) {
         const batch = missing.slice(i, i + batchSize)
-        const urls = batch.map((id) => `/api/uploads/${encodeURIComponent(String(id))}/file`)
+        const urls = batch.map((id) => buildImagePreviewUrl(id, 'graphic_overlay'))
         if (!alive) return
         setGraphicFileUrlByUploadId((prev) => {
           const next = { ...prev }
@@ -9231,6 +9237,7 @@ export default function CreateVideo() {
       alive = false
     }
   }, [
+    buildImagePreviewUrl,
     graphicFileUrlByUploadId,
     graphics,
     logos,
@@ -18743,7 +18750,7 @@ export default function CreateVideo() {
         return { ...prev, screenTitles: nextSts }
       })
 
-      const url = `/api/uploads/${encodeURIComponent(String(uploadId))}/file`
+      const url = buildImagePreviewUrl(uploadId, 'graphic_overlay')
       setGraphicFileUrlByUploadId((prev) => (prev[uploadId] ? prev : { ...prev, [uploadId]: url }))
 
       if (closeEditorOnSuccess) {
@@ -18766,7 +18773,7 @@ export default function CreateVideo() {
     } finally {
       setScreenTitleRenderBusy(false)
     }
-  }, [outputFrame.height, outputFrame.width, screenTitlePlacementEditor, screenTitlePresets, snapshotUndo])
+  }, [buildImagePreviewUrl, outputFrame.height, outputFrame.width, screenTitlePlacementEditor, screenTitlePresets, snapshotUndo])
 
   saveScreenTitlePlacementRef.current = saveScreenTitlePlacement
 
@@ -18875,7 +18882,7 @@ export default function CreateVideo() {
         return { ...prev, screenTitles: nextSts }
       })
 
-      const url = `/api/uploads/${encodeURIComponent(String(uploadId))}/file`
+      const url = buildImagePreviewUrl(uploadId, 'graphic_overlay')
       setGraphicFileUrlByUploadId((prev) => (prev[uploadId] ? prev : { ...prev, [uploadId]: url }))
 
       setScreenTitleCustomizeEditor(null)
@@ -18885,7 +18892,7 @@ export default function CreateVideo() {
     } finally {
       setScreenTitleRenderBusy(false)
     }
-  }, [outputFrame.height, outputFrame.width, screenTitleCustomizeEditor, screenTitlePresets, snapshotUndo])
+  }, [buildImagePreviewUrl, outputFrame.height, outputFrame.width, screenTitleCustomizeEditor, screenTitlePresets, snapshotUndo])
 
   const openAdd = useCallback(() => {
     try {
