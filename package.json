@@ -42,6 +42,8 @@
     "admin:backfill-rule-drafts": "ts-node scripts/backfill-rule-drafts.ts",
     "admin:backfill-spaces-ulid": "ts-node scripts/backfill-spaces-ulid.ts",
     "admin:backfill-audio-durations": "ts-node scripts/backfill-audio-durations.ts",
+    "admin:backfill-image-derivatives": "ts-node scripts/backfill-upload-image-derivatives.ts",
+    "admin:backfill-image-derivatives:loop": "bash scripts/backfill-upload-image-derivatives-loop.sh",
     "e2e": "playwright test --config=e2e/playwright.config.ts",
     "e2e:headed": "cross-env HEADLESS=false playwright test --config=e2e/playwright.config.ts",
     "e2e:ui": "cross-env HEADLESS=false playwright test --config=e2e/playwright.config.ts --ui",

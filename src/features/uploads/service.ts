@@ -488,8 +488,10 @@ export async function getUploadPublicPromptBackgroundCdnUrl(
         })
         const variantKey = selected?.variant?.s3Key ? String(selected.variant.s3Key) : ''
         if (variantKey) return signUploadsCdnUrl(variantKey)
+        await ensureImageDerivativesEnqueuedForRead(row, { priority: 50 })
         if (IMAGE_VARIANTS_REQUIRE_READY) throw new NotFoundError('not_found')
       } catch {
+        await ensureImageDerivativesEnqueuedForRead(row, { priority: 50 })
         if (IMAGE_VARIANTS_REQUIRE_READY) throw new NotFoundError('not_found')
       }
     }
@@ -523,6 +525,78 @@ async function readBodyText(body: any): Promise<string> {
     chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
   }
   return Buffer.concat(chunks).toString('utf8')
+}
+
+async function ensureImageDerivativesEnqueuedForRead(uploadRow: any, opts?: { priority?: number }): Promise<void> {
+  try {
+    if (!MEDIA_JOBS_ENABLED || !IMAGE_VARIANTS_ENABLED) return
+    const uploadId = Number(uploadRow?.id)
+    if (!Number.isFinite(uploadId) || uploadId <= 0) return
+    const sourceDeletedAt = uploadRow?.source_deleted_at != null ? String(uploadRow.source_deleted_at) : null
+    if (sourceDeletedAt) return
+
+    const kind = String(uploadRow?.kind || '').trim().toLowerCase()
+    if (kind !== 'image' && kind !== 'logo') return
+
+    const bucket = String(uploadRow?.s3_bucket || '').trim()
+    const key = String(uploadRow?.s3_key || '').trim()
+    if (!bucket || !key) return
+
+    const ownerUserId = uploadRow?.user_id != null && Number.isFinite(Number(uploadRow.user_id))
+      ? Number(uploadRow.user_id)
+      : null
+    const priority = Number.isFinite(Number(opts?.priority)) ? Math.max(0, Math.round(Number(opts?.priority))) : 0
+
+    const db = getPool()
+    const [rows] = await db.query(
+      `SELECT id, status, priority
+         FROM media_jobs
+        WHERE type = 'upload_image_derivatives_v1'
+          AND status IN ('pending','processing')
+          AND JSON_UNQUOTE(JSON_EXTRACT(input_json, '$.uploadId')) = ?
+        ORDER BY id DESC
+        LIMIT 1`,
+      [String(uploadId)]
+    )
+    const existing = (rows as any[])[0]
+    if (existing) {
+      const existingId = Number((existing as any).id)
+      const existingStatus = String((existing as any).status || '')
+      const existingPriority = Number((existing as any).priority || 0)
+      if (
+        Number.isFinite(existingId) &&
+        existingId > 0 &&
+        existingStatus === 'pending' &&
+        Number.isFinite(existingPriority) &&
+        existingPriority < priority
+      ) {
+        await db.query(
+          `UPDATE media_jobs
+              SET priority = ?, updated_at = NOW()
+            WHERE id = ?
+              AND status = 'pending'
+              AND priority < ?`,
+          [priority, existingId, priority]
+        )
+      }
+      return
+    }
+
+    await enqueueJob(
+      'upload_image_derivatives_v1',
+      {
+        uploadId,
+        userId: ownerUserId != null && ownerUserId > 0 ? ownerUserId : null,
+        image: { bucket, key },
+        kind: kind === 'logo' ? 'logo' : 'image',
+        imageRole: uploadRow?.image_role != null ? String(uploadRow.image_role) : null,
+        outputBucket: String(UPLOAD_BUCKET),
+      },
+      { priority }
+    )
+  } catch {
+    // best-effort; caller already has fallback to source asset
+  }
 }
 
 async function ensureAudioEnvelopeEnqueued(uploadRow: any, ctx: ServiceContext): Promise<void> {
