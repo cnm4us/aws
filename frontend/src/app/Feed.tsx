@@ -129,6 +129,9 @@ type SequenceItem = {
   sourceIndex: number
 }
 
+const FEED_RENDER_WINDOW_BEHIND = 2
+const FEED_RENDER_WINDOW_AHEAD = 4
+
 function isGlobalFeedSlug(slug: string | null | undefined): boolean {
   const s = String(slug || '').trim().toLowerCase()
   return s === 'global' || s === 'global-feed'
@@ -752,6 +755,17 @@ export default function Feed() {
   }, [sequenceItems, activeSequenceIndex])
 
   const activeItem = activeSequenceItem?.item || null
+
+  const renderWindowBounds = useMemo(() => {
+    if (!sequenceItems.length) return { start: 0, end: -1 }
+    const start = Math.max(0, activeSequenceIndex - FEED_RENDER_WINDOW_BEHIND)
+    const end = Math.min(sequenceItems.length - 1, activeSequenceIndex + FEED_RENDER_WINDOW_AHEAD)
+    return { start, end }
+  }, [sequenceItems.length, activeSequenceIndex])
+
+  // Phase F increment 1: keep full render behavior while introducing
+  // window bounds + key-based lookup plumbing.
+  const renderedSequenceItems = sequenceItems
 
   const isGlobalBillboard = useMemo(() => {
     if (feedMode.kind === 'global') return true
@@ -1996,6 +2010,12 @@ export default function Feed() {
   function getSlide(i: number): HTMLDivElement | null {
     const r = railRef.current
     if (!r) return null
+    const sequenceKey = getSequenceKeyByIndex(i)
+    if (sequenceKey) {
+      const escaped = sequenceKey.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+      const byKey = r.querySelector(`[data-sequence-key="${escaped}"]`) as HTMLDivElement | null
+      if (byKey) return byKey
+    }
     return (r.children[i] as HTMLDivElement) || null
   }
 
@@ -2592,7 +2612,10 @@ export default function Feed() {
 
   const slides = useMemo(
     () =>
-      items.map((it, i) => {
+      renderedSequenceItems.map((seq) => {
+        const it = seq.item
+        const i = seq.sourceIndex
+        const sequenceKey = seq.sequenceKey
         const prompt = it.prompt
         if (prompt && isPromptItem(it)) {
           const slideId = `prompt-${prompt.id}-${it.id}`
@@ -2623,6 +2646,7 @@ export default function Feed() {
               key={slideId}
               className={styles.slide}
               id={slideId}
+              data-sequence-key={sequenceKey}
               data-prompt-id={String(prompt.id)}
               data-upload-id={String(it.id)}
             >
@@ -2969,6 +2993,7 @@ export default function Feed() {
             key={slideId}
             className={styles.slide}
             id={slideId}
+            data-sequence-key={sequenceKey}
             data-video-id={vid || undefined}
             data-publication-id={pubId || undefined}
             data-upload-id={String(it.id)}
@@ -3537,7 +3562,7 @@ export default function Feed() {
           </div>
         )
       }),
-    [items, activeSequenceIndex, isPortrait, posterAvail, playingIndex, startedMap, likesCountMap, likedMap, likeBusy, commentsCountMap, commentedByMeMap, reportedMap, isAuthed, feedMode, followMap, spaceList, myUserId, storyOpenForPub, storyTextMap, storyBusyMap, captionsEnabled]
+    [renderedSequenceItems, activeSequenceIndex, isPortrait, posterAvail, playingIndex, startedMap, likesCountMap, likedMap, likeBusy, commentsCountMap, commentedByMeMap, reportedMap, isAuthed, feedMode, followMap, spaceList, myUserId, storyOpenForPub, storyTextMap, storyBusyMap, captionsEnabled]
   )
 
   // Debug: log index changes explicitly (outside slides memo)
@@ -3957,6 +3982,8 @@ export default function Feed() {
       >
         <div
           ref={railRef}
+          data-window-start={String(renderWindowBounds.start)}
+          data-window-end={String(renderWindowBounds.end)}
           style={{
             position: 'relative',
             width: '100%',
