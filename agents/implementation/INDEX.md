@@ -21,6 +21,10 @@ This file is a lightweight index for ongoing work and “what’s next”.
 - `agents/implementation/plan_113.md` — Create Video export progress + consistent post-export UX
 - `agents/implementation/plan_114.md` — Prompt orchestration program (global-feed registration prompts)
 - `agents/implementation/plan_114F.md` — Prompt Creative v2 (dual widgets + image/video background + styling controls)
+- `agents/implementation/plan_117.md` — Prompt sequencing v3 (non-destructive prompt slides, scroll-native behavior)
+- `agents/implementation/plan_118.md` — First-party product analytics (internal source of truth)
+- `agents/implementation/plan_119.md` — Nominal-first analytics rollout (incremental expansion)
+- `agents/implementation/plan_128.md` — Feed sequence engine v1 (queue-first merge + stable keys + windowed render)
 - `agents/implementation/plan_115.md` — Hybrid analytics foundation (internal source of truth + optional external sink)
 - `agents/implementation/plan_116.md` — Automatic image derivatives for prompt/graphics/logo performance
 
@@ -28,8 +32,8 @@ This file is a lightweight index for ongoing work and “what’s next”.
 - Roadmap: `agents/roadmaps/roadmap_create_video.md`
   - Next: Timeline-first library (`plan_68.md`)
 - Program: `agents/implementation/plan_114.md`
-  - Next: Prompt Creative v2 (`plan_114F.md`)
+  - Next: Feed Sequence Engine v1 (`plan_128.md`)
 - Program: `agents/implementation/plan_115.md`
-  - Next: Hardening + privacy controls (retention/PII/DSAR, Phase F)
+  - Next: Nominal-first rollout (`plan_119.md`)
 - Program: `agents/implementation/plan_116.md`
   - Next: Phase A (profile registry + schema)
