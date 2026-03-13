@@ -151,6 +151,7 @@ Acceptance:
 - instrumentation points are available for plan 118/119 attachment.
 
 ### Phase I — QA Matrix + Rollout
+- Checklist document: `agents/implementation/plan_128_phase_i_checklist.md`
 - Run deterministic matrix on both old/new engines:
   - fast swipe,
   - prompt pass-through,
