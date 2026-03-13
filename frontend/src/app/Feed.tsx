@@ -574,6 +574,10 @@ export default function Feed() {
   const viewportRef = useRef<HTMLDivElement | null>(null)
   // Note: individual slide videos are rendered via FeedVideo/HLSVideo; no shared video element
   const [isPortrait, setIsPortrait] = useState<boolean>(() => typeof window !== 'undefined' ? window.matchMedia && window.matchMedia('(orientation: portrait)').matches : true)
+  const [viewportHeight, setViewportHeight] = useState<number>(() => {
+    if (typeof window === 'undefined') return 0
+    return Math.max(1, window.innerHeight || 0)
+  })
   const [posterAvail, setPosterAvail] = useState<Record<string, boolean>>({})
   const railOffsetRef = useRef<number>(0)
   const dragStartOffsetRef = useRef<number>(0)
@@ -763,9 +767,24 @@ export default function Feed() {
     return { start, end }
   }, [sequenceItems.length, activeSequenceIndex])
 
-  // Phase F increment 1: keep full render behavior while introducing
-  // window bounds + key-based lookup plumbing.
-  const renderedSequenceItems = sequenceItems
+  const renderedSequenceItems = useMemo(() => {
+    if (!sequenceEngineV1Enabled) return sequenceItems
+    if (!sequenceItems.length || renderWindowBounds.end < renderWindowBounds.start) return []
+    return sequenceItems.slice(renderWindowBounds.start, renderWindowBounds.end + 1)
+  }, [sequenceEngineV1Enabled, sequenceItems, renderWindowBounds.start, renderWindowBounds.end])
+
+  const renderTopSpacerPx = useMemo(() => {
+    if (!sequenceEngineV1Enabled) return 0
+    if (viewportHeight <= 0) return 0
+    return Math.max(0, renderWindowBounds.start * viewportHeight)
+  }, [sequenceEngineV1Enabled, renderWindowBounds.start, viewportHeight])
+
+  const renderBottomSpacerPx = useMemo(() => {
+    if (!sequenceEngineV1Enabled) return 0
+    if (viewportHeight <= 0) return 0
+    const trailing = Math.max(0, sequenceItems.length - (renderWindowBounds.end + 1))
+    return Math.max(0, trailing * viewportHeight)
+  }, [sequenceEngineV1Enabled, renderWindowBounds.end, sequenceItems.length, viewportHeight])
 
   const isGlobalBillboard = useMemo(() => {
     if (feedMode.kind === 'global') return true
@@ -1993,6 +2012,21 @@ export default function Feed() {
   }, [])
 
   useEffect(() => {
+    if (typeof window === 'undefined') return
+    const update = () => {
+      const next = Math.max(1, viewportRef.current?.clientHeight || window.innerHeight || 0)
+      setViewportHeight((prev) => (prev === next ? prev : next))
+    }
+    update()
+    window.addEventListener('resize', update)
+    window.addEventListener('orientationchange', update)
+    return () => {
+      window.removeEventListener('resize', update)
+      window.removeEventListener('orientationchange', update)
+    }
+  }, [])
+
+  useEffect(() => {
     const nexts = [activeSequenceIndex + 1, activeSequenceIndex + 2]
     nexts.forEach((i) => {
       const pi = items[i]
@@ -2016,6 +2050,7 @@ export default function Feed() {
       const byKey = r.querySelector(`[data-sequence-key="${escaped}"]`) as HTMLDivElement | null
       if (byKey) return byKey
     }
+    if (sequenceEngineV1Enabled) return null
     return (r.children[i] as HTMLDivElement) || null
   }
 
@@ -2045,8 +2080,8 @@ export default function Feed() {
 
   function getSlideHeight(): number {
     const r = railRef.current
-    const slide = r?.firstElementChild as HTMLElement | null
-    const h = slide?.clientHeight || r?.clientHeight || (typeof window !== 'undefined' ? window.innerHeight : 0)
+    const slide = r?.querySelector('[data-sequence-key]') as HTMLElement | null
+    const h = slide?.clientHeight || viewportRef.current?.clientHeight || r?.clientHeight || viewportHeight || (typeof window !== 'undefined' ? window.innerHeight : 0)
     return Math.max(1, h)
   }
 
@@ -3993,7 +4028,21 @@ export default function Feed() {
           }}
         >
           {slides.length ? (
-            slides
+            <>
+              {sequenceEngineV1Enabled && renderTopSpacerPx > 0 ? (
+                <div
+                  data-feed-spacer="top"
+                  style={{ width: '100%', height: `${renderTopSpacerPx}px`, pointerEvents: 'none' }}
+                />
+              ) : null}
+              {slides}
+              {sequenceEngineV1Enabled && renderBottomSpacerPx > 0 ? (
+                <div
+                  data-feed-spacer="bottom"
+                  style={{ width: '100%', height: `${renderBottomSpacerPx}px`, pointerEvents: 'none' }}
+                />
+              ) : null}
+            </>
           ) : (
             <div style={{ color: '#fff', padding: 20 }}>
               {initialLoading ? 'Loading…' : 'No videos yet.'}
