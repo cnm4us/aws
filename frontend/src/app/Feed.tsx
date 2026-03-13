@@ -592,6 +592,7 @@ export default function Feed() {
   } | null>(null)
   const promptDecisionBusyRef = useRef<boolean>(false)
   const promptSeenImpressionRef = useRef<Set<number>>(new Set())
+  const prevActiveSlideRef = useRef<{ slideId: number; isPrompt: boolean; prompt: FeedPromptPayload | null } | null>(null)
   const feedActivityStartedRef = useRef<boolean>(false)
   const feedActivityEndedRef = useRef<boolean>(false)
   const feedActivitySeenImpressionRef = useRef<Set<number>>(new Set())
@@ -612,7 +613,7 @@ export default function Feed() {
     lastPromptDismissedAt: null,
     lastPromptId: null,
   })
-  const lastIndexRef = useRef<number>(0)
+  const lastCountedContentSlideIdRef = useRef<number | null>(null)
 
   const isGlobalBillboard = useMemo(() => {
     if (feedMode.kind === 'global') return true
@@ -1825,17 +1826,33 @@ export default function Feed() {
     return 'none'
   }
 
-  const dismissPromptSlide = useCallback((slideUploadId: number, prompt: FeedPromptPayload) => {
+  const dismissPromptSlide = useCallback((slideUploadId: number, prompt: FeedPromptPayload, opts?: { preserveSlideId?: number | null }) => {
     const dismissedAtIso = new Date().toISOString()
     promptCountersRef.current.lastPromptDismissedAt = dismissedAtIso
     promptCountersRef.current.lastPromptId = prompt.id
     promptCountersRef.current.slidesSinceLastPrompt = 0
+    const preserveSlideId =
+      opts?.preserveSlideId != null && Number.isFinite(Number(opts.preserveSlideId))
+        ? Number(opts.preserveSlideId)
+        : null
     setItems((prev) => {
       const next = prev.filter((it) => Number(it.id) !== Number(slideUploadId))
-      setIndex((cur) => {
-        if (!next.length) return 0
-        return Math.max(0, Math.min(cur, next.length - 1))
-      })
+      if (preserveSlideId != null) {
+        const preserveIdx = next.findIndex((it) => Number(it.id) === preserveSlideId)
+        if (preserveIdx >= 0) {
+          setIndex((cur) => (cur === preserveIdx ? cur : preserveIdx))
+        } else {
+          setIndex((cur) => {
+            if (!next.length) return 0
+            return Math.max(0, Math.min(cur, next.length - 1))
+          })
+        }
+      } else {
+        setIndex((cur) => {
+          if (!next.length) return 0
+          return Math.max(0, Math.min(cur, next.length - 1))
+        })
+      }
       return next
     })
     void sendPromptEvent({
@@ -1845,6 +1862,34 @@ export default function Feed() {
       sessionId: promptSessionId,
     })
   }, [promptSessionId])
+
+  // If viewer swipes away from a prompt slide without tapping Dismiss,
+  // treat that pass-through as a dismiss so pacing/cooldown rules stay consistent.
+  useEffect(() => {
+    const current = items[index]
+    const prev = prevActiveSlideRef.current
+    if (isGlobalBillboard && prev && prev.isPrompt && prev.prompt && current && !isPromptItem(current)) {
+      const promptStillPresent = items.some((it) => Number(it.id) === Number(prev.slideId) && isPromptItem(it))
+      if (promptStillPresent) {
+        dismissPromptSlide(prev.slideId, prev.prompt, { preserveSlideId: Number(current.id) })
+      }
+    }
+    // Fallback cleanup: if a prompt remains behind the active content slide (e.g. fast swipe race),
+    // treat it as dismissed so the feed cannot bounce back to that stale prompt.
+    if (isGlobalBillboard && current && !isPromptItem(current)) {
+      const stalePrompt = items.find((it, idx) => idx < index && isPromptItem(it) && it.prompt)
+      if (stalePrompt?.prompt) {
+        dismissPromptSlide(Number(stalePrompt.id), stalePrompt.prompt, { preserveSlideId: Number(current.id) })
+      }
+    }
+    prevActiveSlideRef.current = current
+      ? {
+          slideId: Number(current.id),
+          isPrompt: isPromptItem(current),
+          prompt: isPromptItem(current) ? (current.prompt || null) : null,
+        }
+      : null
+  }, [index, items, isGlobalBillboard, dismissPromptSlide])
 
   const handlePromptCtaClick = useCallback((prompt: FeedPromptPayload, href: string, ctaKind: 'primary' | 'secondary') => {
     const targetHref = String(href || '').trim()
@@ -1987,13 +2032,17 @@ export default function Feed() {
     if (!items.length) return
     const current = items[index]
     if (!current) return
+    // Prompt cards should not count toward threshold counters;
+    // only content slides should advance "slides viewed/between prompts".
+    if (isPromptItem(current)) return
+    const currentSlideId = Number(current.id)
+    if (!Number.isFinite(currentSlideId)) return
+    if (lastCountedContentSlideIdRef.current === currentSlideId) return
+    lastCountedContentSlideIdRef.current = currentSlideId
     if (promptCountersRef.current.slidesViewed <= 0) {
       promptCountersRef.current.slidesViewed = 1
-      lastIndexRef.current = index
       return
     }
-    if (index === lastIndexRef.current) return
-    lastIndexRef.current = index
     promptCountersRef.current.slidesViewed += 1
     promptCountersRef.current.slidesSinceLastPrompt += 1
   }, [index, items, isGlobalBillboard])
@@ -2043,7 +2092,6 @@ export default function Feed() {
     if (initialLoading) return
     if (!items.length) return
     if (isPromptItem(items[index])) return
-    if (items.some((it) => isPromptItem(it))) return
     if (promptDecisionBusyRef.current) return
 
     let canceled = false
@@ -2081,16 +2129,24 @@ export default function Feed() {
         if (canceled) return
 
         const syntheticUploadId = -Math.floor(Date.now() + prompt.id)
+        const activeSlideId = Number(items[index]?.id)
         setItems((prev) => {
-          if (prev.some((it) => isPromptItem(it) && it.prompt?.id === prompt.id)) return prev
-          const insertAt = Math.max(0, Math.min(index + 1, prev.length))
+          const withoutPrompts = prev.filter((it) => !isPromptItem(it))
+          const activeIdx = withoutPrompts.findIndex((it) => Number(it.id) === activeSlideId)
+          const baseIdx = activeIdx >= 0 ? activeIdx : Math.max(0, Math.min(index, Math.max(0, withoutPrompts.length - 1)))
+          const insertAt = Math.max(0, Math.min(baseIdx + 1, withoutPrompts.length))
           const promptItem: UploadItem = {
             id: syntheticUploadId,
             url: '',
             itemType: 'prompt',
             prompt,
           }
-          return [...prev.slice(0, insertAt), promptItem, ...prev.slice(insertAt)]
+          const next = [...withoutPrompts.slice(0, insertAt), promptItem, ...withoutPrompts.slice(insertAt)]
+          const nextActiveIdx = next.findIndex((it) => Number(it.id) === activeSlideId)
+          if (nextActiveIdx >= 0) {
+            setIndex((cur) => (cur === nextActiveIdx ? cur : nextActiveIdx))
+          }
+          return next
         })
         counters.promptsShown += 1
         counters.slidesSinceLastPrompt = 0
