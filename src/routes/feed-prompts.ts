@@ -22,7 +22,7 @@ async function handleDecision(req: any, res: any, next: any) {
           watch_seconds: req.query?.watch_seconds,
           prompts_shown_this_session: req.query?.prompts_shown_this_session,
           slides_since_last_prompt: req.query?.slides_since_last_prompt,
-          last_prompt_dismissed_at: req.query?.last_prompt_dismissed_at,
+          last_prompt_shown_at: req.query?.last_prompt_shown_at,
           last_prompt_id: req.query?.last_prompt_id,
         }
       : (req.body || {})
@@ -217,6 +217,7 @@ feedPromptsRouter.post('/api/feed/prompt-events', async (req: any, res: any, nex
     const opByEvent: Record<string, string> = {
       impression: 'feed.prompt.render',
       click: 'feed.prompt.click',
+      pass_through: 'feed.prompt.pass_through',
       dismiss: 'feed.prompt.dismiss',
       auth_start: 'feed.prompt.auth_start',
       auth_complete: 'feed.prompt.auth_complete',
@@ -224,6 +225,7 @@ feedPromptsRouter.post('/api/feed/prompt-events', async (req: any, res: any, nex
     const outcomeByEvent: Record<string, string> = {
       impression: 'shown',
       click: 'clicked',
+      pass_through: 'pass_through',
       dismiss: 'dismissed',
       auth_start: 'auth_start',
       auth_complete: 'auth_complete',

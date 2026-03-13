@@ -20,7 +20,8 @@ export type PromptDecisionSessionRow = {
   watch_seconds: number
   prompts_shown_this_session: number
   slides_since_last_prompt: number
-  last_prompt_dismissed_at: string | null
+  last_prompt_shown_at: string | null
+  last_prompt_dismissed_at?: string | null
   last_shown_prompt_id: number | null
   last_decision_reason: string | null
   created_at: string
@@ -36,7 +37,7 @@ export type PromptDecisionInput = {
     watchSeconds: number
     promptsShownThisSession: number
     slidesSinceLastPrompt: number
-    lastPromptDismissedAt: string | null
+    lastPromptShownAt: string | null
     lastPromptId: number | null
   }
 }

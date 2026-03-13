@@ -2,7 +2,7 @@ export type PromptAnalyticsSurface = 'global_feed'
 export type PromptAnalyticsViewerState = 'anonymous' | 'authenticated'
 export type PromptAnalyticsCtaKind = 'primary' | 'secondary' | null
 
-export type PromptAnalyticsInputEvent = 'impression' | 'click' | 'dismiss' | 'auth_start' | 'auth_complete'
+export type PromptAnalyticsInputEvent = 'impression' | 'click' | 'pass_through' | 'dismiss' | 'auth_start' | 'auth_complete'
 
 export type PromptAnalyticsEventType =
   | 'prompt_impression'

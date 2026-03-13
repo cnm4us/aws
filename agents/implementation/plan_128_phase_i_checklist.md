@@ -9,15 +9,15 @@ Validate feed behavior with `VITE_FEED_SEQUENCE_ENGINE_V1=1` after Phase D–H c
 - prompt insertion as normal sequence slides
 
 ## Test Setup
-- [ ] In `frontend/.env`: `VITE_FEED_SEQUENCE_ENGINE_V1=1`
-- [ ] Rebuild frontend: `npm run web:build`
-- [ ] Restart app: `npm run serve:jaeger`
-- [ ] Use private/incognito session for anonymous prompt tests
-- [ ] Confirm tag in Jaeger: `app.feed_sequence_engine=v1`
+- [x] In `frontend/.env`: `VITE_FEED_SEQUENCE_ENGINE_V1=1`
+- [x] Rebuild frontend: `npm run web:build`
+- [x] Restart app: `npm run serve:jaeger`
+- [x] Use private/incognito session for anonymous prompt tests
+- [x] Confirm tag in Jaeger: `app.feed_sequence_engine=v1`
 
 ## Platforms
-- [ ] iOS Safari (real device)
-- [ ] Chrome mobile emulation (Windows/desktop)
+- [x] iOS Safari (real device)
+- [x] Chrome mobile emulation (Windows/desktop)
 
 ## Core Functional Matrix
 

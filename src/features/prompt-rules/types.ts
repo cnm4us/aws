@@ -12,7 +12,8 @@ export type PromptRuleRow = {
   min_watch_seconds: number
   max_prompts_per_session: number
   min_slides_between_prompts: number
-  cooldown_seconds_after_dismiss: number
+  cooldown_seconds_after_prompt: number
+  cooldown_seconds_after_dismiss?: number
   prompt_category_allowlist_json: string | null
   priority: number
   tie_break_strategy: PromptRuleTieBreak
@@ -32,7 +33,8 @@ export type PromptRuleDto = {
   minWatchSeconds: number
   maxPromptsPerSession: number
   minSlidesBetweenPrompts: number
-  cooldownSecondsAfterDismiss: number
+  cooldownSecondsAfterPrompt: number
+  cooldownSecondsAfterDismiss?: number
   promptCategoryAllowlist: string[]
   priority: number
   tieBreakStrategy: PromptRuleTieBreak

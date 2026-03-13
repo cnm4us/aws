@@ -80,9 +80,9 @@ function parseCounters(raw: any): PromptDecisionInput['counters'] {
     1000000,
     0
   )
-  const lastPromptDismissedAt = normalizeDateTime(
-    countersRaw.last_prompt_dismissed_at ?? countersRaw.lastPromptDismissedAt,
-    'last_prompt_dismissed_at'
+  const lastPromptShownAt = normalizeDateTime(
+    countersRaw.last_prompt_shown_at ?? countersRaw.lastPromptShownAt ?? countersRaw.last_prompt_dismissed_at ?? countersRaw.lastPromptDismissedAt,
+    'last_prompt_shown_at'
   )
   const lastPromptId = normalizePromptId(countersRaw.last_prompt_id ?? countersRaw.lastPromptId)
 
@@ -91,7 +91,7 @@ function parseCounters(raw: any): PromptDecisionInput['counters'] {
     watchSeconds,
     promptsShownThisSession,
     slidesSinceLastPrompt,
-    lastPromptDismissedAt,
+    lastPromptShownAt,
     lastPromptId,
   }
 }
@@ -102,7 +102,7 @@ function mergeSessionState(existing: PromptDecisionSessionRow | null, input: Pro
   watchSeconds: number
   promptsShownThisSession: number
   slidesSinceLastPrompt: number
-  lastPromptDismissedAt: string | null
+  lastPromptShownAt: string | null
   lastPromptId: number | null
 } {
   if (!existing) {
@@ -112,7 +112,7 @@ function mergeSessionState(existing: PromptDecisionSessionRow | null, input: Pro
       watchSeconds: input.counters.watchSeconds,
       promptsShownThisSession: input.counters.promptsShownThisSession,
       slidesSinceLastPrompt: input.counters.slidesSinceLastPrompt,
-      lastPromptDismissedAt: input.counters.lastPromptDismissedAt,
+      lastPromptShownAt: input.counters.lastPromptShownAt,
       lastPromptId: input.counters.lastPromptId,
     }
   }
@@ -126,7 +126,7 @@ function mergeSessionState(existing: PromptDecisionSessionRow | null, input: Pro
       input.counters.slidesSinceLastPrompt !== undefined && input.counters.slidesSinceLastPrompt !== null
         ? input.counters.slidesSinceLastPrompt
         : Number(existing.slides_since_last_prompt || 0),
-    lastPromptDismissedAt: input.counters.lastPromptDismissedAt || existing.last_prompt_dismissed_at || null,
+    lastPromptShownAt: input.counters.lastPromptShownAt || existing.last_prompt_shown_at || existing.last_prompt_dismissed_at || null,
     lastPromptId: input.counters.lastPromptId ?? (existing.last_shown_prompt_id == null ? null : Number(existing.last_shown_prompt_id)),
   }
 }
@@ -188,7 +188,7 @@ export async function decidePrompt(input: PromptDecisionInput, opts?: { includeD
       watchSeconds: merged.watchSeconds,
       promptsShownThisSession: merged.promptsShownThisSession,
       slidesSinceLastPrompt: merged.slidesSinceLastPrompt,
-      lastPromptDismissedAt: merged.lastPromptDismissedAt,
+      lastPromptShownAt: merged.lastPromptShownAt,
       lastPromptId: merged.lastPromptId,
       lastDecisionReason: null,
     })
@@ -199,7 +199,7 @@ export async function decidePrompt(input: PromptDecisionInput, opts?: { includeD
       watchSeconds: merged.watchSeconds,
       promptsShownThisSession: merged.promptsShownThisSession,
       slidesSinceLastPrompt: merged.slidesSinceLastPrompt,
-      lastPromptDismissedAt: merged.lastPromptDismissedAt,
+      lastPromptShownAt: merged.lastPromptShownAt,
       lastPromptId: merged.lastPromptId,
     })
   }
@@ -236,11 +236,11 @@ export async function decidePrompt(input: PromptDecisionInput, opts?: { includeD
         if (merged.promptsShownThisSession >= rule.maxPromptsPerSession) {
           currentReason = 'cap_reached'
         } else {
-          const lastDismissedMs = dateToMs(merged.lastPromptDismissedAt)
+          const lastShownMs = dateToMs(merged.lastPromptShownAt)
           if (
-            lastDismissedMs != null &&
-            rule.cooldownSecondsAfterDismiss > 0 &&
-            nowMs() - lastDismissedMs < rule.cooldownSecondsAfterDismiss * 1000
+            lastShownMs != null &&
+            rule.cooldownSecondsAfterPrompt > 0 &&
+            nowMs() - lastShownMs < rule.cooldownSecondsAfterPrompt * 1000
           ) {
             currentReason = 'cooldown_active'
           } else if (
@@ -323,11 +323,6 @@ export async function decidePrompt(input: PromptDecisionInput, opts?: { includeD
     }
   }
 
-  const persisted = await repo.getSessionByKey(input.sessionId, input.surface)
-  if (persisted) {
-    await repo.updateSession(persisted.id, { lastDecisionReason: reasonCode })
-  }
-
   const result: PromptDecisionResult = {
     shouldInsert: reasonCode === 'eligible' && promptId != null,
     promptId,
@@ -336,6 +331,16 @@ export async function decidePrompt(input: PromptDecisionInput, opts?: { includeD
     ruleId,
     ruleName,
     sessionId: input.sessionId,
+  }
+
+  const persisted = await repo.getSessionByKey(input.sessionId, input.surface)
+  if (persisted) {
+    const lastPromptShownAt = result.shouldInsert ? normalizeDateTime(new Date().toISOString(), 'last_prompt_shown_at') : undefined
+    await repo.updateSession(persisted.id, {
+      lastDecisionReason: reasonCode,
+      lastPromptShownAt,
+      lastPromptId: result.shouldInsert ? result.promptId : undefined,
+    })
   }
 
   if (opts?.includeDebug) {
@@ -351,7 +356,7 @@ export async function decidePrompt(input: PromptDecisionInput, opts?: { includeD
         watchSeconds: merged.watchSeconds,
         promptsShownThisSession: merged.promptsShownThisSession,
         slidesSinceLastPrompt: merged.slidesSinceLastPrompt,
-        lastPromptDismissedAt: merged.lastPromptDismissedAt,
+        lastPromptShownAt: merged.lastPromptShownAt,
         lastPromptId: merged.lastPromptId,
       },
       rule: ruleId ? { id: ruleId, name: ruleName } : null,

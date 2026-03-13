@@ -84,7 +84,7 @@ function normalizeSessionId(raw: any): string | null {
 
 function normalizeEvent(raw: any): PromptAnalyticsInputEvent {
   const v = String(raw || '').trim().toLowerCase()
-  if (v === 'impression' || v === 'click' || v === 'dismiss' || v === 'auth_start' || v === 'auth_complete') return v
+  if (v === 'impression' || v === 'click' || v === 'pass_through' || v === 'dismiss' || v === 'auth_start' || v === 'auth_complete') return v
   throw new DomainError('invalid_prompt_event', 'invalid_prompt_event', 400)
 }
 
@@ -97,7 +97,7 @@ function normalizeCtaKind(raw: any): PromptAnalyticsCtaKind {
 
 function mapToEventType(event: PromptAnalyticsInputEvent, ctaKind: PromptAnalyticsCtaKind) {
   if (event === 'impression') return 'prompt_impression' as const
-  if (event === 'dismiss') return 'prompt_dismiss' as const
+  if (event === 'pass_through' || event === 'dismiss') return 'prompt_dismiss' as const
   if (event === 'auth_start') return 'auth_start_from_prompt' as const
   if (event === 'auth_complete') return 'auth_complete_from_prompt' as const
   return ctaKind === 'secondary' ? 'prompt_click_secondary' : 'prompt_click_primary'

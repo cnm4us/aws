@@ -3510,7 +3510,7 @@ function renderAdminPromptForm(opts: {
     ? `bottom:${Math.max(2, Math.min(94, 2 + authInset))}%`
     : `top:${authTopPct}%`
   body += `<div id="prompt-preview-auth" style="display:${creativeForm.authEnabled ? 'block' : 'none'}; position:absolute; left:14px; right:14px; ${authPosStyle}; z-index:2; border:1px solid rgba(255,255,255,0.24); border-radius:10px; background:${hexToRgba(creativeForm.authBgColor, creativeForm.authBgOpacity)}; color:${escapeHtml(creativeForm.authTextColor)}; padding:8px">`
-  body += `<div style="display:grid; grid-template-columns:1fr 1fr 1fr; align-items:center; gap:8px"><span class="btn" style="justify-self:start; border:1px solid rgba(255,255,255,0.45); border-radius:11px; background:rgba(0,0,0,0.5); padding:8px 12px">Register</span><span class="btn" style="justify-self:center; border:1px solid rgba(255,255,255,0.45); border-radius:11px; background:rgba(0,0,0,0.5); padding:8px 12px">Login</span><span class="btn" style="justify-self:end; border:1px solid rgba(255,255,255,0.45); border-radius:11px; background:rgba(0,0,0,0.5); padding:8px 12px">Dismiss</span></div>`
+  body += `<div style="display:grid; grid-template-columns:1fr 1fr; align-items:center; gap:8px"><span class="btn" style="justify-self:start; border:1px solid rgba(255,255,255,0.45); border-radius:11px; background:rgba(0,0,0,0.5); padding:8px 12px">Register</span><span class="btn" style="justify-self:end; border:1px solid rgba(255,255,255,0.45); border-radius:11px; background:rgba(0,0,0,0.5); padding:8px 12px">Login</span></div>`
   body += `</div>`
   body += `</div>`
   if (creativeWarnings.length) {
@@ -4061,7 +4061,7 @@ function renderAdminPromptRuleForm(opts: {
   body += `<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px">`
   body += `<label>Max Prompts / Session<input type="number" name="maxPromptsPerSession" min="0" value="${escapeHtml(String(values.maxPromptsPerSession ?? values.max_prompts_per_session ?? 2))}" /></label>`
   body += `<label>Min Slides Between Prompts<input type="number" name="minSlidesBetweenPrompts" min="0" value="${escapeHtml(String(values.minSlidesBetweenPrompts ?? values.min_slides_between_prompts ?? 15))}" /></label>`
-  body += `<label>Cooldown Seconds After Dismiss<input type="number" name="cooldownSecondsAfterDismiss" min="0" value="${escapeHtml(String(values.cooldownSecondsAfterDismiss ?? values.cooldown_seconds_after_dismiss ?? 900))}" /></label>`
+  body += `<label>Cooldown Seconds Between Prompts<input type="number" name="cooldownSecondsAfterPrompt" min="0" value="${escapeHtml(String(values.cooldownSecondsAfterPrompt ?? values.cooldown_seconds_after_prompt ?? values.cooldownSecondsAfterDismiss ?? values.cooldown_seconds_after_dismiss ?? 900))}" /></label>`
   body += `</div></div>`
 
   body += `<div class="section"><div class="section-title">Selection Filters</div>`
@@ -4127,7 +4127,7 @@ pagesRouter.get('/admin/prompt-rules', async (req: any, res: any) => {
           <td>${escapeHtml(item.appliesToSurface)}</td>
           <td>${escapeHtml(item.authState)}</td>
           <td>slides≥${item.minSlidesViewed}, watch≥${item.minWatchSeconds}s</td>
-          <td>max/session=${item.maxPromptsPerSession}, gap=${item.minSlidesBetweenPrompts}, cooldown=${item.cooldownSecondsAfterDismiss}s</td>
+          <td>max/session=${item.maxPromptsPerSession}, gap=${item.minSlidesBetweenPrompts}, cooldown=${item.cooldownSecondsAfterPrompt}s</td>
           <td>${item.priority}</td>
           <td>${escapeHtml(item.updatedAt || '')}</td>
         </tr>`
@@ -4161,7 +4161,7 @@ pagesRouter.get('/admin/prompt-rules/new', async (req: any, res: any) => {
       minWatchSeconds: 45,
       maxPromptsPerSession: 2,
       minSlidesBetweenPrompts: 15,
-      cooldownSecondsAfterDismiss: 900,
+      cooldownSecondsAfterPrompt: 900,
       promptCategoryAllowlist: ['register_prompt'],
       priority: 100,
       tieBreakStrategy: 'random',
@@ -4631,7 +4631,7 @@ pagesRouter.get('/admin/prompt-analytics', async (req: any, res: any) => {
     body += `<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px; margin-bottom:12px">`
     body += `<div class="section" style="margin:0"><div class="section-title">Impressions</div><div style="font-size:24px; font-weight:800">${report.kpis.totals.impressions}</div><div class="field-hint">Unique sessions: ${report.kpis.uniqueSessions.impressions}</div></div>`
     body += `<div class="section" style="margin:0"><div class="section-title">CTR</div><div style="font-size:24px; font-weight:800">${pctText(report.kpis.rates.ctr)}</div><div class="field-hint">${report.kpis.totals.clicksTotal} clicks</div></div>`
-    body += `<div class="section" style="margin:0"><div class="section-title">Dismiss Rate</div><div style="font-size:24px; font-weight:800">${pctText(report.kpis.rates.dismissRate)}</div><div class="field-hint">${report.kpis.totals.dismiss} dismiss</div></div>`
+    body += `<div class="section" style="margin:0"><div class="section-title">Pass-through Rate</div><div style="font-size:24px; font-weight:800">${pctText(report.kpis.rates.dismissRate)}</div><div class="field-hint">${report.kpis.totals.dismiss} pass-through</div></div>`
     body += `<div class="section" style="margin:0"><div class="section-title">Auth Start Rate</div><div style="font-size:24px; font-weight:800">${pctText(report.kpis.rates.authStartRate)}</div><div class="field-hint">${report.kpis.totals.authStart} starts</div></div>`
     body += `<div class="section" style="margin:0"><div class="section-title">Auth Completion Rate</div><div style="font-size:24px; font-weight:800">${pctText(report.kpis.rates.authCompletionRate)}</div><div class="field-hint">${report.kpis.totals.authComplete} completions</div></div>`
     body += `</div>`
@@ -4639,7 +4639,7 @@ pagesRouter.get('/admin/prompt-analytics', async (req: any, res: any) => {
     if (!report.byPrompt.length) {
       body += '<p>No prompt analytics events found in this range.</p>'
     } else {
-      body += '<table><thead><tr><th>Prompt</th><th>Category</th><th>Impressions</th><th>Clicks</th><th>CTR</th><th>Dismiss</th><th>Dismiss Rate</th><th>Auth Start</th><th>Auth Complete</th><th>Auth Completion Rate</th><th>Status</th></tr></thead><tbody>'
+      body += '<table><thead><tr><th>Prompt</th><th>Category</th><th>Impressions</th><th>Clicks</th><th>CTR</th><th>Pass-through</th><th>Pass-through Rate</th><th>Auth Start</th><th>Auth Complete</th><th>Auth Completion Rate</th><th>Status</th></tr></thead><tbody>'
       for (const row of report.byPrompt) {
         const status = row.rates.dismissRate >= 0.5 && row.rates.authCompletionRate < 0.01 ? 'Overexposed' : 'Healthy'
         const label = row.promptName ? `${row.promptName} (#${row.promptId})` : `#${row.promptId}`
@@ -4662,7 +4662,7 @@ pagesRouter.get('/admin/prompt-analytics', async (req: any, res: any) => {
 
     if (report.byDay.length) {
       body += '<div class="section" style="margin-top:12px"><div class="section-title">Daily Trend (UTC)</div>'
-      body += '<table><thead><tr><th>Date</th><th>Impressions</th><th>Clicks</th><th>CTR</th><th>Dismiss Rate</th><th>Auth Start Rate</th><th>Auth Completion Rate</th></tr></thead><tbody>'
+      body += '<table><thead><tr><th>Date</th><th>Impressions</th><th>Clicks</th><th>CTR</th><th>Pass-through Rate</th><th>Auth Start Rate</th><th>Auth Completion Rate</th></tr></thead><tbody>'
       for (const row of report.byDay) {
         body += `<tr>
           <td>${escapeHtml(row.dateUtc)}</td>

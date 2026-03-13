@@ -409,7 +409,7 @@ async function fetchPromptById(promptId: number): Promise<FeedPromptPayload> {
 }
 
 async function sendPromptEvent(input: {
-  event: 'impression' | 'click' | 'dismiss' | 'auth_start' | 'auth_complete'
+  event: 'impression' | 'click' | 'auth_start' | 'auth_complete'
   promptId: number
   promptCategory: string | null
   sessionId: string | null
@@ -699,14 +699,12 @@ export default function Feed() {
     watchSeconds: number
     promptsShown: number
     slidesSinceLastPrompt: number
-    lastPromptDismissedAt: string | null
     lastPromptId: number | null
   }>({
     slidesViewed: 0,
     watchSeconds: 0,
     promptsShown: 0,
     slidesSinceLastPrompt: 999,
-    lastPromptDismissedAt: null,
     lastPromptId: null,
   })
   const lastCountedContentSlideIdRef = useRef<number | null>(null)
@@ -1638,11 +1636,12 @@ export default function Feed() {
   const slideRenderCountRef = useRef<Record<string, number>>({})
 
   function feedKey(m: FeedMode): string {
+    const viewerKey = isAuthed ? 'auth' : 'anon'
     if (m.kind === 'space') {
       const key = m.spaceUlid && typeof m.spaceUlid === 'string' && m.spaceUlid.length ? m.spaceUlid : ''
-      return key ? `s:${key}` : 's:pending'
+      return key ? `${viewerKey}:s:${key}` : `${viewerKey}:s:pending`
     }
-    return 'g'
+    return `${viewerKey}:g`
   }
 
   function hasSnapshot(mode: FeedMode): boolean {
@@ -1849,6 +1848,29 @@ export default function Feed() {
     if (!isAuthed) return
     loadSpaces(true).catch(() => {})
   }, [isAuthed, loadSpaces])
+
+  // Authenticated feeds should never retain anonymous prompt slides.
+  // This guards against restoring a snapshot that was captured while anonymous.
+  useEffect(() => {
+    if (!meLoaded || !isAuthed) return
+    setItems((prev) => {
+      if (!Array.isArray(prev) || !prev.length) return prev
+      const next = prev.filter((it) => !isPromptItem(it))
+      if (next.length === prev.length) return prev
+      setIndex((cur) => {
+        if (!next.length) return 0
+        return Math.max(0, Math.min(cur, next.length - 1))
+      })
+      if (sequenceEngineV1Enabled) {
+        setActiveSequenceKey((prevKey) => {
+          const keyed = prevKey ? findSequenceIndexInListByKey(next, prevKey) : -1
+          if (keyed >= 0) return prevKey
+          return computeSequenceKeyForListAtIndex(next, Math.max(0, Math.min(index, next.length - 1)))
+        })
+      }
+      return next
+    })
+  }, [meLoaded, isAuthed, sequenceEngineV1Enabled, index])
 
   // If feedMode lacks spaceUlid but list is available, enrich it
   useEffect(() => {
@@ -2200,43 +2222,6 @@ export default function Feed() {
     return 'none'
   }
 
-  const dismissPromptSlide = useCallback((slideUploadId: number, prompt: FeedPromptPayload, opts?: { preserveSlideId?: number | null }) => {
-    const dismissedAtIso = new Date().toISOString()
-    promptCountersRef.current.lastPromptDismissedAt = dismissedAtIso
-    promptCountersRef.current.lastPromptId = prompt.id
-    promptCountersRef.current.slidesSinceLastPrompt = 0
-    const preserveSlideId =
-      opts?.preserveSlideId != null && Number.isFinite(Number(opts.preserveSlideId))
-        ? Number(opts.preserveSlideId)
-        : null
-    setItems((prev) => {
-      const next = prev.filter((it) => Number(it.id) !== Number(slideUploadId))
-      if (preserveSlideId != null) {
-        const preserveIdx = next.findIndex((it) => Number(it.id) === preserveSlideId)
-        if (preserveIdx >= 0) {
-          setIndex((cur) => (cur === preserveIdx ? cur : preserveIdx))
-        } else {
-          setIndex((cur) => {
-            if (!next.length) return 0
-            return Math.max(0, Math.min(cur, next.length - 1))
-          })
-        }
-      } else {
-        setIndex((cur) => {
-          if (!next.length) return 0
-          return Math.max(0, Math.min(cur, next.length - 1))
-        })
-      }
-      return next
-    })
-    void sendPromptEvent({
-      event: 'dismiss',
-      promptId: prompt.id,
-      promptCategory: prompt.category || null,
-      sessionId: promptSessionId,
-    }, { sequenceEngineTag: feedSequenceEngineTag })
-  }, [promptSessionId, feedSequenceEngineTag])
-
   const handlePromptCtaClick = useCallback((prompt: FeedPromptPayload, href: string, ctaKind: 'primary' | 'secondary') => {
     const targetHref = String(href || '').trim()
     if (!targetHref) return
@@ -2460,7 +2445,6 @@ export default function Feed() {
             watch_seconds: counters.watchSeconds,
             prompts_shown_this_session: counters.promptsShown,
             slides_since_last_prompt: counters.slidesSinceLastPrompt,
-            last_prompt_dismissed_at: counters.lastPromptDismissedAt,
             last_prompt_id: counters.lastPromptId,
           }),
         })
@@ -2925,7 +2909,7 @@ export default function Feed() {
                         <div
                           style={{
                             display: 'grid',
-                            gridTemplateColumns: '1fr 1fr 1fr',
+                            gridTemplateColumns: '1fr 1fr',
                             alignItems: 'center',
                             width: '100%',
                             gap: 8,
@@ -2952,7 +2936,7 @@ export default function Feed() {
                             type="button"
                             onClick={() => handlePromptCtaClick(prompt, '/login?return=/', 'secondary')}
                             style={{
-                              justifySelf: 'center',
+                              justifySelf: 'end',
                               border: '1px solid rgba(255,255,255,0.45)',
                               background: 'rgba(0,0,0,0.5)',
                               color: '#fff',
@@ -2965,54 +2949,9 @@ export default function Feed() {
                           >
                             Login
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => dismissPromptSlide(it.id, prompt)}
-                            style={{
-                              justifySelf: 'end',
-                              border: '1px solid rgba(255,255,255,0.26)',
-                              background: 'rgba(0,0,0,0.5)',
-                              color: '#fff',
-                              borderRadius: 11,
-                              padding: '8px 12px',
-                              fontSize: 15,
-                              fontWeight: 600,
-                              cursor: 'pointer',
-                            }}
-                          >
-                            Dismiss
-                          </button>
                         </div>
                       </div>
-                    ) : (
-                      <div
-                        style={{
-                          position: 'absolute',
-                          left: 0,
-                          right: 0,
-                          bottom: 18,
-                          display: 'flex',
-                          justifyContent: 'center',
-                        }}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => dismissPromptSlide(it.id, prompt)}
-                          style={{
-                            border: '1px solid rgba(255,255,255,0.26)',
-                            background: 'rgba(0,0,0,0.5)',
-                            color: '#fff',
-                            borderRadius: 11,
-                            padding: '8px 12px',
-                            fontSize: 15,
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                          }}
-                        >
-                          Dismiss
-                        </button>
-                      </div>
-                    )}
+                    ) : null}
                   </div>
                 </div>
               </div>

@@ -10,7 +10,7 @@ type PromptRuleCreateInput = {
   minWatchSeconds: number
   maxPromptsPerSession: number
   minSlidesBetweenPrompts: number
-  cooldownSecondsAfterDismiss: number
+  cooldownSecondsAfterPrompt: number
   promptCategoryAllowlistJson: string
   priority: number
   tieBreakStrategy: string
@@ -69,7 +69,7 @@ export async function create(input: PromptRuleCreateInput): Promise<PromptRuleRo
         name, enabled, applies_to_surface, auth_state,
         min_slides_viewed, min_watch_seconds,
         max_prompts_per_session, min_slides_between_prompts,
-        cooldown_seconds_after_dismiss, prompt_category_allowlist_json,
+        cooldown_seconds_after_prompt, prompt_category_allowlist_json,
         priority, tie_break_strategy, created_by, updated_by
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
@@ -81,7 +81,7 @@ export async function create(input: PromptRuleCreateInput): Promise<PromptRuleRo
       input.minWatchSeconds,
       input.maxPromptsPerSession,
       input.minSlidesBetweenPrompts,
-      input.cooldownSecondsAfterDismiss,
+      input.cooldownSecondsAfterPrompt,
       input.promptCategoryAllowlistJson,
       input.priority,
       input.tieBreakStrategy,
@@ -108,7 +108,7 @@ export async function update(id: number, patch: PromptRuleUpdateInput): Promise<
   if (patch.minWatchSeconds !== undefined) { sets.push('min_watch_seconds = ?'); args.push(patch.minWatchSeconds) }
   if (patch.maxPromptsPerSession !== undefined) { sets.push('max_prompts_per_session = ?'); args.push(patch.maxPromptsPerSession) }
   if (patch.minSlidesBetweenPrompts !== undefined) { sets.push('min_slides_between_prompts = ?'); args.push(patch.minSlidesBetweenPrompts) }
-  if (patch.cooldownSecondsAfterDismiss !== undefined) { sets.push('cooldown_seconds_after_dismiss = ?'); args.push(patch.cooldownSecondsAfterDismiss) }
+  if (patch.cooldownSecondsAfterPrompt !== undefined) { sets.push('cooldown_seconds_after_prompt = ?'); args.push(patch.cooldownSecondsAfterPrompt) }
   if (patch.promptCategoryAllowlistJson !== undefined) { sets.push('prompt_category_allowlist_json = ?'); args.push(patch.promptCategoryAllowlistJson) }
   if (patch.priority !== undefined) { sets.push('priority = ?'); args.push(patch.priority) }
   if (patch.tieBreakStrategy !== undefined) { sets.push('tie_break_strategy = ?'); args.push(patch.tieBreakStrategy) }

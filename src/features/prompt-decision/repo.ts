@@ -21,7 +21,7 @@ export async function createSession(input: {
   watchSeconds: number
   promptsShownThisSession: number
   slidesSinceLastPrompt: number
-  lastPromptDismissedAt: string | null
+  lastPromptShownAt: string | null
   lastPromptId: number | null
   lastDecisionReason: string | null
 }): Promise<PromptDecisionSessionRow> {
@@ -32,7 +32,7 @@ export async function createSession(input: {
         session_id, surface, viewer_state,
         slides_viewed, watch_seconds,
         prompts_shown_this_session, slides_since_last_prompt,
-        last_prompt_dismissed_at, last_shown_prompt_id,
+        last_prompt_shown_at, last_shown_prompt_id,
         last_decision_reason
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
@@ -43,7 +43,7 @@ export async function createSession(input: {
       input.watchSeconds,
       input.promptsShownThisSession,
       input.slidesSinceLastPrompt,
-      input.lastPromptDismissedAt,
+      input.lastPromptShownAt,
       input.lastPromptId,
       input.lastDecisionReason,
     ]
@@ -59,7 +59,7 @@ export async function updateSession(id: number, patch: {
   watchSeconds?: number
   promptsShownThisSession?: number
   slidesSinceLastPrompt?: number
-  lastPromptDismissedAt?: string | null
+  lastPromptShownAt?: string | null
   lastPromptId?: number | null
   lastDecisionReason?: string | null
 }): Promise<void> {
@@ -72,7 +72,7 @@ export async function updateSession(id: number, patch: {
   if (patch.watchSeconds !== undefined) { sets.push('watch_seconds = ?'); args.push(patch.watchSeconds) }
   if (patch.promptsShownThisSession !== undefined) { sets.push('prompts_shown_this_session = ?'); args.push(patch.promptsShownThisSession) }
   if (patch.slidesSinceLastPrompt !== undefined) { sets.push('slides_since_last_prompt = ?'); args.push(patch.slidesSinceLastPrompt) }
-  if (patch.lastPromptDismissedAt !== undefined) { sets.push('last_prompt_dismissed_at = ?'); args.push(patch.lastPromptDismissedAt) }
+  if (patch.lastPromptShownAt !== undefined) { sets.push('last_prompt_shown_at = ?'); args.push(patch.lastPromptShownAt) }
   if (patch.lastPromptId !== undefined) { sets.push('last_shown_prompt_id = ?'); args.push(patch.lastPromptId) }
   if (patch.lastDecisionReason !== undefined) { sets.push('last_decision_reason = ?'); args.push(patch.lastDecisionReason) }
 

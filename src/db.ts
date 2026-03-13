@@ -686,7 +686,7 @@ export async function ensureSchema(db: DB) {
               min_watch_seconds INT UNSIGNED NOT NULL DEFAULT 45,
               max_prompts_per_session INT UNSIGNED NOT NULL DEFAULT 2,
               min_slides_between_prompts INT UNSIGNED NOT NULL DEFAULT 15,
-              cooldown_seconds_after_dismiss INT UNSIGNED NOT NULL DEFAULT 900,
+              cooldown_seconds_after_prompt INT UNSIGNED NOT NULL DEFAULT 900,
               prompt_category_allowlist_json JSON NOT NULL,
               priority INT NOT NULL DEFAULT 100,
               tie_break_strategy ENUM('random') NOT NULL DEFAULT 'random',
@@ -705,7 +705,7 @@ export async function ensureSchema(db: DB) {
           await db.query(`ALTER TABLE prompt_rules ADD COLUMN IF NOT EXISTS min_watch_seconds INT UNSIGNED NOT NULL DEFAULT 45`)
           await db.query(`ALTER TABLE prompt_rules ADD COLUMN IF NOT EXISTS max_prompts_per_session INT UNSIGNED NOT NULL DEFAULT 2`)
           await db.query(`ALTER TABLE prompt_rules ADD COLUMN IF NOT EXISTS min_slides_between_prompts INT UNSIGNED NOT NULL DEFAULT 15`)
-          await db.query(`ALTER TABLE prompt_rules ADD COLUMN IF NOT EXISTS cooldown_seconds_after_dismiss INT UNSIGNED NOT NULL DEFAULT 900`)
+          await db.query(`ALTER TABLE prompt_rules ADD COLUMN IF NOT EXISTS cooldown_seconds_after_prompt INT UNSIGNED NOT NULL DEFAULT 900`)
           await db.query(`ALTER TABLE prompt_rules ADD COLUMN IF NOT EXISTS prompt_category_allowlist_json JSON NOT NULL`)
           await db.query(`ALTER TABLE prompt_rules ADD COLUMN IF NOT EXISTS priority INT NOT NULL DEFAULT 100`)
           await db.query(`ALTER TABLE prompt_rules ADD COLUMN IF NOT EXISTS tie_break_strategy ENUM('random') NOT NULL DEFAULT 'random'`)
@@ -719,11 +719,20 @@ export async function ensureSchema(db: DB) {
             if (ruleCount <= 0) {
               await db.query(
                 `INSERT INTO prompt_rules
-                  (name, enabled, applies_to_surface, auth_state, min_slides_viewed, min_watch_seconds, max_prompts_per_session, min_slides_between_prompts, cooldown_seconds_after_dismiss, prompt_category_allowlist_json, priority, tie_break_strategy, created_by, updated_by)
+                  (name, enabled, applies_to_surface, auth_state, min_slides_viewed, min_watch_seconds, max_prompts_per_session, min_slides_between_prompts, cooldown_seconds_after_prompt, prompt_category_allowlist_json, priority, tie_break_strategy, created_by, updated_by)
                  VALUES (?, 1, 'global_feed', 'anonymous', 6, 45, 2, 15, 900, ?, 100, 'random', 0, 0)`,
                 ['Global Feed Anonymous Default', JSON.stringify(['register_prompt'])]
               )
             }
+          } catch {}
+
+          await db.query(`ALTER TABLE prompt_rules ADD COLUMN IF NOT EXISTS cooldown_seconds_after_prompt INT UNSIGNED NOT NULL DEFAULT 900`)
+          try {
+            await db.query(`
+              UPDATE prompt_rules
+                 SET cooldown_seconds_after_prompt = COALESCE(cooldown_seconds_after_dismiss, cooldown_seconds_after_prompt, 900)
+               WHERE cooldown_seconds_after_prompt IS NULL OR cooldown_seconds_after_prompt = 0
+            `)
           } catch {}
 
           // --- Prompt decision sessions (plan_114C) ---
@@ -738,6 +747,7 @@ export async function ensureSchema(db: DB) {
               prompts_shown_this_session INT UNSIGNED NOT NULL DEFAULT 0,
               slides_since_last_prompt INT UNSIGNED NOT NULL DEFAULT 0,
               last_prompt_dismissed_at DATETIME NULL,
+              last_prompt_shown_at DATETIME NULL,
               last_shown_prompt_id BIGINT UNSIGNED NULL,
               last_decision_reason VARCHAR(64) NULL,
               created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -755,8 +765,16 @@ export async function ensureSchema(db: DB) {
           await db.query(`ALTER TABLE prompt_decision_sessions ADD COLUMN IF NOT EXISTS prompts_shown_this_session INT UNSIGNED NOT NULL DEFAULT 0`)
           await db.query(`ALTER TABLE prompt_decision_sessions ADD COLUMN IF NOT EXISTS slides_since_last_prompt INT UNSIGNED NOT NULL DEFAULT 0`)
           await db.query(`ALTER TABLE prompt_decision_sessions ADD COLUMN IF NOT EXISTS last_prompt_dismissed_at DATETIME NULL`)
+          await db.query(`ALTER TABLE prompt_decision_sessions ADD COLUMN IF NOT EXISTS last_prompt_shown_at DATETIME NULL`)
           await db.query(`ALTER TABLE prompt_decision_sessions ADD COLUMN IF NOT EXISTS last_shown_prompt_id BIGINT UNSIGNED NULL`)
           await db.query(`ALTER TABLE prompt_decision_sessions ADD COLUMN IF NOT EXISTS last_decision_reason VARCHAR(64) NULL`)
+          try {
+            await db.query(`
+              UPDATE prompt_decision_sessions
+                 SET last_prompt_shown_at = last_prompt_dismissed_at
+               WHERE last_prompt_shown_at IS NULL AND last_prompt_dismissed_at IS NOT NULL
+            `)
+          } catch {}
           try { await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_prompt_decision_session_surface ON prompt_decision_sessions (session_id, surface)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_prompt_decision_surface_updated ON prompt_decision_sessions (surface, updated_at)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_prompt_decision_updated ON prompt_decision_sessions (updated_at)`); } catch {}

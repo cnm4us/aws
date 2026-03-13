@@ -16,7 +16,7 @@ const DEFAULTS = {
   minWatchSeconds: 45,
   maxPromptsPerSession: 2,
   minSlidesBetweenPrompts: 15,
-  cooldownSecondsAfterDismiss: 900,
+  cooldownSecondsAfterPrompt: 900,
   promptCategoryAllowlist: ['register_prompt'],
   priority: 100,
   tieBreakStrategy: 'random' as PromptRuleTieBreak,
@@ -117,7 +117,8 @@ function mapRow(row: PromptRuleRow): PromptRuleDto {
     minWatchSeconds: Number(row.min_watch_seconds || 0),
     maxPromptsPerSession: Number(row.max_prompts_per_session || 0),
     minSlidesBetweenPrompts: Number(row.min_slides_between_prompts || 0),
-    cooldownSecondsAfterDismiss: Number(row.cooldown_seconds_after_dismiss || 0),
+    cooldownSecondsAfterPrompt: Number(row.cooldown_seconds_after_prompt ?? row.cooldown_seconds_after_dismiss ?? 0),
+    cooldownSecondsAfterDismiss: Number(row.cooldown_seconds_after_prompt ?? row.cooldown_seconds_after_dismiss ?? 0),
     promptCategoryAllowlist: allowlist,
     priority: Number(row.priority || 0),
     tieBreakStrategy: row.tie_break_strategy,
@@ -167,7 +168,13 @@ export async function createForAdmin(input: any, actorUserId: number): Promise<P
   const minWatchSeconds = normalizeInt(input?.minWatchSeconds ?? input?.min_watch_seconds, 'min_watch_seconds', 0, 86400, DEFAULTS.minWatchSeconds)
   const maxPromptsPerSession = normalizeInt(input?.maxPromptsPerSession ?? input?.max_prompts_per_session, 'max_prompts_per_session', 0, 100000, DEFAULTS.maxPromptsPerSession)
   const minSlidesBetweenPrompts = normalizeInt(input?.minSlidesBetweenPrompts ?? input?.min_slides_between_prompts, 'min_slides_between_prompts', 0, 2000, DEFAULTS.minSlidesBetweenPrompts)
-  const cooldownSecondsAfterDismiss = normalizeInt(input?.cooldownSecondsAfterDismiss ?? input?.cooldown_seconds_after_dismiss, 'cooldown_seconds_after_dismiss', 0, 604800, DEFAULTS.cooldownSecondsAfterDismiss)
+  const cooldownSecondsAfterPrompt = normalizeInt(
+    input?.cooldownSecondsAfterPrompt ?? input?.cooldown_seconds_after_prompt ?? input?.cooldownSecondsAfterDismiss ?? input?.cooldown_seconds_after_dismiss,
+    'cooldown_seconds_after_prompt',
+    0,
+    604800,
+    DEFAULTS.cooldownSecondsAfterPrompt
+  )
   const promptCategoryAllowlist = parseAllowlist(input?.promptCategoryAllowlist ?? input?.prompt_category_allowlist ?? DEFAULTS.promptCategoryAllowlist)
   const priority = normalizeInt(input?.priority, 'priority', -100000, 100000, DEFAULTS.priority)
   const tieBreakStrategy = normalizeTieBreak(input?.tieBreakStrategy ?? input?.tie_break_strategy)
@@ -181,7 +188,7 @@ export async function createForAdmin(input: any, actorUserId: number): Promise<P
     minWatchSeconds,
     maxPromptsPerSession,
     minSlidesBetweenPrompts,
-    cooldownSecondsAfterDismiss,
+    cooldownSecondsAfterPrompt,
     promptCategoryAllowlistJson: JSON.stringify(promptCategoryAllowlist),
     priority,
     tieBreakStrategy,
@@ -228,10 +235,22 @@ export async function updateForAdmin(id: number, patch: any, actorUserId: number
     patch?.minSlidesBetweenPrompts !== undefined || patch?.min_slides_between_prompts !== undefined
       ? normalizeInt(patch?.minSlidesBetweenPrompts ?? patch?.min_slides_between_prompts, 'min_slides_between_prompts', 0, 2000, current.minSlidesBetweenPrompts)
       : current.minSlidesBetweenPrompts
-  const nextCooldownSecondsAfterDismiss =
-    patch?.cooldownSecondsAfterDismiss !== undefined || patch?.cooldown_seconds_after_dismiss !== undefined
-      ? normalizeInt(patch?.cooldownSecondsAfterDismiss ?? patch?.cooldown_seconds_after_dismiss, 'cooldown_seconds_after_dismiss', 0, 604800, current.cooldownSecondsAfterDismiss)
-      : current.cooldownSecondsAfterDismiss
+  const nextCooldownSecondsAfterPrompt =
+    patch?.cooldownSecondsAfterPrompt !== undefined ||
+    patch?.cooldown_seconds_after_prompt !== undefined ||
+    patch?.cooldownSecondsAfterDismiss !== undefined ||
+    patch?.cooldown_seconds_after_dismiss !== undefined
+      ? normalizeInt(
+          patch?.cooldownSecondsAfterPrompt ??
+            patch?.cooldown_seconds_after_prompt ??
+            patch?.cooldownSecondsAfterDismiss ??
+            patch?.cooldown_seconds_after_dismiss,
+          'cooldown_seconds_after_prompt',
+          0,
+          604800,
+          current.cooldownSecondsAfterPrompt
+        )
+      : current.cooldownSecondsAfterPrompt
   const nextPromptCategoryAllowlist =
     patch?.promptCategoryAllowlist !== undefined || patch?.prompt_category_allowlist !== undefined
       ? parseAllowlist(patch?.promptCategoryAllowlist ?? patch?.prompt_category_allowlist)
@@ -254,7 +273,7 @@ export async function updateForAdmin(id: number, patch: any, actorUserId: number
     minWatchSeconds: nextMinWatchSeconds,
     maxPromptsPerSession: nextMaxPromptsPerSession,
     minSlidesBetweenPrompts: nextMinSlidesBetweenPrompts,
-    cooldownSecondsAfterDismiss: nextCooldownSecondsAfterDismiss,
+    cooldownSecondsAfterPrompt: nextCooldownSecondsAfterPrompt,
     promptCategoryAllowlistJson: JSON.stringify(nextPromptCategoryAllowlist),
     priority: nextPriority,
     tieBreakStrategy: nextTieBreakStrategy,
