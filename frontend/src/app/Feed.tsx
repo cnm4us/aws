@@ -128,6 +128,10 @@ type SequenceItem = {
   item: UploadItem
   sourceIndex: number
 }
+type SequenceHookName =
+  | 'sequence_active_key_changed'
+  | 'sequence_window_shift'
+  | 'sequence_prompt_inserted'
 
 const FEED_RENDER_WINDOW_BEHIND = 2
 const FEED_RENDER_WINDOW_AHEAD = 4
@@ -707,6 +711,10 @@ export default function Feed() {
   })
   const lastCountedContentSlideIdRef = useRef<number | null>(null)
   const sequenceSyncOriginRef = useRef<'index' | 'key' | null>(null)
+  const lastHookActiveKeyRef = useRef<string | null>(null)
+  const lastHookWindowRef = useRef<{ start: number; end: number } | null>(null)
+  const sequenceHookReadyRef = useRef<boolean>(false)
+  const seenPromptSequenceKeysRef = useRef<Set<string>>(new Set())
 
   const sequenceItems = useMemo<SequenceItem[]>(() => {
     const seen = new Map<string, number>()
@@ -786,6 +794,21 @@ export default function Feed() {
     return Math.max(0, trailing * viewportHeight)
   }, [sequenceEngineV1Enabled, renderWindowBounds.end, sequenceItems.length, viewportHeight])
 
+  const emitSequenceHook = useCallback((name: SequenceHookName, payload?: Record<string, unknown>) => {
+    if (!sequenceEngineV1Enabled) return
+    const detail = {
+      name,
+      at: new Date().toISOString(),
+      active_sequence_key: activeSequenceKey,
+      active_sequence_index: activeSequenceIndex,
+      ...(payload || {}),
+    }
+    try { debug.log('feed', `hook:${name}`, detail) } catch {}
+    try {
+      window.dispatchEvent(new CustomEvent('feed:sequence-hook', { detail }))
+    } catch {}
+  }, [sequenceEngineV1Enabled, activeSequenceKey, activeSequenceIndex])
+
   const isGlobalBillboard = useMemo(() => {
     if (feedMode.kind === 'global') return true
     if (feedMode.kind !== 'space') return false
@@ -829,6 +852,62 @@ export default function Feed() {
     sequenceSyncOriginRef.current = 'key'
     setIndex(nextIndex)
   }, [sequenceEngineV1Enabled, activeSequenceKey, getSequenceIndexByKey, index])
+
+  useEffect(() => {
+    if (!sequenceEngineV1Enabled) return
+    if (!activeSequenceKey) return
+    const prev = lastHookActiveKeyRef.current
+    if (prev === activeSequenceKey) return
+    lastHookActiveKeyRef.current = activeSequenceKey
+    emitSequenceHook('sequence_active_key_changed', {
+      previous_sequence_key: prev,
+      next_sequence_key: activeSequenceKey,
+    })
+  }, [sequenceEngineV1Enabled, activeSequenceKey, emitSequenceHook])
+
+  useEffect(() => {
+    if (!sequenceEngineV1Enabled) return
+    const nextWindow = { start: renderWindowBounds.start, end: renderWindowBounds.end }
+    const prev = lastHookWindowRef.current
+    if (prev && prev.start === nextWindow.start && prev.end === nextWindow.end) return
+    lastHookWindowRef.current = nextWindow
+    emitSequenceHook('sequence_window_shift', {
+      previous_start: prev?.start ?? null,
+      previous_end: prev?.end ?? null,
+      next_start: nextWindow.start,
+      next_end: nextWindow.end,
+      rendered_count: renderedSequenceItems.length,
+      sequence_count: sequenceItems.length,
+    })
+  }, [
+    sequenceEngineV1Enabled,
+    renderWindowBounds.start,
+    renderWindowBounds.end,
+    renderedSequenceItems.length,
+    sequenceItems.length,
+    emitSequenceHook,
+  ])
+
+  useEffect(() => {
+    if (!sequenceEngineV1Enabled) return
+    const promptItems = sequenceItems.filter((seq) => seq.kind === 'prompt')
+    const nextSet = new Set(promptItems.map((seq) => seq.sequenceKey))
+    if (!sequenceHookReadyRef.current) {
+      seenPromptSequenceKeysRef.current = nextSet
+      sequenceHookReadyRef.current = true
+      return
+    }
+    const prevSet = seenPromptSequenceKeysRef.current
+    for (const seq of promptItems) {
+      if (prevSet.has(seq.sequenceKey)) continue
+      emitSequenceHook('sequence_prompt_inserted', {
+        sequence_key: seq.sequenceKey,
+        prompt_id: seq.item.prompt?.id ?? null,
+        source_index: seq.sourceIndex,
+      })
+    }
+    seenPromptSequenceKeysRef.current = nextSet
+  }, [sequenceEngineV1Enabled, sequenceItems, emitSequenceHook])
 
   const feedActivityContext = useMemo(() => {
     if (feedMode.kind === 'global') {
