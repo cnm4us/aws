@@ -252,6 +252,7 @@ function classifySurface(pathname: string, req: any, operation: string | null): 
 function applySpanNamingAndTags(span: any, req: any) {
   const p = requestPath(req)
   const method = String(req?.method || 'GET').toUpperCase()
+  const feedSequenceEngine = headerValue(req?.headers?.['x-feed-sequence-engine']).trim().toLowerCase()
   const isStatic = isStaticAssetPath(p)
   const isProbe = isProbePath(p)
   const currentName = String(span?.name || '')
@@ -273,6 +274,10 @@ function applySpanNamingAndTags(span: any, req: any) {
   if (op) span?.setAttribute?.('app.operation', op)
   const surface = classifySurface(p, req, op)
   if (surface) span?.setAttribute?.('app.surface', surface)
+  if (feedSequenceEngine === 'v1' || feedSequenceEngine === 'legacy') {
+    span?.setAttribute?.('app.feed_sequence_engine', feedSequenceEngine)
+    span?.setAttribute?.('app.feed_sequence_engine_v1', feedSequenceEngine === 'v1' ? 1 : 0)
+  }
 }
 
 function responseStatusCode(res: any): number | null {

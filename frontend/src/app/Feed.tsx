@@ -78,6 +78,15 @@ type FeedPromptPayload = {
   } | null
 }
 
+type FeedSequenceEngineTag = 'v1' | 'legacy'
+
+const FEED_SEQUENCE_ENGINE_HEADER = 'x-feed-sequence-engine'
+
+function feedSequenceHeader(tag?: FeedSequenceEngineTag): Record<string, string> {
+  if (!tag) return {}
+  return { [FEED_SEQUENCE_ENGINE_HEADER]: tag }
+}
+
 type MeResponse = {
   userId: number | null
   email: string | null
@@ -110,6 +119,15 @@ type MySpacesResponse = {
 type FeedMode =
   | { kind: 'global' }
   | { kind: 'space'; spaceId: number; spaceUlid?: string | null }
+
+type SequenceKind = 'content' | 'prompt'
+type SequenceItem = {
+  sequenceKey: string
+  baseKey: string
+  kind: SequenceKind
+  item: UploadItem
+  sourceIndex: number
+}
 
 function isGlobalFeedSlug(slug: string | null | undefined): boolean {
   const s = String(slug || '').trim().toLowerCase()
@@ -250,11 +268,18 @@ function buildUploadItem(raw: any, owner?: { id: number | null; displayName?: st
 
 // Legacy feed removed: feeds are driven by publications only.
 
-async function fetchSpaceFeed(spaceId: number, opts: { cursor?: string | null; limit?: number; pinProductionUlid?: string | null } = {}): Promise<{ items: UploadItem[]; nextCursor: string | null }> {
+async function fetchSpaceFeed(spaceId: number, opts: {
+  cursor?: string | null
+  limit?: number
+  pinProductionUlid?: string | null
+  sequenceEngineTag?: FeedSequenceEngineTag
+} = {}): Promise<{ items: UploadItem[]; nextCursor: string | null }> {
   const params = new URLSearchParams({ limit: String(opts.limit ?? 20) })
   if (opts.cursor) params.set('cursor', opts.cursor)
   if (!opts.cursor && opts.pinProductionUlid) params.set('pin', String(opts.pinProductionUlid))
-  const res = await fetch(`/api/spaces/${spaceId}/feed?${params.toString()}`)
+  const res = await fetch(`/api/spaces/${spaceId}/feed?${params.toString()}`, {
+    headers: feedSequenceHeader(opts.sequenceEngineTag),
+  })
   if (!res.ok) throw new Error('failed to fetch space feed')
   const payload = await res.json()
   const items = Array.isArray(payload?.items)
@@ -277,10 +302,16 @@ async function fetchSpaceFeed(spaceId: number, opts: { cursor?: string | null; l
   return { items, nextCursor }
 }
 
-async function fetchGlobalFeed(opts: { cursor?: string | null; limit?: number } = {}): Promise<{ items: UploadItem[]; nextCursor: string | null }> {
+async function fetchGlobalFeed(opts: {
+  cursor?: string | null
+  limit?: number
+  sequenceEngineTag?: FeedSequenceEngineTag
+} = {}): Promise<{ items: UploadItem[]; nextCursor: string | null }> {
   const params = new URLSearchParams({ limit: String(opts.limit ?? 20) })
   if (opts.cursor) params.set('cursor', opts.cursor)
-  const res = await fetch(`/api/feed/global?${params.toString()}`)
+  const res = await fetch(`/api/feed/global?${params.toString()}`, {
+    headers: feedSequenceHeader(opts.sequenceEngineTag),
+  })
   if (!res.ok) throw new Error('failed to fetch global feed')
   const payload = await res.json()
   const items = Array.isArray(payload?.items)
@@ -376,13 +407,16 @@ async function sendPromptEvent(input: {
   promptCategory: string | null
   sessionId: string | null
   ctaKind?: 'primary' | 'secondary'
-}) {
+}, opts?: { sequenceEngineTag?: FeedSequenceEngineTag }) {
   try {
     await fetch('/api/feed/prompt-events', {
       method: 'POST',
       credentials: 'same-origin',
       keepalive: true,
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...feedSequenceHeader(opts?.sequenceEngineTag),
+      },
       body: JSON.stringify({
         event: input.event,
         surface: 'global_feed',
@@ -422,13 +456,16 @@ async function sendFeedActivityEvent(input: {
   sessionId: string
   contentId?: number | null
   watchSeconds?: number
-}) {
+}, opts?: { sequenceEngineTag?: FeedSequenceEngineTag }) {
   try {
     await fetch('/api/feed/activity-events', {
       method: 'POST',
       credentials: 'same-origin',
       keepalive: true,
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...feedSequenceHeader(opts?.sequenceEngineTag),
+      },
       body: JSON.stringify({
         event: input.event,
         surface: input.surface,
@@ -455,6 +492,45 @@ function isPromptItem(it: UploadItem | null | undefined): boolean {
   return Boolean(it.prompt && it.itemType === 'prompt')
 }
 
+function computeSequenceBaseKey(it: UploadItem): string {
+  if (isPromptItem(it)) {
+    const pid = it.prompt?.id != null ? Number(it.prompt.id) : 0
+    return `prompt:${pid}:${String(it.id)}`
+  }
+  const vid = (it as any).videoId ? String((it as any).videoId) : null
+  const pubId = it.publicationId != null ? String(it.publicationId) : null
+  return vid ? `content:v-${vid}` : (pubId ? `content:p-${pubId}` : `content:u-${String(it.id)}`)
+}
+
+function computeSequenceKeyForListAtIndex(list: UploadItem[], rawIndex: number): string | null {
+  if (!Array.isArray(list) || !list.length) return null
+  const clamped = Math.max(0, Math.min(list.length - 1, Number(rawIndex) || 0))
+  const seen = new Map<string, number>()
+  for (let i = 0; i <= clamped; i += 1) {
+    const baseKey = computeSequenceBaseKey(list[i] as UploadItem)
+    const dupCount = seen.get(baseKey) || 0
+    seen.set(baseKey, dupCount + 1)
+    if (i === clamped) {
+      return dupCount === 0 ? baseKey : `${baseKey}#${dupCount}`
+    }
+  }
+  return null
+}
+
+function findSequenceIndexInListByKey(list: UploadItem[], sequenceKey: string | null | undefined): number {
+  if (!Array.isArray(list) || !list.length || !sequenceKey) return -1
+  const target = String(sequenceKey)
+  const seen = new Map<string, number>()
+  for (let i = 0; i < list.length; i += 1) {
+    const baseKey = computeSequenceBaseKey(list[i] as UploadItem)
+    const dupCount = seen.get(baseKey) || 0
+    seen.set(baseKey, dupCount + 1)
+    const key = dupCount === 0 ? baseKey : `${baseKey}#${dupCount}`
+    if (key === target) return i
+  }
+  return -1
+}
+
 function flattenSpaces(list: MySpacesResponse | null): SpaceSummary[] {
   if (!list) return []
   const merged: SpaceSummary[] = []
@@ -466,6 +542,15 @@ function flattenSpaces(list: MySpacesResponse | null): SpaceSummary[] {
 }
 
 export default function Feed() {
+  const sequenceEngineV1Enabled = useMemo(() => {
+    try {
+      const raw = String((import.meta as any)?.env?.VITE_FEED_SEQUENCE_ENGINE_V1 ?? '').trim().toLowerCase()
+      return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on'
+    } catch {
+      return false
+    }
+  }, [])
+  const feedSequenceEngineTag: FeedSequenceEngineTag = sequenceEngineV1Enabled ? 'v1' : 'legacy'
   const [items, setItems] = useState<UploadItem[]>([])
   const [cursor, setCursor] = useState<string | null>(null)
   const [index, setIndex] = useState(0)
@@ -582,6 +667,7 @@ export default function Feed() {
   const [commentsSortOpen, setCommentsSortOpen] = useState(false)
   const [promptSessionId, setPromptSessionId] = useState<string | null>(null)
   const [feedActivitySessionId, setFeedActivitySessionId] = useState<string | null>(null)
+  const [activeSequenceKey, setActiveSequenceKey] = useState<string | null>(null)
   const feedActivitySessionIdRef = useRef<string | null>(null)
   const feedActivitySessionContextRef = useRef<{
     surface: 'global_feed' | 'group_feed' | 'channel_feed' | 'my_feed'
@@ -614,6 +700,59 @@ export default function Feed() {
     lastPromptId: null,
   })
   const lastCountedContentSlideIdRef = useRef<number | null>(null)
+  const sequenceSyncOriginRef = useRef<'index' | 'key' | null>(null)
+
+  const sequenceItems = useMemo<SequenceItem[]>(() => {
+    const seen = new Map<string, number>()
+    return items.map((item, sourceIndex) => {
+      const baseKey = computeSequenceBaseKey(item)
+      const dupCount = seen.get(baseKey) || 0
+      seen.set(baseKey, dupCount + 1)
+      const sequenceKey = dupCount === 0 ? baseKey : `${baseKey}#${dupCount}`
+      return {
+        sequenceKey,
+        baseKey,
+        kind: isPromptItem(item) ? 'prompt' : 'content',
+        item,
+        sourceIndex,
+      }
+    })
+  }, [items])
+
+  const sequenceIndexByKey = useMemo(() => {
+    const map = new Map<string, number>()
+    sequenceItems.forEach((seq, i) => map.set(seq.sequenceKey, i))
+    return map
+  }, [sequenceItems])
+
+  const getSequenceKeyByIndex = useCallback((rawIndex: number): string | null => {
+    if (!sequenceItems.length) return null
+    const clamped = Math.max(0, Math.min(sequenceItems.length - 1, Number(rawIndex) || 0))
+    return sequenceItems[clamped]?.sequenceKey || null
+  }, [sequenceItems])
+
+  const getSequenceIndexByKey = useCallback((key: string | null | undefined): number | null => {
+    if (!key) return null
+    const idx = sequenceIndexByKey.get(String(key))
+    return idx == null ? null : idx
+  }, [sequenceIndexByKey])
+
+  const activeSequenceIndex = useMemo(() => {
+    if (sequenceEngineV1Enabled) {
+      const keyed = getSequenceIndexByKey(activeSequenceKey)
+      if (keyed != null) return keyed
+    }
+    if (!items.length) return 0
+    return Math.max(0, Math.min(items.length - 1, Number(index) || 0))
+  }, [sequenceEngineV1Enabled, getSequenceIndexByKey, activeSequenceKey, items.length, index])
+
+  const activeSequenceItem = useMemo<SequenceItem | null>(() => {
+    if (!sequenceItems.length) return null
+    const clamped = Math.max(0, Math.min(sequenceItems.length - 1, activeSequenceIndex))
+    return sequenceItems[clamped] || null
+  }, [sequenceItems, activeSequenceIndex])
+
+  const activeItem = activeSequenceItem?.item || null
 
   const isGlobalBillboard = useMemo(() => {
     if (feedMode.kind === 'global') return true
@@ -632,6 +771,32 @@ export default function Feed() {
       return false
     }
   }, [feedMode, spaceList])
+
+  // Sequence engine v1 keeps a keyed active cursor available while remaining
+  // backward-compatible with the current index-based rendering path.
+  useEffect(() => {
+    if (!sequenceEngineV1Enabled) return
+    if (sequenceSyncOriginRef.current === 'key') {
+      sequenceSyncOriginRef.current = null
+      return
+    }
+    const keyAtIndex = getSequenceKeyByIndex(index)
+    if (activeSequenceKey === keyAtIndex) return
+    sequenceSyncOriginRef.current = 'index'
+    setActiveSequenceKey((prev) => (prev === keyAtIndex ? prev : keyAtIndex))
+  }, [sequenceEngineV1Enabled, index, activeSequenceKey, getSequenceKeyByIndex])
+
+  useEffect(() => {
+    if (!sequenceEngineV1Enabled) return
+    if (sequenceSyncOriginRef.current === 'index') {
+      sequenceSyncOriginRef.current = null
+      return
+    }
+    const nextIndex = getSequenceIndexByKey(activeSequenceKey)
+    if (nextIndex == null || nextIndex === index) return
+    sequenceSyncOriginRef.current = 'key'
+    setIndex(nextIndex)
+  }, [sequenceEngineV1Enabled, activeSequenceKey, getSequenceIndexByKey, index])
 
   const feedActivityContext = useMemo(() => {
     if (feedMode.kind === 'global') {
@@ -1332,7 +1497,15 @@ export default function Feed() {
   const spacesStatusRef = useRef<{ loading: boolean; loaded: boolean }>({ loading: false, loaded: false })
 
   // ------- Per‑feed UI snapshot cache to avoid visible rewind on revisit -------
-  type FeedSnapshot = { items: UploadItem[]; cursor: string | null; index: number; scrollTop: number; savedAt: number; anchorId: number | null }
+  type FeedSnapshot = {
+    items: UploadItem[]
+    cursor: string | null
+    index: number
+    activeSequenceKey: string | null
+    scrollTop: number
+    savedAt: number
+    anchorId: number | null
+  }
   // Snapshot TTL (ms) can be configured via Vite env: VITE_FEED_SNAPSHOT_TTL_MS
   const SNAPSHOT_TTL_MS = (() => {
     try {
@@ -1379,15 +1552,25 @@ export default function Feed() {
     const key = feedKey(feedMode)
     const r = railRef.current
     if (!r || !items.length) return
-    const kept = trimItems(items, index)
-    const anchorItem = items[index]
+    const anchorAt = Math.max(0, Math.min(items.length - 1, activeSequenceIndex))
+    const kept = trimItems(items, anchorAt)
+    const anchorItem = items[anchorAt]
     const anchorId = anchorItem ? (anchorItem.publicationId ?? anchorItem.id) : null
-    let newIndex = Math.min(index, kept.length - 1)
+    let newIndex = Math.min(anchorAt, kept.length - 1)
     if (anchorId != null) {
       const found = kept.findIndex((it) => (it.publicationId ?? it.id) === anchorId)
       if (found >= 0) newIndex = found
     }
-    const snap: FeedSnapshot = { items: kept, cursor, index: newIndex, scrollTop: r.scrollTop, savedAt: Date.now(), anchorId }
+    const snapshotKey = computeSequenceKeyForListAtIndex(kept, newIndex)
+    const snap: FeedSnapshot = {
+      items: kept,
+      cursor,
+      index: newIndex,
+      activeSequenceKey: snapshotKey,
+      scrollTop: r.scrollTop,
+      savedAt: Date.now(),
+      anchorId,
+    }
     const map = snapshotsRef.current
     map.set(key, snap)
     while (map.size > SNAPSHOT_MAX) {
@@ -1402,19 +1585,49 @@ export default function Feed() {
     const snap = snapshotsRef.current.get(key)
     if (!snap) return false
     if (Date.now() - snap.savedAt > SNAPSHOT_TTL_MS) return false
+    const fallbackIndex = Math.max(0, Math.min(snap.index, snap.items.length - 1))
+    let targetIndex = fallbackIndex
+    let targetSequenceKey = typeof snap.activeSequenceKey === 'string' && snap.activeSequenceKey.trim().length
+      ? snap.activeSequenceKey.trim()
+      : null
+    if (targetSequenceKey) {
+      const keyedIdx = findSequenceIndexInListByKey(snap.items, targetSequenceKey)
+      if (keyedIdx >= 0) {
+        targetIndex = keyedIdx
+      } else {
+        targetSequenceKey = null
+      }
+    }
+    if (!targetSequenceKey) {
+      targetSequenceKey = computeSequenceKeyForListAtIndex(snap.items, targetIndex)
+    }
+
     setItems(snap.items)
     setCursor(snap.cursor)
     indexReasonRef.current = 'snapshot-restore'
-    setIndex(Math.max(0, Math.min(snap.index, snap.items.length - 1)))
-    // Reanchor by index using layout timing and show a poster overlay to prevent flashes
-    const anchor = snap.items[Math.max(0, Math.min(snap.index, snap.items.length - 1))]
+    setIndex(targetIndex)
+    if (sequenceEngineV1Enabled && targetSequenceKey) {
+      sequenceSyncOriginRef.current = 'key'
+      setActiveSequenceKey((prev) => (prev === targetSequenceKey ? prev : targetSequenceKey))
+    }
+    // Reanchor by key/index using layout timing and show a poster overlay to prevent flashes
+    const anchor = snap.items[targetIndex]
     const poster = (isPortrait ? (anchor?.posterPortrait || anchor?.posterLandscape) : (anchor?.posterLandscape || anchor?.posterPortrait)) || null
     setRestorePoster(poster)
     setRestoring(true)
     requestAnimationFrame(() => {
-      const targetIndex = Math.max(0, Math.min(snap.index, snap.items.length - 1))
-      try { reanchorToIndex(targetIndex, { immediate: true, reason: 'snapshot-restore' }) } catch {}
-      const v = getVideoEl(targetIndex)
+      try {
+        if (sequenceEngineV1Enabled && targetSequenceKey) {
+          const ok = reanchorToKey(targetSequenceKey, { immediate: true, reason: 'snapshot-restore' })
+          if (!ok) navigateToIndex(targetIndex, { immediate: true, reason: 'snapshot-restore' })
+        } else {
+          navigateToIndex(targetIndex, { immediate: true, reason: 'snapshot-restore' })
+        }
+      } catch {}
+      const resolvedIndex = (sequenceEngineV1Enabled && targetSequenceKey)
+        ? (getSequenceIndexByKey(targetSequenceKey) ?? targetIndex)
+        : targetIndex
+      const v = getVideoEl(resolvedIndex)
       let doneOnce = false
       const done = () => {
         if (doneOnce) return; doneOnce = true
@@ -1594,16 +1807,19 @@ export default function Feed() {
         let fetchedItems: UploadItem[] = []
         if (feedMode.kind === 'space') {
           const pin = readPinFromUrl()
-          const { items: page, nextCursor: cursorStr } = await fetchSpaceFeed(feedMode.spaceId, { pinProductionUlid: pin })
+          const { items: page, nextCursor: cursorStr } = await fetchSpaceFeed(feedMode.spaceId, {
+            pinProductionUlid: pin,
+            sequenceEngineTag: feedSequenceEngineTag,
+          })
           fetchedItems = applyMineFilter(page, mineOnly, myUserId)
           nextCursor = cursorStr
         } else if (feedMode.kind === 'global') {
-          const { items: page, nextCursor: cursorStr } = await fetchGlobalFeed()
+          const { items: page, nextCursor: cursorStr } = await fetchGlobalFeed({ sequenceEngineTag: feedSequenceEngineTag })
           fetchedItems = applyMineFilter(page, mineOnly, myUserId)
           nextCursor = cursorStr
         } else {
           // Fallback: treat as global feed
-          const { items: page, nextCursor: cursorStr } = await fetchGlobalFeed()
+          const { items: page, nextCursor: cursorStr } = await fetchGlobalFeed({ sequenceEngineTag: feedSequenceEngineTag })
           fetchedItems = applyMineFilter(page, mineOnly, myUserId)
           nextCursor = cursorStr
         }
@@ -1660,7 +1876,12 @@ export default function Feed() {
         // Begin restore cycle to suppress premature saves during reanchor
         restoringRef.current = true
         indexReasonRef.current = 'initial-load'
+        const targetSequenceKey = computeSequenceKeyForListAtIndex(fetchedItems, targetIndex)
         setIndex(targetIndex)
+        if (sequenceEngineV1Enabled && targetSequenceKey) {
+          sequenceSyncOriginRef.current = 'key'
+          setActiveSequenceKey((prev) => (prev === targetSequenceKey ? prev : targetSequenceKey))
+        }
         const fk = firstVisitKeyRef.current
         if (fk && fk === feedKey(feedMode)) {
           const anchor = fetchedItems[Math.max(0, Math.min(targetIndex, fetchedItems.length - 1))]
@@ -1669,8 +1890,18 @@ export default function Feed() {
           restoringRef.current = true
           setRestoring(true)
           requestAnimationFrame(() => {
-            try { reanchorToIndex(targetIndex, { immediate: true, reason: 'initial-load' }) } catch {}
-            const v = getVideoEl(targetIndex)
+            try {
+              if (sequenceEngineV1Enabled && targetSequenceKey) {
+                const ok = reanchorToKey(targetSequenceKey, { immediate: true, reason: 'initial-load' })
+                if (!ok) navigateToIndex(targetIndex, { immediate: true, reason: 'initial-load' })
+              } else {
+                navigateToIndex(targetIndex, { immediate: true, reason: 'initial-load' })
+              }
+            } catch {}
+            const resolvedIndex = (sequenceEngineV1Enabled && targetSequenceKey)
+              ? (getSequenceIndexByKey(targetSequenceKey) ?? targetIndex)
+              : targetIndex
+            const v = getVideoEl(resolvedIndex)
             let doneOnce = false
             const done = () => {
               if (doneOnce) return; doneOnce = true
@@ -1698,9 +1929,19 @@ export default function Feed() {
           // Use the same controlled reanchor flow even when firstVisitKeyRef is not set
           restoringRef.current = true
           requestAnimationFrame(() => {
-            try { reanchorToIndex(targetIndex, { immediate: true, reason: 'initial-load' }) } catch {}
+            try {
+              if (sequenceEngineV1Enabled && targetSequenceKey) {
+                const ok = reanchorToKey(targetSequenceKey, { immediate: true, reason: 'initial-load' })
+                if (!ok) navigateToIndex(targetIndex, { immediate: true, reason: 'initial-load' })
+              } else {
+                navigateToIndex(targetIndex, { immediate: true, reason: 'initial-load' })
+              }
+            } catch {}
             if (seekMs && seekMs > 0) {
-              const v = getVideoEl(targetIndex)
+              const resolvedIndex = (sequenceEngineV1Enabled && targetSequenceKey)
+                ? (getSequenceIndexByKey(targetSequenceKey) ?? targetIndex)
+                : targetIndex
+              const v = getVideoEl(resolvedIndex)
               if (v) {
                 const applySeek = () => {
                   try { v.currentTime = Math.max(0, seekMs! / 1000) } catch {}
@@ -1728,7 +1969,7 @@ export default function Feed() {
     }
     load()
     return () => { canceled = true }
-  }, [feedMode, mineOnly, myUserId, spacesLoaded, meLoaded])
+  }, [feedMode, mineOnly, myUserId, spacesLoaded, meLoaded, feedSequenceEngineTag])
 
   useEffect(() => {
     if (typeof window === 'undefined' || !window.matchMedia) return
@@ -1739,7 +1980,7 @@ export default function Feed() {
   }, [])
 
   useEffect(() => {
-    const nexts = [index + 1, index + 2]
+    const nexts = [activeSequenceIndex + 1, activeSequenceIndex + 2]
     nexts.forEach((i) => {
       const pi = items[i]
       const urls = [pi?.posterPortrait, pi?.posterLandscape].filter(Boolean) as string[]
@@ -1751,7 +1992,7 @@ export default function Feed() {
         img.src = u
       })
     })
-  }, [index, items, posterAvail])
+  }, [activeSequenceIndex, items, posterAvail])
 
   function getSlide(i: number): HTMLDivElement | null {
     const r = railRef.current
@@ -1860,13 +2101,13 @@ export default function Feed() {
       promptId: prompt.id,
       promptCategory: prompt.category || null,
       sessionId: promptSessionId,
-    })
-  }, [promptSessionId])
+    }, { sequenceEngineTag: feedSequenceEngineTag })
+  }, [promptSessionId, feedSequenceEngineTag])
 
   // If viewer swipes away from a prompt slide without tapping Dismiss,
   // treat that pass-through as a dismiss so pacing/cooldown rules stay consistent.
   useEffect(() => {
-    const current = items[index]
+    const current = activeItem
     const prev = prevActiveSlideRef.current
     if (isGlobalBillboard && prev && prev.isPrompt && prev.prompt && current && !isPromptItem(current)) {
       const promptStillPresent = items.some((it) => Number(it.id) === Number(prev.slideId) && isPromptItem(it))
@@ -1877,7 +2118,7 @@ export default function Feed() {
     // Fallback cleanup: if a prompt remains behind the active content slide (e.g. fast swipe race),
     // treat it as dismissed so the feed cannot bounce back to that stale prompt.
     if (isGlobalBillboard && current && !isPromptItem(current)) {
-      const stalePrompt = items.find((it, idx) => idx < index && isPromptItem(it) && it.prompt)
+      const stalePrompt = items.find((it, idx) => idx < activeSequenceIndex && isPromptItem(it) && it.prompt)
       if (stalePrompt?.prompt) {
         dismissPromptSlide(Number(stalePrompt.id), stalePrompt.prompt, { preserveSlideId: Number(current.id) })
       }
@@ -1889,7 +2130,7 @@ export default function Feed() {
           prompt: isPromptItem(current) ? (current.prompt || null) : null,
         }
       : null
-  }, [index, items, isGlobalBillboard, dismissPromptSlide])
+  }, [activeItem, activeSequenceIndex, items, isGlobalBillboard, dismissPromptSlide])
 
   const handlePromptCtaClick = useCallback((prompt: FeedPromptPayload, href: string, ctaKind: 'primary' | 'secondary') => {
     const targetHref = String(href || '').trim()
@@ -1900,7 +2141,7 @@ export default function Feed() {
       promptCategory: prompt.category || null,
       sessionId: promptSessionId,
       ctaKind,
-    })
+    }, { sequenceEngineTag: feedSequenceEngineTag })
     const lowerHref = targetHref.toLowerCase()
     if (lowerHref.startsWith('/register') || lowerHref.startsWith('/login')) {
       void sendPromptEvent({
@@ -1908,7 +2149,7 @@ export default function Feed() {
         promptId: prompt.id,
         promptCategory: prompt.category || null,
         sessionId: promptSessionId,
-      })
+      }, { sequenceEngineTag: feedSequenceEngineTag })
     }
     try {
       const url = new URL(targetHref, window.location.origin)
@@ -1922,7 +2163,7 @@ export default function Feed() {
       }
     } catch {}
     window.location.href = targetHref
-  }, [promptSessionId])
+  }, [promptSessionId, feedSequenceEngineTag])
 
   const closeFeedActivitySession = useCallback((reason: 'pagehide' | 'beforeunload' | 'unmount' | 'mode_change' | 'visibility_hidden') => {
     if (!feedActivityStartedRef.current) return
@@ -1945,11 +2186,11 @@ export default function Feed() {
       spaceName: ctx.spaceName,
       sessionId: sid,
       watchSeconds: Math.max(1, Math.round(feedActivityWatchSecondsRef.current || 0)),
-    })
+    }, { sequenceEngineTag: feedSequenceEngineTag })
     feedActivityStartedRef.current = false
     feedActivitySessionContextRef.current = null
     try { debug.log('feed', 'activity session end', { reason, sid }) } catch {}
-  }, [])
+  }, [feedSequenceEngineTag])
 
   const startFeedActivitySession = useCallback(() => {
     if (!feedActivityContext) return
@@ -1973,9 +2214,9 @@ export default function Feed() {
       spaceSlug: feedActivityContext.spaceSlug,
       spaceName: feedActivityContext.spaceName,
       sessionId: sid,
-    })
+    }, { sequenceEngineTag: feedSequenceEngineTag })
     try { debug.log('feed', 'activity session start', { sid, surface: feedActivityContext.surface, spaceId: feedActivityContext.spaceId }) } catch {}
-  }, [feedActivityContext, meLoaded])
+  }, [feedActivityContext, meLoaded, feedSequenceEngineTag])
 
   // Feed baseline activity: session lifecycle (global/group/channel/my feed).
   useEffect(() => {
@@ -2030,7 +2271,7 @@ export default function Feed() {
   useEffect(() => {
     if (!isGlobalBillboard) return
     if (!items.length) return
-    const current = items[index]
+    const current = activeItem
     if (!current) return
     // Prompt cards should not count toward threshold counters;
     // only content slides should advance "slides viewed/between prompts".
@@ -2045,11 +2286,11 @@ export default function Feed() {
     }
     promptCountersRef.current.slidesViewed += 1
     promptCountersRef.current.slidesSinceLastPrompt += 1
-  }, [index, items, isGlobalBillboard])
+  }, [activeItem, items.length, isGlobalBillboard])
 
   // Emit prompt impression exactly once per prompt id (per page lifetime).
   useEffect(() => {
-    const current = items[index]
+    const current = activeItem
     if (!isPromptItem(current) || !current?.prompt) return
     const prompt = current.prompt
     if (promptSeenImpressionRef.current.has(prompt.id)) return
@@ -2059,14 +2300,14 @@ export default function Feed() {
       promptId: prompt.id,
       promptCategory: prompt.category || null,
       sessionId: promptSessionId,
-    })
-  }, [index, items, promptSessionId])
+    }, { sequenceEngineTag: feedSequenceEngineTag })
+  }, [activeItem, promptSessionId, feedSequenceEngineTag])
 
   // Feed baseline activity: emit slide impression once per session per publication.
   useEffect(() => {
     if (!feedActivityContext) return
     if (!feedActivitySessionId) return
-    const current = items[index]
+    const current = activeItem
     if (!current || isPromptItem(current)) return
     const publicationId = current.publicationId != null ? Number(current.publicationId) : null
     if (!publicationId || !Number.isFinite(publicationId) || publicationId <= 0) return
@@ -2081,8 +2322,8 @@ export default function Feed() {
       spaceName: feedActivityContext.spaceName,
       sessionId: feedActivitySessionId,
       contentId: publicationId,
-    })
-  }, [feedActivityContext, index, items, feedActivitySessionId])
+    }, { sequenceEngineTag: feedSequenceEngineTag })
+  }, [feedActivityContext, activeItem, feedActivitySessionId, feedSequenceEngineTag])
 
   // Ask decision service whether to insert a prompt in the global anonymous feed.
   useEffect(() => {
@@ -2091,7 +2332,7 @@ export default function Feed() {
     if (isAuthed) return
     if (initialLoading) return
     if (!items.length) return
-    if (isPromptItem(items[index])) return
+    if (!activeItem || isPromptItem(activeItem)) return
     if (promptDecisionBusyRef.current) return
 
     let canceled = false
@@ -2103,7 +2344,10 @@ export default function Feed() {
         const res = await fetch('/api/feed/prompt-decision', {
           method: 'POST',
           credentials: 'same-origin',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...feedSequenceHeader(feedSequenceEngineTag),
+          },
           body: JSON.stringify({
             surface: 'global_feed',
             session_id: promptSessionId,
@@ -2129,11 +2373,11 @@ export default function Feed() {
         if (canceled) return
 
         const syntheticUploadId = -Math.floor(Date.now() + prompt.id)
-        const activeSlideId = Number(items[index]?.id)
+        const activeSlideId = Number(activeItem?.id)
         setItems((prev) => {
           const withoutPrompts = prev.filter((it) => !isPromptItem(it))
           const activeIdx = withoutPrompts.findIndex((it) => Number(it.id) === activeSlideId)
-          const baseIdx = activeIdx >= 0 ? activeIdx : Math.max(0, Math.min(index, Math.max(0, withoutPrompts.length - 1)))
+          const baseIdx = activeIdx >= 0 ? activeIdx : Math.max(0, Math.min(activeSequenceIndex, Math.max(0, withoutPrompts.length - 1)))
           const insertAt = Math.max(0, Math.min(baseIdx + 1, withoutPrompts.length))
           const promptItem: UploadItem = {
             id: syntheticUploadId,
@@ -2161,7 +2405,7 @@ export default function Feed() {
       canceled = true
       window.clearTimeout(timer)
     }
-  }, [isGlobalBillboard, meLoaded, isAuthed, initialLoading, items, index, promptSessionId])
+  }, [isGlobalBillboard, meLoaded, isAuthed, initialLoading, items, activeItem, activeSequenceIndex, promptSessionId, feedSequenceEngineTag])
 
   // HLSVideo handles attaching source on Safari and via hls.js elsewhere
 
@@ -2169,8 +2413,8 @@ export default function Feed() {
 
   // Persist last-active on index changes (in addition to scroll handler)
   useEffect(() => {
-    try { saveLastActiveFor(feedMode, index) } catch {}
-  }, [index])
+    try { saveLastActiveFor(feedMode, activeSequenceIndex) } catch {}
+  }, [feedMode, activeSequenceIndex])
 
   // Shared attachAndPlay path removed; each slide owns its <video>
 
@@ -2180,7 +2424,7 @@ export default function Feed() {
   useEffect(() => {
     const r = railRef.current
     if (!r) return
-    const current = getVideoEl(index)
+    const current = getVideoEl(activeSequenceIndex)
     try {
       const videos = Array.from(r.querySelectorAll('video')) as HTMLVideoElement[]
       for (const el of videos) {
@@ -2189,22 +2433,23 @@ export default function Feed() {
         }
       }
     } catch {}
-  }, [index])
+  }, [activeSequenceIndex])
 
   // Track playing state and mark started for fade-in
   useEffect(() => {
-    const v = getVideoEl(index)
+    const targetIndex = activeSequenceIndex
+    const v = getVideoEl(targetIndex)
     if (!v) return
-    const current = items[index]
+    const current = activeItem
     const publicationId = current?.publicationId != null ? Number(current.publicationId) : null
     const onPlaying = () => {
-      playingIndexRef.current = index
-      setPlayingIndex(index)
-      setStartedMap((prev) => (prev[index] ? prev : { ...prev, [index]: true }))
+      playingIndexRef.current = targetIndex
+      setPlayingIndex(targetIndex)
+      setStartedMap((prev) => (prev[targetIndex] ? prev : { ...prev, [targetIndex]: true }))
       // If we had a pending play intent for this index, clear it
-      setPendingPlayIndex((p) => (p === index ? null : p))
+      setPendingPlayIndex((p) => (p === targetIndex ? null : p))
     }
-    const onPause = () => { if (playingIndexRef.current === index) setPlayingIndex(null) }
+    const onPause = () => { if (playingIndexRef.current === targetIndex) setPlayingIndex(null) }
     const onEnded = onPause
     const onTimeUpdate = () => {
       if (!feedActivityContext) return
@@ -2225,7 +2470,7 @@ export default function Feed() {
         spaceName: feedActivityContext.spaceName,
         sessionId: feedActivitySessionId,
         contentId: publicationId,
-      })
+      }, { sequenceEngineTag: feedSequenceEngineTag })
     }
     try {
       v.addEventListener('playing', onPlaying)
@@ -2241,21 +2486,22 @@ export default function Feed() {
         v.removeEventListener('timeupdate', onTimeUpdate)
       } catch {}
     }
-  }, [index, items, feedActivityContext, feedActivitySessionId])
+  }, [activeSequenceIndex, activeItem, feedActivityContext, feedActivitySessionId])
 
   // Track fullscreen changes for the current video's element
   useEffect(() => {
-    const v = getVideoEl(index) as any
+    const targetIndex = activeSequenceIndex
+    const v = getVideoEl(targetIndex) as any
     if (!v) return
     const onDocFsChange = () => {
       try {
         const curFsEl: any = (document as any).fullscreenElement || (document as any).webkitFullscreenElement || null
-        if (curFsEl && v && curFsEl === v) setFsIndex(index)
-        else setFsIndex((prev) => (prev === index ? null : prev))
+        if (curFsEl && v && curFsEl === v) setFsIndex(targetIndex)
+        else setFsIndex((prev) => (prev === targetIndex ? null : prev))
       } catch {}
     }
-    const onWebkitBegin = () => { try { setFsIndex(index) } catch {} }
-    const onWebkitEnd = () => { try { setFsIndex((prev) => (prev === index ? null : prev)) } catch {} }
+    const onWebkitBegin = () => { try { setFsIndex(targetIndex) } catch {} }
+    const onWebkitEnd = () => { try { setFsIndex((prev) => (prev === targetIndex ? null : prev)) } catch {} }
     try { document.addEventListener('fullscreenchange', onDocFsChange) } catch {}
     try { (document as any).addEventListener?.('webkitfullscreenchange', onDocFsChange) } catch {}
     try { v.addEventListener?.('webkitbeginfullscreen', onWebkitBegin) } catch {}
@@ -2266,7 +2512,7 @@ export default function Feed() {
       try { v.removeEventListener?.('webkitbeginfullscreen', onWebkitBegin) } catch {}
       try { v.removeEventListener?.('webkitendfullscreen', onWebkitEnd) } catch {}
     }
-  }, [index])
+  }, [activeSequenceIndex])
 
   // Fulfill pending play intent when a slide becomes ready
   useEffect(() => {
@@ -2336,7 +2582,7 @@ export default function Feed() {
     if (unlocked) return
     // Unmute and attempt to play the current video
     try {
-      const v = getVideoEl(index)
+      const v = getVideoEl(activeSequenceIndex)
       if (v) { v.muted = false; void v.play() }
     } catch {}
     setUnlocked(true)
@@ -2356,15 +2602,15 @@ export default function Feed() {
     const THRESHOLD = 40
     if (wheelDeltaAccumRef.current > THRESHOLD) {
       wheelDeltaAccumRef.current = 0
-      if (index < items.length - 1) {
+      if (activeSequenceIndex < items.length - 1) {
         indexReasonRef.current = 'wheel-next'
-        reanchorToIndex(index + 1)
+        navigateToIndex(activeSequenceIndex + 1)
       }
     } else if (wheelDeltaAccumRef.current < -THRESHOLD) {
       wheelDeltaAccumRef.current = 0
-      if (index > 0) {
+      if (activeSequenceIndex > 0) {
         indexReasonRef.current = 'wheel-prev'
-        reanchorToIndex(index - 1)
+        navigateToIndex(activeSequenceIndex - 1)
       }
     }
   }
@@ -2432,7 +2678,7 @@ export default function Feed() {
                       touchLastXRef.current = t.clientX
                       touchLastYRef.current = t.clientY
                       touchLastTRef.current = now
-                      if (i !== index) return
+                      if (i !== activeSequenceIndex) return
                       const dyTotal = t.clientY - touchStartYRef.current
                       if (!dragThresholdPassedRef.current && Math.abs(dyTotal) > 5) {
                         dragThresholdPassedRef.current = true
@@ -2456,13 +2702,13 @@ export default function Feed() {
                   onTouchEnd={() => {
                     try {
                       const kind = classifyGesture()
-                      const didDrag = dragThresholdPassedRef.current && isDraggingRef.current && i === index
+                      const didDrag = dragThresholdPassedRef.current && isDraggingRef.current && i === activeSequenceIndex
                       if (didDrag) {
-                        let targetIndex = index
-                        if (kind === 'swipeUp') targetIndex = Math.min(items.length - 1, index + 1)
-                        else if (kind === 'swipeDown') targetIndex = Math.max(0, index - 1)
-                        indexReasonRef.current = targetIndex === index ? 'drag-cancel' : (kind === 'swipeUp' ? 'drag-swipe-up' : kind === 'swipeDown' ? 'drag-swipe-down' : 'drag-cancel')
-                        try { reanchorToIndex(targetIndex, { reason: indexReasonRef.current }) } catch {}
+                        let targetIndex = activeSequenceIndex
+                        if (kind === 'swipeUp') targetIndex = Math.min(items.length - 1, activeSequenceIndex + 1)
+                        else if (kind === 'swipeDown') targetIndex = Math.max(0, activeSequenceIndex - 1)
+                        indexReasonRef.current = targetIndex === activeSequenceIndex ? 'drag-cancel' : (kind === 'swipeUp' ? 'drag-swipe-up' : kind === 'swipeDown' ? 'drag-swipe-down' : 'drag-cancel')
+                        try { navigateToIndex(targetIndex, { reason: indexReasonRef.current }) } catch {}
                       }
                       isDraggingRef.current = false
                       dragThresholdPassedRef.current = false
@@ -2697,7 +2943,7 @@ export default function Feed() {
             debug.log(
               'slides',
               'render slide',
-              { i, n: cnt, slideId, active: i === index, warm: i === index + 1, portrait: isPortrait, deps },
+              { i, n: cnt, slideId, active: i === activeSequenceIndex, warm: i === activeSequenceIndex + 1, portrait: isPortrait, deps },
               { id: slideId, ctx: 'render' }
             )
           }
@@ -2713,11 +2959,11 @@ export default function Feed() {
           : (it.masterPortrait || it.url || '')
         const isLandscapeAsset = hasLandscape
         const isPortraitAsset = !isLandscapeAsset
-        const isActive = i === index
-        const isWarm = i === index + 1
-        const isPrewarm = i === index + 2
-        const isPrewarmFar = i > index + 2 && i <= index + 5
-        const isLinger = i === index - 1
+        const isActive = i === activeSequenceIndex
+        const isWarm = i === activeSequenceIndex + 1
+        const isPrewarm = i === activeSequenceIndex + 2
+        const isPrewarmFar = i > activeSequenceIndex + 2 && i <= activeSequenceIndex + 5
+        const isLinger = i === activeSequenceIndex - 1
         // Suppress warming until items belong to the active feed and restore is done
         const allowWarm = Boolean(itemsFeedKeyRef.current && itemsFeedKeyRef.current === feedKey(feedMode) && !restoringRef.current)
         const initials = (() => {
@@ -2794,7 +3040,7 @@ export default function Feed() {
                           touchLastXRef.current = t.clientX
                           touchLastYRef.current = t.clientY
                           touchLastTRef.current = now
-                          if (i !== index) return
+                          if (i !== activeSequenceIndex) return
                           const dyTotal = t.clientY - touchStartYRef.current
                           if (!dragThresholdPassedRef.current && Math.abs(dyTotal) > 5) {
                             dragThresholdPassedRef.current = true
@@ -2824,7 +3070,7 @@ export default function Feed() {
                       // Avoid duplicate handling when touch just fired
                       try { if (Date.now() - lastTouchTsRef.current < 350) return } catch {}
                       const v = getVideoEl(i)
-                      if (i !== index) {
+                      if (i !== activeSequenceIndex) {
                         // If warm element exists, start playback under this gesture before promotion
                         if (v) {
                           try {
@@ -2838,7 +3084,7 @@ export default function Feed() {
                         }
                         try {
                           indexReasonRef.current = 'tap-promote'
-                          reanchorToIndex(i, { reason: 'tap-promote' })
+                          navigateToIndex(i, { reason: 'tap-promote' })
                         } catch {}
                         return
                       }
@@ -2867,17 +3113,17 @@ export default function Feed() {
                       lastTouchTsRef.current = now
                       const kind = classifyGesture()
                       const dy = touchLastYRef.current - touchStartYRef.current // +down, -up
-                      const didDrag = dragThresholdPassedRef.current && isDraggingRef.current && i === index
+                      const didDrag = dragThresholdPassedRef.current && isDraggingRef.current && i === activeSequenceIndex
                       let handled = false
                       if (didDrag) {
-                        let targetIndex = index
+                        let targetIndex = activeSequenceIndex
                         if (kind === 'swipeUp') {
-                          targetIndex = Math.min(items.length - 1, index + 1)
+                          targetIndex = Math.min(items.length - 1, activeSequenceIndex + 1)
                         } else if (kind === 'swipeDown') {
-                          targetIndex = Math.max(0, index - 1)
+                          targetIndex = Math.max(0, activeSequenceIndex - 1)
                         }
-                        indexReasonRef.current = targetIndex === index ? 'drag-cancel' : (kind === 'swipeUp' ? 'drag-swipe-up' : kind === 'swipeDown' ? 'drag-swipe-down' : 'drag-cancel')
-                        try { reanchorToIndex(targetIndex, { reason: indexReasonRef.current }) } catch {}
+                        indexReasonRef.current = targetIndex === activeSequenceIndex ? 'drag-cancel' : (kind === 'swipeUp' ? 'drag-swipe-up' : kind === 'swipeDown' ? 'drag-swipe-down' : 'drag-cancel')
+                        try { navigateToIndex(targetIndex, { reason: indexReasonRef.current }) } catch {}
                         handled = true
                       }
                       isDraggingRef.current = false
@@ -2886,16 +3132,16 @@ export default function Feed() {
                       // No drag-based snap; interpret as tap or swipe from the classifier.
                       if (kind === 'swipeUp' || kind === 'swipeDown') {
                         const dir = kind === 'swipeUp' ? 1 : -1
-                        const targetIndex = Math.max(0, Math.min(items.length - 1, index + dir))
-                        if (targetIndex !== index) {
+                        const targetIndex = Math.max(0, Math.min(items.length - 1, activeSequenceIndex + dir))
+                        if (targetIndex !== activeSequenceIndex) {
                           indexReasonRef.current = kind === 'swipeUp' ? 'swipe-up' : 'swipe-down'
-                          try { reanchorToIndex(targetIndex, { reason: indexReasonRef.current }) } catch {}
+                          try { navigateToIndex(targetIndex, { reason: indexReasonRef.current }) } catch {}
                           return
                         }
                         // If swipe resolved to same index, fall through to tap behavior.
                       }
                       const v = getVideoEl(i)
-                      if (i !== index) {
+                      if (i !== activeSequenceIndex) {
                         if (v) {
                           try {
                             setStartedMap((prev) => (prev[i] ? prev : { ...prev, [i]: true }))
@@ -2908,7 +3154,7 @@ export default function Feed() {
                         }
                         try {
                           indexReasonRef.current = 'swipe-promote'
-                          reanchorToIndex(i, { reason: 'swipe-promote' })
+                          navigateToIndex(i, { reason: 'swipe-promote' })
                         } catch {}
                         return
                       }
@@ -2942,7 +3188,7 @@ export default function Feed() {
                     setPendingPlayIndex(i)
                     try {
                       indexReasonRef.current = 'placeholder-promote'
-                      reanchorToIndex(i, { reason: 'placeholder-promote' })
+                      navigateToIndex(i, { reason: 'placeholder-promote' })
                     } catch {}
                   }}
                 />
@@ -3197,17 +3443,17 @@ export default function Feed() {
                 </div>
               )}
               {/* Fullscreen toggle (active slide only; landscape assets only) */}
-              {i === index && isLandscapeAsset && (
+              {i === activeSequenceIndex && isLandscapeAsset && (
                 <div className={styles.fullToggle}>
                   <button
-                    aria-label={fsIndex === index ? 'Exit full screen' : 'Full screen'}
+                    aria-label={fsIndex === activeSequenceIndex ? 'Exit full screen' : 'Full screen'}
                     onClick={(e) => {
                       e.stopPropagation()
                       try {
-                        const v = getVideoEl(index) as any
+                        const v = getVideoEl(activeSequenceIndex) as any
                         if (!v) return
                         const doc: any = document
-                        if (fsIndex === index) {
+                        if (fsIndex === activeSequenceIndex) {
                           if (doc.fullscreenElement || doc.webkitFullscreenElement) {
                             try { doc.exitFullscreen?.() } catch {}
                             try { doc.webkitExitFullscreen?.() } catch {}
@@ -3316,19 +3562,25 @@ export default function Feed() {
           </div>
         )
       }),
-    [items, index, isPortrait, posterAvail, playingIndex, startedMap, likesCountMap, likedMap, likeBusy, commentsCountMap, commentedByMeMap, reportedMap, isAuthed, feedMode, followMap, spaceList, myUserId, storyOpenForPub, storyTextMap, storyBusyMap, captionsEnabled]
+    [items, activeSequenceIndex, isPortrait, posterAvail, playingIndex, startedMap, likesCountMap, likedMap, likeBusy, commentsCountMap, commentedByMeMap, reportedMap, isAuthed, feedMode, followMap, spaceList, myUserId, storyOpenForPub, storyTextMap, storyBusyMap, captionsEnabled]
   )
 
   // Debug: log index changes explicitly (outside slides memo)
   useEffect(() => {
     try {
       if (!debug.enabled('slides')) return
-      const it = items[index]
+      const it = activeItem
       const slideId = it ? computeSlideId(it) : null
       const reason = indexReasonRef.current || 'unknown'
-      debug.log('slides', 'index -> ' + index, { index, slideId, pubId: it?.publicationId ?? null, reason }, { ctx: 'index' })
+      debug.log('slides', 'index -> ' + activeSequenceIndex, {
+        index: activeSequenceIndex,
+        key: activeSequenceItem?.sequenceKey || null,
+        slideId,
+        pubId: it?.publicationId ?? null,
+        reason,
+      }, { ctx: 'index' })
     } catch {}
-  }, [index, items])
+  }, [activeItem, activeSequenceIndex, activeSequenceItem?.sequenceKey])
 
   function reanchorToIndex(curIndex: number, opts?: { immediate?: boolean; reason?: string }) {
     const r = railRef.current
@@ -3349,29 +3601,53 @@ export default function Feed() {
     railOffsetRef.current = targetOffset
     try { r.style.transform = `translate3d(0, ${targetOffset}px, 0)` } catch {}
     if (reason) indexReasonRef.current = reason
+    if (sequenceEngineV1Enabled) {
+      const nextKey = getSequenceKeyByIndex(clamped)
+      if (nextKey && nextKey !== activeSequenceKey) {
+        sequenceSyncOriginRef.current = 'key'
+        setActiveSequenceKey((prev) => (prev === nextKey ? prev : nextKey))
+      }
+    }
     if (clamped !== index) setIndex(clamped)
     pauseNonCurrent(clamped)
     logSlides('reanchor end', { index: clamped, offset: targetOffset, immediate, reason })
   }
 
+  function reanchorToKey(sequenceKey: string, opts?: { immediate?: boolean; reason?: string }): boolean {
+    const targetIndex = getSequenceIndexByKey(sequenceKey)
+    if (targetIndex == null) return false
+    reanchorToIndex(targetIndex, opts)
+    return true
+  }
+
+  function navigateToIndex(targetIndex: number, opts?: { immediate?: boolean; reason?: string }) {
+    if (sequenceEngineV1Enabled) {
+      const key = getSequenceKeyByIndex(targetIndex)
+      if (key) {
+        if (reanchorToKey(key, opts)) return
+      }
+    }
+    reanchorToIndex(targetIndex, opts)
+  }
+
   useEffect(() => {
-    try { reanchorToIndex(index, { immediate: true, reason: 'orientation-change' }) } catch {}
+    try { navigateToIndex(activeSequenceIndex, { immediate: true, reason: 'orientation-change' }) } catch {}
   }, [isPortrait])
 
   useEffect(() => {
     const handler = () => {
-      try { reanchorToIndex(index, { immediate: true, reason: 'orientationchange-event' }) } catch {}
+      try { navigateToIndex(activeSequenceIndex, { immediate: true, reason: 'orientationchange-event' }) } catch {}
     }
     window.addEventListener('orientationchange', handler)
     return () => window.removeEventListener('orientationchange', handler)
-  }, [index])
+  }, [activeSequenceIndex])
 
   // When a new feed of items is loaded (e.g., changing channels), reanchor decisively to the current index
   useEffect(() => {
     if (!items.length) return
     // Ensure we dock the current index (usually 0) immediately after items render
     const id = window.setTimeout(() => {
-      try { reanchorToIndex(index, { immediate: true, reason: 'items-change' }) } catch {}
+      try { navigateToIndex(activeSequenceIndex, { immediate: true, reason: 'items-change' }) } catch {}
     }, 50)
     return () => window.clearTimeout(id)
   }, [itemsFeedKeyRef.current])
@@ -3380,11 +3656,11 @@ export default function Feed() {
   useEffect(() => {
     if (!isAuthed) return
     if (isGlobalBillboard) return
-    const it = items[index]
+    const it = activeItem
     if (it && it.publicationId != null) {
       ensureLikeSummary(it.publicationId)
     }
-  }, [index, items, isAuthed, isGlobalBillboard])
+  }, [activeItem, isAuthed, isGlobalBillboard])
 
   // LocalStorage disabled: no dwell-based persistence
   const persistTimerRef = useRef<number | null>(null)
@@ -3399,23 +3675,26 @@ export default function Feed() {
     if (!cursor) return
     if (loadingMore) return
     if (!items.length) return
-    const remaining = items.length - index
+    const remaining = items.length - activeSequenceIndex
     if (remaining >= 5) return
     setLoadingMore(true)
     const loadMore = async () => {
       try {
         if (feedMode.kind === 'space') {
-          const { items: page, nextCursor } = await fetchSpaceFeed(feedMode.spaceId, { cursor })
+          const { items: page, nextCursor } = await fetchSpaceFeed(feedMode.spaceId, {
+            cursor,
+            sequenceEngineTag: feedSequenceEngineTag,
+          })
           const filtered = applyMineFilter(page, mineOnly, myUserId)
           setItems((prev) => prev.concat(filtered))
           setCursor(nextCursor)
         } else if (feedMode.kind === 'global') {
-          const { items: page, nextCursor } = await fetchGlobalFeed({ cursor })
+          const { items: page, nextCursor } = await fetchGlobalFeed({ cursor, sequenceEngineTag: feedSequenceEngineTag })
           const filtered = applyMineFilter(page, mineOnly, myUserId)
           setItems((prev) => prev.concat(filtered))
           setCursor(nextCursor)
         } else {
-          const { items: page, nextCursor: nextCursorStr } = await fetchGlobalFeed({ cursor })
+          const { items: page, nextCursor: nextCursorStr } = await fetchGlobalFeed({ cursor, sequenceEngineTag: feedSequenceEngineTag })
           const filtered = applyMineFilter(page, mineOnly, myUserId)
           setItems((prev) => prev.concat(filtered))
           setCursor(nextCursorStr)
@@ -3427,7 +3706,7 @@ export default function Feed() {
       }
     }
     loadMore().catch(() => setLoadingMore(false))
-  }, [cursor, feedMode, index, items.length, loadingMore, mineOnly, myUserId])
+  }, [cursor, feedMode, activeSequenceIndex, items.length, loadingMore, mineOnly, myUserId, feedSequenceEngineTag])
 
   // No shared video element; each slide manages its own via HLSVideo
 
@@ -3475,7 +3754,7 @@ export default function Feed() {
       setIndex(0)
       setStartedMap({})
       setPlayingIndex(null)
-      try { reanchorToIndex(0, { immediate: true, reason: 'space-switch' }) } catch {}
+      try { navigateToIndex(0, { immediate: true, reason: 'space-switch' }) } catch {}
     } else {
       firstVisitKeyRef.current = null
     }
@@ -3508,7 +3787,7 @@ export default function Feed() {
       setIndex(0)
       setStartedMap({})
       setPlayingIndex(null)
-      try { reanchorToIndex(0, { immediate: true, reason: 'global-switch' }) } catch {}
+      try { navigateToIndex(0, { immediate: true, reason: 'global-switch' }) } catch {}
     } else {
       firstVisitKeyRef.current = null
     }
