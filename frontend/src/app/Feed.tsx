@@ -678,7 +678,6 @@ export default function Feed() {
   } | null>(null)
   const promptDecisionBusyRef = useRef<boolean>(false)
   const promptSeenImpressionRef = useRef<Set<number>>(new Set())
-  const prevActiveSlideRef = useRef<{ slideId: number; isPrompt: boolean; prompt: FeedPromptPayload | null } | null>(null)
   const feedActivityStartedRef = useRef<boolean>(false)
   const feedActivityEndedRef = useRef<boolean>(false)
   const feedActivitySeenImpressionRef = useRef<Set<number>>(new Set())
@@ -2104,34 +2103,6 @@ export default function Feed() {
     }, { sequenceEngineTag: feedSequenceEngineTag })
   }, [promptSessionId, feedSequenceEngineTag])
 
-  // If viewer swipes away from a prompt slide without tapping Dismiss,
-  // treat that pass-through as a dismiss so pacing/cooldown rules stay consistent.
-  useEffect(() => {
-    const current = activeItem
-    const prev = prevActiveSlideRef.current
-    if (isGlobalBillboard && prev && prev.isPrompt && prev.prompt && current && !isPromptItem(current)) {
-      const promptStillPresent = items.some((it) => Number(it.id) === Number(prev.slideId) && isPromptItem(it))
-      if (promptStillPresent) {
-        dismissPromptSlide(prev.slideId, prev.prompt, { preserveSlideId: Number(current.id) })
-      }
-    }
-    // Fallback cleanup: if a prompt remains behind the active content slide (e.g. fast swipe race),
-    // treat it as dismissed so the feed cannot bounce back to that stale prompt.
-    if (isGlobalBillboard && current && !isPromptItem(current)) {
-      const stalePrompt = items.find((it, idx) => idx < activeSequenceIndex && isPromptItem(it) && it.prompt)
-      if (stalePrompt?.prompt) {
-        dismissPromptSlide(Number(stalePrompt.id), stalePrompt.prompt, { preserveSlideId: Number(current.id) })
-      }
-    }
-    prevActiveSlideRef.current = current
-      ? {
-          slideId: Number(current.id),
-          isPrompt: isPromptItem(current),
-          prompt: isPromptItem(current) ? (current.prompt || null) : null,
-        }
-      : null
-  }, [activeItem, activeSequenceIndex, items, isGlobalBillboard, dismissPromptSlide])
-
   const handlePromptCtaClick = useCallback((prompt: FeedPromptPayload, href: string, ctaKind: 'primary' | 'secondary') => {
     const targetHref = String(href || '').trim()
     if (!targetHref) return
@@ -2372,20 +2343,24 @@ export default function Feed() {
         const prompt = await fetchPromptById(promptId)
         if (canceled) return
 
-        const syntheticUploadId = -Math.floor(Date.now() + prompt.id)
         const activeSlideId = Number(activeItem?.id)
         setItems((prev) => {
-          const withoutPrompts = prev.filter((it) => !isPromptItem(it))
-          const activeIdx = withoutPrompts.findIndex((it) => Number(it.id) === activeSlideId)
-          const baseIdx = activeIdx >= 0 ? activeIdx : Math.max(0, Math.min(activeSequenceIndex, Math.max(0, withoutPrompts.length - 1)))
-          const insertAt = Math.max(0, Math.min(baseIdx + 1, withoutPrompts.length))
+          const activeIdx = prev.findIndex((it) => Number(it.id) === activeSlideId)
+          const baseIdx = activeIdx >= 0 ? activeIdx : Math.max(0, Math.min(activeSequenceIndex, Math.max(0, prev.length - 1)))
+          const insertAt = Math.max(0, Math.min(baseIdx + 1, prev.length))
+          const currentAtInsert = prev[insertAt]
+          if (isPromptItem(currentAtInsert) && Number(currentAtInsert.prompt?.id || 0) === Number(prompt.id)) {
+            return prev
+          }
+          let syntheticUploadId = -Math.floor(Date.now() + prompt.id)
+          while (prev.some((it) => Number(it.id) === syntheticUploadId)) syntheticUploadId -= 1
           const promptItem: UploadItem = {
             id: syntheticUploadId,
             url: '',
             itemType: 'prompt',
             prompt,
           }
-          const next = [...withoutPrompts.slice(0, insertAt), promptItem, ...withoutPrompts.slice(insertAt)]
+          const next = [...prev.slice(0, insertAt), promptItem, ...prev.slice(insertAt)]
           const nextActiveIdx = next.findIndex((it) => Number(it.id) === activeSlideId)
           if (nextActiveIdx >= 0) {
             setIndex((cur) => (cur === nextActiveIdx ? cur : nextActiveIdx))
