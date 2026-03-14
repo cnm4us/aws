@@ -144,7 +144,7 @@ Use existing `feed_prompts` + `prompt_rules` foundation with explicit program di
 - Examples:
   - `register_login`
   - `fund_drive`
-  - `subscription_offer`
+  - `subscription_upgrade`
   - `sponsor_message`
   - `feature_announcement`
 
@@ -187,7 +187,6 @@ Use existing `feed_prompts` + `prompt_rules` foundation with explicit program di
 ## Audience Resolution
 Create server-side resolver for viewer state:
 - `anonymous` when no user session.
-- `authenticated` base fallback.
 - `authenticated_non_subscriber` / `authenticated_subscriber` based on subscription status source of truth.
 
 No client trust for audience-state claims.
@@ -217,9 +216,9 @@ Initial recommended defaults:
 - Keep creative editor unchanged unless type-specific fields are needed.
 
 ## `/admin/prompt-rules`
-- Expand `Auth State` selector options.
-- Add `Prompt Type Allowlist` control.
-- Keep pacing controls and rename consistency (`cooldownSecondsAfterPrompt`).
+- Replace `Auth State` with `Audience Segment` selector options.
+- Add `Prompt Type` selector (single value).
+- No pacing controls in rules UI (pacing is global env-driven).
 
 ## `/admin/prompt-analytics` (minimal alignment)
 - Show type dimension where available (filter + table column).
@@ -251,9 +250,10 @@ Conversion semantics note:
 - Finalize prompt type taxonomy and audience-state enum list.
 - Define mapping for existing prompts/rules to new defaults.
 - Define suppression thresholds/defaults.
+- Phase A output: `agents/implementation/notes_plan_129_phase_a.md`
 
 Acceptance:
-- Signed-off enum/spec doc with backward-compat behavior.
+- Signed-off enum/spec doc with big-bang migration map.
 
 ### Phase B — Schema + Service Contracts
 - Add schema fields:
