@@ -26,6 +26,7 @@ This file is a lightweight index for ongoing work and “what’s next”.
 - `agents/implementation/plan_119.md` — Nominal-first analytics rollout (incremental expansion)
 - `agents/implementation/plan_128.md` — Feed sequence engine v1 (queue-first merge + stable keys + windowed render)
 - `agents/implementation/plan_128_phase_i_checklist.md` — Feed sequence engine v1 QA matrix + rollout checklist
+- `agents/implementation/plan_129.md` — Multi-type prompt programs (audience targeting + rules-based delivery)
 - `agents/implementation/plan_115.md` — Hybrid analytics foundation (internal source of truth + optional external sink)
 - `agents/implementation/plan_116.md` — Automatic image derivatives for prompt/graphics/logo performance
 
