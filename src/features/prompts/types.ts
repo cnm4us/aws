@@ -1,6 +1,12 @@
 export type PromptStatus = 'draft' | 'active' | 'paused' | 'archived'
 export type PromptWidgetPosition = 'top' | 'middle' | 'bottom'
 export type PromptBackgroundMode = 'none' | 'image' | 'video'
+export type PromptType =
+  | 'register_login'
+  | 'fund_drive'
+  | 'subscription_upgrade'
+  | 'sponsor_message'
+  | 'feature_announcement'
 
 export type PromptCreative = {
   version: 1
@@ -48,6 +54,7 @@ export type PromptRow = {
   cta_secondary_href: string | null
   media_upload_id: number | null
   creative_json: string | null
+  prompt_type: PromptType
   category: string
   priority: number
   status: PromptStatus
@@ -70,6 +77,7 @@ export type PromptDto = {
   ctaSecondaryHref: string | null
   mediaUploadId: number | null
   creative: PromptCreative
+  promptType: PromptType
   category: string
   priority: number
   status: PromptStatus

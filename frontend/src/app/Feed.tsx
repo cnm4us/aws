@@ -1849,29 +1849,6 @@ export default function Feed() {
     loadSpaces(true).catch(() => {})
   }, [isAuthed, loadSpaces])
 
-  // Authenticated feeds should never retain anonymous prompt slides.
-  // This guards against restoring a snapshot that was captured while anonymous.
-  useEffect(() => {
-    if (!meLoaded || !isAuthed) return
-    setItems((prev) => {
-      if (!Array.isArray(prev) || !prev.length) return prev
-      const next = prev.filter((it) => !isPromptItem(it))
-      if (next.length === prev.length) return prev
-      setIndex((cur) => {
-        if (!next.length) return 0
-        return Math.max(0, Math.min(cur, next.length - 1))
-      })
-      if (sequenceEngineV1Enabled) {
-        setActiveSequenceKey((prevKey) => {
-          const keyed = prevKey ? findSequenceIndexInListByKey(next, prevKey) : -1
-          if (keyed >= 0) return prevKey
-          return computeSequenceKeyForListAtIndex(next, Math.max(0, Math.min(index, next.length - 1)))
-        })
-      }
-      return next
-    })
-  }, [meLoaded, isAuthed, sequenceEngineV1Enabled, index])
-
   // If feedMode lacks spaceUlid but list is available, enrich it
   useEffect(() => {
     if (feedMode.kind !== 'space') return
@@ -2415,11 +2392,10 @@ export default function Feed() {
     }, { sequenceEngineTag: feedSequenceEngineTag })
   }, [feedActivityContext, activeItem, feedActivitySessionId, feedSequenceEngineTag])
 
-  // Ask decision service whether to insert a prompt in the global anonymous feed.
+  // Ask decision service whether to insert a prompt in the global feed.
   useEffect(() => {
     if (!isGlobalBillboard) return
     if (!meLoaded) return
-    if (isAuthed) return
     if (initialLoading) return
     if (!items.length) return
     if (!activeItem || isPromptItem(activeItem)) return

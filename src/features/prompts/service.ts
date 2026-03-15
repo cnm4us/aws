@@ -7,6 +7,7 @@ import type {
   PromptDto,
   PromptRow,
   PromptStatus,
+  PromptType,
   PromptWidgetPosition,
 } from './types'
 
@@ -15,6 +16,13 @@ const promptsLogger = getLogger({ component: 'features.prompts' })
 const STATUSES: readonly PromptStatus[] = ['draft', 'active', 'paused', 'archived']
 const BACKGROUND_MODES: readonly PromptBackgroundMode[] = ['none', 'image', 'video']
 const WIDGET_POSITIONS: readonly PromptWidgetPosition[] = ['top', 'middle', 'bottom']
+const PROMPT_TYPES: readonly PromptType[] = [
+  'register_login',
+  'fund_drive',
+  'subscription_upgrade',
+  'sponsor_message',
+  'feature_announcement',
+]
 
 function isEnumValue<T extends string>(value: any, allowed: readonly T[]): value is T {
   return typeof value === 'string' && (allowed as readonly string[]).includes(value)
@@ -75,6 +83,13 @@ function normalizeCategory(raw: any): string {
   if (!value) throw new DomainError('invalid_category', 'invalid_category', 400)
   if (value.length > 64) throw new DomainError('invalid_category', 'invalid_category', 400)
   if (!/^[a-z0-9_-]+$/.test(value)) throw new DomainError('invalid_category', 'invalid_category', 400)
+  return value
+}
+
+function normalizePromptType(raw: any, fallback: PromptType = 'register_login'): PromptType {
+  const value = String(raw ?? '').trim().toLowerCase()
+  if (!value) return fallback
+  if (!isEnumValue(value, PROMPT_TYPES)) throw new DomainError('invalid_prompt_type', 'invalid_prompt_type', 400)
   return value
 }
 
@@ -325,6 +340,7 @@ function mapRow(row: PromptRow): PromptDto {
     ctaSecondaryHref: row.cta_secondary_href == null ? null : String(row.cta_secondary_href),
     mediaUploadId: row.media_upload_id == null ? null : Number(row.media_upload_id),
     creative: resolveCreativeFromRow(row),
+    promptType: normalizePromptType((row as any).prompt_type, 'register_login'),
     category: String(row.category || ''),
     priority: Number(row.priority || 0),
     status: row.status,
@@ -341,15 +357,18 @@ export async function listForAdmin(params: {
   includeArchived?: boolean
   limit?: number
   status?: any
+  promptType?: any
   category?: any
 }): Promise<PromptDto[]> {
   const status = params.status == null || params.status === '' ? null : normalizeStatus(params.status)
+  const promptType = params.promptType == null || params.promptType === '' ? null : normalizePromptType(params.promptType)
   const category = params.category == null || params.category === '' ? null : normalizeCategory(params.category)
 
   const rows = await repo.list({
     includeArchived: Boolean(params.includeArchived),
     limit: params.limit,
     status,
+    promptType,
     category,
   })
   return rows.map(mapRow)
@@ -377,6 +396,7 @@ export async function createForAdmin(input: any, actorUserId: number): Promise<P
   }
 
   const mediaUploadId = normalizeMediaUploadId(input?.mediaUploadId ?? input?.media_upload_id)
+  const promptType = normalizePromptType(input?.promptType ?? input?.prompt_type, 'register_login')
   const creative = normalizeCreative(input?.creative ?? input?.creative_json, {
     headline,
     body,
@@ -401,6 +421,7 @@ export async function createForAdmin(input: any, actorUserId: number): Promise<P
     ctaSecondaryHref,
     mediaUploadId,
     creativeJson: JSON.stringify(creative),
+    promptType,
     category,
     priority,
     status,
@@ -466,6 +487,10 @@ export async function updateForAdmin(id: number, patch: any, actorUserId: number
         mediaUploadId: nextMediaUploadId,
       }))
       : ((existing as any).creative_json == null ? null : String((existing as any).creative_json))
+  const nextPromptType =
+    patch?.promptType !== undefined || patch?.prompt_type !== undefined
+      ? normalizePromptType(patch?.promptType ?? patch?.prompt_type, normalizePromptType((existing as any).prompt_type, 'register_login'))
+      : normalizePromptType((existing as any).prompt_type, 'register_login')
 
   const nextCategory = patch?.category !== undefined ? normalizeCategory(patch.category) : String(existing.category)
   const nextPriority = patch?.priority !== undefined ? normalizePriority(patch.priority, Number(existing.priority)) : Number(existing.priority)
@@ -495,6 +520,7 @@ export async function updateForAdmin(id: number, patch: any, actorUserId: number
     ctaSecondaryHref: nextCtaSecondaryHref,
     mediaUploadId: nextMediaUploadId,
     creativeJson: nextCreativeJson,
+    promptType: nextPromptType,
     category: nextCategory,
     priority: nextPriority,
     status: nextStatus,
@@ -522,6 +548,7 @@ export async function cloneForAdmin(id: number, actorUserId: number): Promise<Pr
     ctaSecondaryHref: existing.cta_secondary_href == null ? null : String(existing.cta_secondary_href),
     mediaUploadId: existing.media_upload_id == null ? null : Number(existing.media_upload_id),
     creativeJson: (existing as any).creative_json == null ? null : String((existing as any).creative_json),
+    promptType: normalizePromptType((existing as any).prompt_type, 'register_login'),
     category: String(existing.category || ''),
     priority: Number(existing.priority || 100),
     status: 'draft',
@@ -551,11 +578,13 @@ export async function updateStatusForAdmin(id: number, statusRaw: any, actorUser
 }
 
 export async function listActiveForFeed(params?: {
+  promptType?: any
   category?: any
   limit?: number
 }): Promise<PromptDto[]> {
+  const promptType = params?.promptType == null || params?.promptType === '' ? null : normalizePromptType(params.promptType)
   const category = params?.category == null || params?.category === '' ? null : normalizeCategory(params.category)
-  const rows = await repo.listActiveForFeed({ category, limit: params?.limit })
+  const rows = await repo.listActiveForFeed({ promptType, category, limit: params?.limit })
   return rows.map(mapRow)
 }
 

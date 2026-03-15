@@ -5,13 +5,10 @@ type PromptRuleCreateInput = {
   name: string
   enabled: boolean
   appliesToSurface: string
-  authState: string
+  audienceSegment: string
+  promptType: string
   minSlidesViewed: number
   minWatchSeconds: number
-  maxPromptsPerSession: number
-  minSlidesBetweenPrompts: number
-  cooldownSecondsAfterPrompt: number
-  promptCategoryAllowlistJson: string
   priority: number
   tieBreakStrategy: string
   createdBy: number
@@ -24,7 +21,8 @@ export async function list(params?: {
   limit?: number
   enabled?: boolean | null
   appliesToSurface?: string | null
-  authState?: string | null
+  audienceSegment?: string | null
+  promptType?: string | null
 }): Promise<PromptRuleRow[]> {
   const db = getPool()
   const limit = Math.min(Math.max(Number(params?.limit ?? 200), 1), 500)
@@ -39,9 +37,13 @@ export async function list(params?: {
     where.push('applies_to_surface = ?')
     args.push(params.appliesToSurface)
   }
-  if (params?.authState) {
-    where.push('auth_state = ?')
-    args.push(params.authState)
+  if (params?.audienceSegment) {
+    where.push('audience_segment = ?')
+    args.push(params.audienceSegment)
+  }
+  if (params?.promptType) {
+    where.push('prompt_type = ?')
+    args.push(params.promptType)
   }
 
   const [rows] = await db.query(
@@ -66,23 +68,18 @@ export async function create(input: PromptRuleCreateInput): Promise<PromptRuleRo
   const [result] = await db.query(
     `INSERT INTO prompt_rules
       (
-        name, enabled, applies_to_surface, auth_state,
+        name, enabled, applies_to_surface, audience_segment, prompt_type,
         min_slides_viewed, min_watch_seconds,
-        max_prompts_per_session, min_slides_between_prompts,
-        cooldown_seconds_after_prompt, prompt_category_allowlist_json,
         priority, tie_break_strategy, created_by, updated_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.name,
       input.enabled ? 1 : 0,
       input.appliesToSurface,
-      input.authState,
+      input.audienceSegment,
+      input.promptType,
       input.minSlidesViewed,
       input.minWatchSeconds,
-      input.maxPromptsPerSession,
-      input.minSlidesBetweenPrompts,
-      input.cooldownSecondsAfterPrompt,
-      input.promptCategoryAllowlistJson,
       input.priority,
       input.tieBreakStrategy,
       input.createdBy,
@@ -103,13 +100,10 @@ export async function update(id: number, patch: PromptRuleUpdateInput): Promise<
   if (patch.name !== undefined) { sets.push('name = ?'); args.push(patch.name) }
   if (patch.enabled !== undefined) { sets.push('enabled = ?'); args.push(patch.enabled ? 1 : 0) }
   if (patch.appliesToSurface !== undefined) { sets.push('applies_to_surface = ?'); args.push(patch.appliesToSurface) }
-  if (patch.authState !== undefined) { sets.push('auth_state = ?'); args.push(patch.authState) }
+  if (patch.audienceSegment !== undefined) { sets.push('audience_segment = ?'); args.push(patch.audienceSegment) }
+  if (patch.promptType !== undefined) { sets.push('prompt_type = ?'); args.push(patch.promptType) }
   if (patch.minSlidesViewed !== undefined) { sets.push('min_slides_viewed = ?'); args.push(patch.minSlidesViewed) }
   if (patch.minWatchSeconds !== undefined) { sets.push('min_watch_seconds = ?'); args.push(patch.minWatchSeconds) }
-  if (patch.maxPromptsPerSession !== undefined) { sets.push('max_prompts_per_session = ?'); args.push(patch.maxPromptsPerSession) }
-  if (patch.minSlidesBetweenPrompts !== undefined) { sets.push('min_slides_between_prompts = ?'); args.push(patch.minSlidesBetweenPrompts) }
-  if (patch.cooldownSecondsAfterPrompt !== undefined) { sets.push('cooldown_seconds_after_prompt = ?'); args.push(patch.cooldownSecondsAfterPrompt) }
-  if (patch.promptCategoryAllowlistJson !== undefined) { sets.push('prompt_category_allowlist_json = ?'); args.push(patch.promptCategoryAllowlistJson) }
   if (patch.priority !== undefined) { sets.push('priority = ?'); args.push(patch.priority) }
   if (patch.tieBreakStrategy !== undefined) { sets.push('tie_break_strategy = ?'); args.push(patch.tieBreakStrategy) }
   if (patch.updatedBy !== undefined) { sets.push('updated_by = ?'); args.push(patch.updatedBy) }

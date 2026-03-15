@@ -1,9 +1,8 @@
 export type PromptDecisionSurface = 'global_feed'
-export type PromptViewerState = 'anonymous' | 'authenticated'
+export type PromptAudienceSegment = 'anonymous' | 'authenticated_non_subscriber' | 'authenticated_subscriber'
 
 export type PromptDecisionReasonCode =
   | 'eligible'
-  | 'viewer_authenticated'
   | 'no_enabled_rule'
   | 'below_threshold'
   | 'cap_reached'
@@ -15,12 +14,14 @@ export type PromptDecisionSessionRow = {
   id: number
   session_id: string
   surface: PromptDecisionSurface
-  viewer_state: PromptViewerState
+  viewer_state: PromptAudienceSegment
   slides_viewed: number
   watch_seconds: number
   prompts_shown_this_session: number
   slides_since_last_prompt: number
   last_prompt_shown_at: string | null
+  pass_through_counts_json: string | null
+  converted_prompt_ids_json: string | null
   last_prompt_dismissed_at?: string | null
   last_shown_prompt_id: number | null
   last_decision_reason: string | null
@@ -31,7 +32,7 @@ export type PromptDecisionSessionRow = {
 export type PromptDecisionInput = {
   surface: PromptDecisionSurface
   sessionId: string
-  viewerState: PromptViewerState
+  audienceSegment: PromptAudienceSegment
   counters: {
     slidesViewed: number
     watchSeconds: number

@@ -2991,7 +2991,7 @@ pagesRouter.get('/admin', async (_req: any, res: any) => {
     { title: 'Audio Configs', href: '/admin/audio-configs', desc: 'Presets for Mix/Replace + ducking (creators pick when producing)' },
     { title: 'Media Jobs', href: '/admin/media-jobs', desc: 'Debug ffmpeg mastering jobs (logs, retries, purge)' },
     { title: 'Prompts', href: '/admin/prompts', desc: 'In-feed registration/login prompt catalog and lifecycle controls' },
-    { title: 'Prompt Rules', href: '/admin/prompt-rules', desc: 'Eligibility thresholds and pacing caps for prompt orchestration' },
+    { title: 'Prompt Rules', href: '/admin/prompt-rules', desc: 'Audience + prompt-type targeting and eligibility thresholds (pacing is global)' },
     { title: 'Analytics', href: '/admin/analytics', desc: 'Cross-metric baseline feed + prompt conversion view with daily trend' },
     { title: 'Prompt Analytics', href: '/admin/prompt-analytics', desc: 'Funnel metrics, conversion rates, and overexposure detection for prompts' },
     { title: 'Analytics Sink', href: '/admin/analytics-sink', desc: 'Optional external sink health and counters (secondary analytics path)' },
@@ -3044,6 +3044,20 @@ const PROMPT_CATEGORY_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'fund_drive', label: 'Fund Drive' },
   { value: 'sponsor', label: 'Sponsor' },
   { value: 'house_message', label: 'House Message' },
+]
+
+const PROMPT_TYPE_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'register_login', label: 'Register / Login' },
+  { value: 'fund_drive', label: 'Fund Drive' },
+  { value: 'subscription_upgrade', label: 'Subscription Upgrade' },
+  { value: 'sponsor_message', label: 'Sponsor Message' },
+  { value: 'feature_announcement', label: 'Feature Announcement' },
+]
+
+const PROMPT_AUDIENCE_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'anonymous', label: 'Anonymous' },
+  { value: 'authenticated_non_subscriber', label: 'Authenticated (Non-Subscriber)' },
+  { value: 'authenticated_subscriber', label: 'Authenticated (Subscriber)' },
 ]
 
 function parseBoolLoose(raw: any, fallback = false): boolean {
@@ -3166,9 +3180,19 @@ function buildPromptCreateOrUpdatePayload(body: any): any {
   const secondaryLabel = secondaryLabelRaw || null
   const secondaryHref = secondaryHrefRaw || null
   const mediaUploadId = String(creativeForm.backgroundUploadId || '').trim()
+  const promptType = String(body?.promptType ?? body?.prompt_type ?? 'register_login').trim().toLowerCase() || 'register_login'
+  const startsAtDate = String(body?.startsAtDate || '').trim()
+  const startsAtTime = String(body?.startsAtTime || '').trim()
+  const endsAtDate = String(body?.endsAtDate || '').trim()
+  const endsAtTime = String(body?.endsAtTime || '').trim()
+  const normalizedStartsAt = startsAtDate ? `${startsAtDate}T${startsAtTime || '00:00'}` : ''
+  const normalizedEndsAt = endsAtDate ? `${endsAtDate}T${endsAtTime || '23:59'}` : ''
   return {
     ...(body || {}),
+    promptType,
     mediaUploadId: mediaUploadId || null,
+    startsAt: normalizedStartsAt,
+    endsAt: normalizedEndsAt,
     ctaPrimaryLabel: primaryLabel,
     ctaPrimaryHref: primaryHref,
     ctaSecondaryLabel: secondaryLabel,
@@ -3370,18 +3394,29 @@ function renderAdminPromptForm(opts: {
     }
   </style>`
 
-  body += `<form id="prompt-editor-form" data-draft-key="${escapeHtml(draftKey)}" method="post" action="${escapeHtml(opts.action)}">`
+  const skipDraftRestore = opts.notice ? '1' : '0'
+  body += `<form id="prompt-editor-form" data-draft-key="${escapeHtml(draftKey)}" data-skip-draft-restore="${skipDraftRestore}" method="post" action="${escapeHtml(opts.action)}">`
   if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
   const categoryValue = String(values.category || 'register_prompt').trim().toLowerCase() || 'register_prompt'
   const categoryOptions = PROMPT_CATEGORY_OPTIONS.slice()
   if (!categoryOptions.some((opt) => opt.value === categoryValue)) {
     categoryOptions.unshift({ value: categoryValue, label: `Custom (${categoryValue})` })
   }
+  const promptTypeValue = String(values.promptType || values.prompt_type || 'register_login').trim().toLowerCase() || 'register_login'
+  const promptTypeOptions = PROMPT_TYPE_OPTIONS.slice()
+  if (!promptTypeOptions.some((opt) => opt.value === promptTypeValue)) {
+    promptTypeOptions.unshift({ value: promptTypeValue, label: `Custom (${promptTypeValue})` })
+  }
 
   body += `<div class="section-title" style="margin:10px 0 6px">Identity</div>`
   body += `<div class="section">`
   body += `<label>Name<input type="text" name="name" value="${escapeHtml(String(values.name || ''))}" required maxlength="120" /></label>`
   body += `<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px; margin-top:10px">`
+  body += `<div class="mini-field"><div class="mini-field-label">Prompt Type</div><select name="promptType">`
+  for (const opt of promptTypeOptions) {
+    body += `<option value="${escapeHtml(opt.value)}"${opt.value === promptTypeValue ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+  }
+  body += `</select></div>`
   body += `<div class="mini-field"><div class="mini-field-label">Category</div><select name="category">`
   for (const opt of categoryOptions) {
     body += `<option value="${escapeHtml(opt.value)}"${opt.value === categoryValue ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
@@ -3524,6 +3559,7 @@ function renderAdminPromptForm(opts: {
       const form = document.getElementById('prompt-editor-form');
       if (!form) return;
       const draftKey = form.getAttribute('data-draft-key') || 'admin_prompt_editor_draft_new';
+      const skipDraftRestore = form.getAttribute('data-skip-draft-restore') === '1';
       const q = (name) => form.querySelector('[name="' + name + '"]');
       const v = (name, fallback = '') => {
         const el = q(name);
@@ -3597,6 +3633,10 @@ function renderAdminPromptForm(opts: {
       }
 
       function restoreDraftIfAny() {
+        if (skipDraftRestore) {
+          try { sessionStorage.removeItem(draftKey); } catch {}
+          return;
+        }
         try {
           const raw = sessionStorage.getItem(draftKey);
           if (!raw) return;
@@ -3649,7 +3689,8 @@ function renderAdminPromptForm(opts: {
           if (!hidden) continue;
           const d = String(v(p.date, '') || '').trim();
           const t = String(v(p.time, '') || '').trim();
-          hidden.value = d && t ? (d + 'T' + t) : '';
+          const fallbackTime = p.hidden === 'startsAt' ? '00:00' : '23:59';
+          hidden.value = d ? (d + 'T' + (t || fallbackTime)) : '';
         }
       }
 
@@ -3836,10 +3877,11 @@ pagesRouter.get('/admin/prompts', async (req: any, res: any) => {
   try {
     const includeArchived = String(req.query?.include_archived || '0') === '1'
     const status = req.query?.status ? String(req.query.status) : ''
+    const promptType = req.query?.prompt_type ? String(req.query.prompt_type) : ''
     const category = req.query?.category ? String(req.query.category) : ''
     const notice = req.query?.notice ? String(req.query.notice) : ''
     const error = req.query?.error ? String(req.query.error) : ''
-    const items = await promptsSvc.listForAdmin({ includeArchived, limit: 500, status, category })
+    const items = await promptsSvc.listForAdmin({ includeArchived, limit: 500, status, promptType, category })
 
     let body = '<h1>Prompts</h1>'
     body += '<div class="toolbar"><div><span class="pill">Prompt Registry</span></div><div><a href="/admin/prompts/new">New prompt</a></div></div>'
@@ -3854,6 +3896,11 @@ pagesRouter.get('/admin/prompts', async (req: any, res: any) => {
       <option value="paused"${status === 'paused' ? ' selected' : ''}>Paused</option>
       <option value="archived"${status === 'archived' ? ' selected' : ''}>Archived</option>
     </select></label>`
+    body += `<label style="min-width:210px">Prompt Type<select name="prompt_type"><option value="">All</option>`
+    for (const opt of PROMPT_TYPE_OPTIONS) {
+      body += `<option value="${escapeHtml(opt.value)}"${promptType === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+    }
+    body += `</select></label>`
     body += `<label style="min-width:180px">Category<input type="text" name="category" value="${escapeHtml(category)}" /></label>`
     body += `<label><input type="checkbox" name="include_archived" value="1"${includeArchived ? ' checked' : ''} /> Include archived</label>`
     body += `<button class="btn" type="submit">Apply</button>`
@@ -3862,12 +3909,13 @@ pagesRouter.get('/admin/prompts', async (req: any, res: any) => {
     if (!items.length) {
       body += '<p>No prompts found for current filters.</p>'
     } else {
-      body += '<table><thead><tr><th>ID</th><th>Name</th><th>Category</th><th>Priority</th><th>Status</th><th>Window</th><th>Updated</th></tr></thead><tbody>'
+      body += '<table><thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Category</th><th>Priority</th><th>Status</th><th>Window</th><th>Updated</th></tr></thead><tbody>'
       for (const item of items) {
         const windowLabel = item.startsAt || item.endsAt ? `${item.startsAt || '—'} → ${item.endsAt || '—'}` : 'Always'
         body += `<tr>
           <td>${item.id}</td>
           <td><a href="/admin/prompts/${item.id}">${escapeHtml(item.name)}</a></td>
+          <td>${escapeHtml(item.promptType)}</td>
           <td>${escapeHtml(item.category)}</td>
           <td>${item.priority}</td>
           <td>${escapeHtml(item.status)}</td>
@@ -3903,6 +3951,7 @@ pagesRouter.get('/admin/prompts/new', async (req: any, res: any) => {
       ctaPrimaryHref: '/register?return=/',
       ctaSecondaryLabel: 'Log In',
       ctaSecondaryHref: '/login?return=/',
+      promptType: 'register_login',
       category: 'register_prompt',
       priority: 100,
       status: 'draft',
@@ -4005,17 +4054,6 @@ pagesRouter.post('/admin/prompts/:id/status', async (req: any, res: any) => {
   }
 })
 
-function promptRuleSelectedCategory(values: any): string {
-  const raw = values?.promptCategoryAllowlist ?? values?.prompt_category_allowlist ?? []
-  const list = Array.isArray(raw)
-    ? raw.map((x) => String(x || '').trim().toLowerCase()).filter(Boolean)
-    : String(raw || '')
-        .split(',')
-        .map((x) => x.trim().toLowerCase())
-        .filter(Boolean)
-  return list.length ? list[0] : ''
-}
-
 function renderAdminPromptRuleForm(opts: {
   title: string
   action: string
@@ -4027,17 +4065,22 @@ function renderAdminPromptRuleForm(opts: {
 }): string {
   const csrfToken = opts.csrfToken ? String(opts.csrfToken) : ''
   const values = opts.values || {}
-  const selectedCategory = promptRuleSelectedCategory(values)
-  const categoryOptions = PROMPT_CATEGORY_OPTIONS.slice()
-  if (selectedCategory && !categoryOptions.some((opt) => opt.value === selectedCategory)) {
-    categoryOptions.unshift({ value: selectedCategory, label: `Custom (${selectedCategory})` })
+  const selectedAudience = String(values.audienceSegment || values.audience_segment || 'anonymous').trim().toLowerCase() || 'anonymous'
+  const audienceOptions = PROMPT_AUDIENCE_OPTIONS.slice()
+  if (!audienceOptions.some((opt) => opt.value === selectedAudience)) {
+    audienceOptions.unshift({ value: selectedAudience, label: `Custom (${selectedAudience})` })
+  }
+  const selectedPromptType = String(values.promptType || values.prompt_type || 'register_login').trim().toLowerCase() || 'register_login'
+  const promptTypeOptions = PROMPT_TYPE_OPTIONS.slice()
+  if (!promptTypeOptions.some((opt) => opt.value === selectedPromptType)) {
+    promptTypeOptions.unshift({ value: selectedPromptType, label: `Custom (${selectedPromptType})` })
   }
 
   let body = `<h1>${escapeHtml(opts.title)}</h1>`
   body += `<div class="toolbar"><div><a href="${escapeHtml(opts.backHref)}">← Back to prompt rules</a></div><div></div></div>`
   if (opts.error) body += `<div class="error">${escapeHtml(String(opts.error))}</div>`
   if (opts.notice) body += `<div class="notice">${escapeHtml(String(opts.notice))}</div>`
-  body += `<div class="section"><div class="field-hint">No safety minimums are enforced for prompt-rule pacing fields.</div></div>`
+  body += `<div class="section"><div class="field-hint">Global pacing and threshold controls are configured via environment variables (not per rule).</div></div>`
 
   body += `<form method="post" action="${escapeHtml(opts.action)}">`
   if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
@@ -4046,33 +4089,19 @@ function renderAdminPromptRuleForm(opts: {
   body += `<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:10px">`
   body += `<label style="display:flex; align-items:center; gap:8px; margin-top:10px"><input type="checkbox" name="enabled" value="1"${(values.enabled === true || String(values.enabled || '') === '1' || String(values.enabled || '') === 'true') ? ' checked' : ''} /> Enabled</label>`
   body += `<label>Surface<select name="appliesToSurface"><option value="global_feed"${String(values.appliesToSurface || values.applies_to_surface || '') === 'global_feed' ? ' selected' : ''}>Global Feed</option></select></label>`
-  body += `<label>Auth State<select name="authState"><option value="anonymous"${String(values.authState || values.auth_state || '') === 'anonymous' ? ' selected' : ''}>Anonymous</option></select></label>`
+  body += `<label>Audience Segment<select name="audienceSegment">`
+  for (const opt of audienceOptions) {
+    body += `<option value="${escapeHtml(opt.value)}"${opt.value === selectedAudience ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+  }
+  body += `</select></label>`
+  body += `<label>Prompt Type<select name="promptType">`
+  for (const opt of promptTypeOptions) {
+    body += `<option value="${escapeHtml(opt.value)}"${opt.value === selectedPromptType ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+  }
+  body += `</select></label>`
   body += `<label>Priority<input type="number" name="priority" value="${escapeHtml(String(values.priority ?? 100))}" /></label>`
   body += `<label>Tie Break<select name="tieBreakStrategy"><option value="random"${String(values.tieBreakStrategy || values.tie_break_strategy || '') === 'random' ? ' selected' : ''}>Random (within top priority)</option></select></label>`
   body += `</div></div>`
-
-  body += `<div class="section"><div class="section-title">Eligibility Thresholds</div>`
-  body += `<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px">`
-  body += `<label>Min Slides Viewed<input type="number" name="minSlidesViewed" min="0" value="${escapeHtml(String(values.minSlidesViewed ?? values.min_slides_viewed ?? 6))}" /></label>`
-  body += `<label>Min Watch Seconds<input type="number" name="minWatchSeconds" min="0" value="${escapeHtml(String(values.minWatchSeconds ?? values.min_watch_seconds ?? 45))}" /></label>`
-  body += `</div></div>`
-
-  body += `<div class="section"><div class="section-title">Session Caps</div>`
-  body += `<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px">`
-  body += `<label>Max Prompts / Session<input type="number" name="maxPromptsPerSession" min="0" value="${escapeHtml(String(values.maxPromptsPerSession ?? values.max_prompts_per_session ?? 2))}" /></label>`
-  body += `<label>Min Slides Between Prompts<input type="number" name="minSlidesBetweenPrompts" min="0" value="${escapeHtml(String(values.minSlidesBetweenPrompts ?? values.min_slides_between_prompts ?? 15))}" /></label>`
-  body += `<label>Cooldown Seconds Between Prompts<input type="number" name="cooldownSecondsAfterPrompt" min="0" value="${escapeHtml(String(values.cooldownSecondsAfterPrompt ?? values.cooldown_seconds_after_prompt ?? values.cooldownSecondsAfterDismiss ?? values.cooldown_seconds_after_dismiss ?? 900))}" /></label>`
-  body += `</div></div>`
-
-  body += `<div class="section"><div class="section-title">Selection Filters</div>`
-  body += `<label>Prompt Category<select name="promptCategoryAllowlist">`
-  body += `<option value=""${selectedCategory === '' ? ' selected' : ''}>All Categories</option>`
-  for (const opt of categoryOptions) {
-    body += `<option value="${escapeHtml(opt.value)}"${opt.value === selectedCategory ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
-  }
-  body += `</select></label>`
-  body += `<div class="field-hint">Matches prompt categories from <code>/admin/prompts</code>.</div>`
-  body += `</div>`
 
   body += `<div class="toolbar"><div></div><div style="display:flex; gap:8px"><button class="btn" type="submit">Save</button></div></div>`
   body += `</form>`
@@ -4092,13 +4121,16 @@ function renderAdminPromptRuleForm(opts: {
 pagesRouter.get('/admin/prompt-rules', async (req: any, res: any) => {
   try {
     const enabled = req.query?.enabled == null ? '' : String(req.query.enabled)
+    const audienceSegment = req.query?.audience_segment == null ? '' : String(req.query.audience_segment)
+    const promptType = req.query?.prompt_type == null ? '' : String(req.query.prompt_type)
     const notice = req.query?.notice ? String(req.query.notice) : ''
     const error = req.query?.error ? String(req.query.error) : ''
     const items = await promptRulesSvc.listForAdmin({
       limit: 500,
       enabled: enabled === '' ? undefined : enabled,
       appliesToSurface: req.query?.applies_to_surface,
-      authState: req.query?.auth_state,
+      audienceSegment: audienceSegment || undefined,
+      promptType: promptType || undefined,
     })
 
     let body = '<h1>Prompt Rules</h1>'
@@ -4112,22 +4144,31 @@ pagesRouter.get('/admin/prompt-rules', async (req: any, res: any) => {
       <option value="1"${enabled === '1' ? ' selected' : ''}>Enabled</option>
       <option value="0"${enabled === '0' ? ' selected' : ''}>Disabled</option>
     </select></label>`
+    body += `<label>Audience<select name="audience_segment"><option value="">All</option>`
+    for (const opt of PROMPT_AUDIENCE_OPTIONS) {
+      body += `<option value="${escapeHtml(opt.value)}"${audienceSegment === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+    }
+    body += `</select></label>`
+    body += `<label>Prompt Type<select name="prompt_type"><option value="">All</option>`
+    for (const opt of PROMPT_TYPE_OPTIONS) {
+      body += `<option value="${escapeHtml(opt.value)}"${promptType === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+    }
+    body += `</select></label>`
     body += `<button class="btn" type="submit">Apply</button>`
     body += `</div></form>`
 
     if (!items.length) {
       body += '<p>No prompt rules found.</p>'
     } else {
-      body += '<table><thead><tr><th>ID</th><th>Name</th><th>Enabled</th><th>Surface</th><th>Auth</th><th>Thresholds</th><th>Caps</th><th>Priority</th><th>Updated</th></tr></thead><tbody>'
+      body += '<table><thead><tr><th>ID</th><th>Name</th><th>Enabled</th><th>Surface</th><th>Audience</th><th>Type</th><th>Priority</th><th>Updated</th></tr></thead><tbody>'
       for (const item of items) {
         body += `<tr>
           <td>${item.id}</td>
           <td><a href="/admin/prompt-rules/${item.id}">${escapeHtml(item.name)}</a></td>
           <td>${item.enabled ? 'Yes' : 'No'}</td>
           <td>${escapeHtml(item.appliesToSurface)}</td>
-          <td>${escapeHtml(item.authState)}</td>
-          <td>slides≥${item.minSlidesViewed}, watch≥${item.minWatchSeconds}s</td>
-          <td>max/session=${item.maxPromptsPerSession}, gap=${item.minSlidesBetweenPrompts}, cooldown=${item.cooldownSecondsAfterPrompt}s</td>
+          <td>${escapeHtml(item.audienceSegment)}</td>
+          <td>${escapeHtml(item.promptType)}</td>
           <td>${item.priority}</td>
           <td>${escapeHtml(item.updatedAt || '')}</td>
         </tr>`
@@ -4156,13 +4197,8 @@ pagesRouter.get('/admin/prompt-rules/new', async (req: any, res: any) => {
       name: 'Global Feed Anonymous Rule',
       enabled: true,
       appliesToSurface: 'global_feed',
-      authState: 'anonymous',
-      minSlidesViewed: 6,
-      minWatchSeconds: 45,
-      maxPromptsPerSession: 2,
-      minSlidesBetweenPrompts: 15,
-      cooldownSecondsAfterPrompt: 900,
-      promptCategoryAllowlist: ['register_prompt'],
+      audienceSegment: 'anonymous',
+      promptType: 'register_login',
       priority: 100,
       tieBreakStrategy: 'random',
     },

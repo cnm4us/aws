@@ -1,23 +1,28 @@
 import { DomainError, ForbiddenError, NotFoundError } from '../../core/errors'
 import { getLogger } from '../../lib/logger'
 import * as repo from './repo'
-import type { PromptRuleAuthState, PromptRuleDto, PromptRuleRow, PromptRuleSurface, PromptRuleTieBreak } from './types'
+import type {
+  PromptAudienceSegment,
+  PromptRuleDto,
+  PromptRuleRow,
+  PromptRuleSurface,
+  PromptRuleTieBreak,
+  PromptType,
+} from './types'
 
 const rulesLogger = getLogger({ component: 'features.prompt_rules' })
 
 const SURFACES: readonly PromptRuleSurface[] = ['global_feed']
-const AUTH_STATES: readonly PromptRuleAuthState[] = ['anonymous']
+const AUDIENCE_SEGMENTS: readonly PromptAudienceSegment[] = ['anonymous', 'authenticated_non_subscriber', 'authenticated_subscriber']
+const PROMPT_TYPES: readonly PromptType[] = ['register_login', 'fund_drive', 'subscription_upgrade', 'sponsor_message', 'feature_announcement']
 const TIE_BREAKS: readonly PromptRuleTieBreak[] = ['random']
 
 const DEFAULTS = {
   appliesToSurface: 'global_feed' as PromptRuleSurface,
-  authState: 'anonymous' as PromptRuleAuthState,
+  audienceSegment: 'anonymous' as PromptAudienceSegment,
+  promptType: 'register_login' as PromptType,
   minSlidesViewed: 6,
   minWatchSeconds: 45,
-  maxPromptsPerSession: 2,
-  minSlidesBetweenPrompts: 15,
-  cooldownSecondsAfterPrompt: 900,
-  promptCategoryAllowlist: ['register_prompt'],
   priority: 100,
   tieBreakStrategy: 'random' as PromptRuleTieBreak,
 }
@@ -49,10 +54,17 @@ function normalizeSurface(raw: any, fallback = DEFAULTS.appliesToSurface): Promp
   return value
 }
 
-function normalizeAuthState(raw: any, fallback = DEFAULTS.authState): PromptRuleAuthState {
+function normalizeAudienceSegment(raw: any, fallback = DEFAULTS.audienceSegment): PromptAudienceSegment {
   const value = String(raw ?? '').trim().toLowerCase()
   if (!value) return fallback
-  if (!isEnumValue(value, AUTH_STATES)) throw new DomainError('invalid_auth_state', 'invalid_auth_state', 400)
+  if (!isEnumValue(value, AUDIENCE_SEGMENTS)) throw new DomainError('invalid_audience_segment', 'invalid_audience_segment', 400)
+  return value
+}
+
+function normalizePromptType(raw: any, fallback = DEFAULTS.promptType): PromptType {
+  const value = String(raw ?? '').trim().toLowerCase()
+  if (!value) return fallback
+  if (!isEnumValue(value, PROMPT_TYPES)) throw new DomainError('invalid_prompt_type', 'invalid_prompt_type', 400)
   return value
 }
 
@@ -71,55 +83,16 @@ function normalizeInt(raw: any, key: string, min: number, max: number, fallback:
   return rounded
 }
 
-function parseAllowlist(raw: any): string[] {
-  if (Array.isArray(raw)) {
-    const cleaned = raw.map((s) => String(s || '').trim().toLowerCase()).filter(Boolean)
-    const unique = Array.from(new Set(cleaned))
-    if (unique.some((c) => !/^[a-z0-9_-]+$/.test(c))) throw new DomainError('invalid_prompt_category_allowlist', 'invalid_prompt_category_allowlist', 400)
-    return unique
-  }
-
-  const text = String(raw ?? '').trim()
-  if (!text) return []
-
-  if (text.startsWith('[')) {
-    try {
-      const parsed = JSON.parse(text)
-      if (!Array.isArray(parsed)) throw new Error('bad')
-      return parseAllowlist(parsed)
-    } catch {
-      throw new DomainError('invalid_prompt_category_allowlist', 'invalid_prompt_category_allowlist', 400)
-    }
-  }
-
-  const split = text.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)
-  const unique = Array.from(new Set(split))
-  if (unique.some((c) => !/^[a-z0-9_-]+$/.test(c))) throw new DomainError('invalid_prompt_category_allowlist', 'invalid_prompt_category_allowlist', 400)
-  return unique
-}
-
 function mapRow(row: PromptRuleRow): PromptRuleDto {
-  let allowlist: string[] = []
-  try {
-    const parsed = row.prompt_category_allowlist_json ? JSON.parse(String(row.prompt_category_allowlist_json)) : []
-    if (Array.isArray(parsed)) allowlist = parsed.map((x) => String(x || '').trim().toLowerCase()).filter(Boolean)
-  } catch {
-    allowlist = []
-  }
-
   return {
     id: Number(row.id),
     name: String(row.name || ''),
     enabled: Number(row.enabled || 0) === 1,
     appliesToSurface: row.applies_to_surface,
-    authState: row.auth_state,
+    audienceSegment: row.audience_segment,
+    promptType: row.prompt_type,
     minSlidesViewed: Number(row.min_slides_viewed || 0),
     minWatchSeconds: Number(row.min_watch_seconds || 0),
-    maxPromptsPerSession: Number(row.max_prompts_per_session || 0),
-    minSlidesBetweenPrompts: Number(row.min_slides_between_prompts || 0),
-    cooldownSecondsAfterPrompt: Number(row.cooldown_seconds_after_prompt ?? row.cooldown_seconds_after_dismiss ?? 0),
-    cooldownSecondsAfterDismiss: Number(row.cooldown_seconds_after_prompt ?? row.cooldown_seconds_after_dismiss ?? 0),
-    promptCategoryAllowlist: allowlist,
     priority: Number(row.priority || 0),
     tieBreakStrategy: row.tie_break_strategy,
     createdBy: Number(row.created_by || 0),
@@ -133,20 +106,23 @@ export async function listForAdmin(params?: {
   limit?: number
   enabled?: any
   appliesToSurface?: any
-  authState?: any
+  audienceSegment?: any
+  promptType?: any
 }): Promise<PromptRuleDto[]> {
   const enabledRaw = params?.enabled
   const enabled = enabledRaw === undefined || enabledRaw === null || enabledRaw === ''
     ? null
     : normalizeBool(enabledRaw, true)
   const appliesToSurface = params?.appliesToSurface ? normalizeSurface(params.appliesToSurface) : null
-  const authState = params?.authState ? normalizeAuthState(params.authState) : null
+  const audienceSegment = params?.audienceSegment ? normalizeAudienceSegment(params.audienceSegment) : null
+  const promptType = params?.promptType ? normalizePromptType(params.promptType) : null
 
   const rows = await repo.list({
     limit: params?.limit,
     enabled,
     appliesToSurface,
-    authState,
+    audienceSegment,
+    promptType,
   })
   return rows.map(mapRow)
 }
@@ -163,19 +139,10 @@ export async function createForAdmin(input: any, actorUserId: number): Promise<P
   const name = normalizeName(input?.name)
   const enabled = normalizeBool(input?.enabled, true)
   const appliesToSurface = normalizeSurface(input?.appliesToSurface ?? input?.applies_to_surface)
-  const authState = normalizeAuthState(input?.authState ?? input?.auth_state)
+  const audienceSegment = normalizeAudienceSegment(input?.audienceSegment ?? input?.audience_segment)
+  const promptType = normalizePromptType(input?.promptType ?? input?.prompt_type)
   const minSlidesViewed = normalizeInt(input?.minSlidesViewed ?? input?.min_slides_viewed, 'min_slides_viewed', 0, 5000, DEFAULTS.minSlidesViewed)
   const minWatchSeconds = normalizeInt(input?.minWatchSeconds ?? input?.min_watch_seconds, 'min_watch_seconds', 0, 86400, DEFAULTS.minWatchSeconds)
-  const maxPromptsPerSession = normalizeInt(input?.maxPromptsPerSession ?? input?.max_prompts_per_session, 'max_prompts_per_session', 0, 100000, DEFAULTS.maxPromptsPerSession)
-  const minSlidesBetweenPrompts = normalizeInt(input?.minSlidesBetweenPrompts ?? input?.min_slides_between_prompts, 'min_slides_between_prompts', 0, 2000, DEFAULTS.minSlidesBetweenPrompts)
-  const cooldownSecondsAfterPrompt = normalizeInt(
-    input?.cooldownSecondsAfterPrompt ?? input?.cooldown_seconds_after_prompt ?? input?.cooldownSecondsAfterDismiss ?? input?.cooldown_seconds_after_dismiss,
-    'cooldown_seconds_after_prompt',
-    0,
-    604800,
-    DEFAULTS.cooldownSecondsAfterPrompt
-  )
-  const promptCategoryAllowlist = parseAllowlist(input?.promptCategoryAllowlist ?? input?.prompt_category_allowlist ?? DEFAULTS.promptCategoryAllowlist)
   const priority = normalizeInt(input?.priority, 'priority', -100000, 100000, DEFAULTS.priority)
   const tieBreakStrategy = normalizeTieBreak(input?.tieBreakStrategy ?? input?.tie_break_strategy)
 
@@ -183,13 +150,10 @@ export async function createForAdmin(input: any, actorUserId: number): Promise<P
     name,
     enabled,
     appliesToSurface,
-    authState,
+    audienceSegment,
+    promptType,
     minSlidesViewed,
     minWatchSeconds,
-    maxPromptsPerSession,
-    minSlidesBetweenPrompts,
-    cooldownSecondsAfterPrompt,
-    promptCategoryAllowlistJson: JSON.stringify(promptCategoryAllowlist),
     priority,
     tieBreakStrategy,
     createdBy: actorUserId,
@@ -215,10 +179,14 @@ export async function updateForAdmin(id: number, patch: any, actorUserId: number
     patch?.appliesToSurface !== undefined || patch?.applies_to_surface !== undefined
       ? normalizeSurface(patch?.appliesToSurface ?? patch?.applies_to_surface, current.appliesToSurface)
       : current.appliesToSurface
-  const nextAuthState =
-    patch?.authState !== undefined || patch?.auth_state !== undefined
-      ? normalizeAuthState(patch?.authState ?? patch?.auth_state, current.authState)
-      : current.authState
+  const nextAudienceSegment =
+    patch?.audienceSegment !== undefined || patch?.audience_segment !== undefined
+      ? normalizeAudienceSegment(patch?.audienceSegment ?? patch?.audience_segment, current.audienceSegment)
+      : current.audienceSegment
+  const nextPromptType =
+    patch?.promptType !== undefined || patch?.prompt_type !== undefined
+      ? normalizePromptType(patch?.promptType ?? patch?.prompt_type, current.promptType)
+      : current.promptType
   const nextMinSlidesViewed =
     patch?.minSlidesViewed !== undefined || patch?.min_slides_viewed !== undefined
       ? normalizeInt(patch?.minSlidesViewed ?? patch?.min_slides_viewed, 'min_slides_viewed', 0, 5000, current.minSlidesViewed)
@@ -227,34 +195,6 @@ export async function updateForAdmin(id: number, patch: any, actorUserId: number
     patch?.minWatchSeconds !== undefined || patch?.min_watch_seconds !== undefined
       ? normalizeInt(patch?.minWatchSeconds ?? patch?.min_watch_seconds, 'min_watch_seconds', 0, 86400, current.minWatchSeconds)
       : current.minWatchSeconds
-  const nextMaxPromptsPerSession =
-    patch?.maxPromptsPerSession !== undefined || patch?.max_prompts_per_session !== undefined
-      ? normalizeInt(patch?.maxPromptsPerSession ?? patch?.max_prompts_per_session, 'max_prompts_per_session', 0, 100000, current.maxPromptsPerSession)
-      : current.maxPromptsPerSession
-  const nextMinSlidesBetweenPrompts =
-    patch?.minSlidesBetweenPrompts !== undefined || patch?.min_slides_between_prompts !== undefined
-      ? normalizeInt(patch?.minSlidesBetweenPrompts ?? patch?.min_slides_between_prompts, 'min_slides_between_prompts', 0, 2000, current.minSlidesBetweenPrompts)
-      : current.minSlidesBetweenPrompts
-  const nextCooldownSecondsAfterPrompt =
-    patch?.cooldownSecondsAfterPrompt !== undefined ||
-    patch?.cooldown_seconds_after_prompt !== undefined ||
-    patch?.cooldownSecondsAfterDismiss !== undefined ||
-    patch?.cooldown_seconds_after_dismiss !== undefined
-      ? normalizeInt(
-          patch?.cooldownSecondsAfterPrompt ??
-            patch?.cooldown_seconds_after_prompt ??
-            patch?.cooldownSecondsAfterDismiss ??
-            patch?.cooldown_seconds_after_dismiss,
-          'cooldown_seconds_after_prompt',
-          0,
-          604800,
-          current.cooldownSecondsAfterPrompt
-        )
-      : current.cooldownSecondsAfterPrompt
-  const nextPromptCategoryAllowlist =
-    patch?.promptCategoryAllowlist !== undefined || patch?.prompt_category_allowlist !== undefined
-      ? parseAllowlist(patch?.promptCategoryAllowlist ?? patch?.prompt_category_allowlist)
-      : current.promptCategoryAllowlist
   const nextPriority =
     patch?.priority !== undefined
       ? normalizeInt(patch?.priority, 'priority', -100000, 100000, current.priority)
@@ -268,13 +208,10 @@ export async function updateForAdmin(id: number, patch: any, actorUserId: number
     name: nextName,
     enabled: nextEnabled,
     appliesToSurface: nextSurface,
-    authState: nextAuthState,
+    audienceSegment: nextAudienceSegment,
+    promptType: nextPromptType,
     minSlidesViewed: nextMinSlidesViewed,
     minWatchSeconds: nextMinWatchSeconds,
-    maxPromptsPerSession: nextMaxPromptsPerSession,
-    minSlidesBetweenPrompts: nextMinSlidesBetweenPrompts,
-    cooldownSecondsAfterPrompt: nextCooldownSecondsAfterPrompt,
-    promptCategoryAllowlistJson: JSON.stringify(nextPromptCategoryAllowlist),
     priority: nextPriority,
     tieBreakStrategy: nextTieBreakStrategy,
     updatedBy: actorUserId,

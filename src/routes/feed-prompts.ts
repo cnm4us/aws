@@ -3,14 +3,53 @@ import { context, trace } from '@opentelemetry/api'
 import { parseCookies } from '../utils/cookies'
 import { can } from '../security/permissions'
 import { PERM } from '../security/perm'
-import { buildDecisionInput, ANON_SESSION_COOKIE, ANON_SESSION_TTL_MS, decidePrompt } from '../features/prompt-decision/service'
+import {
+  buildDecisionInput,
+  ANON_SESSION_COOKIE,
+  ANON_SESSION_TTL_MS,
+  decidePrompt,
+  recordPromptSessionEvent,
+} from '../features/prompt-decision/service'
+import type { PromptAudienceSegment, PromptDecisionSurface } from '../features/prompt-decision/types'
 import * as promptsSvc from '../features/prompts/service'
 import * as uploadsSvc from '../features/uploads/service'
 import * as promptAnalyticsSvc from '../features/prompt-analytics/service'
+import * as spacesRepo from '../features/spaces/repo'
 import { getLogger } from '../lib/logger'
 
 export const feedPromptsRouter = Router()
 const feedPromptsLogger = getLogger({ component: 'routes.feed_prompts' })
+
+let globalSubscriptionSpaceCache: { spaceId: number | null; expiresAtMs: number } = { spaceId: null, expiresAtMs: 0 }
+
+async function getGlobalSubscriptionSpaceId(): Promise<number | null> {
+  const now = Date.now()
+  if (globalSubscriptionSpaceCache.expiresAtMs > now) return globalSubscriptionSpaceCache.spaceId
+  try {
+    const candidate = await spacesRepo.findGlobalSpaceCandidate()
+    const spaceId = candidate?.id != null ? Number(candidate.id) : null
+    globalSubscriptionSpaceCache = {
+      spaceId: Number.isFinite(spaceId as number) && (spaceId as number) > 0 ? (spaceId as number) : null,
+      expiresAtMs: now + 60_000,
+    }
+  } catch {
+    globalSubscriptionSpaceCache = { spaceId: null, expiresAtMs: now + 10_000 }
+  }
+  return globalSubscriptionSpaceCache.spaceId
+}
+
+async function resolveAudienceSegment(userIdRaw: any): Promise<PromptAudienceSegment> {
+  const userId = Number(userIdRaw || 0)
+  if (!Number.isFinite(userId) || userId <= 0) return 'anonymous'
+  const globalSpaceId = await getGlobalSubscriptionSpaceId()
+  if (!globalSpaceId) return 'authenticated_non_subscriber'
+  try {
+    const subscribed = await spacesRepo.hasActiveSubscription(globalSpaceId, userId)
+    return subscribed ? 'authenticated_subscriber' : 'authenticated_non_subscriber'
+  } catch {
+    return 'authenticated_non_subscriber'
+  }
+}
 
 async function handleDecision(req: any, res: any, next: any) {
   try {
@@ -29,15 +68,15 @@ async function handleDecision(req: any, res: any, next: any) {
 
     const cookies = parseCookies(req.headers.cookie)
     const cookieSessionId = cookies[ANON_SESSION_COOKIE] ? String(cookies[ANON_SESSION_COOKIE]).trim() : null
-    const viewerState = req.user?.id ? 'authenticated' : 'anonymous'
+    const audienceSegment = await resolveAudienceSegment(req.user?.id)
 
     const { input, createdSessionId } = buildDecisionInput({
       body,
       cookieSessionId,
-      viewerState,
+      audienceSegment,
     })
 
-    if (viewerState === 'anonymous' && (createdSessionId || !cookieSessionId || cookieSessionId !== input.sessionId)) {
+    if (audienceSegment === 'anonymous' && (createdSessionId || !cookieSessionId || cookieSessionId !== input.sessionId)) {
       const protoHeader = String(req.headers['x-forwarded-proto'] || '')
       const secure = protoHeader.toLowerCase() === 'https' || req.secure
       res.cookie(ANON_SESSION_COOKIE, input.sessionId, {
@@ -64,6 +103,7 @@ async function handleDecision(req: any, res: any, next: any) {
     if (span) {
       span.setAttribute('app.surface', 'global_feed')
       span.setAttribute('app.operation', 'feed.prompt.decide')
+      span.setAttribute('app.audience_segment', audienceSegment)
       span.setAttribute('app.rule_reason', decision.reasonCode)
       span.setAttribute('app.outcome', decision.shouldInsert ? 'shown' : 'blocked')
       if (decision.promptId != null) span.setAttribute('app.prompt_id', String(decision.promptId))
@@ -174,12 +214,14 @@ feedPromptsRouter.get('/api/feed/prompts/:id', async (req: any, res: any, next: 
       span.setAttribute('app.surface', 'global_feed')
       span.setAttribute('app.operation', 'feed.prompt.fetch')
       span.setAttribute('app.prompt_id', String(prompt.id))
+      span.setAttribute('app.prompt_type', String((prompt as any).promptType || 'register_login'))
       span.setAttribute('app.outcome', 'shown')
     }
 
     return res.json({
       prompt: {
         id: prompt.id,
+        prompt_type: (prompt as any).promptType || 'register_login',
         category: prompt.category,
         headline: prompt.headline,
         body: prompt.body,
@@ -212,6 +254,12 @@ feedPromptsRouter.post('/api/feed/prompt-events', async (req: any, res: any, nex
       sessionId,
       viewerState: req.user?.id ? 'authenticated' : 'anonymous',
       userId: req.user?.id ? Number(req.user.id) : null,
+    })
+    await recordPromptSessionEvent({
+      sessionId,
+      surface: String(body.surface || 'global_feed').trim().toLowerCase() as PromptDecisionSurface,
+      promptId: body.prompt_id,
+      event: body.event,
     })
 
     const opByEvent: Record<string, string> = {

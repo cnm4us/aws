@@ -13,7 +13,8 @@ adminPromptRulesRouter.get('/api/admin/prompt-rules', async (req, res, next) => 
       limit: limitRaw,
       enabled: req.query?.enabled,
       appliesToSurface: req.query?.applies_to_surface,
-      authState: req.query?.auth_state,
+      audienceSegment: req.query?.audience_segment,
+      promptType: req.query?.prompt_type,
     })
     return res.json({ items })
   } catch (err) {
