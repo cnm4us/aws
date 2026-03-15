@@ -7,6 +7,7 @@ import {
   PROMPT_MIN_SLIDES_BETWEEN_PROMPTS,
   PROMPT_MIN_WATCH_SECONDS_BEFORE_FIRST_PROMPT,
   PROMPT_PASS_THROUGH_SUPPRESS_N,
+  PROMPT_RULE_SELECTION_STRATEGY,
 } from '../../config'
 import * as promptsSvc from '../prompts/service'
 import * as promptRulesSvc from '../prompt-rules/service'
@@ -209,7 +210,9 @@ function mergeSessionState(existing: PromptDecisionSessionRow | null, input: Pro
     audienceSegment: input.audienceSegment,
     slidesViewed: Math.max(Number(existing.slides_viewed || 0), input.counters.slidesViewed),
     watchSeconds: Math.max(Number(existing.watch_seconds || 0), input.counters.watchSeconds),
-    promptsShownThisSession: Math.max(Number(existing.prompts_shown_this_session || 0), input.counters.promptsShownThisSession),
+    // Server-authoritative counter; incremented when a prompt is actually selected.
+    // This avoids client refreshes resetting rotation behavior.
+    promptsShownThisSession: Number(existing.prompts_shown_this_session || 0),
     slidesSinceLastPrompt:
       input.counters.slidesSinceLastPrompt !== undefined && input.counters.slidesSinceLastPrompt !== null
         ? input.counters.slidesSinceLastPrompt
@@ -222,6 +225,36 @@ function mergeSessionState(existing: PromptDecisionSessionRow | null, input: Pro
 
 function nowMs(): number {
   return Date.now()
+}
+
+type EligibleRuleCandidate = {
+  ruleId: number
+  ruleName: string
+  promptId: number
+}
+
+function selectEligibleRuleCandidate(
+  candidates: EligibleRuleCandidate[],
+  input: PromptDecisionInput,
+  merged: ReturnType<typeof mergeSessionState>
+): EligibleRuleCandidate | null {
+  if (!candidates.length) return null
+  if (candidates.length === 1) return candidates[0]
+
+  if (PROMPT_RULE_SELECTION_STRATEGY === 'round_robin') {
+    const base = Math.max(0, Math.round(Number(merged.promptsShownThisSession || 0)))
+    return candidates[base % candidates.length]
+  }
+
+  if (PROMPT_RULE_SELECTION_STRATEGY === 'weighted_random') {
+    const seed = `${input.sessionId}:${merged.promptsShownThisSession}:${merged.slidesViewed}:${merged.watchSeconds}:weighted_random`
+    const hash = deterministicScore(seed)
+    const numeric = Number.parseInt(hash.slice(0, 12), 16)
+    const idx = Number.isFinite(numeric) ? numeric % candidates.length : 0
+    return candidates[idx]
+  }
+
+  return candidates[0]
 }
 
 function dateToMs(raw: string | null): number | null {
@@ -313,7 +346,7 @@ export async function decidePrompt(input: PromptDecisionInput, opts?: { includeD
   if (!rules.length) {
     reasonCode = 'no_enabled_rule'
   } else {
-    let matched = false
+    const eligibleCandidates: EligibleRuleCandidate[] = []
     let lastBlockedReason: PromptDecisionReasonCode = 'no_enabled_rule'
     let lastBlockedRuleId: number | null = null
     let lastBlockedRuleName: string | null = null
@@ -396,12 +429,12 @@ export async function decidePrompt(input: PromptDecisionInput, opts?: { includeD
       }
 
       if (currentReason === 'eligible' && currentPromptId != null) {
-        matched = true
-        reasonCode = 'eligible'
-        promptId = currentPromptId
-        ruleId = currentRuleId
-        ruleName = currentRuleName
-        break
+        eligibleCandidates.push({
+          ruleId: currentRuleId,
+          ruleName: currentRuleName,
+          promptId: currentPromptId,
+        })
+        continue
       }
 
       lastBlockedReason = currentReason
@@ -409,7 +442,15 @@ export async function decidePrompt(input: PromptDecisionInput, opts?: { includeD
       lastBlockedRuleName = currentRuleName
     }
 
-    if (!matched) {
+    if (eligibleCandidates.length > 0) {
+      const selected = selectEligibleRuleCandidate(eligibleCandidates, input, merged)
+      if (selected) {
+        reasonCode = 'eligible'
+        promptId = selected.promptId
+        ruleId = selected.ruleId
+        ruleName = selected.ruleName
+      }
+    } else {
       reasonCode = lastBlockedReason
       ruleId = lastBlockedRuleId
       ruleName = lastBlockedRuleName
@@ -429,8 +470,13 @@ export async function decidePrompt(input: PromptDecisionInput, opts?: { includeD
   const persisted = await repo.getSessionByKey(input.sessionId, input.surface)
   if (persisted) {
     const lastPromptShownAt = result.shouldInsert ? normalizeDateTime(new Date().toISOString(), 'last_prompt_shown_at') : undefined
+    const nextShownCount = result.shouldInsert
+      ? Number(persisted.prompts_shown_this_session || 0) + 1
+      : Number(persisted.prompts_shown_this_session || 0)
     await repo.updateSession(persisted.id, {
       lastDecisionReason: reasonCode,
+      promptsShownThisSession: nextShownCount,
+      slidesSinceLastPrompt: result.shouldInsert ? 0 : undefined,
       lastPromptShownAt,
       lastPromptId: result.shouldInsert ? result.promptId : undefined,
     })
@@ -455,6 +501,7 @@ export async function decidePrompt(input: PromptDecisionInput, opts?: { includeD
         convertedPromptIds: Array.from(merged.suppression.convertedPromptIds),
       },
       rule: ruleId ? { id: ruleId, name: ruleName } : null,
+      selectionStrategy: PROMPT_RULE_SELECTION_STRATEGY,
       reasonCode,
     }
   }
