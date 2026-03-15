@@ -43,6 +43,7 @@ type FeedPromptPayload = {
   id: number
   category: string
   backgroundMode: 'none' | 'image' | 'video'
+  backgroundVideoPlayback: 'muted_autoplay' | 'tap_to_play_sound'
   overlayColor: string
   overlayOpacity: number
   headline: string
@@ -370,6 +371,10 @@ async function fetchPromptById(promptId: number): Promise<FeedPromptPayload> {
     backgroundMode: (String(p?.creative?.background?.mode || 'none').toLowerCase() === 'video'
       ? 'video'
       : (String(p?.creative?.background?.mode || 'none').toLowerCase() === 'image' ? 'image' : 'none')),
+    backgroundVideoPlayback:
+      String(p?.creative?.background?.videoPlaybackMode || '').toLowerCase() === 'tap_to_play_sound'
+        ? 'tap_to_play_sound'
+        : 'muted_autoplay',
     overlayColor: parseHexColor(background.overlayColor, '#000000'),
     overlayOpacity: parseOpacity(background.overlayOpacity, 0.35),
     headline: String(p.headline || ''),
@@ -2702,6 +2707,13 @@ export default function Feed() {
             prompt.backgroundMode === 'image'
               ? (prompt.media?.master || promptPosterByOrientation || null)
               : (promptPosterByOrientation || null)
+          const promptVideoSrc =
+            prompt.backgroundMode === 'video'
+              ? (prompt.media?.master || null)
+              : null
+          const promptVideoTapToPlay =
+            prompt.backgroundMode === 'video' && prompt.backgroundVideoPlayback === 'tap_to_play_sound'
+          const promptVideoAutoplayMuted = Boolean(promptVideoSrc && !promptVideoTapToPlay)
           const panelStyle = promptPoster
             ? {
                 backgroundImage: `url("${promptPoster}")`,
@@ -2727,6 +2739,26 @@ export default function Feed() {
               <div className={styles.holder}>
                 <div
                   className={styles.frame}
+                  onClick={(e) => {
+                    if (!promptVideoSrc || !promptVideoTapToPlay) return
+                    if (i !== activeSequenceIndex) return
+                    const target = e.target as HTMLElement | null
+                    if (target && (target.closest('button') || target.closest('a') || target.closest('input'))) return
+                    const el = e.currentTarget.querySelector('video') as HTMLVideoElement | null
+                    if (!el) return
+                    try {
+                      if (!el.paused) {
+                        el.pause()
+                        return
+                      }
+                      el.muted = false
+                      setStartedMap((prev) => (prev[i] ? prev : { ...prev, [i]: true }))
+                      const p = el.play()
+                      if (p && typeof p.then === 'function') {
+                        p.catch(() => {})
+                      }
+                    } catch {}
+                  }}
                   onTouchStart={(e) => {
                     try {
                       const t = e.touches && e.touches[0]
@@ -2789,6 +2821,32 @@ export default function Feed() {
                   }}
                   style={panelStyle}
                 >
+                  {promptVideoSrc ? (
+                    <video
+                      src={promptVideoSrc}
+                      poster={promptPoster || undefined}
+                      muted={promptVideoAutoplayMuted}
+                      playsInline
+                      autoPlay={promptVideoAutoplayMuted}
+                      loop
+                      preload="metadata"
+                      style={{
+                        position: 'absolute',
+                        inset: 0,
+                        width: '100%',
+                        height: '100%',
+                        objectFit: 'cover',
+                        pointerEvents: 'none',
+                      }}
+                    />
+                  ) : null}
+                  {promptVideoTapToPlay && playingIndex !== i ? (
+                    <div aria-hidden className={styles.playHint}>
+                      <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet">
+                        <polygon points="38,28 38,72 72,50" fill="#ffffff" fillOpacity="0.4" />
+                      </svg>
+                    </div>
+                  ) : null}
                   <div
                     style={{
                       position: 'absolute',
@@ -2832,7 +2890,10 @@ export default function Feed() {
                         <div style={{ display: 'flex', gap: 10, justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
                           <button
                             type="button"
-                            onClick={() => handlePromptCtaClick(prompt, prompt.ctaPrimaryHref, 'primary')}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handlePromptCtaClick(prompt, prompt.ctaPrimaryHref, 'primary')
+                            }}
                             style={{
                               border: '1px solid rgba(255,255,255,0.45)',
                               background: 'rgba(0,0,0,0.5)',
@@ -2849,7 +2910,10 @@ export default function Feed() {
                           {prompt.ctaSecondaryLabel && prompt.ctaSecondaryHref ? (
                             <button
                               type="button"
-                            onClick={() => handlePromptCtaClick(prompt, prompt.ctaSecondaryHref || '', 'secondary')}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handlePromptCtaClick(prompt, prompt.ctaSecondaryHref || '', 'secondary')
+                              }}
                             style={{
                               border: '1px solid rgba(255,255,255,0.45)',
                               background: 'rgba(0,0,0,0.5)',
@@ -2893,7 +2957,10 @@ export default function Feed() {
                         >
                           <button
                             type="button"
-                            onClick={() => handlePromptCtaClick(prompt, '/register?return=/', 'primary')}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handlePromptCtaClick(prompt, '/register?return=/', 'primary')
+                            }}
                             style={{
                               justifySelf: 'start',
                               border: '1px solid rgba(255,255,255,0.45)',
@@ -2910,7 +2977,10 @@ export default function Feed() {
                           </button>
                           <button
                             type="button"
-                            onClick={() => handlePromptCtaClick(prompt, '/login?return=/', 'secondary')}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handlePromptCtaClick(prompt, '/login?return=/', 'secondary')
+                            }}
                             style={{
                               justifySelf: 'end',
                               border: '1px solid rgba(255,255,255,0.45)',

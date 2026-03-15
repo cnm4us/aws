@@ -1,6 +1,7 @@
 export type PromptStatus = 'draft' | 'active' | 'paused' | 'archived'
 export type PromptWidgetPosition = 'top' | 'middle' | 'bottom'
 export type PromptBackgroundMode = 'none' | 'image' | 'video'
+export type PromptVideoPlaybackMode = 'muted_autoplay' | 'tap_to_play_sound'
 export type PromptType =
   | 'register_login'
   | 'fund_drive'
@@ -12,6 +13,7 @@ export type PromptCreative = {
   version: 1
   background: {
     mode: PromptBackgroundMode
+    videoPlaybackMode: PromptVideoPlaybackMode
     uploadId: number | null
     overlayColor: string
     overlayOpacity: number

@@ -632,6 +632,34 @@ export async function getUploadPublicPromptBackgroundCdnUrl(
   throw new DomainError('bad_request')
 }
 
+export async function getUploadPublicPromptPosterCdnUrl(
+  uploadId: number
+): Promise<{ url: string; expiresAt: number }> {
+  if (!uploadsCdnConfigured()) throw new DomainError('cdn_not_configured')
+
+  const row = await repo.getById(uploadId)
+  if (!row) throw new NotFoundError('not_found')
+
+  const rowKind = String(row.kind || 'video').toLowerCase()
+  if (rowKind !== 'video') throw new NotFoundError('not_found')
+
+  const thumbKey = buildUploadThumbKey(uploadId)
+  const exists = await s3ObjectExists({
+    s3,
+    bucket: String(UPLOAD_BUCKET),
+    key: thumbKey,
+    objectKind: 'upload_thumb',
+    attrs: { 'app.operation': 'uploads.prompt_poster.get' },
+  })
+
+  if (!exists.exists) {
+    await ensureThumbEnqueued(row, { userId: null })
+    throw new NotFoundError('not_found')
+  }
+
+  return signUploadsCdnUrl(thumbKey)
+}
+
 async function readBodyText(body: any): Promise<string> {
   const chunks: Buffer[] = []
   for await (const chunk of body as any) {

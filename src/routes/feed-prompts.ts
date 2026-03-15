@@ -150,6 +150,7 @@ feedPromptsRouter.get('/api/feed/prompts/:id', async (req: any, res: any, next: 
       try {
         const upload = await uploadsSvc.get(Number(mediaUploadId), {}, { userId: req.user?.id ? Number(req.user.id) : null })
         let publicBackgroundUrl: string | null = null
+        let publicPosterUrl: string | null = null
         let portraitBackgroundUrl: string | null = null
         let landscapeBackgroundUrl: string | null = null
         if (backgroundMode === 'image') {
@@ -184,25 +185,36 @@ feedPromptsRouter.get('/api/feed/prompts/:id', async (req: any, res: any, next: 
           }
         } else if (backgroundMode === 'video') {
           try {
-            const signed = await uploadsSvc.getUploadPublicPromptBackgroundCdnUrl(Number(upload.id), {
-              mode: 'video',
-            })
-            publicBackgroundUrl = signed.url
+            const [signedVideo, signedPoster] = await Promise.all([
+              uploadsSvc.getUploadPublicPromptBackgroundCdnUrl(Number(upload.id), {
+                mode: 'video',
+              }),
+              uploadsSvc.getUploadPublicPromptPosterCdnUrl(Number(upload.id)).catch(() => null),
+            ])
+            publicBackgroundUrl = signedVideo.url
+            publicPosterUrl = signedPoster?.url || null
           } catch {
             publicBackgroundUrl = null
+            publicPosterUrl = null
           }
         }
         media = {
           upload_id: Number(upload.id),
           master: publicBackgroundUrl || upload.cdn_master || upload.s3_master || null,
           poster_portrait:
+            publicPosterUrl ||
             portraitBackgroundUrl ||
             upload.poster_portrait_cdn ||
             upload.poster_portrait_s3 ||
             upload.poster_cdn ||
             upload.poster_s3 ||
             null,
-          poster_landscape: landscapeBackgroundUrl || upload.poster_landscape_cdn || upload.poster_landscape_s3 || null,
+          poster_landscape:
+            publicPosterUrl ||
+            landscapeBackgroundUrl ||
+            upload.poster_landscape_cdn ||
+            upload.poster_landscape_s3 ||
+            null,
         }
       } catch {
         media = null

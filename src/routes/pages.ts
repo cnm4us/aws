@@ -3091,6 +3091,7 @@ function hexToRgba(hex: string, opacity: number): string {
 
 function extractPromptCreativeForm(values: any): {
   backgroundMode: 'none' | 'image' | 'video'
+  backgroundVideoPlayback: 'muted_autoplay' | 'tap_to_play_sound'
   backgroundUploadId: string
   backgroundOverlayColor: string
   backgroundOverlayOpacity: number
@@ -3121,6 +3122,10 @@ function extractPromptCreativeForm(values: any): {
 
   const base = {
     backgroundMode: String(creative?.background?.mode || (defaultUploadId ? 'image' : 'none')).toLowerCase() as 'none' | 'image' | 'video',
+    backgroundVideoPlayback:
+      String(creative?.background?.videoPlaybackMode || 'muted_autoplay').toLowerCase() === 'tap_to_play_sound'
+        ? 'tap_to_play_sound'
+        : 'muted_autoplay',
     backgroundUploadId: String(creative?.background?.uploadId ?? defaultUploadId ?? ''),
     backgroundOverlayColor: String(creative?.background?.overlayColor || '#000000'),
     backgroundOverlayOpacity: parseNumLoose(creative?.background?.overlayOpacity, 0.35),
@@ -3146,6 +3151,9 @@ function extractPromptCreativeForm(values: any): {
     backgroundMode: (String(values?.creativeBgMode || base.backgroundMode).toLowerCase() === 'video'
       ? 'video'
       : (String(values?.creativeBgMode || base.backgroundMode).toLowerCase() === 'image' ? 'image' : 'none')),
+    backgroundVideoPlayback: (String(values?.creativeBgVideoPlayback || base.backgroundVideoPlayback).toLowerCase() === 'tap_to_play_sound'
+      ? 'tap_to_play_sound'
+      : 'muted_autoplay'),
     backgroundUploadId: String(values?.creativeBgUploadId ?? base.backgroundUploadId ?? ''),
     backgroundOverlayColor: parseColorLoose(values?.creativeBgOverlayColor ?? base.backgroundOverlayColor, '#000000'),
     backgroundOverlayOpacity: Math.min(1, Math.max(0, parseNumLoose(values?.creativeBgOverlayOpacity ?? base.backgroundOverlayOpacity, 0.35))),
@@ -3201,6 +3209,7 @@ function buildPromptCreateOrUpdatePayload(body: any): any {
       version: 1,
       background: {
         mode: creativeForm.backgroundMode,
+        videoPlaybackMode: creativeForm.backgroundVideoPlayback,
         uploadId: mediaUploadId ? Number(mediaUploadId) : null,
         overlayColor: creativeForm.backgroundOverlayColor,
         overlayOpacity: creativeForm.backgroundOverlayOpacity,
@@ -3441,6 +3450,10 @@ function renderAdminPromptForm(opts: {
     <option value="image"${creativeForm.backgroundMode === 'image' ? ' selected' : ''}>Image</option>
     <option value="video"${creativeForm.backgroundMode === 'video' ? ' selected' : ''}>Video</option>
   </select></label>`
+  body += `<label id="prompt-video-playback-row"${creativeForm.backgroundMode === 'video' ? '' : ' style="display:none"'}>Video Playback<select name="creativeBgVideoPlayback">
+    <option value="muted_autoplay"${creativeForm.backgroundVideoPlayback === 'muted_autoplay' ? ' selected' : ''}>Muted Autoplay</option>
+    <option value="tap_to_play_sound"${creativeForm.backgroundVideoPlayback === 'tap_to_play_sound' ? ' selected' : ''}>Tap to Play (Sound)</option>
+  </select></label>`
   body += `</div>`
   body += `<div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:10px; align-items:start">`
   body += `<div class="mini-field"><div class="mini-field-label">Overlay Color</div><input class="color-swatch-input" type="color" name="creativeBgOverlayColor" value="${escapeHtml(String(creativeForm.backgroundOverlayColor || '#000000'))}" /></div>`
@@ -3526,7 +3539,7 @@ function renderAdminPromptForm(opts: {
   body += `<div style="border:1px solid rgba(96,165,250,0.6); border-radius:12px; background:linear-gradient(180deg, rgba(28,45,58,0.72) 0%, rgba(12,16,20,0.72) 100%); overflow:hidden">`
   body += `<div id="prompt-preview-device" style="width:100%; max-width:100%; aspect-ratio:9/16; margin:0; ${previewBaseStyle} position:relative">`
   body += `<div id="prompt-preview-overlay" style="position:absolute; inset:0; background:${hexToRgba(creativeForm.backgroundOverlayColor, creativeForm.backgroundOverlayOpacity)}"></div>`
-  body += `<div id="prompt-preview-mode-badge" style="position:absolute; top:10px; right:10px; z-index:2; border:1px solid rgba(255,255,255,0.25); border-radius:999px; padding:3px 8px; font-size:11px; background:rgba(0,0,0,0.45)">Mode: ${escapeHtml(String(creativeForm.backgroundMode))}</div>`
+  body += `<div id="prompt-preview-mode-badge" style="position:absolute; top:10px; right:10px; z-index:2; border:1px solid rgba(255,255,255,0.25); border-radius:999px; padding:3px 8px; font-size:11px; background:rgba(0,0,0,0.45)">Mode: ${escapeHtml(String(creativeForm.backgroundMode))}${creativeForm.backgroundMode === 'video' ? ` (${escapeHtml(creativeForm.backgroundVideoPlayback === 'tap_to_play_sound' ? 'tap-to-play' : 'muted-autoplay')})` : ''}</div>`
   const msgInset = Math.max(0, Math.min(80, Number(creativeForm.messageOffsetPct || 0)))
   const msgTopPct = Math.max(2, Math.min(92, (creativeForm.messagePosition === 'top' ? 2 : 42) + msgInset))
   const msgPosStyle = creativeForm.messagePosition === 'bottom'
@@ -3588,6 +3601,7 @@ function renderAdminPromptForm(opts: {
       const preview = {
         messageSection: document.getElementById('message-widget-content-section'),
         authSection: document.getElementById('auth-widget-style-section'),
+        videoPlaybackRow: document.getElementById('prompt-video-playback-row'),
         device: document.getElementById('prompt-preview-device'),
         overlay: document.getElementById('prompt-preview-overlay'),
         modeBadge: document.getElementById('prompt-preview-mode-badge'),
@@ -3696,6 +3710,7 @@ function renderAdminPromptForm(opts: {
 
       function updatePreview() {
         const bgMode = String(v('creativeBgMode', 'none')).toLowerCase();
+        const bgVideoPlayback = String(v('creativeBgVideoPlayback', 'muted_autoplay')).toLowerCase() === 'tap_to_play_sound' ? 'tap_to_play_sound' : 'muted_autoplay';
         const bgUploadId = String(v('creativeBgUploadId', '')).trim();
         const bgOverlayColor = hex(v('creativeBgOverlayColor', '#000000'), '#000000');
         const bgOverlayOpacity = clamp(vn('creativeBgOverlayOpacity', 0.35), 0, 1);
@@ -3763,8 +3778,10 @@ function renderAdminPromptForm(opts: {
 
         if (preview.overlay) preview.overlay.style.background = hexToRgba(bgOverlayColor, bgOverlayOpacity);
         if (preview.modeBadge) {
-          preview.modeBadge.textContent = 'Mode: ' + (bgMode || 'none') + (bgUploadId ? (' #' + bgUploadId) : '');
+          const playbackLabel = bgMode === 'video' ? (' (' + (bgVideoPlayback === 'tap_to_play_sound' ? 'tap-to-play' : 'muted-autoplay') + ')') : '';
+          preview.modeBadge.textContent = 'Mode: ' + (bgMode || 'none') + playbackLabel + (bgUploadId ? (' #' + bgUploadId) : '');
         }
+        if (preview.videoPlaybackRow) preview.videoPlaybackRow.style.display = bgMode === 'video' ? '' : 'none';
         if (pickImageBtn) pickImageBtn.style.display = bgMode === 'image' ? '' : 'none';
         if (pickVideoBtn) pickVideoBtn.style.display = bgMode === 'video' ? '' : 'none';
         if (preview.device) {

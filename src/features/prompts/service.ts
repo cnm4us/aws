@@ -5,6 +5,7 @@ import type {
   PromptBackgroundMode,
   PromptCreative,
   PromptDto,
+  PromptVideoPlaybackMode,
   PromptRow,
   PromptStatus,
   PromptType,
@@ -15,6 +16,7 @@ const promptsLogger = getLogger({ component: 'features.prompts' })
 
 const STATUSES: readonly PromptStatus[] = ['draft', 'active', 'paused', 'archived']
 const BACKGROUND_MODES: readonly PromptBackgroundMode[] = ['none', 'image', 'video']
+const VIDEO_PLAYBACK_MODES: readonly PromptVideoPlaybackMode[] = ['muted_autoplay', 'tap_to_play_sound']
 const WIDGET_POSITIONS: readonly PromptWidgetPosition[] = ['top', 'middle', 'bottom']
 const PROMPT_TYPES: readonly PromptType[] = [
   'register_login',
@@ -177,6 +179,13 @@ function normalizeBackgroundMode(raw: any, key: string, fallback: PromptBackgrou
   return value
 }
 
+function normalizeVideoPlaybackMode(raw: any, key: string, fallback: PromptVideoPlaybackMode): PromptVideoPlaybackMode {
+  const value = String(raw ?? '').trim().toLowerCase()
+  if (!value) return fallback
+  if (!isEnumValue(value, VIDEO_PLAYBACK_MODES)) throw new DomainError(`invalid_${key}`, `invalid_${key}`, 400)
+  return value
+}
+
 function normalizeOffsetPct(raw: any, key: string, fallback: number): number {
   const value = raw == null || raw === '' ? fallback : Number(raw)
   if (!Number.isFinite(value)) throw new DomainError(`invalid_${key}`, `invalid_${key}`, 400)
@@ -213,6 +222,7 @@ function buildLegacyCreative(legacy: PromptLegacyFields): PromptCreative {
     version: 1,
     background: {
       mode: legacy.mediaUploadId ? 'image' : 'none',
+      videoPlaybackMode: 'muted_autoplay',
       uploadId: legacy.mediaUploadId,
       overlayColor: '#000000',
       overlayOpacity: 0.35,
@@ -278,6 +288,11 @@ function normalizeCreative(raw: any, legacy: PromptLegacyFields): PromptCreative
     version: 1,
     background: {
       mode: normalizeBackgroundMode(backgroundSrc.mode, 'creative_background_mode', base.background.mode),
+      videoPlaybackMode: normalizeVideoPlaybackMode(
+        backgroundSrc.videoPlaybackMode ?? backgroundSrc.video_playback_mode,
+        'creative_background_video_playback_mode',
+        base.background.videoPlaybackMode
+      ),
       uploadId: normalizeMediaUploadId(backgroundSrc.uploadId ?? backgroundSrc.upload_id ?? base.background.uploadId),
       overlayColor: normalizeHexColor(backgroundSrc.overlayColor ?? backgroundSrc.overlay_color, 'creative_background_overlay_color', base.background.overlayColor),
       overlayOpacity: normalizeOpacity(backgroundSrc.overlayOpacity ?? backgroundSrc.overlay_opacity, 'creative_background_overlay_opacity', base.background.overlayOpacity),
