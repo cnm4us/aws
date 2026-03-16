@@ -15,6 +15,8 @@ adminPromptsRouter.get('/api/admin/prompts', async (req, res, next) => {
       limit: limitRaw,
       status: req.query?.status,
       promptType: req.query?.prompt_type,
+      appliesToSurface: req.query?.applies_to_surface,
+      audienceSegment: req.query?.audience_segment,
       category: req.query?.category,
     })
     return res.json({ items })

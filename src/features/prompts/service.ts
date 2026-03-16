@@ -2,9 +2,12 @@ import { DomainError, ForbiddenError, NotFoundError } from '../../core/errors'
 import { getLogger } from '../../lib/logger'
 import * as repo from './repo'
 import type {
+  PromptAudienceSegment,
   PromptBackgroundMode,
   PromptCreative,
   PromptDto,
+  PromptSurface,
+  PromptTieBreakStrategy,
   PromptVideoPlaybackMode,
   PromptRow,
   PromptStatus,
@@ -18,6 +21,9 @@ const STATUSES: readonly PromptStatus[] = ['draft', 'active', 'paused', 'archive
 const BACKGROUND_MODES: readonly PromptBackgroundMode[] = ['none', 'image', 'video']
 const VIDEO_PLAYBACK_MODES: readonly PromptVideoPlaybackMode[] = ['muted_autoplay', 'tap_to_play_sound']
 const WIDGET_POSITIONS: readonly PromptWidgetPosition[] = ['top', 'middle', 'bottom']
+const SURFACES: readonly PromptSurface[] = ['global_feed']
+const AUDIENCE_SEGMENTS: readonly PromptAudienceSegment[] = ['anonymous', 'authenticated_non_subscriber', 'authenticated_subscriber']
+const TIE_BREAK_STRATEGIES: readonly PromptTieBreakStrategy[] = ['first', 'round_robin', 'weighted_random']
 const PROMPT_TYPES: readonly PromptType[] = [
   'register_login',
   'fund_drive',
@@ -92,6 +98,27 @@ function normalizePromptType(raw: any, fallback: PromptType = 'register_login'):
   const value = String(raw ?? '').trim().toLowerCase()
   if (!value) return fallback
   if (!isEnumValue(value, PROMPT_TYPES)) throw new DomainError('invalid_prompt_type', 'invalid_prompt_type', 400)
+  return value
+}
+
+function normalizeSurface(raw: any, fallback: PromptSurface = 'global_feed'): PromptSurface {
+  const value = String(raw ?? '').trim().toLowerCase()
+  if (!value) return fallback
+  if (!isEnumValue(value, SURFACES)) throw new DomainError('invalid_applies_to_surface', 'invalid_applies_to_surface', 400)
+  return value
+}
+
+function normalizeAudienceSegment(raw: any, fallback: PromptAudienceSegment = 'anonymous'): PromptAudienceSegment {
+  const value = String(raw ?? '').trim().toLowerCase()
+  if (!value) return fallback
+  if (!isEnumValue(value, AUDIENCE_SEGMENTS)) throw new DomainError('invalid_audience_segment', 'invalid_audience_segment', 400)
+  return value
+}
+
+function normalizeTieBreakStrategy(raw: any, fallback: PromptTieBreakStrategy = 'round_robin'): PromptTieBreakStrategy {
+  const value = String(raw ?? '').trim().toLowerCase()
+  if (!value) return fallback
+  if (!isEnumValue(value, TIE_BREAK_STRATEGIES)) throw new DomainError('invalid_tie_break_strategy', 'invalid_tie_break_strategy', 400)
   return value
 }
 
@@ -356,6 +383,9 @@ function mapRow(row: PromptRow): PromptDto {
     mediaUploadId: row.media_upload_id == null ? null : Number(row.media_upload_id),
     creative: resolveCreativeFromRow(row),
     promptType: normalizePromptType((row as any).prompt_type, 'register_login'),
+    appliesToSurface: normalizeSurface((row as any).applies_to_surface, 'global_feed'),
+    audienceSegment: normalizeAudienceSegment((row as any).audience_segment, 'anonymous'),
+    tieBreakStrategy: normalizeTieBreakStrategy((row as any).tie_break_strategy, 'round_robin'),
     category: String(row.category || ''),
     priority: Number(row.priority || 0),
     status: row.status,
@@ -373,10 +403,14 @@ export async function listForAdmin(params: {
   limit?: number
   status?: any
   promptType?: any
+  appliesToSurface?: any
+  audienceSegment?: any
   category?: any
 }): Promise<PromptDto[]> {
   const status = params.status == null || params.status === '' ? null : normalizeStatus(params.status)
   const promptType = params.promptType == null || params.promptType === '' ? null : normalizePromptType(params.promptType)
+  const appliesToSurface = params.appliesToSurface == null || params.appliesToSurface === '' ? null : normalizeSurface(params.appliesToSurface)
+  const audienceSegment = params.audienceSegment == null || params.audienceSegment === '' ? null : normalizeAudienceSegment(params.audienceSegment)
   const category = params.category == null || params.category === '' ? null : normalizeCategory(params.category)
 
   const rows = await repo.list({
@@ -384,6 +418,8 @@ export async function listForAdmin(params: {
     limit: params.limit,
     status,
     promptType,
+    appliesToSurface,
+    audienceSegment,
     category,
   })
   return rows.map(mapRow)
@@ -412,6 +448,9 @@ export async function createForAdmin(input: any, actorUserId: number): Promise<P
 
   const mediaUploadId = normalizeMediaUploadId(input?.mediaUploadId ?? input?.media_upload_id)
   const promptType = normalizePromptType(input?.promptType ?? input?.prompt_type, 'register_login')
+  const appliesToSurface = normalizeSurface(input?.appliesToSurface ?? input?.applies_to_surface, 'global_feed')
+  const audienceSegment = normalizeAudienceSegment(input?.audienceSegment ?? input?.audience_segment, 'anonymous')
+  const tieBreakStrategy = normalizeTieBreakStrategy(input?.tieBreakStrategy ?? input?.tie_break_strategy, 'round_robin')
   const creative = normalizeCreative(input?.creative ?? input?.creative_json, {
     headline,
     body,
@@ -437,6 +476,9 @@ export async function createForAdmin(input: any, actorUserId: number): Promise<P
     mediaUploadId,
     creativeJson: JSON.stringify(creative),
     promptType,
+    appliesToSurface,
+    audienceSegment,
+    tieBreakStrategy,
     category,
     priority,
     status,
@@ -506,6 +548,24 @@ export async function updateForAdmin(id: number, patch: any, actorUserId: number
     patch?.promptType !== undefined || patch?.prompt_type !== undefined
       ? normalizePromptType(patch?.promptType ?? patch?.prompt_type, normalizePromptType((existing as any).prompt_type, 'register_login'))
       : normalizePromptType((existing as any).prompt_type, 'register_login')
+  const nextAppliesToSurface =
+    patch?.appliesToSurface !== undefined || patch?.applies_to_surface !== undefined
+      ? normalizeSurface(patch?.appliesToSurface ?? patch?.applies_to_surface, normalizeSurface((existing as any).applies_to_surface, 'global_feed'))
+      : normalizeSurface((existing as any).applies_to_surface, 'global_feed')
+  const nextAudienceSegment =
+    patch?.audienceSegment !== undefined || patch?.audience_segment !== undefined
+      ? normalizeAudienceSegment(
+        patch?.audienceSegment ?? patch?.audience_segment,
+        normalizeAudienceSegment((existing as any).audience_segment, 'anonymous')
+      )
+      : normalizeAudienceSegment((existing as any).audience_segment, 'anonymous')
+  const nextTieBreakStrategy =
+    patch?.tieBreakStrategy !== undefined || patch?.tie_break_strategy !== undefined
+      ? normalizeTieBreakStrategy(
+        patch?.tieBreakStrategy ?? patch?.tie_break_strategy,
+        normalizeTieBreakStrategy((existing as any).tie_break_strategy, 'round_robin')
+      )
+      : normalizeTieBreakStrategy((existing as any).tie_break_strategy, 'round_robin')
 
   const nextCategory = patch?.category !== undefined ? normalizeCategory(patch.category) : String(existing.category)
   const nextPriority = patch?.priority !== undefined ? normalizePriority(patch.priority, Number(existing.priority)) : Number(existing.priority)
@@ -536,6 +596,9 @@ export async function updateForAdmin(id: number, patch: any, actorUserId: number
     mediaUploadId: nextMediaUploadId,
     creativeJson: nextCreativeJson,
     promptType: nextPromptType,
+    appliesToSurface: nextAppliesToSurface,
+    audienceSegment: nextAudienceSegment,
+    tieBreakStrategy: nextTieBreakStrategy,
     category: nextCategory,
     priority: nextPriority,
     status: nextStatus,
@@ -564,6 +627,9 @@ export async function cloneForAdmin(id: number, actorUserId: number): Promise<Pr
     mediaUploadId: existing.media_upload_id == null ? null : Number(existing.media_upload_id),
     creativeJson: (existing as any).creative_json == null ? null : String((existing as any).creative_json),
     promptType: normalizePromptType((existing as any).prompt_type, 'register_login'),
+    appliesToSurface: normalizeSurface((existing as any).applies_to_surface, 'global_feed'),
+    audienceSegment: normalizeAudienceSegment((existing as any).audience_segment, 'anonymous'),
+    tieBreakStrategy: normalizeTieBreakStrategy((existing as any).tie_break_strategy, 'round_robin'),
     category: String(existing.category || ''),
     priority: Number(existing.priority || 100),
     status: 'draft',
@@ -594,12 +660,16 @@ export async function updateStatusForAdmin(id: number, statusRaw: any, actorUser
 
 export async function listActiveForFeed(params?: {
   promptType?: any
+  appliesToSurface?: any
+  audienceSegment?: any
   category?: any
   limit?: number
 }): Promise<PromptDto[]> {
   const promptType = params?.promptType == null || params?.promptType === '' ? null : normalizePromptType(params.promptType)
+  const appliesToSurface = params?.appliesToSurface == null || params?.appliesToSurface === '' ? null : normalizeSurface(params.appliesToSurface)
+  const audienceSegment = params?.audienceSegment == null || params?.audienceSegment === '' ? null : normalizeAudienceSegment(params.audienceSegment)
   const category = params?.category == null || params?.category === '' ? null : normalizeCategory(params.category)
-  const rows = await repo.listActiveForFeed({ promptType, category, limit: params?.limit })
+  const rows = await repo.listActiveForFeed({ promptType, appliesToSurface, audienceSegment, category, limit: params?.limit })
   return rows.map(mapRow)
 }
 

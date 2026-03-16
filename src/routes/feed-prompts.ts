@@ -19,6 +19,7 @@ import { getLogger } from '../lib/logger'
 
 export const feedPromptsRouter = Router()
 const feedPromptsLogger = getLogger({ component: 'routes.feed_prompts' })
+const PROMPT_DEBUG_ENABLED = String(process.env.PROMPT_DEBUG || '0') === '1'
 
 let globalSubscriptionSpaceCache: { spaceId: number | null; expiresAtMs: number } = { spaceId: null, expiresAtMs: 0 }
 
@@ -99,6 +100,25 @@ async function handleDecision(req: any, res: any, next: any) {
 
     const decision = await decidePrompt(input, { includeDebug })
 
+    if (PROMPT_DEBUG_ENABLED) {
+      ;(req.log || feedPromptsLogger).debug(
+        {
+          app_surface: input.surface,
+          app_operation: 'feed.prompt.decide',
+          audience_segment: audienceSegment,
+          session_id: input.sessionId,
+          counters: input.counters,
+          decision: {
+            should_insert: decision.shouldInsert,
+            prompt_id: decision.promptId,
+            reason_code: decision.reasonCode,
+          },
+          decision_debug: decision.debug || null,
+        },
+        'prompt.decision.debug'
+      )
+    }
+
     const span = trace.getSpan(context.active())
     if (span) {
       span.setAttribute('app.surface', 'global_feed')
@@ -107,7 +127,6 @@ async function handleDecision(req: any, res: any, next: any) {
       span.setAttribute('app.rule_reason', decision.reasonCode)
       span.setAttribute('app.outcome', decision.shouldInsert ? 'shown' : 'blocked')
       if (decision.promptId != null) span.setAttribute('app.prompt_id', String(decision.promptId))
-      if (decision.ruleId != null) span.setAttribute('app.rule_id', String(decision.ruleId))
     }
 
     return res.json({

@@ -18,7 +18,6 @@ import * as licenseSourcesSvc from '../features/license-sources/service'
 import * as licenseSourcesRepo from '../features/license-sources/repo'
 import * as lowerThirdsSvc from '../features/lower-thirds/service'
 import * as promptsSvc from '../features/prompts/service'
-import * as promptRulesSvc from '../features/prompt-rules/service'
 import * as promptAnalyticsSvc from '../features/prompt-analytics/service'
 import * as feedActivitySvc from '../features/feed-activity/service'
 import { getAnalyticsSinkHealth } from '../features/analytics-sink/service'
@@ -646,9 +645,8 @@ type AdminNavKey =
 	| 'license_sources'
 	| 'lower_thirds'
 	| 'audio_configs'
-	| 'media_jobs'
+  | 'media_jobs'
   | 'prompts'
-  | 'prompt_rules'
   | 'analytics'
   | 'prompt_analytics'
   | 'analytics_sink'
@@ -672,7 +670,6 @@ const ADMIN_NAV_ITEMS: Array<{ key: AdminNavKey; label: string; href: string }> 
 	{ key: 'audio_configs', label: 'Audio Configs', href: '/admin/audio-configs' },
 	{ key: 'media_jobs', label: 'Media Jobs', href: '/admin/media-jobs' },
   { key: 'prompts', label: 'Prompts', href: '/admin/prompts' },
-  { key: 'prompt_rules', label: 'Prompt Rules', href: '/admin/prompt-rules' },
   { key: 'analytics', label: 'Analytics', href: '/admin/analytics' },
   { key: 'prompt_analytics', label: 'Prompt Analytics', href: '/admin/prompt-analytics' },
   { key: 'analytics_sink', label: 'Analytics Sink', href: '/admin/analytics-sink' },
@@ -2991,7 +2988,6 @@ pagesRouter.get('/admin', async (_req: any, res: any) => {
     { title: 'Audio Configs', href: '/admin/audio-configs', desc: 'Presets for Mix/Replace + ducking (creators pick when producing)' },
     { title: 'Media Jobs', href: '/admin/media-jobs', desc: 'Debug ffmpeg mastering jobs (logs, retries, purge)' },
     { title: 'Prompts', href: '/admin/prompts', desc: 'In-feed registration/login prompt catalog and lifecycle controls' },
-    { title: 'Prompt Rules', href: '/admin/prompt-rules', desc: 'Audience + prompt-type targeting and eligibility thresholds (pacing is global)' },
     { title: 'Analytics', href: '/admin/analytics', desc: 'Cross-metric baseline feed + prompt conversion view with daily trend' },
     { title: 'Prompt Analytics', href: '/admin/prompt-analytics', desc: 'Funnel metrics, conversion rates, and overexposure detection for prompts' },
     { title: 'Analytics Sink', href: '/admin/analytics-sink', desc: 'Optional external sink health and counters (secondary analytics path)' },
@@ -3058,6 +3054,16 @@ const PROMPT_AUDIENCE_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'anonymous', label: 'Anonymous' },
   { value: 'authenticated_non_subscriber', label: 'Authenticated (Non-Subscriber)' },
   { value: 'authenticated_subscriber', label: 'Authenticated (Subscriber)' },
+]
+
+const PROMPT_SURFACE_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'global_feed', label: 'Global Feed' },
+]
+
+const PROMPT_TIE_BREAK_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'round_robin', label: 'Round Robin' },
+  { value: 'weighted_random', label: 'Weighted Random' },
+  { value: 'first', label: 'First' },
 ]
 
 function parseBoolLoose(raw: any, fallback = false): boolean {
@@ -3189,6 +3195,9 @@ function buildPromptCreateOrUpdatePayload(body: any): any {
   const secondaryHref = secondaryHrefRaw || null
   const mediaUploadId = String(creativeForm.backgroundUploadId || '').trim()
   const promptType = String(body?.promptType ?? body?.prompt_type ?? 'register_login').trim().toLowerCase() || 'register_login'
+  const appliesToSurface = String(body?.appliesToSurface ?? body?.applies_to_surface ?? 'global_feed').trim().toLowerCase() || 'global_feed'
+  const audienceSegment = String(body?.audienceSegment ?? body?.audience_segment ?? 'anonymous').trim().toLowerCase() || 'anonymous'
+  const tieBreakStrategy = String(body?.tieBreakStrategy ?? body?.tie_break_strategy ?? 'round_robin').trim().toLowerCase() || 'round_robin'
   const startsAtDate = String(body?.startsAtDate || '').trim()
   const startsAtTime = String(body?.startsAtTime || '').trim()
   const endsAtDate = String(body?.endsAtDate || '').trim()
@@ -3198,6 +3207,9 @@ function buildPromptCreateOrUpdatePayload(body: any): any {
   return {
     ...(body || {}),
     promptType,
+    appliesToSurface,
+    audienceSegment,
+    tieBreakStrategy,
     mediaUploadId: mediaUploadId || null,
     startsAt: normalizedStartsAt,
     endsAt: normalizedEndsAt,
@@ -3416,6 +3428,21 @@ function renderAdminPromptForm(opts: {
   if (!promptTypeOptions.some((opt) => opt.value === promptTypeValue)) {
     promptTypeOptions.unshift({ value: promptTypeValue, label: `Custom (${promptTypeValue})` })
   }
+  const audienceValue = String(values.audienceSegment || values.audience_segment || 'anonymous').trim().toLowerCase() || 'anonymous'
+  const audienceOptions = PROMPT_AUDIENCE_OPTIONS.slice()
+  if (!audienceOptions.some((opt) => opt.value === audienceValue)) {
+    audienceOptions.unshift({ value: audienceValue, label: `Custom (${audienceValue})` })
+  }
+  const surfaceValue = String(values.appliesToSurface || values.applies_to_surface || 'global_feed').trim().toLowerCase() || 'global_feed'
+  const surfaceOptions = PROMPT_SURFACE_OPTIONS.slice()
+  if (!surfaceOptions.some((opt) => opt.value === surfaceValue)) {
+    surfaceOptions.unshift({ value: surfaceValue, label: `Custom (${surfaceValue})` })
+  }
+  const tieBreakValue = String(values.tieBreakStrategy || values.tie_break_strategy || 'round_robin').trim().toLowerCase() || 'round_robin'
+  const tieBreakOptions = PROMPT_TIE_BREAK_OPTIONS.slice()
+  if (!tieBreakOptions.some((opt) => opt.value === tieBreakValue)) {
+    tieBreakOptions.unshift({ value: tieBreakValue, label: `Custom (${tieBreakValue})` })
+  }
 
   body += `<div class="section-title" style="margin:10px 0 6px">Identity</div>`
   body += `<div class="section">`
@@ -3424,6 +3451,21 @@ function renderAdminPromptForm(opts: {
   body += `<div class="mini-field"><div class="mini-field-label">Prompt Type</div><select name="promptType">`
   for (const opt of promptTypeOptions) {
     body += `<option value="${escapeHtml(opt.value)}"${opt.value === promptTypeValue ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+  }
+  body += `</select></div>`
+  body += `<div class="mini-field"><div class="mini-field-label">Audience</div><select name="audienceSegment">`
+  for (const opt of audienceOptions) {
+    body += `<option value="${escapeHtml(opt.value)}"${opt.value === audienceValue ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+  }
+  body += `</select></div>`
+  body += `<div class="mini-field"><div class="mini-field-label">Surface</div><select name="appliesToSurface">`
+  for (const opt of surfaceOptions) {
+    body += `<option value="${escapeHtml(opt.value)}"${opt.value === surfaceValue ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+  }
+  body += `</select></div>`
+  body += `<div class="mini-field"><div class="mini-field-label">Tie Break</div><select name="tieBreakStrategy">`
+  for (const opt of tieBreakOptions) {
+    body += `<option value="${escapeHtml(opt.value)}"${opt.value === tieBreakValue ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
   }
   body += `</select></div>`
   body += `<div class="mini-field"><div class="mini-field-label">Category</div><select name="category">`
@@ -3895,10 +3937,20 @@ pagesRouter.get('/admin/prompts', async (req: any, res: any) => {
     const includeArchived = String(req.query?.include_archived || '0') === '1'
     const status = req.query?.status ? String(req.query.status) : ''
     const promptType = req.query?.prompt_type ? String(req.query.prompt_type) : ''
+    const audienceSegment = req.query?.audience_segment ? String(req.query.audience_segment) : ''
+    const appliesToSurface = req.query?.applies_to_surface ? String(req.query.applies_to_surface) : ''
     const category = req.query?.category ? String(req.query.category) : ''
     const notice = req.query?.notice ? String(req.query.notice) : ''
     const error = req.query?.error ? String(req.query.error) : ''
-    const items = await promptsSvc.listForAdmin({ includeArchived, limit: 500, status, promptType, category })
+    const items = await promptsSvc.listForAdmin({
+      includeArchived,
+      limit: 500,
+      status,
+      promptType,
+      audienceSegment,
+      appliesToSurface,
+      category,
+    })
 
     let body = '<h1>Prompts</h1>'
     body += '<div class="toolbar"><div><span class="pill">Prompt Registry</span></div><div><a href="/admin/prompts/new">New prompt</a></div></div>'
@@ -3918,6 +3970,16 @@ pagesRouter.get('/admin/prompts', async (req: any, res: any) => {
       body += `<option value="${escapeHtml(opt.value)}"${promptType === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
     }
     body += `</select></label>`
+    body += `<label style="min-width:230px">Audience<select name="audience_segment"><option value="">All</option>`
+    for (const opt of PROMPT_AUDIENCE_OPTIONS) {
+      body += `<option value="${escapeHtml(opt.value)}"${audienceSegment === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+    }
+    body += `</select></label>`
+    body += `<label style="min-width:170px">Surface<select name="applies_to_surface"><option value="">All</option>`
+    for (const opt of PROMPT_SURFACE_OPTIONS) {
+      body += `<option value="${escapeHtml(opt.value)}"${appliesToSurface === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+    }
+    body += `</select></label>`
     body += `<label style="min-width:180px">Category<input type="text" name="category" value="${escapeHtml(category)}" /></label>`
     body += `<label><input type="checkbox" name="include_archived" value="1"${includeArchived ? ' checked' : ''} /> Include archived</label>`
     body += `<button class="btn" type="submit">Apply</button>`
@@ -3926,13 +3988,15 @@ pagesRouter.get('/admin/prompts', async (req: any, res: any) => {
     if (!items.length) {
       body += '<p>No prompts found for current filters.</p>'
     } else {
-      body += '<table><thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Category</th><th>Priority</th><th>Status</th><th>Window</th><th>Updated</th></tr></thead><tbody>'
+      body += '<table><thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Audience</th><th>Surface</th><th>Category</th><th>Priority</th><th>Status</th><th>Window</th><th>Updated</th></tr></thead><tbody>'
       for (const item of items) {
         const windowLabel = item.startsAt || item.endsAt ? `${item.startsAt || '—'} → ${item.endsAt || '—'}` : 'Always'
         body += `<tr>
           <td>${item.id}</td>
           <td><a href="/admin/prompts/${item.id}">${escapeHtml(item.name)}</a></td>
           <td>${escapeHtml(item.promptType)}</td>
+          <td>${escapeHtml(item.audienceSegment)}</td>
+          <td>${escapeHtml(item.appliesToSurface)}</td>
           <td>${escapeHtml(item.category)}</td>
           <td>${item.priority}</td>
           <td>${escapeHtml(item.status)}</td>
@@ -3969,6 +4033,9 @@ pagesRouter.get('/admin/prompts/new', async (req: any, res: any) => {
       ctaSecondaryLabel: 'Log In',
       ctaSecondaryHref: '/login?return=/',
       promptType: 'register_login',
+      audienceSegment: 'anonymous',
+      appliesToSurface: 'global_feed',
+      tieBreakStrategy: 'round_robin',
       category: 'register_prompt',
       priority: 100,
       status: 'draft',
@@ -4071,232 +4138,23 @@ pagesRouter.post('/admin/prompts/:id/status', async (req: any, res: any) => {
   }
 })
 
-function renderAdminPromptRuleForm(opts: {
-  title: string
-  action: string
-  csrfToken?: string | null
-  backHref: string
-  values: any
-  error?: string | null
-  notice?: string | null
-}): string {
-  const csrfToken = opts.csrfToken ? String(opts.csrfToken) : ''
-  const values = opts.values || {}
-  const selectedAudience = String(values.audienceSegment || values.audience_segment || 'anonymous').trim().toLowerCase() || 'anonymous'
-  const audienceOptions = PROMPT_AUDIENCE_OPTIONS.slice()
-  if (!audienceOptions.some((opt) => opt.value === selectedAudience)) {
-    audienceOptions.unshift({ value: selectedAudience, label: `Custom (${selectedAudience})` })
-  }
-  const selectedPromptType = String(values.promptType || values.prompt_type || 'register_login').trim().toLowerCase() || 'register_login'
-  const promptTypeOptions = PROMPT_TYPE_OPTIONS.slice()
-  if (!promptTypeOptions.some((opt) => opt.value === selectedPromptType)) {
-    promptTypeOptions.unshift({ value: selectedPromptType, label: `Custom (${selectedPromptType})` })
-  }
-
-  let body = `<h1>${escapeHtml(opts.title)}</h1>`
-  body += `<div class="toolbar"><div><a href="${escapeHtml(opts.backHref)}">← Back to prompt rules</a></div><div></div></div>`
-  if (opts.error) body += `<div class="error">${escapeHtml(String(opts.error))}</div>`
-  if (opts.notice) body += `<div class="notice">${escapeHtml(String(opts.notice))}</div>`
-  body += `<div class="section"><div class="field-hint">Global pacing and threshold controls are configured via environment variables (not per rule).</div></div>`
-
-  body += `<form method="post" action="${escapeHtml(opts.action)}">`
-  if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
-  body += `<div class="section"><div class="section-title">Rule Identity</div>`
-  body += `<label>Name<input type="text" name="name" value="${escapeHtml(String(values.name || ''))}" required maxlength="120" /></label>`
-  body += `<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:10px">`
-  body += `<label style="display:flex; align-items:center; gap:8px; margin-top:10px"><input type="checkbox" name="enabled" value="1"${(values.enabled === true || String(values.enabled || '') === '1' || String(values.enabled || '') === 'true') ? ' checked' : ''} /> Enabled</label>`
-  body += `<label>Surface<select name="appliesToSurface"><option value="global_feed"${String(values.appliesToSurface || values.applies_to_surface || '') === 'global_feed' ? ' selected' : ''}>Global Feed</option></select></label>`
-  body += `<label>Audience Segment<select name="audienceSegment">`
-  for (const opt of audienceOptions) {
-    body += `<option value="${escapeHtml(opt.value)}"${opt.value === selectedAudience ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
-  }
-  body += `</select></label>`
-  body += `<label>Prompt Type<select name="promptType">`
-  for (const opt of promptTypeOptions) {
-    body += `<option value="${escapeHtml(opt.value)}"${opt.value === selectedPromptType ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
-  }
-  body += `</select></label>`
-  body += `<label>Priority<input type="number" name="priority" value="${escapeHtml(String(values.priority ?? 100))}" /></label>`
-  body += `<label>Tie Break<select name="tieBreakStrategy"><option value="random"${String(values.tieBreakStrategy || values.tie_break_strategy || '') === 'random' ? ' selected' : ''}>Random (within top priority)</option></select></label>`
-  body += `</div></div>`
-
-  body += `<div class="toolbar"><div></div><div style="display:flex; gap:8px"><button class="btn" type="submit">Save</button></div></div>`
-  body += `</form>`
-
-  if (values?.id != null) {
-    body += `<div class="section"><div class="section-title">Quick Action</div>`
-    body += `<form method="post" action="/admin/prompt-rules/${Number(values.id)}/toggle" style="margin:0; display:inline-flex; gap:8px; align-items:center">`
-    if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
-    body += `<input type="hidden" name="enabled" value="${(values.enabled === true || String(values.enabled || '') === '1' || String(values.enabled || '') === 'true') ? '0' : '1'}" />`
-    body += `<button class="btn" type="submit">${(values.enabled === true || String(values.enabled || '') === '1' || String(values.enabled || '') === 'true') ? 'Disable' : 'Enable'}</button>`
-    body += `</form></div>`
-  }
-
-  return renderAdminPage({ title: opts.title, bodyHtml: body, active: 'prompt_rules' })
-}
-
-pagesRouter.get('/admin/prompt-rules', async (req: any, res: any) => {
-  try {
-    const enabled = req.query?.enabled == null ? '' : String(req.query.enabled)
-    const audienceSegment = req.query?.audience_segment == null ? '' : String(req.query.audience_segment)
-    const promptType = req.query?.prompt_type == null ? '' : String(req.query.prompt_type)
-    const notice = req.query?.notice ? String(req.query.notice) : ''
-    const error = req.query?.error ? String(req.query.error) : ''
-    const items = await promptRulesSvc.listForAdmin({
-      limit: 500,
-      enabled: enabled === '' ? undefined : enabled,
-      appliesToSurface: req.query?.applies_to_surface,
-      audienceSegment: audienceSegment || undefined,
-      promptType: promptType || undefined,
-    })
-
-    let body = '<h1>Prompt Rules</h1>'
-    body += '<div class="toolbar"><div><span class="pill">Prompt Rule Profiles</span></div><div><a href="/admin/prompt-rules/new">New rule</a></div></div>'
-    if (notice) body += `<div class="notice">${escapeHtml(notice)}</div>`
-    if (error) body += `<div class="error">${escapeHtml(error)}</div>`
-    body += `<form method="get" action="/admin/prompt-rules" class="section" style="margin:12px 0">`
-    body += `<div style="display:flex; gap:10px; align-items:end; flex-wrap:wrap">`
-    body += `<label>Enabled<select name="enabled">
-      <option value=""${enabled === '' ? ' selected' : ''}>All</option>
-      <option value="1"${enabled === '1' ? ' selected' : ''}>Enabled</option>
-      <option value="0"${enabled === '0' ? ' selected' : ''}>Disabled</option>
-    </select></label>`
-    body += `<label>Audience<select name="audience_segment"><option value="">All</option>`
-    for (const opt of PROMPT_AUDIENCE_OPTIONS) {
-      body += `<option value="${escapeHtml(opt.value)}"${audienceSegment === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
-    }
-    body += `</select></label>`
-    body += `<label>Prompt Type<select name="prompt_type"><option value="">All</option>`
-    for (const opt of PROMPT_TYPE_OPTIONS) {
-      body += `<option value="${escapeHtml(opt.value)}"${promptType === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
-    }
-    body += `</select></label>`
-    body += `<button class="btn" type="submit">Apply</button>`
-    body += `</div></form>`
-
-    if (!items.length) {
-      body += '<p>No prompt rules found.</p>'
-    } else {
-      body += '<table><thead><tr><th>ID</th><th>Name</th><th>Enabled</th><th>Surface</th><th>Audience</th><th>Type</th><th>Priority</th><th>Updated</th></tr></thead><tbody>'
-      for (const item of items) {
-        body += `<tr>
-          <td>${item.id}</td>
-          <td><a href="/admin/prompt-rules/${item.id}">${escapeHtml(item.name)}</a></td>
-          <td>${item.enabled ? 'Yes' : 'No'}</td>
-          <td>${escapeHtml(item.appliesToSurface)}</td>
-          <td>${escapeHtml(item.audienceSegment)}</td>
-          <td>${escapeHtml(item.promptType)}</td>
-          <td>${item.priority}</td>
-          <td>${escapeHtml(item.updatedAt || '')}</td>
-        </tr>`
-      }
-      body += '</tbody></table>'
-    }
-
-    const doc = renderAdminPage({ title: 'Prompt Rules', bodyHtml: body, active: 'prompt_rules' })
-    res.set('Content-Type', 'text/html; charset=utf-8')
-    res.send(doc)
-  } catch (err) {
-    logError(req.log || pagesLogger, err, 'admin prompt rules list failed', { path: req.path })
-    res.status(500).send('Failed to load prompt rules')
-  }
+pagesRouter.get('/admin/prompt-rules', (_req: any, res: any) => {
+  res.redirect('/admin/prompts?notice=' + encodeURIComponent('Prompt Rules have been removed. Use Prompts targeting instead.'))
 })
-
-pagesRouter.get('/admin/prompt-rules/new', async (req: any, res: any) => {
-  const cookies = parseCookies(req.headers.cookie)
-  const csrfToken = cookies['csrf'] || ''
-  const doc = renderAdminPromptRuleForm({
-    title: 'New Prompt Rule',
-    action: '/admin/prompt-rules',
-    csrfToken,
-    backHref: '/admin/prompt-rules',
-    values: {
-      name: 'Global Feed Anonymous Rule',
-      enabled: true,
-      appliesToSurface: 'global_feed',
-      audienceSegment: 'anonymous',
-      promptType: 'register_login',
-      priority: 100,
-      tieBreakStrategy: 'random',
-    },
-  })
-  res.set('Content-Type', 'text/html; charset=utf-8')
-  res.send(doc)
+pagesRouter.get('/admin/prompt-rules/new', (_req: any, res: any) => {
+  res.redirect('/admin/prompts?notice=' + encodeURIComponent('Prompt Rules have been removed. Use Prompts targeting instead.'))
 })
-
-pagesRouter.post('/admin/prompt-rules', async (req: any, res: any) => {
-  const cookies = parseCookies(req.headers.cookie)
-  const csrfToken = cookies['csrf'] || ''
-  try {
-    const created = await promptRulesSvc.createForAdmin(req.body || {}, Number(req.user?.id || 0))
-    res.redirect(`/admin/prompt-rules/${created.id}?notice=${encodeURIComponent('Rule created.')}`)
-  } catch (err: any) {
-    const doc = renderAdminPromptRuleForm({
-      title: 'New Prompt Rule',
-      action: '/admin/prompt-rules',
-      csrfToken,
-      backHref: '/admin/prompt-rules',
-      values: req.body || {},
-      error: String(err?.message || 'Failed to create rule'),
-    })
-    res.status(400).set('Content-Type', 'text/html; charset=utf-8').send(doc)
-  }
+pagesRouter.get('/admin/prompt-rules/:id', (_req: any, res: any) => {
+  res.redirect('/admin/prompts?notice=' + encodeURIComponent('Prompt Rules have been removed. Use Prompts targeting instead.'))
 })
-
-pagesRouter.get('/admin/prompt-rules/:id', async (req: any, res: any) => {
-  const id = Number(req.params.id)
-  if (!Number.isFinite(id) || id <= 0) return res.status(400).send('Bad prompt rule id')
-  try {
-    const rule = await promptRulesSvc.getForAdmin(id)
-    const cookies = parseCookies(req.headers.cookie)
-    const csrfToken = cookies['csrf'] || ''
-    const doc = renderAdminPromptRuleForm({
-      title: `Edit Prompt Rule #${id}`,
-      action: `/admin/prompt-rules/${id}`,
-      csrfToken,
-      backHref: '/admin/prompt-rules',
-      values: rule,
-      notice: req.query?.notice ? String(req.query.notice) : '',
-      error: req.query?.error ? String(req.query.error) : '',
-    })
-    res.set('Content-Type', 'text/html; charset=utf-8')
-    res.send(doc)
-  } catch (err) {
-    logError(req.log || pagesLogger, err, 'admin prompt rule detail failed', { path: req.path, rule_id: id })
-    res.status(404).send('Prompt rule not found')
-  }
+pagesRouter.post('/admin/prompt-rules', (_req: any, res: any) => {
+  res.redirect('/admin/prompts?error=' + encodeURIComponent('Prompt Rules have been removed.'))
 })
-
-pagesRouter.post('/admin/prompt-rules/:id', async (req: any, res: any) => {
-  const id = Number(req.params.id)
-  if (!Number.isFinite(id) || id <= 0) return res.status(400).send('Bad prompt rule id')
-  const cookies = parseCookies(req.headers.cookie)
-  const csrfToken = cookies['csrf'] || ''
-  try {
-    await promptRulesSvc.updateForAdmin(id, req.body || {}, Number(req.user?.id || 0))
-    res.redirect(`/admin/prompt-rules/${id}?notice=${encodeURIComponent('Saved.')}`)
-  } catch (err: any) {
-    const doc = renderAdminPromptRuleForm({
-      title: `Edit Prompt Rule #${id}`,
-      action: `/admin/prompt-rules/${id}`,
-      csrfToken,
-      backHref: '/admin/prompt-rules',
-      values: { ...(req.body || {}), id },
-      error: String(err?.message || 'Failed to save rule'),
-    })
-    res.status(400).set('Content-Type', 'text/html; charset=utf-8').send(doc)
-  }
+pagesRouter.post('/admin/prompt-rules/:id', (_req: any, res: any) => {
+  res.redirect('/admin/prompts?error=' + encodeURIComponent('Prompt Rules have been removed.'))
 })
-
-pagesRouter.post('/admin/prompt-rules/:id/toggle', async (req: any, res: any) => {
-  const id = Number(req.params.id)
-  if (!Number.isFinite(id) || id <= 0) return res.redirect('/admin/prompt-rules?error=bad_id')
-  try {
-    await promptRulesSvc.toggleEnabledForAdmin(id, req.body?.enabled, Number(req.user?.id || 0))
-    res.redirect(`/admin/prompt-rules/${id}?notice=${encodeURIComponent('Enabled state updated.')}`)
-  } catch (err: any) {
-    res.redirect(`/admin/prompt-rules/${id}?error=${encodeURIComponent(String(err?.message || 'Failed to update enabled state'))}`)
-  }
+pagesRouter.post('/admin/prompt-rules/:id/toggle', (_req: any, res: any) => {
+  res.redirect('/admin/prompts?error=' + encodeURIComponent('Prompt Rules have been removed.'))
 })
 
 function pctText(rate: number): string {

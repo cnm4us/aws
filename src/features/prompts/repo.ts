@@ -12,6 +12,9 @@ type PromptCreateInput = {
   mediaUploadId: number | null
   creativeJson: string | null
   promptType: string
+  appliesToSurface: string
+  audienceSegment: string
+  tieBreakStrategy: string
   category: string
   priority: number
   status: string
@@ -28,6 +31,8 @@ export async function list(params?: {
   includeArchived?: boolean
   status?: string | null
   promptType?: string | null
+  appliesToSurface?: string | null
+  audienceSegment?: string | null
   category?: string | null
 }): Promise<PromptRow[]> {
   const db = getPool()
@@ -45,6 +50,14 @@ export async function list(params?: {
   if (params?.promptType) {
     where.push('prompt_type = ?')
     args.push(params.promptType)
+  }
+  if (params?.appliesToSurface) {
+    where.push('applies_to_surface = ?')
+    args.push(params.appliesToSurface)
+  }
+  if (params?.audienceSegment) {
+    where.push('audience_segment = ?')
+    args.push(params.audienceSegment)
   }
   if (params?.category) {
     where.push('category = ?')
@@ -76,10 +89,10 @@ export async function create(input: PromptCreateInput): Promise<PromptRow> {
         name, headline, body,
         cta_primary_label, cta_primary_href,
         cta_secondary_label, cta_secondary_href,
-        media_upload_id, creative_json, prompt_type, category, priority, status,
+        media_upload_id, creative_json, prompt_type, applies_to_surface, audience_segment, tie_break_strategy, category, priority, status,
         starts_at, ends_at, created_by, updated_by
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.name,
       input.headline,
@@ -91,6 +104,9 @@ export async function create(input: PromptCreateInput): Promise<PromptRow> {
       input.mediaUploadId,
       input.creativeJson,
       input.promptType,
+      input.appliesToSurface,
+      input.audienceSegment,
+      input.tieBreakStrategy,
       input.category,
       input.priority,
       input.status,
@@ -122,6 +138,9 @@ export async function update(id: number, patch: PromptUpdateInput): Promise<Prom
   if (patch.mediaUploadId !== undefined) { sets.push('media_upload_id = ?'); args.push(patch.mediaUploadId) }
   if (patch.creativeJson !== undefined) { sets.push('creative_json = ?'); args.push(patch.creativeJson) }
   if (patch.promptType !== undefined) { sets.push('prompt_type = ?'); args.push(patch.promptType) }
+  if (patch.appliesToSurface !== undefined) { sets.push('applies_to_surface = ?'); args.push(patch.appliesToSurface) }
+  if (patch.audienceSegment !== undefined) { sets.push('audience_segment = ?'); args.push(patch.audienceSegment) }
+  if (patch.tieBreakStrategy !== undefined) { sets.push('tie_break_strategy = ?'); args.push(patch.tieBreakStrategy) }
   if (patch.category !== undefined) { sets.push('category = ?'); args.push(patch.category) }
   if (patch.priority !== undefined) { sets.push('priority = ?'); args.push(patch.priority) }
   if (patch.status !== undefined) { sets.push('status = ?'); args.push(patch.status) }
@@ -143,6 +162,8 @@ export async function update(id: number, patch: PromptUpdateInput): Promise<Prom
 
 export async function listActiveForFeed(params?: {
   promptType?: string | null
+  appliesToSurface?: string | null
+  audienceSegment?: string | null
   category?: string | null
   limit?: number
 }): Promise<PromptRow[]> {
@@ -162,6 +183,14 @@ export async function listActiveForFeed(params?: {
   if (params?.promptType) {
     where.push('prompt_type = ?')
     args.push(params.promptType)
+  }
+  if (params?.appliesToSurface) {
+    where.push('applies_to_surface = ?')
+    args.push(params.appliesToSurface)
+  }
+  if (params?.audienceSegment) {
+    where.push('audience_segment = ?')
+    args.push(params.audienceSegment)
   }
   const [rows] = await db.query(
     `SELECT *

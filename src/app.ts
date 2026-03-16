@@ -19,7 +19,6 @@ import { screenTitlePresetsRouter } from './routes/screen-title-presets';
 import { screenTitlePreviewRouter } from './routes/screen-title-preview';
 import { visualizerPresetsRouter } from './routes/visualizer-presets';
 import { adminPromptsRouter } from './routes/admin-prompts';
-import { adminPromptRulesRouter } from './routes/admin-prompt-rules';
 import { adminPromptAnalyticsRouter } from './routes/admin-prompt-analytics';
 import { feedPromptsRouter } from './routes/feed-prompts';
 import { feedActivityRouter } from './routes/feed-activity';
@@ -89,7 +88,6 @@ export function buildServer(): express.Application {
   app.use(screenTitlePreviewRouter);
   app.use(visualizerPresetsRouter);
   app.use(adminPromptsRouter);
-  app.use(adminPromptRulesRouter);
   app.use(adminPromptAnalyticsRouter);
   app.use(adminFeedAnalyticsRouter);
   app.use(adminAnalyticsSinkRouter);

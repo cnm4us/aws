@@ -641,6 +641,9 @@ export async function ensureSchema(db: DB) {
               media_upload_id BIGINT UNSIGNED NULL,
               creative_json JSON NULL,
               prompt_type ENUM('register_login','fund_drive','subscription_upgrade','sponsor_message','feature_announcement') NOT NULL DEFAULT 'register_login',
+              applies_to_surface ENUM('global_feed') NOT NULL DEFAULT 'global_feed',
+              audience_segment ENUM('anonymous','authenticated_non_subscriber','authenticated_subscriber') NOT NULL DEFAULT 'anonymous',
+              tie_break_strategy ENUM('first','round_robin','weighted_random') NOT NULL DEFAULT 'round_robin',
               category VARCHAR(64) NOT NULL,
               priority INT NOT NULL DEFAULT 100,
               status ENUM('draft','active','paused','archived') NOT NULL DEFAULT 'draft',
@@ -664,6 +667,9 @@ export async function ensureSchema(db: DB) {
           await db.query(`ALTER TABLE feed_prompts ADD COLUMN IF NOT EXISTS media_upload_id BIGINT UNSIGNED NULL`)
           await db.query(`ALTER TABLE feed_prompts ADD COLUMN IF NOT EXISTS creative_json JSON NULL`)
           await db.query(`ALTER TABLE feed_prompts ADD COLUMN IF NOT EXISTS prompt_type ENUM('register_login','fund_drive','subscription_upgrade','sponsor_message','feature_announcement') NOT NULL DEFAULT 'register_login'`)
+          await db.query(`ALTER TABLE feed_prompts ADD COLUMN IF NOT EXISTS applies_to_surface ENUM('global_feed') NOT NULL DEFAULT 'global_feed'`)
+          await db.query(`ALTER TABLE feed_prompts ADD COLUMN IF NOT EXISTS audience_segment ENUM('anonymous','authenticated_non_subscriber','authenticated_subscriber') NOT NULL DEFAULT 'anonymous'`)
+          await db.query(`ALTER TABLE feed_prompts ADD COLUMN IF NOT EXISTS tie_break_strategy ENUM('first','round_robin','weighted_random') NOT NULL DEFAULT 'round_robin'`)
           await db.query(`ALTER TABLE feed_prompts ADD COLUMN IF NOT EXISTS category VARCHAR(64) NOT NULL`)
           await db.query(`ALTER TABLE feed_prompts ADD COLUMN IF NOT EXISTS priority INT NOT NULL DEFAULT 100`)
           await db.query(`ALTER TABLE feed_prompts ADD COLUMN IF NOT EXISTS status ENUM('draft','active','paused','archived') NOT NULL DEFAULT 'draft'`)
@@ -690,6 +696,11 @@ export async function ensureSchema(db: DB) {
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_prompts_status_category ON feed_prompts (status, category, priority, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_prompts_active_window ON feed_prompts (status, starts_at, ends_at, priority, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_prompts_active_type ON feed_prompts (status, prompt_type, starts_at, ends_at, priority, id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_prompts_surface_audience_type_active ON feed_prompts (applies_to_surface, audience_segment, status, prompt_type, starts_at, ends_at, priority, id)`); } catch {}
+
+          // NOTE: Do not backfill feed_prompts audience from prompt_rules during normal startup.
+          // That legacy bridge mutates admin-edited prompt audience values on each restart.
+          // Prompt audience is now prompt-owned and must remain stable across deploys/restarts.
 
           // --- Prompt rules (plan_114B) ---
           await db.query(`
@@ -785,6 +796,8 @@ export async function ensureSchema(db: DB) {
               )
             }
           } catch {}
+
+          // NOTE: legacy prompt_rules -> feed_prompts audience sync intentionally disabled.
 
           // --- Prompt decision sessions (plan_114C) ---
           await db.query(`

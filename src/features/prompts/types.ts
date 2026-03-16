@@ -2,6 +2,9 @@ export type PromptStatus = 'draft' | 'active' | 'paused' | 'archived'
 export type PromptWidgetPosition = 'top' | 'middle' | 'bottom'
 export type PromptBackgroundMode = 'none' | 'image' | 'video'
 export type PromptVideoPlaybackMode = 'muted_autoplay' | 'tap_to_play_sound'
+export type PromptSurface = 'global_feed'
+export type PromptAudienceSegment = 'anonymous' | 'authenticated_non_subscriber' | 'authenticated_subscriber'
+export type PromptTieBreakStrategy = 'first' | 'round_robin' | 'weighted_random'
 export type PromptType =
   | 'register_login'
   | 'fund_drive'
@@ -57,6 +60,9 @@ export type PromptRow = {
   media_upload_id: number | null
   creative_json: string | null
   prompt_type: PromptType
+  applies_to_surface: PromptSurface
+  audience_segment: PromptAudienceSegment
+  tie_break_strategy: PromptTieBreakStrategy
   category: string
   priority: number
   status: PromptStatus
@@ -80,6 +86,9 @@ export type PromptDto = {
   mediaUploadId: number | null
   creative: PromptCreative
   promptType: PromptType
+  appliesToSurface: PromptSurface
+  audienceSegment: PromptAudienceSegment
+  tieBreakStrategy: PromptTieBreakStrategy
   category: string
   priority: number
   status: PromptStatus

@@ -10,7 +10,6 @@ import {
   PROMPT_RULE_SELECTION_STRATEGY,
 } from '../../config'
 import * as promptsSvc from '../prompts/service'
-import * as promptRulesSvc from '../prompt-rules/service'
 import * as repo from './repo'
 import type {
   PromptAudienceSegment,
@@ -178,6 +177,7 @@ function serializeSuppressionState(state: SessionSuppressionState): {
 }
 
 function isPromptSuppressed(promptId: number, state: SessionSuppressionState): boolean {
+  if (PROMPT_PASS_THROUGH_SUPPRESS_N <= 0) return false
   if (state.convertedPromptIds.has(promptId)) return true
   const passThroughCount = Number(state.passThroughCounts[String(promptId)] || 0)
   return passThroughCount >= PROMPT_PASS_THROUGH_SUPPRESS_N
@@ -227,34 +227,45 @@ function nowMs(): number {
   return Date.now()
 }
 
-type EligibleRuleCandidate = {
-  ruleId: number
-  ruleName: string
+type EligiblePromptCandidate = {
   promptId: number
+  promptType: string
+  priority: number
+  tieBreakStrategy: 'first' | 'round_robin' | 'weighted_random'
 }
 
-function selectEligibleRuleCandidate(
-  candidates: EligibleRuleCandidate[],
+function selectPromptCandidate(
+  candidates: EligiblePromptCandidate[],
   input: PromptDecisionInput,
   merged: ReturnType<typeof mergeSessionState>
-): EligibleRuleCandidate | null {
+): EligiblePromptCandidate | null {
   if (!candidates.length) return null
   if (candidates.length === 1) return candidates[0]
 
-  if (PROMPT_RULE_SELECTION_STRATEGY === 'round_robin') {
+  const sorted = candidates
+    .slice()
+    .sort((a, b) => {
+      if (a.priority !== b.priority) return a.priority - b.priority
+      if (a.promptId !== b.promptId) return a.promptId - b.promptId
+      return 0
+    })
+
+  const tieBreak = sorted[0]?.tieBreakStrategy || 'round_robin'
+
+  if (tieBreak === 'round_robin' || PROMPT_RULE_SELECTION_STRATEGY === 'round_robin') {
     const base = Math.max(0, Math.round(Number(merged.promptsShownThisSession || 0)))
-    return candidates[base % candidates.length]
+    return sorted[base % sorted.length]
   }
 
-  if (PROMPT_RULE_SELECTION_STRATEGY === 'weighted_random') {
+  if (tieBreak === 'weighted_random' || PROMPT_RULE_SELECTION_STRATEGY === 'weighted_random') {
     const seed = `${input.sessionId}:${merged.promptsShownThisSession}:${merged.slidesViewed}:${merged.watchSeconds}:weighted_random`
     const hash = deterministicScore(seed)
     const numeric = Number.parseInt(hash.slice(0, 12), 16)
-    const idx = Number.isFinite(numeric) ? numeric % candidates.length : 0
-    return candidates[idx]
+    const idx = Number.isFinite(numeric) ? numeric % sorted.length : 0
+    return sorted[idx]
   }
 
-  return candidates[0]
+  return sorted[0]
 }
 
 function dateToMs(raw: string | null): number | null {
@@ -333,127 +344,69 @@ export async function decidePrompt(input: PromptDecisionInput, opts?: { includeD
 
   let reasonCode: PromptDecisionReasonCode = 'no_enabled_rule'
   let promptId: number | null = null
-  let ruleId: number | null = null
-  let ruleName: string | null = null
+  let selectionEngine: 'prompt_pool' = 'prompt_pool'
+  let candidateCount = 0
+  let selectedPriority: number | null = null
 
-  const rules = await promptRulesSvc.listForAdmin({
-    enabled: true,
-    appliesToSurface: input.surface,
-    audienceSegment: merged.audienceSegment,
-    limit: 100,
-  })
-
-  if (!rules.length) {
-    reasonCode = 'no_enabled_rule'
+  if (merged.promptsShownThisSession >= PROMPT_MAX_PROMPTS_PER_SESSION) {
+    reasonCode = 'cap_reached'
   } else {
-    const eligibleCandidates: EligibleRuleCandidate[] = []
-    let lastBlockedReason: PromptDecisionReasonCode = 'no_enabled_rule'
-    let lastBlockedRuleId: number | null = null
-    let lastBlockedRuleName: string | null = null
+    const lastShownMs = dateToMs(merged.lastPromptShownAt)
+    if (
+      lastShownMs != null &&
+      PROMPT_COOLDOWN_SECONDS_AFTER_PROMPT > 0 &&
+      nowMs() - lastShownMs < PROMPT_COOLDOWN_SECONDS_AFTER_PROMPT * 1000
+    ) {
+      reasonCode = 'cooldown_active'
+    } else if (
+      (merged.promptsShownThisSession <= 0 &&
+        (merged.slidesViewed < PROMPT_MIN_SLIDES_BEFORE_FIRST_PROMPT ||
+          merged.watchSeconds < PROMPT_MIN_WATCH_SECONDS_BEFORE_FIRST_PROMPT)) ||
+      (merged.promptsShownThisSession > 0 && merged.slidesSinceLastPrompt < PROMPT_MIN_SLIDES_BETWEEN_PROMPTS)
+    ) {
+      reasonCode = 'below_threshold'
+    } else {
+      const prompts = await promptsSvc.listActiveForFeed({
+        limit: 300,
+        appliesToSurface: input.surface,
+        audienceSegment: merged.audienceSegment,
+      })
 
-    for (const rule of rules) {
-      const currentRuleId = Number(rule.id)
-      const currentRuleName = String(rule.name || '')
-      let currentReason: PromptDecisionReasonCode = 'eligible'
-      let currentPromptId: number | null = null
-
-      if (merged.promptsShownThisSession >= PROMPT_MAX_PROMPTS_PER_SESSION) {
-        currentReason = 'cap_reached'
+      if (!prompts.length) {
+        reasonCode = 'no_enabled_rule'
       } else {
-        const lastShownMs = dateToMs(merged.lastPromptShownAt)
-        if (
-          lastShownMs != null &&
-          PROMPT_COOLDOWN_SECONDS_AFTER_PROMPT > 0 &&
-          nowMs() - lastShownMs < PROMPT_COOLDOWN_SECONDS_AFTER_PROMPT * 1000
-        ) {
-          currentReason = 'cooldown_active'
-        } else if (
-          (merged.promptsShownThisSession <= 0 &&
-            (merged.slidesViewed < PROMPT_MIN_SLIDES_BEFORE_FIRST_PROMPT ||
-              merged.watchSeconds < PROMPT_MIN_WATCH_SECONDS_BEFORE_FIRST_PROMPT)) ||
-          (merged.promptsShownThisSession > 0 && merged.slidesSinceLastPrompt < PROMPT_MIN_SLIDES_BETWEEN_PROMPTS)
-        ) {
-          currentReason = 'below_threshold'
+        const candidates: EligiblePromptCandidate[] = []
+        for (const prompt of prompts) {
+          const candidateId = Number(prompt.id || 0)
+          if (!Number.isFinite(candidateId) || candidateId <= 0) continue
+          if (isPromptSuppressed(candidateId, merged.suppression)) continue
+          const tieBreakRaw = String((prompt as any).tieBreakStrategy || '').trim().toLowerCase()
+          const tieBreakStrategy: 'first' | 'round_robin' | 'weighted_random' =
+            tieBreakRaw === 'first' || tieBreakRaw === 'weighted_random' || tieBreakRaw === 'round_robin'
+              ? tieBreakRaw
+              : 'round_robin'
+          candidates.push({
+            promptId: candidateId,
+            promptType: String(prompt.promptType || 'register_login'),
+            priority: Number(prompt.priority || 0),
+            tieBreakStrategy,
+          })
+        }
+
+        candidateCount = candidates.length
+        if (!candidateCount) {
+          reasonCode = 'no_candidate'
         } else {
-          const prompts = await promptsSvc.listActiveForFeed({ limit: 300, promptType: rule.promptType })
-
-          if (!prompts.length) {
-            currentReason = 'no_candidate'
+          const selected = selectPromptCandidate(candidates, input, merged)
+          if (!selected) {
+            reasonCode = 'no_candidate'
           } else {
-            const byPriority = new Map<number, typeof prompts>()
-            for (const prompt of prompts) {
-              const pr = Number(prompt.priority || 0)
-              const group = byPriority.get(pr) || []
-              group.push(prompt)
-              byPriority.set(pr, group)
-            }
-
-            const priorities = Array.from(byPriority.keys()).sort((a, b) => a - b)
-            const lastPromptId = merged.lastPromptId
-            let selected: any = null
-            let fallbackSelected: any = null
-
-            for (const pr of priorities) {
-              const group = (byPriority.get(pr) || []).slice()
-              group.sort((a: any, b: any) => {
-                const sa = deterministicScore(`${input.sessionId}:${rule.id}:${a.id}`)
-                const sb = deterministicScore(`${input.sessionId}:${rule.id}:${b.id}`)
-                if (sa < sb) return -1
-                if (sa > sb) return 1
-                return Number(a.id) - Number(b.id)
-              })
-
-              for (const candidate of group) {
-                const candidateId = Number(candidate.id || 0)
-                if (!Number.isFinite(candidateId) || candidateId <= 0) continue
-                if (isPromptSuppressed(candidateId, merged.suppression)) continue
-                if (!fallbackSelected) fallbackSelected = candidate
-                if (candidateId !== Number(lastPromptId || 0)) {
-                  selected = candidate
-                  break
-                }
-              }
-              if (selected) break
-            }
-
-            if (!selected && fallbackSelected) selected = fallbackSelected
-
-            if (!selected) {
-              currentReason = 'no_candidate'
-            } else {
-              currentPromptId = Number(selected.id)
-              currentReason = 'eligible'
-            }
+            reasonCode = 'eligible'
+            promptId = selected.promptId
+            selectedPriority = selected.priority
           }
         }
       }
-
-      if (currentReason === 'eligible' && currentPromptId != null) {
-        eligibleCandidates.push({
-          ruleId: currentRuleId,
-          ruleName: currentRuleName,
-          promptId: currentPromptId,
-        })
-        continue
-      }
-
-      lastBlockedReason = currentReason
-      lastBlockedRuleId = currentRuleId
-      lastBlockedRuleName = currentRuleName
-    }
-
-    if (eligibleCandidates.length > 0) {
-      const selected = selectEligibleRuleCandidate(eligibleCandidates, input, merged)
-      if (selected) {
-        reasonCode = 'eligible'
-        promptId = selected.promptId
-        ruleId = selected.ruleId
-        ruleName = selected.ruleName
-      }
-    } else {
-      reasonCode = lastBlockedReason
-      ruleId = lastBlockedRuleId
-      ruleName = lastBlockedRuleName
     }
   }
 
@@ -462,8 +415,8 @@ export async function decidePrompt(input: PromptDecisionInput, opts?: { includeD
     promptId,
     insertAfterIndex: null,
     reasonCode,
-    ruleId,
-    ruleName,
+    ruleId: null,
+    ruleName: null,
     sessionId: input.sessionId,
   }
 
@@ -500,7 +453,11 @@ export async function decidePrompt(input: PromptDecisionInput, opts?: { includeD
         passThroughCounts: merged.suppression.passThroughCounts,
         convertedPromptIds: Array.from(merged.suppression.convertedPromptIds),
       },
-      rule: ruleId ? { id: ruleId, name: ruleName } : null,
+      selection: {
+        engine: selectionEngine,
+        candidateCount,
+        selectedPriority,
+      },
       selectionStrategy: PROMPT_RULE_SELECTION_STRATEGY,
       reasonCode,
     }
