@@ -191,13 +191,6 @@ function classifyHttpOperation(methodRaw: string, pathname: string): string | nu
     { method: 'POST', re: /^\/api\/admin\/prompts\/[^/]+\/clone$/, op: 'admin.prompts.write' },
     { method: 'POST', re: /^\/api\/admin\/prompts\/[^/]+\/status$/, op: 'admin.prompts.write' },
 
-    // Admin prompt rules (plan_114B)
-    { method: 'GET', re: /^\/api\/admin\/prompt-rules$/, op: 'admin.prompt_rules.list' },
-    { method: 'POST', re: /^\/api\/admin\/prompt-rules$/, op: 'admin.prompt_rules.write' },
-    { method: 'GET', re: /^\/api\/admin\/prompt-rules\/[^/]+$/, op: 'admin.prompt_rules.get' },
-    { method: 'PATCH', re: /^\/api\/admin\/prompt-rules\/[^/]+$/, op: 'admin.prompt_rules.write' },
-    { method: 'POST', re: /^\/api\/admin\/prompt-rules\/[^/]+\/toggle$/, op: 'admin.prompt_rules.write' },
-
     // Admin prompt analytics (plan_114E)
     { method: 'GET', re: /^\/api\/admin\/prompt-analytics$/, op: 'prompt.analytics.query' },
     { method: 'GET', re: /^\/api\/admin\/prompt-analytics\.csv$/, op: 'prompt.analytics.query' },
