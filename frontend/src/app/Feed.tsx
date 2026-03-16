@@ -6,6 +6,7 @@ import { prefetchForHref } from '../ui/routes'
 import styles from '../styles/feed.module.css'
 import debug from '../debug'
 import useRenderDebug from '../debug/useRenderDebug'
+import { dispatchClientDebugDomEvent, installClientDebugDomBridges, isClientDebugEnabled } from '../debug/clientDebug'
 
 const LazyReportModal = React.lazy(() => import('./ReportModal'))
 const LazyJumpToSpaceModal = React.lazy(() => import('./JumpToSpaceModal'))
@@ -89,152 +90,26 @@ function feedSequenceHeader(tag?: FeedSequenceEngineTag): Record<string, string>
 }
 
 function isPromptDebugEnabled(): boolean {
-  try {
-    const envEnabled = String((import.meta as any)?.env?.VITE_PROMPT_DEBUG || '').trim() === '1'
-    if (envEnabled) return true
-  } catch {}
-  try {
-    if (typeof window !== 'undefined') {
-      const qs = new URLSearchParams(window.location.search || '')
-      if (qs.get('prompt_debug') === '1') return true
-      if (window.localStorage.getItem('prompt:debug') === '1') return true
-      if ((window as any).__PROMPT_DEBUG__ === true) return true
-    }
-  } catch {}
-  return false
+  return isClientDebugEnabled({
+    envFlag: 'VITE_PROMPT_DEBUG',
+    queryParam: 'prompt_debug',
+    storageKey: 'prompt:debug',
+    globalFlag: '__PROMPT_DEBUG__',
+  })
 }
 
 function emitPromptDebug(name: string, detail?: Record<string, any>) {
-  if (!isPromptDebugEnabled()) return
-  const payload = {
-    name,
-    at: new Date().toISOString(),
-    ...(detail || {}),
-  }
-  try {
-    window.dispatchEvent(new CustomEvent('feed:prompt-debug', { detail: payload }))
-  } catch {}
-  try {
-    // eslint-disable-next-line no-console
-    console.debug('[prompt-debug]', payload)
-  } catch {}
+  dispatchClientDebugDomEvent('feed:prompt-debug', name, detail, {
+    enabled: isPromptDebugEnabled(),
+    consoleLabel: '[prompt-debug]',
+  })
 }
 
 function emitIndexDebug(name: string, detail?: Record<string, any>) {
-  if (!isBrowserDebugEnabled()) return
-  const payload = {
-    name,
-    at: new Date().toISOString(),
-    ...(detail || {}),
-  }
-  try {
-    window.dispatchEvent(new CustomEvent('feed:index-debug', { detail: payload }))
-  } catch {}
-  try {
-    // eslint-disable-next-line no-console
-    console.debug('[index-debug]', payload)
-  } catch {}
-}
-
-type BrowserDebugEventPayload = {
-  ts: string
-  category: string
-  event: string
-  level: 'debug' | 'info' | 'warn' | 'error'
-  path: string
-  browser_session_id: string
-  prompt_session_id?: string | null
-  user_id?: number | null
-  payload?: Record<string, any> | null
-}
-
-const BROWSER_DEBUG_BATCH_SIZE = 20
-const BROWSER_DEBUG_FLUSH_MS = 1_000
-const browserDebugQueue: BrowserDebugEventPayload[] = []
-let browserDebugFlushTimer: number | null = null
-let browserDebugFlushInFlight: Promise<void> | null = null
-
-function getGlobalCsrfToken(): string | null {
-  try {
-    const m = document.cookie.match(/(?:^|; )csrf=([^;]+)/)
-    return m ? decodeURIComponent(m[1]) : null
-  } catch {
-    return null
-  }
-}
-
-function isBrowserDebugEnabled(): boolean {
-  try {
-    if (typeof window !== 'undefined') {
-      const qs = new URLSearchParams(window.location.search || '')
-      if (qs.get('browser_debug') === '1') return true
-      if (window.localStorage.getItem('browser:debug') === '1') return true
-      if ((window as any).__BROWSER_DEBUG__ === true) return true
-    }
-  } catch {}
-  return isPromptDebugEnabled()
-}
-
-function getBrowserDebugSessionId(): string | null {
-  try {
-    if (typeof window === 'undefined') return null
-    const key = 'browser:debug:session'
-    const existing = window.sessionStorage.getItem(key)
-    if (existing) return existing
-    const next = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(16).slice(2)}`
-    window.sessionStorage.setItem(key, next)
-    return next
-  } catch {
-    return null
-  }
-}
-
-async function flushBrowserDebugQueue(): Promise<void> {
-  if (!browserDebugQueue.length) return
-  if (browserDebugFlushInFlight) {
-    await browserDebugFlushInFlight
-    if (!browserDebugQueue.length) return
-  }
-  const csrfToken = getGlobalCsrfToken()
-  const batch = browserDebugQueue.splice(0, BROWSER_DEBUG_BATCH_SIZE)
-  browserDebugFlushInFlight = (async () => {
-    try {
-      await fetch('/api/debug/browser-log', {
-        method: 'POST',
-        credentials: 'same-origin',
-        keepalive: true,
-        headers: {
-          'Content-Type': 'application/json',
-          ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
-        },
-        body: JSON.stringify({ events: batch }),
-      })
-    } catch {
-      browserDebugQueue.unshift(...batch)
-    } finally {
-      browserDebugFlushInFlight = null
-    }
-  })()
-  await browserDebugFlushInFlight
-}
-
-function scheduleBrowserDebugFlush() {
-  if (browserDebugFlushTimer != null) return
-  browserDebugFlushTimer = window.setTimeout(() => {
-    browserDebugFlushTimer = null
-    void flushBrowserDebugQueue()
-  }, BROWSER_DEBUG_FLUSH_MS)
-}
-
-function enqueueBrowserDebugEvent(event: BrowserDebugEventPayload) {
-  browserDebugQueue.push(event)
-  if (browserDebugQueue.length >= BROWSER_DEBUG_BATCH_SIZE) {
-    void flushBrowserDebugQueue()
-    return
-  }
-  if (typeof window !== 'undefined') scheduleBrowserDebugFlush()
+  dispatchClientDebugDomEvent('feed:index-debug', name, detail, {
+    enabled: isClientDebugEnabled({ storageKey: 'browser:debug', queryParam: 'browser_debug', globalFlag: '__BROWSER_DEBUG__' }) || isPromptDebugEnabled(),
+    consoleLabel: '[index-debug]',
+  })
 }
 
 type MeResponse = {
@@ -1189,50 +1064,22 @@ export default function Feed() {
   }, [feedActivityContext, myUserId, promptSessionId])
 
   useEffect(() => {
-    if (!isBrowserDebugEnabled()) return
-
-    const browserSessionId = getBrowserDebugSessionId()
-    if (!browserSessionId) return
-
-    const pushStructuredDebug = (category: string, evt: Event) => {
-      const detail = (evt as CustomEvent<Record<string, any> | undefined>)?.detail || {}
-      const ctx = browserDebugContextRef.current
-      enqueueBrowserDebugEvent({
-        ts: String(detail?.at || new Date().toISOString()),
-        category,
-        event: String(detail?.name || 'unknown'),
-        level: 'debug',
-        path: ctx.path,
-        browser_session_id: browserSessionId,
-        prompt_session_id: ctx.promptSessionId || null,
-        user_id: ctx.userId ?? null,
-        payload: {
-          surface: ctx.surface,
-          space_id: ctx.spaceId,
-          space_type: ctx.spaceType,
-          space_slug: ctx.spaceSlug,
-          space_name: ctx.spaceName,
-          detail,
-        },
-      })
-    }
-    const onPromptDebug = (evt: Event) => pushStructuredDebug('prompt', evt)
-    const onSequenceHook = (evt: Event) => pushStructuredDebug('sequence', evt)
-    const onIndexDebug = (evt: Event) => pushStructuredDebug('index', evt)
-
-    const onPageHide = () => { void flushBrowserDebugQueue() }
-
-    window.addEventListener('feed:prompt-debug', onPromptDebug as EventListener)
-    window.addEventListener('feed:sequence-hook', onSequenceHook as EventListener)
-    window.addEventListener('feed:index-debug', onIndexDebug as EventListener)
-    window.addEventListener('pagehide', onPageHide)
-    return () => {
-      window.removeEventListener('feed:prompt-debug', onPromptDebug as EventListener)
-      window.removeEventListener('feed:sequence-hook', onSequenceHook as EventListener)
-      window.removeEventListener('feed:index-debug', onIndexDebug as EventListener)
-      window.removeEventListener('pagehide', onPageHide)
-      void flushBrowserDebugQueue()
-    }
+    return installClientDebugDomBridges(
+      [
+        { domEventName: 'feed:prompt-debug', category: 'prompt' },
+        { domEventName: 'feed:sequence-hook', category: 'sequence' },
+        { domEventName: 'feed:index-debug', category: 'index' },
+      ],
+      () => browserDebugContextRef.current,
+      {
+        enabled:
+          isClientDebugEnabled({
+            storageKey: 'browser:debug',
+            queryParam: 'browser_debug',
+            globalFlag: '__BROWSER_DEBUG__',
+          }) || isPromptDebugEnabled(),
+      }
+    )
   }, [])
 
   // Optional per-component render tracing (DEBUG_RENDER)
