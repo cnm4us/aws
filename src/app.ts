@@ -25,6 +25,7 @@ import { feedPromptsRouter } from './routes/feed-prompts';
 import { feedActivityRouter } from './routes/feed-activity';
 import { adminFeedAnalyticsRouter } from './routes/admin-feed-analytics';
 import { adminAnalyticsSinkRouter } from './routes/admin-analytics-sink';
+import { debugBrowserRouter } from './routes/debug-browser';
 import { productionDraftsRouter } from './routes/production-drafts';
 import { createVideoRouter } from './routes/create-video';
 import { libraryRouter } from './routes/library';
@@ -92,6 +93,7 @@ export function buildServer(): express.Application {
   app.use(adminPromptAnalyticsRouter);
   app.use(adminFeedAnalyticsRouter);
   app.use(adminAnalyticsSinkRouter);
+  app.use(debugBrowserRouter);
   app.use(feedPromptsRouter);
   app.use(feedActivityRouter);
   app.use(productionDraftsRouter);

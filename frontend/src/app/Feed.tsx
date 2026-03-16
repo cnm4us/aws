@@ -88,6 +88,155 @@ function feedSequenceHeader(tag?: FeedSequenceEngineTag): Record<string, string>
   return { [FEED_SEQUENCE_ENGINE_HEADER]: tag }
 }
 
+function isPromptDebugEnabled(): boolean {
+  try {
+    const envEnabled = String((import.meta as any)?.env?.VITE_PROMPT_DEBUG || '').trim() === '1'
+    if (envEnabled) return true
+  } catch {}
+  try {
+    if (typeof window !== 'undefined') {
+      const qs = new URLSearchParams(window.location.search || '')
+      if (qs.get('prompt_debug') === '1') return true
+      if (window.localStorage.getItem('prompt:debug') === '1') return true
+      if ((window as any).__PROMPT_DEBUG__ === true) return true
+    }
+  } catch {}
+  return false
+}
+
+function emitPromptDebug(name: string, detail?: Record<string, any>) {
+  if (!isPromptDebugEnabled()) return
+  const payload = {
+    name,
+    at: new Date().toISOString(),
+    ...(detail || {}),
+  }
+  try {
+    window.dispatchEvent(new CustomEvent('feed:prompt-debug', { detail: payload }))
+  } catch {}
+  try {
+    // eslint-disable-next-line no-console
+    console.debug('[prompt-debug]', payload)
+  } catch {}
+}
+
+function emitIndexDebug(name: string, detail?: Record<string, any>) {
+  if (!isBrowserDebugEnabled()) return
+  const payload = {
+    name,
+    at: new Date().toISOString(),
+    ...(detail || {}),
+  }
+  try {
+    window.dispatchEvent(new CustomEvent('feed:index-debug', { detail: payload }))
+  } catch {}
+  try {
+    // eslint-disable-next-line no-console
+    console.debug('[index-debug]', payload)
+  } catch {}
+}
+
+type BrowserDebugEventPayload = {
+  ts: string
+  category: string
+  event: string
+  level: 'debug' | 'info' | 'warn' | 'error'
+  path: string
+  browser_session_id: string
+  prompt_session_id?: string | null
+  user_id?: number | null
+  payload?: Record<string, any> | null
+}
+
+const BROWSER_DEBUG_BATCH_SIZE = 20
+const BROWSER_DEBUG_FLUSH_MS = 1_000
+const browserDebugQueue: BrowserDebugEventPayload[] = []
+let browserDebugFlushTimer: number | null = null
+let browserDebugFlushInFlight: Promise<void> | null = null
+
+function getGlobalCsrfToken(): string | null {
+  try {
+    const m = document.cookie.match(/(?:^|; )csrf=([^;]+)/)
+    return m ? decodeURIComponent(m[1]) : null
+  } catch {
+    return null
+  }
+}
+
+function isBrowserDebugEnabled(): boolean {
+  try {
+    if (typeof window !== 'undefined') {
+      const qs = new URLSearchParams(window.location.search || '')
+      if (qs.get('browser_debug') === '1') return true
+      if (window.localStorage.getItem('browser:debug') === '1') return true
+      if ((window as any).__BROWSER_DEBUG__ === true) return true
+    }
+  } catch {}
+  return isPromptDebugEnabled()
+}
+
+function getBrowserDebugSessionId(): string | null {
+  try {
+    if (typeof window === 'undefined') return null
+    const key = 'browser:debug:session'
+    const existing = window.sessionStorage.getItem(key)
+    if (existing) return existing
+    const next = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`
+    window.sessionStorage.setItem(key, next)
+    return next
+  } catch {
+    return null
+  }
+}
+
+async function flushBrowserDebugQueue(): Promise<void> {
+  if (!browserDebugQueue.length) return
+  if (browserDebugFlushInFlight) {
+    await browserDebugFlushInFlight
+    if (!browserDebugQueue.length) return
+  }
+  const csrfToken = getGlobalCsrfToken()
+  const batch = browserDebugQueue.splice(0, BROWSER_DEBUG_BATCH_SIZE)
+  browserDebugFlushInFlight = (async () => {
+    try {
+      await fetch('/api/debug/browser-log', {
+        method: 'POST',
+        credentials: 'same-origin',
+        keepalive: true,
+        headers: {
+          'Content-Type': 'application/json',
+          ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
+        },
+        body: JSON.stringify({ events: batch }),
+      })
+    } catch {
+      browserDebugQueue.unshift(...batch)
+    } finally {
+      browserDebugFlushInFlight = null
+    }
+  })()
+  await browserDebugFlushInFlight
+}
+
+function scheduleBrowserDebugFlush() {
+  if (browserDebugFlushTimer != null) return
+  browserDebugFlushTimer = window.setTimeout(() => {
+    browserDebugFlushTimer = null
+    void flushBrowserDebugQueue()
+  }, BROWSER_DEBUG_FLUSH_MS)
+}
+
+function enqueueBrowserDebugEvent(event: BrowserDebugEventPayload) {
+  browserDebugQueue.push(event)
+  if (browserDebugQueue.length >= BROWSER_DEBUG_BATCH_SIZE) {
+    void flushBrowserDebugQueue()
+    return
+  }
+  if (typeof window !== 'undefined') scheduleBrowserDebugFlush()
+}
+
 type MeResponse = {
   userId: number | null
   email: string | null
@@ -529,6 +678,30 @@ function computeSequenceKeyForListAtIndex(list: UploadItem[], rawIndex: number):
   return null
 }
 
+function computeSequenceIndexByKeyForList(list: UploadItem[], targetKey: string | null | undefined): number | null {
+  const target = String(targetKey || '').trim()
+  if (!target || !Array.isArray(list) || !list.length) return null
+  const seen = new Map<string, number>()
+  for (let i = 0; i < list.length; i += 1) {
+    const baseKey = computeSequenceBaseKey(list[i] as UploadItem)
+    const dupCount = seen.get(baseKey) || 0
+    seen.set(baseKey, dupCount + 1)
+    const sequenceKey = dupCount === 0 ? baseKey : `${baseKey}#${dupCount}`
+    if (sequenceKey === target) return i
+  }
+  return null
+}
+
+function computeContentDecisionKey(item: UploadItem | null | undefined, activeSequenceKey: string | null | undefined): string | null {
+  if (!item || isPromptItem(item)) return null
+  if (activeSequenceKey) return `seq:${activeSequenceKey}`
+  const publicationId = item.publicationId != null ? Number(item.publicationId) : null
+  if (publicationId != null && Number.isFinite(publicationId) && publicationId > 0) return `pub:${publicationId}`
+  const uploadId = Number(item.id)
+  if (Number.isFinite(uploadId) && uploadId > 0) return `upload:${uploadId}`
+  return null
+}
+
 function findSequenceIndexInListByKey(list: UploadItem[], sequenceKey: string | null | undefined): number {
   if (!Array.isArray(list) || !list.length || !sequenceKey) return -1
   const target = String(sequenceKey)
@@ -693,6 +866,26 @@ export default function Feed() {
     spaceName: string | null
   } | null>(null)
   const promptDecisionBusyRef = useRef<boolean>(false)
+  const promptDecisionLastContentKeyRef = useRef<string | null>(null)
+  const browserDebugContextRef = useRef<{
+    path: string
+    promptSessionId: string | null
+    userId: number | null
+    surface: string | null
+    spaceId: number | null
+    spaceType: string | null
+    spaceSlug: string | null
+    spaceName: string | null
+  }>({
+    path: typeof window !== 'undefined' ? `${window.location.pathname || '/'}${window.location.search || ''}` : '/',
+    promptSessionId: null,
+    userId: null,
+    surface: null,
+    spaceId: null,
+    spaceType: null,
+    spaceSlug: null,
+    spaceName: null,
+  })
   const promptSeenImpressionRef = useRef<Set<number>>(new Set())
   const feedActivityStartedRef = useRef<boolean>(false)
   const feedActivityEndedRef = useRef<boolean>(false)
@@ -712,7 +905,7 @@ export default function Feed() {
     slidesSinceLastPrompt: 999,
     lastPromptId: null,
   })
-  const lastCountedContentSlideIdRef = useRef<number | null>(null)
+  const lastCountedContentKeyRef = useRef<string | null>(null)
   const sequenceSyncOriginRef = useRef<'index' | 'key' | null>(null)
   const lastHookActiveKeyRef = useRef<string | null>(null)
   const lastHookWindowRef = useRef<{ start: number; end: number } | null>(null)
@@ -981,6 +1174,66 @@ export default function Feed() {
     } catch {}
     return null
   }, [feedMode, spaceList])
+
+  useEffect(() => {
+    browserDebugContextRef.current = {
+      path: typeof window !== 'undefined' ? `${window.location.pathname || '/'}${window.location.search || ''}` : '/',
+      promptSessionId,
+      userId: myUserId,
+      surface: feedActivityContext?.surface || null,
+      spaceId: feedActivityContext?.spaceId ?? null,
+      spaceType: feedActivityContext?.spaceType || null,
+      spaceSlug: feedActivityContext?.spaceSlug || null,
+      spaceName: feedActivityContext?.spaceName || null,
+    }
+  }, [feedActivityContext, myUserId, promptSessionId])
+
+  useEffect(() => {
+    if (!isBrowserDebugEnabled()) return
+
+    const browserSessionId = getBrowserDebugSessionId()
+    if (!browserSessionId) return
+
+    const pushStructuredDebug = (category: string, evt: Event) => {
+      const detail = (evt as CustomEvent<Record<string, any> | undefined>)?.detail || {}
+      const ctx = browserDebugContextRef.current
+      enqueueBrowserDebugEvent({
+        ts: String(detail?.at || new Date().toISOString()),
+        category,
+        event: String(detail?.name || 'unknown'),
+        level: 'debug',
+        path: ctx.path,
+        browser_session_id: browserSessionId,
+        prompt_session_id: ctx.promptSessionId || null,
+        user_id: ctx.userId ?? null,
+        payload: {
+          surface: ctx.surface,
+          space_id: ctx.spaceId,
+          space_type: ctx.spaceType,
+          space_slug: ctx.spaceSlug,
+          space_name: ctx.spaceName,
+          detail,
+        },
+      })
+    }
+    const onPromptDebug = (evt: Event) => pushStructuredDebug('prompt', evt)
+    const onSequenceHook = (evt: Event) => pushStructuredDebug('sequence', evt)
+    const onIndexDebug = (evt: Event) => pushStructuredDebug('index', evt)
+
+    const onPageHide = () => { void flushBrowserDebugQueue() }
+
+    window.addEventListener('feed:prompt-debug', onPromptDebug as EventListener)
+    window.addEventListener('feed:sequence-hook', onSequenceHook as EventListener)
+    window.addEventListener('feed:index-debug', onIndexDebug as EventListener)
+    window.addEventListener('pagehide', onPageHide)
+    return () => {
+      window.removeEventListener('feed:prompt-debug', onPromptDebug as EventListener)
+      window.removeEventListener('feed:sequence-hook', onSequenceHook as EventListener)
+      window.removeEventListener('feed:index-debug', onIndexDebug as EventListener)
+      window.removeEventListener('pagehide', onPageHide)
+      void flushBrowserDebugQueue()
+    }
+  }, [])
 
   // Optional per-component render tracing (DEBUG_RENDER)
   useRenderDebug('Feed', {
@@ -2348,17 +2601,24 @@ export default function Feed() {
     // Prompt cards should not count toward threshold counters;
     // only content slides should advance "slides viewed/between prompts".
     if (isPromptItem(current)) return
-    const currentSlideId = Number(current.id)
-    if (!Number.isFinite(currentSlideId)) return
-    if (lastCountedContentSlideIdRef.current === currentSlideId) return
-    lastCountedContentSlideIdRef.current = currentSlideId
+    const currentContentKey = computeContentDecisionKey(current, activeSequenceKey)
+    if (!currentContentKey) return
+    if (lastCountedContentKeyRef.current === currentContentKey) return
+    lastCountedContentKeyRef.current = currentContentKey
     if (promptCountersRef.current.slidesViewed <= 0) {
       promptCountersRef.current.slidesViewed = 1
       return
     }
     promptCountersRef.current.slidesViewed += 1
     promptCountersRef.current.slidesSinceLastPrompt += 1
-  }, [activeItem, items.length, isGlobalBillboard])
+  }, [activeItem, activeSequenceKey, items.length, isGlobalBillboard])
+
+  // Reset per-slide decision guard when leaving global feed.
+  useEffect(() => {
+    if (!isGlobalBillboard) {
+      promptDecisionLastContentKeyRef.current = null
+    }
+  }, [isGlobalBillboard])
 
   // Emit prompt impression exactly once per prompt id (per page lifetime).
   useEffect(() => {
@@ -2399,19 +2659,56 @@ export default function Feed() {
 
   // Ask decision service whether to insert a prompt in the global feed.
   useEffect(() => {
-    if (!isGlobalBillboard) return
-    if (!meLoaded) return
-    if (initialLoading) return
-    if (!items.length) return
-    if (!activeItem || isPromptItem(activeItem)) return
-    if (promptDecisionBusyRef.current) return
+    if (!isGlobalBillboard) {
+      emitPromptDebug('decision:skip:not_global')
+      return
+    }
+    if (!meLoaded) {
+      emitPromptDebug('decision:skip:me_not_loaded')
+      return
+    }
+    if (initialLoading) {
+      emitPromptDebug('decision:skip:initial_loading')
+      return
+    }
+    if (!items.length) {
+      emitPromptDebug('decision:skip:no_items')
+      return
+    }
+    if (!activeItem || isPromptItem(activeItem)) {
+      emitPromptDebug('decision:skip:active_not_content')
+      return
+    }
+    if (promptDecisionBusyRef.current) {
+      emitPromptDebug('decision:skip:busy')
+      return
+    }
+    const activeContentKey = computeContentDecisionKey(activeItem, activeSequenceKey)
+    if (!activeContentKey) {
+      emitPromptDebug('decision:skip:invalid_active_content_key', { active_id: activeItem.id, active_sequence_key: activeSequenceKey })
+      return
+    }
+    if (promptDecisionLastContentKeyRef.current === activeContentKey) {
+      emitPromptDebug('decision:skip:same_content_slide', { active_content_key: activeContentKey })
+      return
+    }
 
     let canceled = false
     const timer = window.setTimeout(async () => {
       if (canceled) return
+      promptDecisionLastContentKeyRef.current = activeContentKey
       promptDecisionBusyRef.current = true
       try {
         const counters = promptCountersRef.current
+        emitPromptDebug('decision:request', {
+          active_content_key: activeContentKey,
+          session_id: promptSessionId,
+          slides_viewed: counters.slidesViewed,
+          watch_seconds: counters.watchSeconds,
+          prompts_shown_this_session: counters.promptsShown,
+          slides_since_last_prompt: counters.slidesSinceLastPrompt,
+          last_prompt_id: counters.lastPromptId,
+        })
         const res = await fetch('/api/feed/prompt-decision', {
           method: 'POST',
           credentials: 'same-origin',
@@ -2429,28 +2726,88 @@ export default function Feed() {
             last_prompt_id: counters.lastPromptId,
           }),
         })
-        if (!res.ok) return
+        if (!res.ok) {
+          emitPromptDebug('decision:response:not_ok', { status: res.status, active_content_key: activeContentKey })
+          return
+        }
         const decision = await res.json()
         if (canceled) return
+        emitPromptDebug('decision:response', {
+          active_content_key: activeContentKey,
+          should_insert: Boolean(decision?.should_insert),
+          reason_code: decision?.reason_code || null,
+          prompt_id: decision?.prompt_id ?? null,
+          session_id: decision?.session_id ?? null,
+          debug: decision?.debug || null,
+        })
         if (typeof decision?.session_id === 'string' && decision.session_id.trim()) {
           setPromptSessionId(decision.session_id.trim())
         }
-        if (!decision?.should_insert) return
+        if (!decision?.should_insert) {
+          emitPromptDebug('decision:no_insert', {
+            active_content_slide_id: Number(activeItem?.id),
+            active_content_key: activeContentKey,
+            reason_code: decision?.reason_code || null,
+          })
+          return
+        }
         const promptId = Number(decision?.prompt_id)
-        if (!Number.isFinite(promptId) || promptId <= 0) return
+        if (!Number.isFinite(promptId) || promptId <= 0) {
+          emitPromptDebug('decision:skip:invalid_prompt_id', { prompt_id: decision?.prompt_id })
+          return
+        }
 
         const prompt = await fetchPromptById(promptId)
         if (canceled) return
 
+        const activeAnchorSequenceKey = activeSequenceKey
         const activeSlideId = Number(activeItem?.id)
         setItems((prev) => {
-          const activeIdx = prev.findIndex((it) => Number(it.id) === activeSlideId)
+          const activeIdxBySequenceKey = computeSequenceIndexByKeyForList(prev, activeAnchorSequenceKey)
+          const activeIdxById = prev.findIndex((it) => Number(it.id) === activeSlideId)
+          const activeIdx = activeIdxBySequenceKey != null ? activeIdxBySequenceKey : activeIdxById
           const baseIdx = activeIdx >= 0 ? activeIdx : Math.max(0, Math.min(activeSequenceIndex, Math.max(0, prev.length - 1)))
           const insertAt = Math.max(0, Math.min(baseIdx + 1, prev.length))
-          const currentAtInsert = prev[insertAt]
-          if (isPromptItem(currentAtInsert) && Number(currentAtInsert.prompt?.id || 0) === Number(prompt.id)) {
+          const matchingIndicesById = prev.reduce<number[]>((acc, it, idx) => {
+            if (Number(it.id) === activeSlideId) acc.push(idx)
+            return acc
+          }, [])
+          const sequenceKeyAtResolvedIndex = activeIdxBySequenceKey != null ? computeSequenceKeyForListAtIndex(prev, activeIdxBySequenceKey) : null
+          emitIndexDebug('prompt_anchor:resolved', {
+            prompt_id: prompt.id,
+            active_content_key: activeContentKey,
+            active_sequence_key: activeAnchorSequenceKey,
+            active_content_slide_id: activeSlideId,
+            active_sequence_index: activeSequenceIndex,
+            matched_index_by_sequence_key: activeIdxBySequenceKey,
+            resolved_sequence_key: sequenceKeyAtResolvedIndex,
+            matched_indices_by_id: matchingIndicesById,
+            matched_index_by_id: activeIdxById,
+            selected_active_index: activeIdx,
+            base_index: baseIdx,
+            insert_at: insertAt,
+            prev_length: prev.length,
+          })
+
+          // Keep cadence stable: only one pending prompt is allowed ahead of the active slide.
+          // If we are due for a new decision, we collapse future prompt stack and place one
+          // selected prompt immediately after the active content slide.
+          const immediate = prev[insertAt]
+          const immediatePromptId = isPromptItem(immediate) ? Number(immediate?.prompt?.id || 0) : 0
+          const hasAdditionalPromptAhead = prev.some((it, idx) => idx > insertAt && isPromptItem(it))
+          if (immediatePromptId === Number(prompt.id) && !hasAdditionalPromptAhead) {
+            counters.promptsShown += 1
+            counters.slidesSinceLastPrompt = 0
+            counters.lastPromptId = prompt.id
+            emitPromptDebug('decision:insert:already_present', {
+              active_content_slide_id: activeSlideId,
+              active_content_key: activeContentKey,
+              prompt_id: prompt.id,
+              prompts_shown_this_session: counters.promptsShown,
+            })
             return prev
           }
+
           let syntheticUploadId = -Math.floor(Date.now() + prompt.id)
           while (prev.some((it) => Number(it.id) === syntheticUploadId)) syntheticUploadId -= 1
           const promptItem: UploadItem = {
@@ -2459,17 +2816,57 @@ export default function Feed() {
             itemType: 'prompt',
             prompt,
           }
-          const next = [...prev.slice(0, insertAt), promptItem, ...prev.slice(insertAt)]
-          const nextActiveIdx = next.findIndex((it) => Number(it.id) === activeSlideId)
+
+          const withoutAheadPrompts: UploadItem[] = []
+          for (let i = 0; i < prev.length; i += 1) {
+            const it = prev[i]
+            if (i > baseIdx && isPromptItem(it)) continue
+            withoutAheadPrompts.push(it)
+          }
+          const cleanInsertAt = Math.max(0, Math.min(baseIdx + 1, withoutAheadPrompts.length))
+          const next = [
+            ...withoutAheadPrompts.slice(0, cleanInsertAt),
+            promptItem,
+            ...withoutAheadPrompts.slice(cleanInsertAt),
+          ]
+          const nextActiveIdx = computeSequenceIndexByKeyForList(next, activeAnchorSequenceKey)
+          const nextActiveIdxById = next.findIndex((it) => Number(it.id) === activeSlideId)
+          emitIndexDebug('prompt_anchor:next_index', {
+            prompt_id: prompt.id,
+            active_content_key: activeContentKey,
+            active_sequence_key: activeAnchorSequenceKey,
+            active_content_slide_id: activeSlideId,
+            base_index: baseIdx,
+            clean_insert_at: cleanInsertAt,
+            next_active_index: nextActiveIdx,
+            next_active_index_by_id: nextActiveIdxById,
+            next_length: next.length,
+          })
           if (nextActiveIdx >= 0) {
+            emitIndexDebug('prompt_anchor:set_index', {
+              prompt_id: prompt.id,
+              active_content_key: activeContentKey,
+              active_sequence_key: activeAnchorSequenceKey,
+              active_content_slide_id: activeSlideId,
+              next_active_index: nextActiveIdx,
+            })
             setIndex((cur) => (cur === nextActiveIdx ? cur : nextActiveIdx))
           }
+          counters.promptsShown += 1
+          counters.slidesSinceLastPrompt = 0
+          counters.lastPromptId = prompt.id
+          emitPromptDebug('decision:insert:applied', {
+            active_content_slide_id: activeSlideId,
+            active_content_key: activeContentKey,
+            prompt_id: prompt.id,
+            insert_index: cleanInsertAt,
+            prompts_shown_this_session: counters.promptsShown,
+          })
           return next
         })
-        counters.promptsShown += 1
-        counters.slidesSinceLastPrompt = 0
-        counters.lastPromptId = prompt.id
-      } catch {}
+      } catch (err: any) {
+        emitPromptDebug('decision:error', { message: String(err?.message || err || 'unknown_error') })
+      }
       finally {
         promptDecisionBusyRef.current = false
       }
@@ -2479,7 +2876,7 @@ export default function Feed() {
       canceled = true
       window.clearTimeout(timer)
     }
-  }, [isGlobalBillboard, meLoaded, isAuthed, initialLoading, items, activeItem, activeSequenceIndex, promptSessionId, feedSequenceEngineTag])
+  }, [isGlobalBillboard, meLoaded, isAuthed, initialLoading, items, activeItem, activeSequenceIndex, activeSequenceKey, promptSessionId, feedSequenceEngineTag])
 
   // HLSVideo handles attaching source on Safari and via hls.js elsewhere
 
@@ -3679,6 +4076,13 @@ export default function Feed() {
         reason,
       }, { ctx: 'index' })
     } catch {}
+    emitIndexDebug('index:active_changed', {
+      index: activeSequenceIndex,
+      key: activeSequenceItem?.sequenceKey || null,
+      slide_id: activeItem ? computeSlideId(activeItem) : null,
+      publication_id: activeItem?.publicationId ?? null,
+      reason: indexReasonRef.current || 'unknown',
+    })
   }, [activeItem, activeSequenceIndex, activeSequenceItem?.sequenceKey])
 
   function reanchorToIndex(curIndex: number, opts?: { immediate?: boolean; reason?: string }) {
@@ -3690,6 +4094,16 @@ export default function Feed() {
     const immediate = opts?.immediate ?? false
     const reason = opts?.reason
     logSlides('reanchor start', { index: clamped, offset: targetOffset, immediate, reason })
+    emitIndexDebug('reanchor:start', {
+      requested_index: curIndex,
+      clamped_index: clamped,
+      current_index: index,
+      target_offset: targetOffset,
+      immediate,
+      reason: reason || null,
+      active_sequence_key: activeSequenceKey,
+      requested_sequence_key: sequenceEngineV1Enabled ? (getSequenceKeyByIndex(clamped) || null) : null,
+    })
     try {
       if (immediate) {
         r.style.transition = 'none'
@@ -3710,6 +4124,14 @@ export default function Feed() {
     if (clamped !== index) setIndex(clamped)
     pauseNonCurrent(clamped)
     logSlides('reanchor end', { index: clamped, offset: targetOffset, immediate, reason })
+    emitIndexDebug('reanchor:end', {
+      index: clamped,
+      offset: targetOffset,
+      immediate,
+      reason: reason || null,
+      active_sequence_key: activeSequenceKey,
+      resolved_sequence_key: sequenceEngineV1Enabled ? (getSequenceKeyByIndex(clamped) || null) : null,
+    })
   }
 
   function reanchorToKey(sequenceKey: string, opts?: { immediate?: boolean; reason?: string }): boolean {
