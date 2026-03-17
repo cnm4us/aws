@@ -253,7 +253,7 @@ feedPromptsRouter.get('/api/feed/prompts/:id', async (req: any, res: any, next: 
       prompt: {
         id: prompt.id,
         prompt_type: (prompt as any).promptType || 'register_login',
-        category: prompt.category,
+        campaign_key: prompt.campaignKey,
         headline: prompt.headline,
         body: prompt.body,
         cta_primary_label: prompt.ctaPrimaryLabel,
@@ -272,14 +272,14 @@ feedPromptsRouter.get('/api/feed/prompts/:id', async (req: any, res: any, next: 
 feedPromptsRouter.post('/api/feed/prompt-events', async (req: any, res: any, next: any) => {
   try {
     const body = (req.body || {}) as any
-    const promptCategory = body.prompt_category ? String(body.prompt_category) : null
+    const promptCampaignKey = body.prompt_campaign_key ? String(body.prompt_campaign_key) : (body.prompt_category ? String(body.prompt_category) : null)
     const ctaKind = body.cta_kind ? String(body.cta_kind) : null
     const sessionId = body.session_id ? String(body.session_id).trim() : null
 
     const tracked = await promptAnalyticsSvc.recordPromptEvent({
       event: body.event,
       promptId: body.prompt_id,
-      promptCategory,
+      promptCampaignKey,
       ctaKind,
       surface: body.surface || 'global_feed',
       sessionId,
@@ -327,7 +327,7 @@ feedPromptsRouter.post('/api/feed/prompt-events', async (req: any, res: any, nex
         app_operation_detail: opByEvent[tracked.inputEvent] || 'feed.prompt.event',
         app_outcome: outcomeByEvent[tracked.inputEvent] || 'shown',
         prompt_id: tracked.promptId,
-        prompt_category: promptCategory,
+        prompt_campaign_key: promptCampaignKey,
         cta_kind: ctaKind,
         prompt_session_id: sessionId,
         prompt_event_type: tracked.eventType,

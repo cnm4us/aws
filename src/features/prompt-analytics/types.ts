@@ -20,7 +20,7 @@ export type PromptAnalyticsEventRow = {
   session_id: string | null
   user_id: number | null
   prompt_id: number
-  prompt_category: string | null
+  prompt_campaign_key: string | null
   cta_kind: string | null
   attributed: number
   occurred_at: string
@@ -58,7 +58,7 @@ export type PromptAnalyticsKpis = {
 export type PromptAnalyticsPromptRow = {
   promptId: number
   promptName: string | null
-  promptCategory: string | null
+  promptCampaignKey: string | null
   totals: {
     impressions: number
     clicksPrimary: number
@@ -107,7 +107,7 @@ export type PromptAnalyticsReport = {
     toDate: string
     surface: PromptAnalyticsSurface | null
     promptId: number | null
-    promptCategory: string | null
+    promptCampaignKey: string | null
     viewerState: PromptAnalyticsViewerState | null
   }
   kpis: PromptAnalyticsKpis

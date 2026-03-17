@@ -1,4 +1,5 @@
 import { DomainError, ForbiddenError, NotFoundError } from '../../core/errors'
+import { context, trace } from '@opentelemetry/api'
 import { getLogger } from '../../lib/logger'
 import * as repo from './repo'
 import type {
@@ -31,6 +32,50 @@ const PROMPT_TYPES: readonly PromptType[] = [
   'sponsor_message',
   'feature_announcement',
 ]
+
+function annotateAdminPromptWrite(row: PromptRow, detail: 'admin.prompts.create' | 'admin.prompts.update' | 'admin.prompts.clone' | 'admin.prompts.status', actorUserId: number, extra?: Record<string, unknown>) {
+  const promptId = Number(row.id || 0)
+  const promptType = normalizePromptType((row as any).prompt_type, 'register_login')
+  const appliesToSurface = normalizeSurface((row as any).applies_to_surface, 'global_feed')
+  const audienceSegment = normalizeAudienceSegment((row as any).audience_segment, 'anonymous')
+  const status = normalizeStatus((row as any).status, 'draft')
+  const campaignKey = row.campaign_key == null || String(row.campaign_key).trim() === '' ? null : String(row.campaign_key)
+  const priority = Number(row.priority || 0)
+  const name = String(row.name || '')
+
+  const span = trace.getSpan(context.active())
+  if (span) {
+    span.setAttribute('app.operation', 'admin.prompts.write')
+    span.setAttribute('app.operation_detail', detail)
+    span.setAttribute('app.prompt_id', String(promptId))
+    span.setAttribute('app.prompt_type', promptType)
+    span.setAttribute('app.applies_to_surface', appliesToSurface)
+    span.setAttribute('app.audience_segment', audienceSegment)
+    span.setAttribute('app.prompt_status', status)
+    span.setAttribute('app.prompt_priority', String(priority))
+    span.setAttribute('app.outcome', 'success')
+    if (campaignKey) span.setAttribute('app.prompt_campaign_key', campaignKey)
+  }
+
+  promptsLogger.info(
+    {
+      event: detail,
+      prompt_id: promptId,
+      user_id: actorUserId,
+      app_operation: 'admin.prompts.write',
+      app_operation_detail: detail,
+      app_prompt_type: promptType,
+      app_applies_to_surface: appliesToSurface,
+      app_audience_segment: audienceSegment,
+      app_prompt_status: status,
+      app_prompt_priority: priority,
+      app_prompt_campaign_key: campaignKey,
+      prompt_name: name,
+      ...(extra || {}),
+    },
+    detail
+  )
+}
 
 function isEnumValue<T extends string>(value: any, allowed: readonly T[]): value is T {
   return typeof value === 'string' && (allowed as readonly string[]).includes(value)
@@ -86,11 +131,11 @@ function normalizeInternalHref(raw: any, key: string, required = true): string |
   return value
 }
 
-function normalizeCategory(raw: any): string {
+function normalizeCampaignKey(raw: any): string | null {
   const value = String(raw ?? '').trim().toLowerCase()
-  if (!value) throw new DomainError('invalid_category', 'invalid_category', 400)
-  if (value.length > 64) throw new DomainError('invalid_category', 'invalid_category', 400)
-  if (!/^[a-z0-9_-]+$/.test(value)) throw new DomainError('invalid_category', 'invalid_category', 400)
+  if (!value) return null
+  if (value.length > 64) throw new DomainError('invalid_campaign_key', 'invalid_campaign_key', 400)
+  if (!/^[a-z0-9_-]+$/.test(value)) throw new DomainError('invalid_campaign_key', 'invalid_campaign_key', 400)
   return value
 }
 
@@ -386,7 +431,7 @@ function mapRow(row: PromptRow): PromptDto {
     appliesToSurface: normalizeSurface((row as any).applies_to_surface, 'global_feed'),
     audienceSegment: normalizeAudienceSegment((row as any).audience_segment, 'anonymous'),
     tieBreakStrategy: normalizeTieBreakStrategy((row as any).tie_break_strategy, 'round_robin'),
-    category: String(row.category || ''),
+    campaignKey: row.campaign_key == null || String(row.campaign_key).trim() === '' ? null : String(row.campaign_key),
     priority: Number(row.priority || 0),
     status: row.status,
     startsAt: row.starts_at == null ? null : String(row.starts_at),
@@ -405,13 +450,13 @@ export async function listForAdmin(params: {
   promptType?: any
   appliesToSurface?: any
   audienceSegment?: any
-  category?: any
+  campaignKey?: any
 }): Promise<PromptDto[]> {
   const status = params.status == null || params.status === '' ? null : normalizeStatus(params.status)
   const promptType = params.promptType == null || params.promptType === '' ? null : normalizePromptType(params.promptType)
   const appliesToSurface = params.appliesToSurface == null || params.appliesToSurface === '' ? null : normalizeSurface(params.appliesToSurface)
   const audienceSegment = params.audienceSegment == null || params.audienceSegment === '' ? null : normalizeAudienceSegment(params.audienceSegment)
-  const category = params.category == null || params.category === '' ? null : normalizeCategory(params.category)
+  const campaignKey = params.campaignKey == null || params.campaignKey === '' ? null : normalizeCampaignKey(params.campaignKey)
 
   const rows = await repo.list({
     includeArchived: Boolean(params.includeArchived),
@@ -420,7 +465,7 @@ export async function listForAdmin(params: {
     promptType,
     appliesToSurface,
     audienceSegment,
-    category,
+    campaignKey,
   })
   return rows.map(mapRow)
 }
@@ -460,7 +505,7 @@ export async function createForAdmin(input: any, actorUserId: number): Promise<P
     ctaSecondaryHref,
     mediaUploadId,
   })
-  const category = normalizeCategory(input?.category)
+  const campaignKey = normalizeCampaignKey(input?.campaignKey ?? input?.campaign_key)
   const priority = normalizePriority(input?.priority, 100)
   const status = normalizeStatus(input?.status, 'draft')
   const { startsAt, endsAt } = normalizeDateWindow(input?.startsAt ?? input?.starts_at, input?.endsAt ?? input?.ends_at)
@@ -479,7 +524,7 @@ export async function createForAdmin(input: any, actorUserId: number): Promise<P
     appliesToSurface,
     audienceSegment,
     tieBreakStrategy,
-    category,
+    campaignKey,
     priority,
     status,
     startsAt,
@@ -488,7 +533,7 @@ export async function createForAdmin(input: any, actorUserId: number): Promise<P
     updatedBy: actorUserId,
   })
 
-  promptsLogger.info({ event: 'admin.prompts.create', prompt_id: row.id, user_id: actorUserId, app_operation: 'admin.prompts.write' }, 'admin.prompts.create')
+  annotateAdminPromptWrite(row, 'admin.prompts.create', actorUserId)
   return mapRow(row)
 }
 
@@ -567,7 +612,10 @@ export async function updateForAdmin(id: number, patch: any, actorUserId: number
       )
       : normalizeTieBreakStrategy((existing as any).tie_break_strategy, 'round_robin')
 
-  const nextCategory = patch?.category !== undefined ? normalizeCategory(patch.category) : String(existing.category)
+  const nextCampaignKey =
+    patch?.campaignKey !== undefined || patch?.campaign_key !== undefined
+      ? normalizeCampaignKey(patch?.campaignKey ?? patch?.campaign_key)
+      : (existing.campaign_key == null || String(existing.campaign_key).trim() === '' ? null : String(existing.campaign_key))
   const nextPriority = patch?.priority !== undefined ? normalizePriority(patch.priority, Number(existing.priority)) : Number(existing.priority)
   const nextStatus = patch?.status !== undefined ? normalizeStatus(patch.status, existing.status) : existing.status
 
@@ -599,7 +647,7 @@ export async function updateForAdmin(id: number, patch: any, actorUserId: number
     appliesToSurface: nextAppliesToSurface,
     audienceSegment: nextAudienceSegment,
     tieBreakStrategy: nextTieBreakStrategy,
-    category: nextCategory,
+    campaignKey: nextCampaignKey,
     priority: nextPriority,
     status: nextStatus,
     startsAt: nextStartsAt,
@@ -607,7 +655,7 @@ export async function updateForAdmin(id: number, patch: any, actorUserId: number
     updatedBy: actorUserId,
   })
 
-  promptsLogger.info({ event: 'admin.prompts.update', prompt_id: id, user_id: actorUserId, app_operation: 'admin.prompts.write' }, 'admin.prompts.update')
+  annotateAdminPromptWrite(row, 'admin.prompts.update', actorUserId)
   return mapRow(row)
 }
 
@@ -630,7 +678,7 @@ export async function cloneForAdmin(id: number, actorUserId: number): Promise<Pr
     appliesToSurface: normalizeSurface((existing as any).applies_to_surface, 'global_feed'),
     audienceSegment: normalizeAudienceSegment((existing as any).audience_segment, 'anonymous'),
     tieBreakStrategy: normalizeTieBreakStrategy((existing as any).tie_break_strategy, 'round_robin'),
-    category: String(existing.category || ''),
+    campaignKey: existing.campaign_key == null || String(existing.campaign_key).trim() === '' ? null : String(existing.campaign_key),
     priority: Number(existing.priority || 100),
     status: 'draft',
     startsAt: existing.starts_at == null ? null : String(existing.starts_at),
@@ -639,7 +687,7 @@ export async function cloneForAdmin(id: number, actorUserId: number): Promise<Pr
     updatedBy: actorUserId,
   })
 
-  promptsLogger.info({ event: 'admin.prompts.clone', prompt_id: id, cloned_prompt_id: row.id, user_id: actorUserId, app_operation: 'admin.prompts.write' }, 'admin.prompts.clone')
+  annotateAdminPromptWrite(row, 'admin.prompts.clone', actorUserId, { cloned_from_prompt_id: id })
   return mapRow(row)
 }
 
@@ -654,7 +702,7 @@ export async function updateStatusForAdmin(id: number, statusRaw: any, actorUser
     updatedBy: actorUserId,
   })
 
-  promptsLogger.info({ event: 'admin.prompts.status', prompt_id: id, status, user_id: actorUserId, app_operation: 'admin.prompts.write' }, 'admin.prompts.status')
+  annotateAdminPromptWrite(row, 'admin.prompts.status', actorUserId)
   return mapRow(row)
 }
 
@@ -662,14 +710,14 @@ export async function listActiveForFeed(params?: {
   promptType?: any
   appliesToSurface?: any
   audienceSegment?: any
-  category?: any
+  campaignKey?: any
   limit?: number
 }): Promise<PromptDto[]> {
   const promptType = params?.promptType == null || params?.promptType === '' ? null : normalizePromptType(params.promptType)
   const appliesToSurface = params?.appliesToSurface == null || params?.appliesToSurface === '' ? null : normalizeSurface(params.appliesToSurface)
   const audienceSegment = params?.audienceSegment == null || params?.audienceSegment === '' ? null : normalizeAudienceSegment(params.audienceSegment)
-  const category = params?.category == null || params?.category === '' ? null : normalizeCategory(params.category)
-  const rows = await repo.listActiveForFeed({ promptType, appliesToSurface, audienceSegment, category, limit: params?.limit })
+  const campaignKey = params?.campaignKey == null || params?.campaignKey === '' ? null : normalizeCampaignKey(params.campaignKey)
+  const rows = await repo.listActiveForFeed({ promptType, appliesToSurface, audienceSegment, campaignKey, limit: params?.limit })
   return rows.map(mapRow)
 }
 

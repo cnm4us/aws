@@ -14,7 +14,7 @@ adminPromptAnalyticsRouter.get('/api/admin/prompt-analytics', async (req, res, n
       toDate: req.query?.to,
       surface: req.query?.surface,
       promptId: req.query?.prompt_id,
-      promptCategory: req.query?.prompt_category,
+      promptCampaignKey: req.query?.prompt_campaign_key ?? req.query?.prompt_category,
       viewerState: req.query?.viewer_state,
     })
     const span = trace.getSpan(context.active())
@@ -37,7 +37,7 @@ adminPromptAnalyticsRouter.get('/api/admin/prompt-analytics.csv', async (req, re
       toDate: req.query?.to,
       surface: req.query?.surface,
       promptId: req.query?.prompt_id,
-      promptCategory: req.query?.prompt_category,
+      promptCampaignKey: req.query?.prompt_campaign_key ?? req.query?.prompt_category,
       viewerState: req.query?.viewer_state,
     })
     const csv = promptAnalyticsSvc.buildPromptAnalyticsCsv(report)

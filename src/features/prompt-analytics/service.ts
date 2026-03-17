@@ -66,11 +66,11 @@ function normalizePromptId(raw: any): number | null {
   return Math.round(n)
 }
 
-function normalizeCategory(raw: any): string | null {
+function normalizeCampaignKey(raw: any): string | null {
   if (raw == null || raw === '') return null
   const v = String(raw).trim().toLowerCase()
   if (!v) return null
-  if (!/^[a-z0-9_-]{1,64}$/.test(v)) throw new DomainError('invalid_prompt_category', 'invalid_prompt_category', 400)
+  if (!/^[a-z0-9_-]{1,64}$/.test(v)) throw new DomainError('invalid_prompt_campaign_key', 'invalid_prompt_campaign_key', 400)
   return v
 }
 
@@ -145,11 +145,11 @@ function dedupeKey(input: {
     .digest('hex')
 }
 
-async function maybeLookupPromptMeta(promptId: number): Promise<{ promptCategory: string | null }> {
+async function maybeLookupPromptMeta(promptId: number): Promise<{ promptCampaignKey: string | null }> {
   const row = await promptRepo.getById(promptId)
-  if (!row) return { promptCategory: null }
-  const promptCategory = row.category ? String(row.category).trim().toLowerCase() : null
-  return { promptCategory }
+  if (!row) return { promptCampaignKey: null }
+  const promptCampaignKey = row.campaign_key ? String(row.campaign_key).trim().toLowerCase() : null
+  return { promptCampaignKey }
 }
 
 type RecordPromptEventInput = {
@@ -159,7 +159,7 @@ type RecordPromptEventInput = {
   sessionId?: string | null
   userId?: number | string | null
   promptId: number | string | null | undefined
-  promptCategory?: string | null
+  promptCampaignKey?: string | null
   ctaKind?: PromptAnalyticsCtaKind | string | null
   occurredAt?: Date
 }
@@ -190,14 +190,14 @@ export async function recordPromptEvent(input: RecordPromptEventInput): Promise<
         ? Math.round(Number(input.userId))
         : null
 
-      let promptCategory = normalizeCategory(input.promptCategory)
+      let promptCampaignKey = normalizeCampaignKey(input.promptCampaignKey)
       const ctaKind = normalizeCtaKind(input.ctaKind)
       const eventType = mapToEventType(event, ctaKind)
 
-      if (!promptCategory) {
+      if (!promptCampaignKey) {
         try {
           const looked = await maybeLookupPromptMeta(promptId)
-          if (!promptCategory) promptCategory = looked.promptCategory
+          if (!promptCampaignKey) promptCampaignKey = looked.promptCampaignKey
         } catch {}
       }
 
@@ -212,7 +212,7 @@ export async function recordPromptEvent(input: RecordPromptEventInput): Promise<
         promptId,
         meta: {
           input_event: event,
-          ...(promptCategory ? { prompt_category: promptCategory } : {}),
+          ...(promptCampaignKey ? { prompt_campaign_key: promptCampaignKey } : {}),
           ...(ctaKind ? { cta_kind: ctaKind } : {}),
           source_route: 'feed_prompt_events',
         },
@@ -251,7 +251,7 @@ export async function recordPromptEvent(input: RecordPromptEventInput): Promise<
         sessionId: canonical.sessionId,
         userId: canonical.userId,
         promptId: canonical.promptId || promptId,
-        promptCategory,
+        promptCampaignKey,
         ctaKind,
         attributed,
         occurredAt,
@@ -277,7 +277,7 @@ export async function recordPromptEvent(input: RecordPromptEventInput): Promise<
                 dateUtc: dayUtc,
                 surface,
                 promptId: canonical.promptId || promptId,
-                promptCategory,
+                promptCampaignKey,
                 viewerState: canonical.viewerState,
                 eventType,
                 totalDelta: 1,
@@ -310,7 +310,7 @@ export async function recordPromptEvent(input: RecordPromptEventInput): Promise<
       span.setAttributes({
         'app.surface': surface,
         'app.prompt_id': String(canonical.promptId || promptId),
-        ...(promptCategory ? { 'app.prompt_category': promptCategory } : {}),
+        ...(promptCampaignKey ? { 'app.prompt_campaign_key': promptCampaignKey } : {}),
         'app.outcome': inserted.inserted ? 'success' : 'redirect',
         'app.event_name': canonical.eventName,
         'prompt.analytics.event_type': eventType,
@@ -325,7 +325,7 @@ export async function recordPromptEvent(input: RecordPromptEventInput): Promise<
           app_operation_detail: 'prompt.analytics.ingest',
           app_surface: surface,
           app_prompt_id: canonical.promptId || promptId,
-          app_prompt_category: promptCategory,
+          app_prompt_campaign_key: promptCampaignKey,
           app_event_name: canonical.eventName,
           prompt_event_type: eventType,
           prompt_event_deduped: !inserted.inserted,
@@ -362,7 +362,7 @@ function normalizeReportRange(input: {
   toDate?: any
   surface?: any
   promptId?: any
-  promptCategory?: any
+  promptCampaignKey?: any
   viewerState?: any
 }): {
   fromDate: string
@@ -371,7 +371,7 @@ function normalizeReportRange(input: {
   toDateTimeExclusive: string
   surface: PromptAnalyticsSurface | null
   promptId: number | null
-  promptCategory: string | null
+  promptCampaignKey: string | null
   viewerState: PromptAnalyticsViewerState | null
 } {
   const now = new Date()
@@ -398,7 +398,7 @@ function normalizeReportRange(input: {
     toDateTimeExclusive,
     surface: normalizeSurface(input.surface),
     promptId: normalizePromptId(input.promptId),
-    promptCategory: normalizeCategory(input.promptCategory),
+    promptCampaignKey: normalizeCampaignKey(input.promptCampaignKey),
     viewerState: normalizeViewerState(input.viewerState),
   }
 }
@@ -455,7 +455,7 @@ export async function getPromptAnalyticsReportForAdmin(input: {
   toDate?: any
   surface?: any
   promptId?: any
-  promptCategory?: any
+  promptCampaignKey?: any
   viewerState?: any
 }): Promise<PromptAnalyticsReport> {
   return tracer.startActiveSpan('prompt.analytics.query', { attributes: { 'app.operation': 'analytics.query', 'app.operation_detail': 'prompt.analytics.query' } }, async (span) => {
@@ -509,7 +509,7 @@ export async function getPromptAnalyticsReportForAdmin(input: {
         return {
           promptId,
           promptName: (row as any).prompt_name ? String((row as any).prompt_name) : null,
-          promptCategory: (row as any).prompt_category ? String((row as any).prompt_category) : null,
+          promptCampaignKey: (row as any).prompt_campaign_key ? String((row as any).prompt_campaign_key) : null,
           totals: {
             impressions,
             clicksPrimary,
@@ -563,7 +563,7 @@ export async function getPromptAnalyticsReportForAdmin(input: {
       span.setAttributes({
         ...(range.surface ? { 'app.surface': range.surface } : {}),
         ...(range.promptId != null ? { 'app.prompt_id': String(range.promptId) } : {}),
-        ...(range.promptCategory ? { 'app.prompt_category': range.promptCategory } : {}),
+        ...(range.promptCampaignKey ? { 'app.prompt_campaign_key': range.promptCampaignKey } : {}),
         ...(range.viewerState ? { 'prompt.analytics.viewer_state': range.viewerState } : {}),
         'prompt.analytics.result_rows': byPrompt.length,
         'app.outcome': 'success',
@@ -576,7 +576,7 @@ export async function getPromptAnalyticsReportForAdmin(input: {
           app_operation_detail: 'prompt.analytics.query',
           app_surface: range.surface,
           app_prompt_id: range.promptId,
-          app_prompt_category: range.promptCategory,
+          app_prompt_campaign_key: range.promptCampaignKey,
           viewer_state: range.viewerState,
           range_from_date: range.fromDate,
           range_to_date: range.toDate,
@@ -591,7 +591,7 @@ export async function getPromptAnalyticsReportForAdmin(input: {
           toDate: range.toDate,
           surface: range.surface,
           promptId: range.promptId,
-          promptCategory: range.promptCategory,
+          promptCampaignKey: range.promptCampaignKey,
           viewerState: range.viewerState,
         },
         kpis,
@@ -613,7 +613,7 @@ export function buildPromptAnalyticsCsv(report: PromptAnalyticsReport): string {
   const header = [
     'prompt_id',
     'prompt_name',
-    'prompt_category',
+    'prompt_campaign_key',
     'impressions',
     'clicks_primary',
     'clicks_secondary',
@@ -638,7 +638,7 @@ export function buildPromptAnalyticsCsv(report: PromptAnalyticsReport): string {
     rows.push([
       String(row.promptId),
       row.promptName || '',
-      row.promptCategory || '',
+      row.promptCampaignKey || '',
       String(row.totals.impressions),
       String(row.totals.clicksPrimary),
       String(row.totals.clicksSecondary),

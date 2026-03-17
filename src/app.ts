@@ -301,7 +301,7 @@ export function buildServer(): express.Application {
         event: 'auth_complete',
         surface: 'global_feed',
         promptId: promptIdRaw,
-        promptCategory: req?.body?.prompt_category,
+        promptCampaignKey: req?.body?.prompt_campaign_key ?? req?.body?.prompt_category,
         sessionId: req?.body?.prompt_session_id,
         ctaKind: req?.body?.prompt_cta_kind,
         viewerState: userId != null && Number(userId) > 0 ? 'authenticated' : 'anonymous',

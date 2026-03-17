@@ -42,7 +42,7 @@ type UploadItem = {
 
 type FeedPromptPayload = {
   id: number
-  category: string
+  campaignKey: string | null
   backgroundMode: 'none' | 'image' | 'video'
   backgroundVideoPlayback: 'muted_autoplay' | 'tap_to_play_sound'
   overlayColor: string
@@ -391,7 +391,7 @@ async function fetchPromptById(promptId: number): Promise<FeedPromptPayload> {
   const authOffset = Math.max(0, Math.min(80, Math.round(Number(authWidget.yOffsetPct ?? 0) || 0)))
   return {
     id: Number(p.id),
-    category: String(p.category || ''),
+    campaignKey: p.campaign_key == null ? null : String(p.campaign_key),
     backgroundMode: (String(p?.creative?.background?.mode || 'none').toLowerCase() === 'video'
       ? 'video'
       : (String(p?.creative?.background?.mode || 'none').toLowerCase() === 'image' ? 'image' : 'none')),
@@ -440,7 +440,7 @@ async function fetchPromptById(promptId: number): Promise<FeedPromptPayload> {
 async function sendPromptEvent(input: {
   event: 'impression' | 'click' | 'pass_through' | 'auth_start' | 'auth_complete'
   promptId: number
-  promptCategory: string | null
+  promptCampaignKey: string | null
   sessionId: string | null
   ctaKind?: 'primary' | 'secondary'
 }, opts?: { sequenceEngineTag?: FeedSequenceEngineTag }) {
@@ -457,7 +457,7 @@ async function sendPromptEvent(input: {
         event: input.event,
         surface: 'global_feed',
         prompt_id: input.promptId,
-        prompt_category: input.promptCategory,
+        prompt_campaign_key: input.promptCampaignKey,
         session_id: input.sessionId,
         cta_kind: input.ctaKind || null,
       }),
@@ -766,7 +766,7 @@ export default function Feed() {
   const activePromptExposureRef = useRef<{
     sequenceKey: string
     promptId: number
-    promptCategory: string | null
+    promptCampaignKey: string | null
     visibleAtMs: number
     clicked: boolean
     completed: boolean
@@ -2323,7 +2323,7 @@ export default function Feed() {
     void sendPromptEvent({
       event: 'click',
       promptId: prompt.id,
-      promptCategory: prompt.category || null,
+      promptCampaignKey: prompt.campaignKey || null,
       sessionId: promptSessionId,
       ctaKind,
     }, { sequenceEngineTag: feedSequenceEngineTag })
@@ -2332,7 +2332,7 @@ export default function Feed() {
       void sendPromptEvent({
         event: 'auth_start',
         promptId: prompt.id,
-        promptCategory: prompt.category || null,
+        promptCampaignKey: prompt.campaignKey || null,
         sessionId: promptSessionId,
       }, { sequenceEngineTag: feedSequenceEngineTag })
     }
@@ -2340,7 +2340,7 @@ export default function Feed() {
       const url = new URL(targetHref, window.location.origin)
       if (url.origin === window.location.origin) {
         url.searchParams.set('prompt_id', String(prompt.id))
-        if (prompt.category) url.searchParams.set('prompt_category', prompt.category)
+        if (prompt.campaignKey) url.searchParams.set('prompt_campaign_key', prompt.campaignKey)
         if (promptSessionId) url.searchParams.set('prompt_session_id', promptSessionId)
         url.searchParams.set('prompt_cta_kind', ctaKind)
         window.location.href = `${url.pathname}${url.search}${url.hash || ''}`
@@ -2495,7 +2495,7 @@ export default function Feed() {
         void sendPromptEvent({
           event: 'pass_through',
           promptId: previous.promptId,
-          promptCategory: previous.promptCategory,
+          promptCampaignKey: previous.promptCampaignKey,
           sessionId: promptSessionId,
         }, { sequenceEngineTag: feedSequenceEngineTag })
         emitPromptDebug('pass_through:recorded', {
@@ -2526,7 +2526,7 @@ export default function Feed() {
       void sendPromptEvent({
         event: 'impression',
         promptId: prompt.id,
-        promptCategory: prompt.category || null,
+        promptCampaignKey: prompt.campaignKey || null,
         sessionId: promptSessionId,
       }, { sequenceEngineTag: feedSequenceEngineTag })
       emitPromptDebug('impression:recorded', {
@@ -2543,7 +2543,7 @@ export default function Feed() {
     activePromptExposureRef.current = {
       sequenceKey: nextSequenceKey,
       promptId: Number(prompt.id),
-      promptCategory: prompt.category || null,
+      promptCampaignKey: prompt.campaignKey || null,
       visibleAtMs: now,
       clicked: false,
       completed: false,

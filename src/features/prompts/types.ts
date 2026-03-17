@@ -63,7 +63,7 @@ export type PromptRow = {
   applies_to_surface: PromptSurface
   audience_segment: PromptAudienceSegment
   tie_break_strategy: PromptTieBreakStrategy
-  category: string
+  campaign_key: string | null
   priority: number
   status: PromptStatus
   starts_at: string | null
@@ -89,7 +89,7 @@ export type PromptDto = {
   appliesToSurface: PromptSurface
   audienceSegment: PromptAudienceSegment
   tieBreakStrategy: PromptTieBreakStrategy
-  category: string
+  campaignKey: string | null
   priority: number
   status: PromptStatus
   startsAt: string | null

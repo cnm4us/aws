@@ -13,7 +13,7 @@ export type PromptAnalyticsQueryFilter = {
   toDateTimeExclusive: string
   surface: PromptAnalyticsSurface | null
   promptId: number | null
-  promptCategory: string | null
+  promptCampaignKey: string | null
   viewerState: PromptAnalyticsViewerState | null
 }
 
@@ -24,7 +24,7 @@ export async function insertEvent(input: {
   sessionId: string | null
   userId: number | null
   promptId: number
-  promptCategory: string | null
+  promptCampaignKey: string | null
   ctaKind: PromptAnalyticsCtaKind
   attributed: boolean
   occurredAt: string
@@ -37,7 +37,7 @@ export async function insertEvent(input: {
       (
         event_type, surface, viewer_state,
         session_id, user_id,
-        prompt_id, prompt_category,
+        prompt_id, prompt_campaign_key,
         cta_kind, attributed,
         occurred_at, dedupe_bucket_start, dedupe_key
       )
@@ -49,7 +49,7 @@ export async function insertEvent(input: {
       input.sessionId,
       input.userId,
       input.promptId,
-      input.promptCategory,
+      input.promptCampaignKey,
       input.ctaKind,
       input.attributed ? 1 : 0,
       input.occurredAt,
@@ -65,7 +65,7 @@ export async function upsertDailyCount(input: {
   dateUtc: string
   surface: PromptAnalyticsSurface
   promptId: number
-  promptCategory: string | null
+  promptCampaignKey: string | null
   viewerState: PromptAnalyticsViewerState
   eventType: PromptAnalyticsEventType
   totalDelta: number
@@ -74,7 +74,7 @@ export async function upsertDailyCount(input: {
   await db.query(
     `INSERT INTO feed_prompt_daily_stats
       (
-        date_utc, surface, prompt_id, prompt_category,
+        date_utc, surface, prompt_id, prompt_campaign_key,
         viewer_state, event_type, total_events
       )
       VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -85,7 +85,7 @@ export async function upsertDailyCount(input: {
       input.dateUtc,
       input.surface,
       input.promptId,
-      input.promptCategory || '',
+      input.promptCampaignKey || '',
       input.viewerState,
       input.eventType,
       Math.max(1, Math.round(input.totalDelta || 1)),
@@ -145,9 +145,9 @@ function buildDailyWhere(filter: PromptAnalyticsQueryFilter): { whereSql: string
     where.push('prompt_id = ?')
     args.push(filter.promptId)
   }
-  if (filter.promptCategory) {
-    where.push('prompt_category = ?')
-    args.push(filter.promptCategory)
+  if (filter.promptCampaignKey) {
+    where.push('prompt_campaign_key = ?')
+    args.push(filter.promptCampaignKey)
   }
   if (filter.viewerState) {
     where.push('viewer_state = ?')
@@ -167,9 +167,9 @@ function buildRawWhere(filter: PromptAnalyticsQueryFilter): { whereSql: string; 
     where.push('prompt_id = ?')
     args.push(filter.promptId)
   }
-  if (filter.promptCategory) {
-    where.push('prompt_category = ?')
-    args.push(filter.promptCategory)
+  if (filter.promptCampaignKey) {
+    where.push('prompt_campaign_key = ?')
+    args.push(filter.promptCampaignKey)
   }
   if (filter.viewerState) {
     where.push('viewer_state = ?')
@@ -202,7 +202,7 @@ export async function getByPromptFromDaily(filter: PromptAnalyticsQueryFilter): 
   const [rows] = await db.query(
     `SELECT
         s.prompt_id,
-        MAX(NULLIF(s.prompt_category, '')) AS prompt_category,
+        MAX(NULLIF(s.prompt_campaign_key, '')) AS prompt_campaign_key,
         MAX(p.name) AS prompt_name,
         COALESCE(SUM(CASE WHEN s.event_type = 'prompt_impression' THEN s.total_events ELSE 0 END), 0) AS impressions,
         COALESCE(SUM(CASE WHEN s.event_type = 'prompt_click_primary' THEN s.total_events ELSE 0 END), 0) AS clicks_primary,

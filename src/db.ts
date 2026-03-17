@@ -644,7 +644,7 @@ export async function ensureSchema(db: DB) {
               applies_to_surface ENUM('global_feed') NOT NULL DEFAULT 'global_feed',
               audience_segment ENUM('anonymous','authenticated_non_subscriber','authenticated_subscriber') NOT NULL DEFAULT 'anonymous',
               tie_break_strategy ENUM('first','round_robin','weighted_random') NOT NULL DEFAULT 'round_robin',
-              category VARCHAR(64) NOT NULL,
+              campaign_key VARCHAR(64) NULL,
               priority INT NOT NULL DEFAULT 100,
               status ENUM('draft','active','paused','archived') NOT NULL DEFAULT 'draft',
               starts_at DATETIME NULL,
@@ -653,7 +653,7 @@ export async function ensureSchema(db: DB) {
               updated_by BIGINT UNSIGNED NOT NULL DEFAULT 0,
               created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
               updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-              KEY idx_feed_prompts_status_category (status, category, priority, id),
+              KEY idx_feed_prompts_status_campaign_key (status, campaign_key, priority, id),
               KEY idx_feed_prompts_active_window (status, starts_at, ends_at, priority, id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
           `)
@@ -670,7 +670,7 @@ export async function ensureSchema(db: DB) {
           await db.query(`ALTER TABLE feed_prompts ADD COLUMN IF NOT EXISTS applies_to_surface ENUM('global_feed') NOT NULL DEFAULT 'global_feed'`)
           await db.query(`ALTER TABLE feed_prompts ADD COLUMN IF NOT EXISTS audience_segment ENUM('anonymous','authenticated_non_subscriber','authenticated_subscriber') NOT NULL DEFAULT 'anonymous'`)
           await db.query(`ALTER TABLE feed_prompts ADD COLUMN IF NOT EXISTS tie_break_strategy ENUM('first','round_robin','weighted_random') NOT NULL DEFAULT 'round_robin'`)
-          await db.query(`ALTER TABLE feed_prompts ADD COLUMN IF NOT EXISTS category VARCHAR(64) NOT NULL`)
+          await db.query(`ALTER TABLE feed_prompts ADD COLUMN IF NOT EXISTS campaign_key VARCHAR(64) NULL`)
           await db.query(`ALTER TABLE feed_prompts ADD COLUMN IF NOT EXISTS priority INT NOT NULL DEFAULT 100`)
           await db.query(`ALTER TABLE feed_prompts ADD COLUMN IF NOT EXISTS status ENUM('draft','active','paused','archived') NOT NULL DEFAULT 'draft'`)
           await db.query(`ALTER TABLE feed_prompts ADD COLUMN IF NOT EXISTS starts_at DATETIME NULL`)
@@ -693,7 +693,16 @@ export async function ensureSchema(db: DB) {
                   OR prompt_type NOT IN ('register_login','fund_drive','subscription_upgrade','sponsor_message','feature_announcement')
             `)
           } catch {}
-          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_prompts_status_category ON feed_prompts (status, category, priority, id)`); } catch {}
+          try {
+            await db.query(`
+              UPDATE feed_prompts
+                 SET campaign_key = NULLIF(TRIM(category), '')
+               WHERE (campaign_key IS NULL OR campaign_key = '')
+                 AND COALESCE(category, '') <> ''
+            `)
+          } catch {}
+          try { await db.query(`ALTER TABLE feed_prompts DROP COLUMN category`) } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_prompts_status_campaign_key ON feed_prompts (status, campaign_key, priority, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_prompts_active_window ON feed_prompts (status, starts_at, ends_at, priority, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_prompts_active_type ON feed_prompts (status, prompt_type, starts_at, ends_at, priority, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_prompts_surface_audience_type_active ON feed_prompts (applies_to_surface, audience_segment, status, prompt_type, starts_at, ends_at, priority, id)`); } catch {}
@@ -765,7 +774,7 @@ export async function ensureSchema(db: DB) {
               session_id VARCHAR(120) NULL,
               user_id BIGINT UNSIGNED NULL,
               prompt_id BIGINT UNSIGNED NOT NULL,
-              prompt_category VARCHAR(64) NULL,
+              prompt_campaign_key VARCHAR(64) NULL,
               cta_kind ENUM('primary','secondary') NULL,
               attributed TINYINT(1) NOT NULL DEFAULT 1,
               occurred_at DATETIME NOT NULL,
@@ -779,7 +788,7 @@ export async function ensureSchema(db: DB) {
               KEY idx_feed_prompt_events_event_occurred (event_type, occurred_at, id),
               KEY idx_feed_prompt_events_session_event (session_id, event_type, occurred_at, id),
               KEY idx_feed_prompt_events_user_event (user_id, event_type, occurred_at, id),
-              KEY idx_feed_prompt_events_category_occurred (prompt_category, occurred_at, id)
+              KEY idx_feed_prompt_events_campaign_key_occurred (prompt_campaign_key, occurred_at, id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
           `)
           await db.query(`ALTER TABLE feed_prompt_events ADD COLUMN IF NOT EXISTS event_type ENUM('prompt_impression','prompt_click_primary','prompt_click_secondary','prompt_dismiss','auth_start_from_prompt','auth_complete_from_prompt') NOT NULL`)
@@ -788,7 +797,7 @@ export async function ensureSchema(db: DB) {
           await db.query(`ALTER TABLE feed_prompt_events ADD COLUMN IF NOT EXISTS session_id VARCHAR(120) NULL`)
           await db.query(`ALTER TABLE feed_prompt_events ADD COLUMN IF NOT EXISTS user_id BIGINT UNSIGNED NULL`)
           await db.query(`ALTER TABLE feed_prompt_events ADD COLUMN IF NOT EXISTS prompt_id BIGINT UNSIGNED NOT NULL DEFAULT 0`)
-          await db.query(`ALTER TABLE feed_prompt_events ADD COLUMN IF NOT EXISTS prompt_category VARCHAR(64) NULL`)
+          await db.query(`ALTER TABLE feed_prompt_events ADD COLUMN IF NOT EXISTS prompt_campaign_key VARCHAR(64) NULL`)
           await db.query(`ALTER TABLE feed_prompt_events ADD COLUMN IF NOT EXISTS cta_kind ENUM('primary','secondary') NULL`)
           await db.query(`ALTER TABLE feed_prompt_events ADD COLUMN IF NOT EXISTS attributed TINYINT(1) NOT NULL DEFAULT 1`)
           await db.query(`ALTER TABLE feed_prompt_events ADD COLUMN IF NOT EXISTS occurred_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP`)
@@ -802,7 +811,16 @@ export async function ensureSchema(db: DB) {
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_prompt_events_event_occurred ON feed_prompt_events (event_type, occurred_at, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_prompt_events_session_event ON feed_prompt_events (session_id, event_type, occurred_at, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_prompt_events_user_event ON feed_prompt_events (user_id, event_type, occurred_at, id)`); } catch {}
-          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_prompt_events_category_occurred ON feed_prompt_events (prompt_category, occurred_at, id)`); } catch {}
+          try {
+            await db.query(`
+              UPDATE feed_prompt_events
+                 SET prompt_campaign_key = NULLIF(TRIM(prompt_category), '')
+               WHERE (prompt_campaign_key IS NULL OR prompt_campaign_key = '')
+                 AND COALESCE(prompt_category, '') <> ''
+            `)
+          } catch {}
+          try { await db.query(`ALTER TABLE feed_prompt_events DROP COLUMN prompt_category`) } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_prompt_events_campaign_key_occurred ON feed_prompt_events (prompt_campaign_key, occurred_at, id)`); } catch {}
           try { await db.query(`UPDATE feed_prompt_events SET dedupe_key = LPAD(HEX(id), 64, '0') WHERE dedupe_key IS NULL OR dedupe_key = ''`); } catch {}
 
           await db.query(`
@@ -810,7 +828,7 @@ export async function ensureSchema(db: DB) {
               date_utc DATE NOT NULL,
               surface ENUM('global_feed') NOT NULL DEFAULT 'global_feed',
               prompt_id BIGINT UNSIGNED NOT NULL,
-              prompt_category VARCHAR(64) NOT NULL DEFAULT '',
+              prompt_campaign_key VARCHAR(64) NOT NULL DEFAULT '',
               viewer_state ENUM('anonymous','authenticated') NOT NULL DEFAULT 'anonymous',
               event_type ENUM(
                 'prompt_impression',
@@ -824,44 +842,53 @@ export async function ensureSchema(db: DB) {
               created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
               updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
               PRIMARY KEY (
-                date_utc, surface, prompt_id, prompt_category, viewer_state, event_type
+                date_utc, surface, prompt_id, prompt_campaign_key, viewer_state, event_type
               ),
               KEY idx_feed_prompt_daily_stats_surface_date (surface, date_utc, event_type),
               KEY idx_feed_prompt_daily_stats_prompt_date (prompt_id, date_utc, event_type),
-              KEY idx_feed_prompt_daily_stats_category_date (prompt_category, date_utc, event_type)
+              KEY idx_feed_prompt_daily_stats_campaign_key_date (prompt_campaign_key, date_utc, event_type)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
           `)
           await db.query(`ALTER TABLE feed_prompt_daily_stats ADD COLUMN IF NOT EXISTS date_utc DATE NOT NULL`)
           await db.query(`ALTER TABLE feed_prompt_daily_stats ADD COLUMN IF NOT EXISTS surface ENUM('global_feed') NOT NULL DEFAULT 'global_feed'`)
           await db.query(`ALTER TABLE feed_prompt_daily_stats ADD COLUMN IF NOT EXISTS prompt_id BIGINT UNSIGNED NOT NULL DEFAULT 0`)
-          await db.query(`ALTER TABLE feed_prompt_daily_stats ADD COLUMN IF NOT EXISTS prompt_category VARCHAR(64) NOT NULL DEFAULT ''`)
+          await db.query(`ALTER TABLE feed_prompt_daily_stats ADD COLUMN IF NOT EXISTS prompt_campaign_key VARCHAR(64) NOT NULL DEFAULT ''`)
           await db.query(`ALTER TABLE feed_prompt_daily_stats ADD COLUMN IF NOT EXISTS viewer_state ENUM('anonymous','authenticated') NOT NULL DEFAULT 'anonymous'`)
           await db.query(`ALTER TABLE feed_prompt_daily_stats ADD COLUMN IF NOT EXISTS event_type ENUM('prompt_impression','prompt_click_primary','prompt_click_secondary','prompt_dismiss','auth_start_from_prompt','auth_complete_from_prompt') NOT NULL`)
           await db.query(`ALTER TABLE feed_prompt_daily_stats ADD COLUMN IF NOT EXISTS total_events BIGINT UNSIGNED NOT NULL DEFAULT 0`)
           try {
-            await db.query(`ALTER TABLE feed_prompt_daily_stats DROP PRIMARY KEY, DROP COLUMN prompt_kind, ADD PRIMARY KEY (date_utc, surface, prompt_id, prompt_category, viewer_state, event_type)`)
+            await db.query(`ALTER TABLE feed_prompt_daily_stats DROP PRIMARY KEY, DROP COLUMN prompt_kind, ADD PRIMARY KEY (date_utc, surface, prompt_id, prompt_campaign_key, viewer_state, event_type)`)
           } catch {
             try { await db.query(`ALTER TABLE feed_prompt_daily_stats DROP COLUMN prompt_kind`); } catch {}
-            try { await db.query(`ALTER TABLE feed_prompt_daily_stats ADD PRIMARY KEY (date_utc, surface, prompt_id, prompt_category, viewer_state, event_type)`); } catch {}
+            try { await db.query(`ALTER TABLE feed_prompt_daily_stats ADD PRIMARY KEY (date_utc, surface, prompt_id, prompt_campaign_key, viewer_state, event_type)`); } catch {}
           }
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_prompt_daily_stats_surface_date ON feed_prompt_daily_stats (surface, date_utc, event_type)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_prompt_daily_stats_prompt_date ON feed_prompt_daily_stats (prompt_id, date_utc, event_type)`); } catch {}
-          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_prompt_daily_stats_category_date ON feed_prompt_daily_stats (prompt_category, date_utc, event_type)`); } catch {}
+          try {
+            await db.query(`
+              UPDATE feed_prompt_daily_stats
+                 SET prompt_campaign_key = COALESCE(NULLIF(TRIM(prompt_category), ''), '')
+               WHERE prompt_campaign_key = ''
+                 AND COALESCE(prompt_category, '') <> ''
+            `)
+          } catch {}
+          try { await db.query(`ALTER TABLE feed_prompt_daily_stats DROP COLUMN prompt_category`) } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_prompt_daily_stats_campaign_key_date ON feed_prompt_daily_stats (prompt_campaign_key, date_utc, event_type)`); } catch {}
           try {
             await db.query(
               `INSERT INTO feed_prompt_daily_stats
-                (date_utc, surface, prompt_id, prompt_category, viewer_state, event_type, total_events)
+                (date_utc, surface, prompt_id, prompt_campaign_key, viewer_state, event_type, total_events)
                SELECT
                  DATE(occurred_at) AS date_utc,
                  surface,
                  prompt_id,
-                 COALESCE(prompt_category, '') AS prompt_category,
+                 COALESCE(prompt_campaign_key, '') AS prompt_campaign_key,
                  viewer_state,
                  event_type,
                  COUNT(*) AS total_events
                FROM feed_prompt_events
                WHERE event_type <> 'auth_complete_from_prompt' OR attributed = 1
-               GROUP BY DATE(occurred_at), surface, prompt_id, COALESCE(prompt_category, ''), viewer_state, event_type
+               GROUP BY DATE(occurred_at), surface, prompt_id, COALESCE(prompt_campaign_key, ''), viewer_state, event_type
                ON DUPLICATE KEY UPDATE total_events = VALUES(total_events), updated_at = CURRENT_TIMESTAMP`
             )
           } catch {}

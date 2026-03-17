@@ -3035,13 +3035,6 @@ function toTimeOnlyValue(raw: any): string {
   return dt ? dt.slice(11, 16) : ''
 }
 
-const PROMPT_CATEGORY_OPTIONS: Array<{ value: string; label: string }> = [
-  { value: 'register_prompt', label: 'Register Prompt' },
-  { value: 'fund_drive', label: 'Fund Drive' },
-  { value: 'sponsor', label: 'Sponsor' },
-  { value: 'house_message', label: 'House Message' },
-]
-
 const PROMPT_TYPE_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'register_login', label: 'Register / Login' },
   { value: 'fund_drive', label: 'Fund Drive' },
@@ -3198,6 +3191,7 @@ function buildPromptCreateOrUpdatePayload(body: any): any {
   const appliesToSurface = String(body?.appliesToSurface ?? body?.applies_to_surface ?? 'global_feed').trim().toLowerCase() || 'global_feed'
   const audienceSegment = String(body?.audienceSegment ?? body?.audience_segment ?? 'anonymous').trim().toLowerCase() || 'anonymous'
   const tieBreakStrategy = String(body?.tieBreakStrategy ?? body?.tie_break_strategy ?? 'round_robin').trim().toLowerCase() || 'round_robin'
+  const campaignKey = String(body?.campaignKey ?? body?.campaign_key ?? '').trim().toLowerCase()
   const startsAtDate = String(body?.startsAtDate || '').trim()
   const startsAtTime = String(body?.startsAtTime || '').trim()
   const endsAtDate = String(body?.endsAtDate || '').trim()
@@ -3210,6 +3204,7 @@ function buildPromptCreateOrUpdatePayload(body: any): any {
     appliesToSurface,
     audienceSegment,
     tieBreakStrategy,
+    campaignKey: campaignKey || null,
     mediaUploadId: mediaUploadId || null,
     startsAt: normalizedStartsAt,
     endsAt: normalizedEndsAt,
@@ -3418,11 +3413,6 @@ function renderAdminPromptForm(opts: {
   const skipDraftRestore = opts.notice ? '1' : '0'
   body += `<form id="prompt-editor-form" data-draft-key="${escapeHtml(draftKey)}" data-skip-draft-restore="${skipDraftRestore}" method="post" action="${escapeHtml(opts.action)}">`
   if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
-  const categoryValue = String(values.category || 'register_prompt').trim().toLowerCase() || 'register_prompt'
-  const categoryOptions = PROMPT_CATEGORY_OPTIONS.slice()
-  if (!categoryOptions.some((opt) => opt.value === categoryValue)) {
-    categoryOptions.unshift({ value: categoryValue, label: `Custom (${categoryValue})` })
-  }
   const promptTypeValue = String(values.promptType || values.prompt_type || 'register_login').trim().toLowerCase() || 'register_login'
   const promptTypeOptions = PROMPT_TYPE_OPTIONS.slice()
   if (!promptTypeOptions.some((opt) => opt.value === promptTypeValue)) {
@@ -3443,12 +3433,13 @@ function renderAdminPromptForm(opts: {
   if (!tieBreakOptions.some((opt) => opt.value === tieBreakValue)) {
     tieBreakOptions.unshift({ value: tieBreakValue, label: `Custom (${tieBreakValue})` })
   }
+  const campaignKeyValue = String(values.campaignKey || values.campaign_key || '').trim().toLowerCase()
 
   body += `<div class="section-title" style="margin:10px 0 6px">Identity</div>`
   body += `<div class="section">`
   body += `<label>Name<input type="text" name="name" value="${escapeHtml(String(values.name || ''))}" required maxlength="120" /></label>`
   body += `<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px; margin-top:10px">`
-  body += `<div class="mini-field"><div class="mini-field-label">Prompt Type</div><select name="promptType">`
+  body += `<div class="mini-field"><div class="mini-field-label">Type</div><select name="promptType">`
   for (const opt of promptTypeOptions) {
     body += `<option value="${escapeHtml(opt.value)}"${opt.value === promptTypeValue ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
   }
@@ -3468,11 +3459,7 @@ function renderAdminPromptForm(opts: {
     body += `<option value="${escapeHtml(opt.value)}"${opt.value === tieBreakValue ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
   }
   body += `</select></div>`
-  body += `<div class="mini-field"><div class="mini-field-label">Category</div><select name="category">`
-  for (const opt of categoryOptions) {
-    body += `<option value="${escapeHtml(opt.value)}"${opt.value === categoryValue ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
-  }
-  body += `</select></div>`
+  body += `<div class="mini-field"><div class="mini-field-label">Campaign Key</div><input type="text" name="campaignKey" value="${escapeHtml(campaignKeyValue)}" maxlength="64" placeholder="spring_2026_drive" /></div>`
   body += `<div class="mini-field"><div class="mini-field-label">Priority</div><input type="number" name="priority" value="${escapeHtml(String(values.priority ?? 100))}" /></div>`
   body += `<div class="mini-field"><div class="mini-field-label">Status</div><select name="status">
     <option value="draft"${String(values.status || '') === 'draft' ? ' selected' : ''}>Draft</option>
@@ -3939,7 +3926,7 @@ pagesRouter.get('/admin/prompts', async (req: any, res: any) => {
     const promptType = req.query?.prompt_type ? String(req.query.prompt_type) : ''
     const audienceSegment = req.query?.audience_segment ? String(req.query.audience_segment) : ''
     const appliesToSurface = req.query?.applies_to_surface ? String(req.query.applies_to_surface) : ''
-    const category = req.query?.category ? String(req.query.category) : ''
+    const campaignKey = req.query?.campaign_key ? String(req.query.campaign_key) : ''
     const notice = req.query?.notice ? String(req.query.notice) : ''
     const error = req.query?.error ? String(req.query.error) : ''
     const items = await promptsSvc.listForAdmin({
@@ -3949,7 +3936,7 @@ pagesRouter.get('/admin/prompts', async (req: any, res: any) => {
       promptType,
       audienceSegment,
       appliesToSurface,
-      category,
+      campaignKey,
     })
 
     let body = '<h1>Prompts</h1>'
@@ -3965,7 +3952,7 @@ pagesRouter.get('/admin/prompts', async (req: any, res: any) => {
       <option value="paused"${status === 'paused' ? ' selected' : ''}>Paused</option>
       <option value="archived"${status === 'archived' ? ' selected' : ''}>Archived</option>
     </select></label>`
-    body += `<label style="min-width:210px">Prompt Type<select name="prompt_type"><option value="">All</option>`
+    body += `<label style="min-width:210px">Type<select name="prompt_type"><option value="">All</option>`
     for (const opt of PROMPT_TYPE_OPTIONS) {
       body += `<option value="${escapeHtml(opt.value)}"${promptType === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
     }
@@ -3980,7 +3967,7 @@ pagesRouter.get('/admin/prompts', async (req: any, res: any) => {
       body += `<option value="${escapeHtml(opt.value)}"${appliesToSurface === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
     }
     body += `</select></label>`
-    body += `<label style="min-width:180px">Category<input type="text" name="category" value="${escapeHtml(category)}" /></label>`
+    body += `<label style="min-width:180px">Campaign Key<input type="text" name="campaign_key" value="${escapeHtml(campaignKey)}" /></label>`
     body += `<label><input type="checkbox" name="include_archived" value="1"${includeArchived ? ' checked' : ''} /> Include archived</label>`
     body += `<button class="btn" type="submit">Apply</button>`
     body += `</div></form>`
@@ -3988,7 +3975,7 @@ pagesRouter.get('/admin/prompts', async (req: any, res: any) => {
     if (!items.length) {
       body += '<p>No prompts found for current filters.</p>'
     } else {
-      body += '<table><thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Audience</th><th>Surface</th><th>Category</th><th>Priority</th><th>Status</th><th>Window</th><th>Updated</th></tr></thead><tbody>'
+      body += '<table><thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Audience</th><th>Surface</th><th>Campaign Key</th><th>Priority</th><th>Status</th><th>Window</th><th>Updated</th></tr></thead><tbody>'
       for (const item of items) {
         const windowLabel = item.startsAt || item.endsAt ? `${item.startsAt || '—'} → ${item.endsAt || '—'}` : 'Always'
         body += `<tr>
@@ -3997,7 +3984,7 @@ pagesRouter.get('/admin/prompts', async (req: any, res: any) => {
           <td>${escapeHtml(item.promptType)}</td>
           <td>${escapeHtml(item.audienceSegment)}</td>
           <td>${escapeHtml(item.appliesToSurface)}</td>
-          <td>${escapeHtml(item.category)}</td>
+          <td>${escapeHtml(item.campaignKey || '—')}</td>
           <td>${item.priority}</td>
           <td>${escapeHtml(item.status)}</td>
           <td>${escapeHtml(windowLabel)}</td>
@@ -4036,7 +4023,7 @@ pagesRouter.get('/admin/prompts/new', async (req: any, res: any) => {
       audienceSegment: 'anonymous',
       appliesToSurface: 'global_feed',
       tieBreakStrategy: 'round_robin',
-      category: 'register_prompt',
+      campaignKey: '',
       priority: 100,
       status: 'draft',
       startsAt: '',
@@ -4171,7 +4158,7 @@ pagesRouter.get('/admin/analytics', async (req: any, res: any) => {
         toDate: feedReport.range.toDate,
         surface: promptSurfaceEligible ? selectedSurface : null,
         promptId: null,
-        promptCategory: null,
+        promptCampaignKey: null,
         viewerState: feedReport.range.viewerState,
       },
       kpis: {
@@ -4476,7 +4463,7 @@ pagesRouter.get('/admin/prompt-analytics', async (req: any, res: any) => {
       toDate: req.query?.to,
       surface: req.query?.surface,
       promptId: req.query?.prompt_id,
-      promptCategory: req.query?.prompt_category,
+      promptCampaignKey: req.query?.prompt_campaign_key ?? req.query?.prompt_category,
       viewerState: req.query?.viewer_state,
     })
 
@@ -4493,7 +4480,7 @@ pagesRouter.get('/admin/prompt-analytics', async (req: any, res: any) => {
     q.set('to', report.range.toDate)
     if (report.range.surface) q.set('surface', report.range.surface)
     if (report.range.promptId != null) q.set('prompt_id', String(report.range.promptId))
-    if (report.range.promptCategory) q.set('prompt_category', report.range.promptCategory)
+    if (report.range.promptCampaignKey) q.set('prompt_campaign_key', report.range.promptCampaignKey)
     if (report.range.viewerState) q.set('viewer_state', report.range.viewerState)
 
     let body = '<h1>Prompt Analytics</h1>'
@@ -4512,7 +4499,7 @@ pagesRouter.get('/admin/prompt-analytics', async (req: any, res: any) => {
       <option value="authenticated"${report.range.viewerState === 'authenticated' ? ' selected' : ''}>Authenticated</option>
     </select></label>`
     body += `<label>Prompt ID<input type="number" name="prompt_id" min="1" value="${escapeHtml(report.range.promptId == null ? '' : String(report.range.promptId))}" /></label>`
-    body += `<label>Category<input type="text" name="prompt_category" value="${escapeHtml(report.range.promptCategory || '')}" /></label>`
+    body += `<label>Campaign Key<input type="text" name="prompt_campaign_key" value="${escapeHtml(report.range.promptCampaignKey || '')}" /></label>`
     body += `</div>`
     body += `<div style="display:flex; gap:10px; margin-top:10px; flex-wrap:wrap">`
     body += `<button class="btn" type="submit">Apply</button>`
@@ -4531,13 +4518,13 @@ pagesRouter.get('/admin/prompt-analytics', async (req: any, res: any) => {
     if (!report.byPrompt.length) {
       body += '<p>No prompt analytics events found in this range.</p>'
     } else {
-      body += '<table><thead><tr><th>Prompt</th><th>Category</th><th>Impressions</th><th>Clicks</th><th>CTR</th><th>Pass-through</th><th>Pass-through Rate</th><th>Auth Start</th><th>Auth Complete</th><th>Auth Completion Rate</th><th>Status</th></tr></thead><tbody>'
+      body += '<table><thead><tr><th>Prompt</th><th>Campaign Key</th><th>Impressions</th><th>Clicks</th><th>CTR</th><th>Pass-through</th><th>Pass-through Rate</th><th>Auth Start</th><th>Auth Complete</th><th>Auth Completion Rate</th><th>Status</th></tr></thead><tbody>'
       for (const row of report.byPrompt) {
         const status = row.rates.dismissRate >= 0.5 && row.rates.authCompletionRate < 0.01 ? 'Overexposed' : 'Healthy'
         const label = row.promptName ? `${row.promptName} (#${row.promptId})` : `#${row.promptId}`
         body += `<tr>
           <td>${escapeHtml(label)}</td>
-          <td>${escapeHtml(row.promptCategory || '—')}</td>
+          <td>${escapeHtml(row.promptCampaignKey || '—')}</td>
           <td>${row.totals.impressions} <span class="field-hint">(u:${row.uniqueSessions.impressions})</span></td>
           <td>${row.totals.clicksTotal} <span class="field-hint">(u:${row.uniqueSessions.clicksTotal})</span></td>
           <td>${pctText(row.rates.ctr)}</td>
