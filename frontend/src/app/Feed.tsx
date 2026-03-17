@@ -438,7 +438,7 @@ async function fetchPromptById(promptId: number): Promise<FeedPromptPayload> {
 }
 
 async function sendPromptEvent(input: {
-  event: 'impression' | 'click' | 'auth_start' | 'auth_complete'
+  event: 'impression' | 'click' | 'pass_through' | 'auth_start' | 'auth_complete'
   promptId: number
   promptCategory: string | null
   sessionId: string | null
@@ -761,7 +761,16 @@ export default function Feed() {
     spaceSlug: null,
     spaceName: null,
   })
-  const promptSeenImpressionRef = useRef<Set<number>>(new Set())
+  const promptSeenImpressionRef = useRef<Set<string>>(new Set())
+  const promptSeenPassThroughRef = useRef<Set<string>>(new Set())
+  const activePromptExposureRef = useRef<{
+    sequenceKey: string
+    promptId: number
+    promptCategory: string | null
+    visibleAtMs: number
+    clicked: boolean
+    completed: boolean
+  } | null>(null)
   const feedActivityStartedRef = useRef<boolean>(false)
   const feedActivityEndedRef = useRef<boolean>(false)
   const feedActivitySeenImpressionRef = useRef<Set<number>>(new Set())
@@ -2307,6 +2316,10 @@ export default function Feed() {
   const handlePromptCtaClick = useCallback((prompt: FeedPromptPayload, href: string, ctaKind: 'primary' | 'secondary') => {
     const targetHref = String(href || '').trim()
     if (!targetHref) return
+    const activeExposure = activePromptExposureRef.current
+    if (activeExposure && activeExposure.promptId === Number(prompt.id)) {
+      activeExposure.clicked = true
+    }
     void sendPromptEvent({
       event: 'click',
       promptId: prompt.id,
@@ -2467,20 +2480,75 @@ export default function Feed() {
     }
   }, [isGlobalBillboard])
 
-  // Emit prompt impression exactly once per prompt id (per page lifetime).
+  // Prompt analytics: record impression/pass-through by prompt sequence instance.
   useEffect(() => {
+    const now = Date.now()
+    const previous = activePromptExposureRef.current
     const current = activeItem
-    if (!isPromptItem(current) || !current?.prompt) return
+    const nextIsPrompt = isPromptItem(current) && Boolean(current?.prompt) && typeof activeSequenceKey === 'string' && activeSequenceKey.trim().length > 0
+    const nextSequenceKey = nextIsPrompt ? String(activeSequenceKey).trim() : null
+
+    if (previous && previous.sequenceKey !== nextSequenceKey) {
+      const visibleForMs = Math.max(0, now - previous.visibleAtMs)
+      if (!previous.clicked && !previous.completed && visibleForMs >= 800 && !promptSeenPassThroughRef.current.has(previous.sequenceKey)) {
+        promptSeenPassThroughRef.current.add(previous.sequenceKey)
+        void sendPromptEvent({
+          event: 'pass_through',
+          promptId: previous.promptId,
+          promptCategory: previous.promptCategory,
+          sessionId: promptSessionId,
+        }, { sequenceEngineTag: feedSequenceEngineTag })
+        emitPromptDebug('pass_through:recorded', {
+          prompt_id: previous.promptId,
+          prompt_sequence_key: previous.sequenceKey,
+          visible_for_ms: visibleForMs,
+        })
+      } else {
+        emitPromptDebug('pass_through:skipped', {
+          prompt_id: previous.promptId,
+          prompt_sequence_key: previous.sequenceKey,
+          visible_for_ms: visibleForMs,
+          clicked: previous.clicked,
+          completed: previous.completed,
+          already_recorded: promptSeenPassThroughRef.current.has(previous.sequenceKey),
+        })
+      }
+    }
+
+    if (!nextIsPrompt || !current?.prompt || !nextSequenceKey) {
+      activePromptExposureRef.current = null
+      return
+    }
+
     const prompt = current.prompt
-    if (promptSeenImpressionRef.current.has(prompt.id)) return
-    promptSeenImpressionRef.current.add(prompt.id)
-    void sendPromptEvent({
-      event: 'impression',
-      promptId: prompt.id,
+    if (!promptSeenImpressionRef.current.has(nextSequenceKey)) {
+      promptSeenImpressionRef.current.add(nextSequenceKey)
+      void sendPromptEvent({
+        event: 'impression',
+        promptId: prompt.id,
+        promptCategory: prompt.category || null,
+        sessionId: promptSessionId,
+      }, { sequenceEngineTag: feedSequenceEngineTag })
+      emitPromptDebug('impression:recorded', {
+        prompt_id: prompt.id,
+        prompt_sequence_key: nextSequenceKey,
+      })
+    }
+
+    if (previous && previous.sequenceKey === nextSequenceKey) {
+      activePromptExposureRef.current = previous
+      return
+    }
+
+    activePromptExposureRef.current = {
+      sequenceKey: nextSequenceKey,
+      promptId: Number(prompt.id),
       promptCategory: prompt.category || null,
-      sessionId: promptSessionId,
-    }, { sequenceEngineTag: feedSequenceEngineTag })
-  }, [activeItem, promptSessionId, feedSequenceEngineTag])
+      visibleAtMs: now,
+      clicked: false,
+      completed: false,
+    }
+  }, [activeItem, activeSequenceKey, promptSessionId, feedSequenceEngineTag])
 
   // Feed baseline activity: emit slide impression once per session per publication.
   useEffect(() => {

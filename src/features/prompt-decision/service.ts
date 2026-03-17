@@ -6,7 +6,6 @@ import {
   PROMPT_MIN_SLIDES_BEFORE_FIRST_PROMPT,
   PROMPT_MIN_SLIDES_BETWEEN_PROMPTS,
   PROMPT_MIN_WATCH_SECONDS_BEFORE_FIRST_PROMPT,
-  PROMPT_PASS_THROUGH_SUPPRESS_N,
   PROMPT_RULE_SELECTION_STRATEGY,
 } from '../../config'
 import * as promptsSvc from '../prompts/service'
@@ -177,10 +176,7 @@ function serializeSuppressionState(state: SessionSuppressionState): {
 }
 
 function isPromptSuppressed(promptId: number, state: SessionSuppressionState): boolean {
-  if (PROMPT_PASS_THROUGH_SUPPRESS_N <= 0) return false
-  if (state.convertedPromptIds.has(promptId)) return true
-  const passThroughCount = Number(state.passThroughCounts[String(promptId)] || 0)
-  return passThroughCount >= PROMPT_PASS_THROUGH_SUPPRESS_N
+  return state.convertedPromptIds.has(promptId)
 }
 
 function mergeSessionState(existing: PromptDecisionSessionRow | null, input: PromptDecisionInput): {
@@ -450,7 +446,6 @@ export async function decidePrompt(input: PromptDecisionInput, opts?: { includeD
         slidesSinceLastPrompt: merged.slidesSinceLastPrompt,
         lastPromptShownAt: merged.lastPromptShownAt,
         lastPromptId: merged.lastPromptId,
-        passThroughCounts: merged.suppression.passThroughCounts,
         convertedPromptIds: Array.from(merged.suppression.convertedPromptIds),
       },
       selection: {
@@ -478,19 +473,12 @@ export async function recordPromptSessionEvent(input: {
   if (!Number.isFinite(promptId) || promptId <= 0) return
 
   const normalizedEvent = String(input.event || '').trim().toLowerCase()
-  if (!['click', 'pass_through', 'dismiss', 'auth_complete'].includes(normalizedEvent)) return
+  if (!['auth_complete', 'flow_complete'].includes(normalizedEvent)) return
 
   const existing = await repo.getSessionByKey(sessionId, input.surface)
   if (!existing) return
   const suppression = suppressionStateFromRow(existing)
-
-  if (normalizedEvent === 'click' || normalizedEvent === 'auth_complete') {
-    suppression.convertedPromptIds.add(promptId)
-  } else if (normalizedEvent === 'pass_through' || normalizedEvent === 'dismiss') {
-    const key = String(promptId)
-    const current = Number(suppression.passThroughCounts[key] || 0)
-    suppression.passThroughCounts[key] = current + 1
-  }
+  suppression.convertedPromptIds.add(promptId)
 
   const serialized = serializeSuppressionState(suppression)
   await repo.updateSession(Number(existing.id), {

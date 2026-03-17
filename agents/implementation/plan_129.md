@@ -89,14 +89,14 @@ Primary outcomes:
   - no CTA click,
   - user advanced away (forward or backward slide change),
   - prompt was visible for at least `800ms` (anti-accidental swipe guard).
-- Suppression policy:
-  - suppress same `prompt_id` after `N=2` pass-throughs in-session,
-- suppression duration uses existing cooldown window,
-- suppression is scoped to that prompt (does not suppress other prompt types).
+- Analytics policy:
+  - record `pass_through` as a prompt outcome for reporting and funnel analysis,
+  - do not suppress on `pass_through`.
 - Conversion handling:
-  - CTA click marks prompt as converted in-session,
-  - converted prompt is suppressed for remainder of session (or extended conversion cooldown),
-  - conversion does not reset pass-through counters in a way that would increase re-show frequency.
+  - CTA click is tracked but does not suppress by itself,
+  - `flow_complete` / `auth_complete` marks prompt as converted in-session,
+  - converted prompt is suppressed for remainder of session,
+  - optional future impression caps remain separate from conversion suppression.
 
 ### 4) Compatibility strategy
 - Adopt big-bang rename/cutover for this phase:
@@ -118,7 +118,6 @@ Primary outcomes:
   - `PROMPT_MAX_PROMPTS_PER_SESSION`
   - `PROMPT_MIN_SLIDES_BETWEEN_PROMPTS`
   - `PROMPT_COOLDOWN_SECONDS_AFTER_PROMPT`
-  - `PROMPT_PASS_THROUGH_SUPPRESS_N`
   - `PROMPT_PASS_THROUGH_MIN_VISIBLE_MS`
 - Decisioning applies these global gates after rule/candidate selection and before insertion.
 
@@ -134,6 +133,9 @@ Primary outcomes:
 
 ### 9) Suppression scope
 - First-pass suppression key: `prompt_id` in-session.
+- Suppress only on `flow_complete` / `auth_complete`.
+- Do not suppress on `pass_through`.
+- Do not suppress on CTA click alone.
 - Optional future escalation: suppress by `(audience_segment, prompt_type)` only if prompt-level suppression is insufficient.
 
 ### 10) Prompt-pool pivot (C.2)
@@ -211,13 +213,18 @@ No client trust for audience-state claims.
 Treat scroll-past as pass-through signal (no dismiss action required).
 
 Default suppression behavior:
-- if same `prompt_id` has `N` pass-through events in-session without `cta_click`/`flow_start`, temporarily suppress that `prompt_id`,
+- `pass_through` is analytics-only and does not suppress that prompt,
+- CTA click is analytics-only and does not suppress that prompt,
+- suppress exact `prompt_id` only after `flow_complete` / `auth_complete`,
 - allow other eligible prompt types to continue,
 - suppression resets per session.
 
 Initial recommended defaults:
-- `N = 2` pass-throughs for same prompt before temporary suppression.
-- suppression duration tied to cooldown window.
+- no pass-through-based suppression,
+- suppression duration for completed prompts is session-scoped.
+- optional future extension:
+  - prompt-level `max_impressions_per_session`
+  - prompt-level `max_impressions_per_user`
 
 ## Feed Behavior Requirements
 - Prompt slides remain first-class sequence items.
@@ -326,8 +333,8 @@ Acceptance:
 
 ### Phase D — Feed Client Integration
 - Remove client-side authenticated short-circuit for prompt decision.
-- Keep sequence insertion path unchanged (non-destructive).
-- Emit `pass_through` prompt events when prompt is viewed then bypassed.
+- Keep prompt insertion non-destructive and sequence-stable.
+- Emit `pass_through` prompt events when prompt is viewed then bypassed for analytics only.
 - Consume decision payload independent of legacy rule ids.
 
 Acceptance:
@@ -350,7 +357,9 @@ Acceptance:
   - anonymous session,
   - authenticated subscriber,
   - authenticated non-subscriber,
-  - repeated pass-through suppression behavior,
+  - repeated pass-through analytics behavior,
+  - CTA click without completion does not suppress,
+  - CTA completion suppresses the converting prompt in-session,
   - feed switching/snapshot restore with prompts present,
   - prompt-pool round-robin parity when multiple prompts match same cohort/type.
 - Rollout with feature flag:
@@ -365,19 +374,21 @@ Acceptance:
 1. Anonymous + register prompt eligible -> prompt inserted.
 2. Authenticated non-subscriber + fund-drive prompt eligible -> prompt inserted.
 3. Authenticated subscriber + non-subscriber-targeted prompt -> blocked with rule reason.
-4. Repeated pass-through on same prompt suppresses that prompt in-session.
-5. Prompt CTA click marks prompt converted and suppresses re-show of that prompt in-session.
-6. Switching feeds and returning preserves stable sequence behavior.
+4. Repeated pass-through on same prompt is recorded analytically and does not suppress that prompt by itself.
+5. Prompt CTA click is recorded analytically and does not suppress that prompt by itself.
+6. Prompt CTA completion suppresses re-show of that prompt in-session.
+7. Switching feeds and returning preserves stable sequence behavior.
 
 ## Risks
 - Prompt-pool query/selection complexity can create hard-to-debug selection outcomes.
 - Segment source of truth (subscription state) may be incomplete at first.
-- Pass-through suppression tuning can over-suppress or under-suppress.
+- Completion detection may lag or fail, causing prompts to continue showing longer than intended.
 
 Mitigations:
 - deterministic decision debug payload for admins,
 - explicit `reason_code` coverage,
-- conservative defaults with rapid tuning via prompt targeting + global pacing.
+- conservative defaults with rapid tuning via prompt targeting + global pacing,
+- keep suppression tied only to durable completion events.
 
 ## Rollout Plan
 1. Dark-launch schema + decision changes behind flag.
