@@ -146,24 +146,42 @@ Primary outcomes:
   2. complete parity verification in dev,
   3. remove legacy rule selection path + rule admin endpoints/UI in same C.2 stream.
 
+### 11) Type vs Campaign Key
+- Keep `prompt_type`, but relabel it in the UI as `Type`.
+- `Type` is the structured program field.
+- Replace prompt `category` with `campaign_key` as a freeform analytics/editorial label.
+- `campaign_key` is not used for delivery gating.
+- Defer any type-dependent subtype/category field to future work; do not add a placeholder field now.
+
 ## Prompt Program Model (v1 for multi-type)
 Use `feed_prompts` as the primary delivery unit with explicit program dimensions:
 
-1. Prompt Type
+1. Type
 - Examples:
   - `register_login`
   - `fund_drive`
   - `subscription_upgrade`
   - `sponsor_message`
   - `feature_announcement`
+- Stored as `prompt_type`
+- Used as the primary structured prompt program dimension.
 
-2. Audience State
+2. Campaign Key
+- Freeform analytics/editorial label.
+- Examples:
+  - `spring_2026_drive`
+  - `host_a_video_v1`
+  - `channel_launch_q2`
+- Stored as `campaign_key`
+- Not used for delivery gating.
+
+3. Audience State
 - Initial enum (`audience_segment`):
   - `anonymous`
   - `authenticated_non_subscriber`
   - `authenticated_subscriber`
 
-3. Delivery Controls
+4. Delivery Controls
 - Pacing is global and environment-driven (not per-rule):
   - max prompts per session
   - min slides between prompts
@@ -175,12 +193,15 @@ Use `feed_prompts` as the primary delivery unit with explicit program dimensions
 ## Data/Contract Changes
 ## Prompt Content
 - Add/normalize `prompt_type` on prompts (default mapped for existing prompts).
+- Replace prompt `category` with `campaign_key`.
 - Add/normalize prompt-level delivery fields:
   - `applies_to_surface`
   - `audience_segment`
   - `priority`
   - `tie_break_strategy` (default `round_robin`)
-- Keep `category` as business label; use `prompt_type` for delivery mechanics.
+- Use `prompt_type` as the structured program dimension.
+- Use `campaign_key` as the analytics/editorial grouping dimension.
+- Defer any future subtype field until its type-dependent behavior is defined.
 
 ## Rules
 - `prompt_rules` are deprecated and removed in C.2.
@@ -234,13 +255,13 @@ Initial recommended defaults:
 
 ## Admin UX Requirements
 ## `/admin/prompts`
-- Add `Prompt Type` selector.
+- Add `Type` selector (stored as `prompt_type`).
+- Add `Campaign Key` text input.
 - Add prompt-level targeting controls:
   - `Audience Segment`
   - `Surface`
   - `Priority`
   - `Tie-break strategy`
-- Keep category selector.
 - Keep creative editor unchanged unless type-specific fields are needed.
 
 ## `/admin/prompt-rules`
@@ -249,6 +270,7 @@ Initial recommended defaults:
 
 ## `/admin/prompt-analytics` (minimal alignment)
 - Show type dimension where available (filter + table column).
+- Show campaign key dimension where available (filter + table column).
 - Continue using existing rollups; no full analytics refactor in this plan.
 
 ## Observability Minimum
@@ -257,7 +279,7 @@ Add/ensure tags on decision + render + click + pass-through:
 - `app.operation`
 - `app.prompt_id`
 - `app.prompt_type`
-- `app.prompt_category`
+- `app.prompt_campaign_key`
 - `app.audience_segment`
 - `app.decision_reason`
 - `app.outcome` (`shown|blocked|pass_through|cta_click|flow_start|flow_complete`)
