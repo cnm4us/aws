@@ -13,6 +13,7 @@ export type PromptAnalyticsQueryFilter = {
   toDateTimeExclusive: string
   surface: PromptAnalyticsSurface | null
   promptId: number | null
+  promptType: string | null
   promptCampaignKey: string | null
   viewerState: PromptAnalyticsViewerState | null
 }
@@ -145,6 +146,10 @@ function buildDailyWhere(filter: PromptAnalyticsQueryFilter): { whereSql: string
     where.push('prompt_id = ?')
     args.push(filter.promptId)
   }
+  if (filter.promptType) {
+    where.push(`EXISTS (SELECT 1 FROM feed_prompts p_filter WHERE p_filter.id = prompt_id AND p_filter.prompt_type = ?)`)
+    args.push(filter.promptType)
+  }
   if (filter.promptCampaignKey) {
     where.push('prompt_campaign_key = ?')
     args.push(filter.promptCampaignKey)
@@ -166,6 +171,10 @@ function buildRawWhere(filter: PromptAnalyticsQueryFilter): { whereSql: string; 
   if (filter.promptId != null) {
     where.push('prompt_id = ?')
     args.push(filter.promptId)
+  }
+  if (filter.promptType) {
+    where.push(`EXISTS (SELECT 1 FROM feed_prompts p_filter WHERE p_filter.id = prompt_id AND p_filter.prompt_type = ?)`)
+    args.push(filter.promptType)
   }
   if (filter.promptCampaignKey) {
     where.push('prompt_campaign_key = ?')
@@ -202,6 +211,7 @@ export async function getByPromptFromDaily(filter: PromptAnalyticsQueryFilter): 
   const [rows] = await db.query(
     `SELECT
         s.prompt_id,
+        MAX(p.prompt_type) AS prompt_type,
         MAX(NULLIF(s.prompt_campaign_key, '')) AS prompt_campaign_key,
         MAX(p.name) AS prompt_name,
         COALESCE(SUM(CASE WHEN s.event_type = 'prompt_impression' THEN s.total_events ELSE 0 END), 0) AS impressions,

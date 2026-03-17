@@ -14,6 +14,7 @@ adminPromptAnalyticsRouter.get('/api/admin/prompt-analytics', async (req, res, n
       toDate: req.query?.to,
       surface: req.query?.surface,
       promptId: req.query?.prompt_id,
+      promptType: req.query?.prompt_type,
       promptCampaignKey: req.query?.prompt_campaign_key ?? req.query?.prompt_category,
       viewerState: req.query?.viewer_state,
     })
@@ -37,6 +38,7 @@ adminPromptAnalyticsRouter.get('/api/admin/prompt-analytics.csv', async (req, re
       toDate: req.query?.to,
       surface: req.query?.surface,
       promptId: req.query?.prompt_id,
+      promptType: req.query?.prompt_type,
       promptCampaignKey: req.query?.prompt_campaign_key ?? req.query?.prompt_category,
       viewerState: req.query?.viewer_state,
     })

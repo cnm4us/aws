@@ -4158,6 +4158,7 @@ pagesRouter.get('/admin/analytics', async (req: any, res: any) => {
         toDate: feedReport.range.toDate,
         surface: promptSurfaceEligible ? selectedSurface : null,
         promptId: null,
+        promptType: null,
         promptCampaignKey: null,
         viewerState: feedReport.range.viewerState,
       },
@@ -4463,6 +4464,7 @@ pagesRouter.get('/admin/prompt-analytics', async (req: any, res: any) => {
       toDate: req.query?.to,
       surface: req.query?.surface,
       promptId: req.query?.prompt_id,
+      promptType: req.query?.prompt_type,
       promptCampaignKey: req.query?.prompt_campaign_key ?? req.query?.prompt_category,
       viewerState: req.query?.viewer_state,
     })
@@ -4480,6 +4482,7 @@ pagesRouter.get('/admin/prompt-analytics', async (req: any, res: any) => {
     q.set('to', report.range.toDate)
     if (report.range.surface) q.set('surface', report.range.surface)
     if (report.range.promptId != null) q.set('prompt_id', String(report.range.promptId))
+    if (report.range.promptType) q.set('prompt_type', report.range.promptType)
     if (report.range.promptCampaignKey) q.set('prompt_campaign_key', report.range.promptCampaignKey)
     if (report.range.viewerState) q.set('viewer_state', report.range.viewerState)
 
@@ -4499,6 +4502,11 @@ pagesRouter.get('/admin/prompt-analytics', async (req: any, res: any) => {
       <option value="authenticated"${report.range.viewerState === 'authenticated' ? ' selected' : ''}>Authenticated</option>
     </select></label>`
     body += `<label>Prompt ID<input type="number" name="prompt_id" min="1" value="${escapeHtml(report.range.promptId == null ? '' : String(report.range.promptId))}" /></label>`
+    body += `<label>Type<select name="prompt_type"><option value="">All</option>`
+    for (const opt of PROMPT_TYPE_OPTIONS) {
+      body += `<option value="${escapeHtml(opt.value)}"${report.range.promptType === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+    }
+    body += `</select></label>`
     body += `<label>Campaign Key<input type="text" name="prompt_campaign_key" value="${escapeHtml(report.range.promptCampaignKey || '')}" /></label>`
     body += `</div>`
     body += `<div style="display:flex; gap:10px; margin-top:10px; flex-wrap:wrap">`
@@ -4518,12 +4526,13 @@ pagesRouter.get('/admin/prompt-analytics', async (req: any, res: any) => {
     if (!report.byPrompt.length) {
       body += '<p>No prompt analytics events found in this range.</p>'
     } else {
-      body += '<table><thead><tr><th>Prompt</th><th>Campaign Key</th><th>Impressions</th><th>Clicks</th><th>CTR</th><th>Pass-through</th><th>Pass-through Rate</th><th>Auth Start</th><th>Auth Complete</th><th>Auth Completion Rate</th><th>Status</th></tr></thead><tbody>'
+      body += '<table><thead><tr><th>Prompt</th><th>Type</th><th>Campaign Key</th><th>Impressions</th><th>Clicks</th><th>CTR</th><th>Pass-through</th><th>Pass-through Rate</th><th>Auth Start</th><th>Auth Complete</th><th>Auth Completion Rate</th><th>Status</th></tr></thead><tbody>'
       for (const row of report.byPrompt) {
         const status = row.rates.dismissRate >= 0.5 && row.rates.authCompletionRate < 0.01 ? 'Overexposed' : 'Healthy'
         const label = row.promptName ? `${row.promptName} (#${row.promptId})` : `#${row.promptId}`
         body += `<tr>
           <td>${escapeHtml(label)}</td>
+          <td>${escapeHtml(row.promptType || '—')}</td>
           <td>${escapeHtml(row.promptCampaignKey || '—')}</td>
           <td>${row.totals.impressions} <span class="field-hint">(u:${row.uniqueSessions.impressions})</span></td>
           <td>${row.totals.clicksTotal} <span class="field-hint">(u:${row.uniqueSessions.clicksTotal})</span></td>

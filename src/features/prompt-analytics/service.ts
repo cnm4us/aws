@@ -66,6 +66,16 @@ function normalizePromptId(raw: any): number | null {
   return Math.round(n)
 }
 
+function normalizePromptType(raw: any): string | null {
+  if (raw == null || raw === '') return null
+  const v = String(raw).trim().toLowerCase()
+  if (!v) return null
+  if (!['register_login', 'fund_drive', 'subscription_upgrade', 'sponsor_message', 'feature_announcement'].includes(v)) {
+    throw new DomainError('invalid_prompt_type', 'invalid_prompt_type', 400)
+  }
+  return v
+}
+
 function normalizeCampaignKey(raw: any): string | null {
   if (raw == null || raw === '') return null
   const v = String(raw).trim().toLowerCase()
@@ -362,6 +372,7 @@ function normalizeReportRange(input: {
   toDate?: any
   surface?: any
   promptId?: any
+  promptType?: any
   promptCampaignKey?: any
   viewerState?: any
 }): {
@@ -371,6 +382,7 @@ function normalizeReportRange(input: {
   toDateTimeExclusive: string
   surface: PromptAnalyticsSurface | null
   promptId: number | null
+  promptType: string | null
   promptCampaignKey: string | null
   viewerState: PromptAnalyticsViewerState | null
 } {
@@ -398,6 +410,7 @@ function normalizeReportRange(input: {
     toDateTimeExclusive,
     surface: normalizeSurface(input.surface),
     promptId: normalizePromptId(input.promptId),
+    promptType: normalizePromptType(input.promptType),
     promptCampaignKey: normalizeCampaignKey(input.promptCampaignKey),
     viewerState: normalizeViewerState(input.viewerState),
   }
@@ -455,6 +468,7 @@ export async function getPromptAnalyticsReportForAdmin(input: {
   toDate?: any
   surface?: any
   promptId?: any
+  promptType?: any
   promptCampaignKey?: any
   viewerState?: any
 }): Promise<PromptAnalyticsReport> {
@@ -509,6 +523,7 @@ export async function getPromptAnalyticsReportForAdmin(input: {
         return {
           promptId,
           promptName: (row as any).prompt_name ? String((row as any).prompt_name) : null,
+          promptType: (row as any).prompt_type ? String((row as any).prompt_type) : null,
           promptCampaignKey: (row as any).prompt_campaign_key ? String((row as any).prompt_campaign_key) : null,
           totals: {
             impressions,
@@ -563,6 +578,7 @@ export async function getPromptAnalyticsReportForAdmin(input: {
       span.setAttributes({
         ...(range.surface ? { 'app.surface': range.surface } : {}),
         ...(range.promptId != null ? { 'app.prompt_id': String(range.promptId) } : {}),
+        ...(range.promptType ? { 'app.prompt_type': range.promptType } : {}),
         ...(range.promptCampaignKey ? { 'app.prompt_campaign_key': range.promptCampaignKey } : {}),
         ...(range.viewerState ? { 'prompt.analytics.viewer_state': range.viewerState } : {}),
         'prompt.analytics.result_rows': byPrompt.length,
@@ -576,6 +592,7 @@ export async function getPromptAnalyticsReportForAdmin(input: {
           app_operation_detail: 'prompt.analytics.query',
           app_surface: range.surface,
           app_prompt_id: range.promptId,
+          app_prompt_type: range.promptType,
           app_prompt_campaign_key: range.promptCampaignKey,
           viewer_state: range.viewerState,
           range_from_date: range.fromDate,
@@ -591,6 +608,7 @@ export async function getPromptAnalyticsReportForAdmin(input: {
           toDate: range.toDate,
           surface: range.surface,
           promptId: range.promptId,
+          promptType: range.promptType,
           promptCampaignKey: range.promptCampaignKey,
           viewerState: range.viewerState,
         },
@@ -613,6 +631,7 @@ export function buildPromptAnalyticsCsv(report: PromptAnalyticsReport): string {
   const header = [
     'prompt_id',
     'prompt_name',
+    'prompt_type',
     'prompt_campaign_key',
     'impressions',
     'clicks_primary',
@@ -638,6 +657,7 @@ export function buildPromptAnalyticsCsv(report: PromptAnalyticsReport): string {
     rows.push([
       String(row.promptId),
       row.promptName || '',
+      row.promptType || '',
       row.promptCampaignKey || '',
       String(row.totals.impressions),
       String(row.totals.clicksPrimary),

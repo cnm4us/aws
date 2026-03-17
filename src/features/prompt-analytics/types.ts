@@ -58,6 +58,7 @@ export type PromptAnalyticsKpis = {
 export type PromptAnalyticsPromptRow = {
   promptId: number
   promptName: string | null
+  promptType: string | null
   promptCampaignKey: string | null
   totals: {
     impressions: number
@@ -107,6 +108,7 @@ export type PromptAnalyticsReport = {
     toDate: string
     surface: PromptAnalyticsSurface | null
     promptId: number | null
+    promptType: string | null
     promptCampaignKey: string | null
     viewerState: PromptAnalyticsViewerState | null
   }
