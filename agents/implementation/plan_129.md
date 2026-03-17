@@ -94,8 +94,8 @@ Primary outcomes:
   - do not suppress on `pass_through`.
 - Conversion handling:
   - CTA click is tracked but does not suppress by itself,
-  - `flow_complete` / `auth_complete` marks prompt as converted in-session,
-  - converted prompt is suppressed for remainder of session,
+  - completion-based suppression is deferred until a dedicated CTA completion pipeline exists,
+  - `flow_complete` / `auth_complete` remain the intended future conversion signals,
   - optional future impression caps remain separate from conversion suppression.
 
 ### 4) Compatibility strategy
@@ -133,7 +133,7 @@ Primary outcomes:
 
 ### 9) Suppression scope
 - First-pass suppression key: `prompt_id` in-session.
-- Suppress only on `flow_complete` / `auth_complete`.
+- Defer completion-based suppression until the CTA completion pipeline exists.
 - Do not suppress on `pass_through`.
 - Do not suppress on CTA click alone.
 - Optional future escalation: suppress by `(audience_segment, prompt_type)` only if prompt-level suppression is insufficient.
@@ -236,7 +236,8 @@ Treat scroll-past as pass-through signal (no dismiss action required).
 Default suppression behavior:
 - `pass_through` is analytics-only and does not suppress that prompt,
 - CTA click is analytics-only and does not suppress that prompt,
-- suppress exact `prompt_id` only after `flow_complete` / `auth_complete`,
+- do not suppress prompts in v1 based on CTA events,
+- future suppression target remains exact `prompt_id` after `flow_complete` / `auth_complete`,
 - allow other eligible prompt types to continue,
 - suppression resets per session.
 
@@ -379,7 +380,7 @@ Acceptance:
   - authenticated non-subscriber,
   - repeated pass-through analytics behavior,
   - CTA click without completion does not suppress,
-  - CTA completion suppresses the converting prompt in-session,
+  - CTA completion suppression is deferred and not required for this phase,
   - feed switching/snapshot restore with prompts present,
   - prompt-pool round-robin parity when multiple prompts match same cohort/type.
 - Rollout with feature flag:
@@ -396,13 +397,13 @@ Acceptance:
 3. Authenticated subscriber + non-subscriber-targeted prompt -> blocked with rule reason.
 4. Repeated pass-through on same prompt is recorded analytically and does not suppress that prompt by itself.
 5. Prompt CTA click is recorded analytically and does not suppress that prompt by itself.
-6. Prompt CTA completion suppresses re-show of that prompt in-session.
+6. CTA completion suppression is deferred to the later CTA completion pipeline.
 7. Switching feeds and returning preserves stable sequence behavior.
 
 ## Risks
 - Prompt-pool query/selection complexity can create hard-to-debug selection outcomes.
 - Segment source of truth (subscription state) may be incomplete at first.
-- Completion detection may lag or fail, causing prompts to continue showing longer than intended.
+- Completion pipeline is not yet wired, so converting prompts will continue showing until later conversion integration.
 
 Mitigations:
 - deterministic decision debug payload for admins,
