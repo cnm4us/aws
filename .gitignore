@@ -15,6 +15,7 @@ keys/
 
 
 logs/
+debug/
 
 schema_backups/
 
