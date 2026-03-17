@@ -3,7 +3,7 @@ export type PromptAudienceSegment = 'anonymous' | 'authenticated_non_subscriber'
 
 export type PromptDecisionReasonCode =
   | 'eligible'
-  | 'no_enabled_rule'
+  | 'no_active_prompt'
   | 'below_threshold'
   | 'cap_reached'
   | 'cooldown_active'
@@ -20,9 +20,7 @@ export type PromptDecisionSessionRow = {
   prompts_shown_this_session: number
   slides_since_last_prompt: number
   last_prompt_shown_at: string | null
-  pass_through_counts_json: string | null
   converted_prompt_ids_json: string | null
-  last_prompt_dismissed_at?: string | null
   last_shown_prompt_id: number | null
   last_decision_reason: string | null
   created_at: string
@@ -48,8 +46,6 @@ export type PromptDecisionResult = {
   promptId: number | null
   insertAfterIndex: number | null
   reasonCode: PromptDecisionReasonCode
-  ruleId: number | null
-  ruleName: string | null
   sessionId: string
   debug?: Record<string, unknown>
 }

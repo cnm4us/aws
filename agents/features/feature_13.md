@@ -73,9 +73,7 @@ Current prompt/rule mechanics are a strong base for this evolution.
 ## Relationship to Current Work
 This feature is a strategic extension of:
 - `admin/prompts`
-- `admin/prompt-rules`
 - prompt decision/insertion logic
 - prompt analytics
 
 Implementation planning will happen later when prioritization moves from prompt UX polish to campaign system expansion.
-

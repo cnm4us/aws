@@ -22,7 +22,6 @@ export async function createSession(input: {
   promptsShownThisSession: number
   slidesSinceLastPrompt: number
   lastPromptShownAt: string | null
-  passThroughCountsJson: string | null
   convertedPromptIdsJson: string | null
   lastPromptId: number | null
   lastDecisionReason: string | null
@@ -34,10 +33,10 @@ export async function createSession(input: {
         session_id, surface, viewer_state,
         slides_viewed, watch_seconds,
         prompts_shown_this_session, slides_since_last_prompt,
-        pass_through_counts_json, converted_prompt_ids_json,
+        converted_prompt_ids_json,
         last_prompt_shown_at, last_shown_prompt_id,
         last_decision_reason
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.sessionId,
       input.surface,
@@ -46,7 +45,6 @@ export async function createSession(input: {
       input.watchSeconds,
       input.promptsShownThisSession,
       input.slidesSinceLastPrompt,
-      input.passThroughCountsJson,
       input.convertedPromptIdsJson,
       input.lastPromptShownAt,
       input.lastPromptId,
@@ -65,7 +63,6 @@ export async function updateSession(id: number, patch: {
   promptsShownThisSession?: number
   slidesSinceLastPrompt?: number
   lastPromptShownAt?: string | null
-  passThroughCountsJson?: string | null
   convertedPromptIdsJson?: string | null
   lastPromptId?: number | null
   lastDecisionReason?: string | null
@@ -79,7 +76,6 @@ export async function updateSession(id: number, patch: {
   if (patch.watchSeconds !== undefined) { sets.push('watch_seconds = ?'); args.push(patch.watchSeconds) }
   if (patch.promptsShownThisSession !== undefined) { sets.push('prompts_shown_this_session = ?'); args.push(patch.promptsShownThisSession) }
   if (patch.slidesSinceLastPrompt !== undefined) { sets.push('slides_since_last_prompt = ?'); args.push(patch.slidesSinceLastPrompt) }
-  if (patch.passThroughCountsJson !== undefined) { sets.push('pass_through_counts_json = ?'); args.push(patch.passThroughCountsJson) }
   if (patch.convertedPromptIdsJson !== undefined) { sets.push('converted_prompt_ids_json = ?'); args.push(patch.convertedPromptIdsJson) }
   if (patch.lastPromptShownAt !== undefined) { sets.push('last_prompt_shown_at = ?'); args.push(patch.lastPromptShownAt) }
   if (patch.lastPromptId !== undefined) { sets.push('last_shown_prompt_id = ?'); args.push(patch.lastPromptId) }

@@ -4138,25 +4138,6 @@ pagesRouter.post('/admin/prompts/:id/status', async (req: any, res: any) => {
   }
 })
 
-pagesRouter.get('/admin/prompt-rules', (_req: any, res: any) => {
-  res.redirect('/admin/prompts?notice=' + encodeURIComponent('Prompt Rules have been removed. Use Prompts targeting instead.'))
-})
-pagesRouter.get('/admin/prompt-rules/new', (_req: any, res: any) => {
-  res.redirect('/admin/prompts?notice=' + encodeURIComponent('Prompt Rules have been removed. Use Prompts targeting instead.'))
-})
-pagesRouter.get('/admin/prompt-rules/:id', (_req: any, res: any) => {
-  res.redirect('/admin/prompts?notice=' + encodeURIComponent('Prompt Rules have been removed. Use Prompts targeting instead.'))
-})
-pagesRouter.post('/admin/prompt-rules', (_req: any, res: any) => {
-  res.redirect('/admin/prompts?error=' + encodeURIComponent('Prompt Rules have been removed.'))
-})
-pagesRouter.post('/admin/prompt-rules/:id', (_req: any, res: any) => {
-  res.redirect('/admin/prompts?error=' + encodeURIComponent('Prompt Rules have been removed.'))
-})
-pagesRouter.post('/admin/prompt-rules/:id/toggle', (_req: any, res: any) => {
-  res.redirect('/admin/prompts?error=' + encodeURIComponent('Prompt Rules have been removed.'))
-})
-
 function pctText(rate: number): string {
   const n = Number(rate || 0)
   if (!Number.isFinite(n)) return '0.00%'

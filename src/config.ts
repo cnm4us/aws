@@ -136,12 +136,6 @@ export const PROMPT_MIN_WATCH_SECONDS_BEFORE_FIRST_PROMPT = envInt('PROMPT_MIN_W
 export const PROMPT_MIN_SLIDES_BETWEEN_PROMPTS = envInt('PROMPT_MIN_SLIDES_BETWEEN_PROMPTS', 15, { min: 0, max: 10000 })
 export const PROMPT_COOLDOWN_SECONDS_AFTER_PROMPT = envInt('PROMPT_COOLDOWN_SECONDS_AFTER_PROMPT', 900, { min: 0, max: 7 * 24 * 60 * 60 })
 export const PROMPT_PASS_THROUGH_MIN_VISIBLE_MS = envInt('PROMPT_PASS_THROUGH_MIN_VISIBLE_MS', 800, { min: 0, max: 30000 })
-export const PROMPT_RULE_SELECTION_STRATEGY = (() => {
-  const raw = String(process.env.PROMPT_RULE_SELECTION_STRATEGY || 'first').trim().toLowerCase()
-  if (raw === 'round_robin') return 'round_robin' as const
-  if (raw === 'weighted_random') return 'weighted_random' as const
-  return 'first' as const
-})()
 
 export type ImageVariantFormat = 'webp' | 'png'
 export type ImageVariantUsage = 'prompt_bg' | 'graphic_overlay' | 'logo' | 'lower_third'

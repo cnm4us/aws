@@ -698,106 +698,9 @@ export async function ensureSchema(db: DB) {
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_prompts_active_type ON feed_prompts (status, prompt_type, starts_at, ends_at, priority, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_prompts_surface_audience_type_active ON feed_prompts (applies_to_surface, audience_segment, status, prompt_type, starts_at, ends_at, priority, id)`); } catch {}
 
-          // NOTE: Do not backfill feed_prompts audience from prompt_rules during normal startup.
-          // That legacy bridge mutates admin-edited prompt audience values on each restart.
-          // Prompt audience is now prompt-owned and must remain stable across deploys/restarts.
-
-          // --- Prompt rules (plan_114B) ---
-          await db.query(`
-            CREATE TABLE IF NOT EXISTS prompt_rules (
-              id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-              name VARCHAR(120) NOT NULL,
-              enabled TINYINT(1) NOT NULL DEFAULT 1,
-              applies_to_surface ENUM('global_feed') NOT NULL DEFAULT 'global_feed',
-              audience_segment ENUM('anonymous','authenticated_non_subscriber','authenticated_subscriber') NOT NULL DEFAULT 'anonymous',
-              prompt_type ENUM('register_login','fund_drive','subscription_upgrade','sponsor_message','feature_announcement') NOT NULL DEFAULT 'register_login',
-              min_slides_viewed INT UNSIGNED NOT NULL DEFAULT 6,
-              min_watch_seconds INT UNSIGNED NOT NULL DEFAULT 45,
-              priority INT NOT NULL DEFAULT 100,
-              tie_break_strategy ENUM('random') NOT NULL DEFAULT 'random',
-              created_by BIGINT UNSIGNED NOT NULL DEFAULT 0,
-              updated_by BIGINT UNSIGNED NOT NULL DEFAULT 0,
-              created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-              updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-              KEY idx_prompt_rules_surface_audience_enabled (applies_to_surface, audience_segment, enabled, priority, id)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-          `)
-          await db.query(`ALTER TABLE prompt_rules ADD COLUMN IF NOT EXISTS name VARCHAR(120) NOT NULL`)
-          await db.query(`ALTER TABLE prompt_rules ADD COLUMN IF NOT EXISTS enabled TINYINT(1) NOT NULL DEFAULT 1`)
-          await db.query(`ALTER TABLE prompt_rules ADD COLUMN IF NOT EXISTS applies_to_surface ENUM('global_feed') NOT NULL DEFAULT 'global_feed'`)
-          await db.query(`ALTER TABLE prompt_rules ADD COLUMN IF NOT EXISTS audience_segment ENUM('anonymous','authenticated_non_subscriber','authenticated_subscriber') NOT NULL DEFAULT 'anonymous'`)
-          await db.query(`ALTER TABLE prompt_rules ADD COLUMN IF NOT EXISTS prompt_type ENUM('register_login','fund_drive','subscription_upgrade','sponsor_message','feature_announcement') NOT NULL DEFAULT 'register_login'`)
-          await db.query(`ALTER TABLE prompt_rules ADD COLUMN IF NOT EXISTS min_slides_viewed INT UNSIGNED NOT NULL DEFAULT 6`)
-          await db.query(`ALTER TABLE prompt_rules ADD COLUMN IF NOT EXISTS min_watch_seconds INT UNSIGNED NOT NULL DEFAULT 45`)
-          await db.query(`ALTER TABLE prompt_rules ADD COLUMN IF NOT EXISTS priority INT NOT NULL DEFAULT 100`)
-          await db.query(`ALTER TABLE prompt_rules ADD COLUMN IF NOT EXISTS tie_break_strategy ENUM('random') NOT NULL DEFAULT 'random'`)
-          await db.query(`ALTER TABLE prompt_rules ADD COLUMN IF NOT EXISTS created_by BIGINT UNSIGNED NOT NULL DEFAULT 0`)
-          await db.query(`ALTER TABLE prompt_rules ADD COLUMN IF NOT EXISTS updated_by BIGINT UNSIGNED NOT NULL DEFAULT 0`)
-          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_prompt_rules_surface_audience_enabled ON prompt_rules (applies_to_surface, audience_segment, enabled, priority, id)`); } catch {}
-          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_prompt_rules_surface_type_enabled ON prompt_rules (applies_to_surface, prompt_type, enabled, priority, id)`); } catch {}
-          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_prompt_rules_prompt_type_priority ON prompt_rules (prompt_type, priority, id)`); } catch {}
-
-          // Backfill new rule columns from legacy schema values when present.
-          try {
-            await db.query(`
-              UPDATE prompt_rules
-                 SET audience_segment = CASE
-                   WHEN COALESCE(LOWER(auth_state), '') = 'anonymous' THEN 'anonymous'
-                   ELSE audience_segment
-                 END
-            `)
-          } catch {}
-          try {
-            await db.query(`
-              UPDATE prompt_rules
-                 SET prompt_type = CASE
-                   WHEN JSON_VALID(prompt_category_allowlist_json)
-                        AND JSON_CONTAINS(prompt_category_allowlist_json, JSON_QUOTE('register_prompt')) THEN 'register_login'
-                   WHEN JSON_VALID(prompt_category_allowlist_json)
-                        AND (
-                          JSON_CONTAINS(prompt_category_allowlist_json, JSON_QUOTE('fund_drive'))
-                          OR JSON_CONTAINS(prompt_category_allowlist_json, JSON_QUOTE('donation_prompt'))
-                          OR JSON_CONTAINS(prompt_category_allowlist_json, JSON_QUOTE('support_prompt'))
-                        ) THEN 'fund_drive'
-                   WHEN JSON_VALID(prompt_category_allowlist_json)
-                        AND (
-                          JSON_CONTAINS(prompt_category_allowlist_json, JSON_QUOTE('subscription_prompt'))
-                          OR JSON_CONTAINS(prompt_category_allowlist_json, JSON_QUOTE('subscription_offer'))
-                          OR JSON_CONTAINS(prompt_category_allowlist_json, JSON_QUOTE('upgrade_prompt'))
-                        ) THEN 'subscription_upgrade'
-                   WHEN JSON_VALID(prompt_category_allowlist_json)
-                        AND (
-                          JSON_CONTAINS(prompt_category_allowlist_json, JSON_QUOTE('sponsor'))
-                          OR JSON_CONTAINS(prompt_category_allowlist_json, JSON_QUOTE('sponsor_message'))
-                        ) THEN 'sponsor_message'
-                   ELSE 'register_login'
-                 END
-            `)
-          } catch {}
-
-          // Big-bang cutover: remove legacy rule-level pacing + category-gating + auth alias fields.
-          try { await db.query(`ALTER TABLE prompt_rules DROP COLUMN auth_state`) } catch {}
-          try { await db.query(`ALTER TABLE prompt_rules DROP COLUMN max_prompts_per_session`) } catch {}
-          try { await db.query(`ALTER TABLE prompt_rules DROP COLUMN min_slides_between_prompts`) } catch {}
-          try { await db.query(`ALTER TABLE prompt_rules DROP COLUMN cooldown_seconds_after_prompt`) } catch {}
-          try { await db.query(`ALTER TABLE prompt_rules DROP COLUMN cooldown_seconds_after_dismiss`) } catch {}
-          try { await db.query(`ALTER TABLE prompt_rules DROP COLUMN prompt_category_allowlist_json`) } catch {}
-          try { await db.query(`ALTER TABLE prompt_rules DROP INDEX idx_prompt_rules_surface_enabled`) } catch {}
-
-          try {
-            const [ruleCountRows] = await db.query(`SELECT COUNT(*) AS c FROM prompt_rules`)
-            const ruleCount = Number((ruleCountRows as any[])[0]?.c || 0)
-            if (ruleCount <= 0) {
-              await db.query(
-                `INSERT INTO prompt_rules
-                  (name, enabled, applies_to_surface, audience_segment, prompt_type, min_slides_viewed, min_watch_seconds, priority, tie_break_strategy, created_by, updated_by)
-                 VALUES (?, 1, 'global_feed', 'anonymous', 'register_login', 6, 45, 100, 'random', 0, 0)`,
-                ['Global Feed Anonymous Default']
-              )
-            }
-          } catch {}
-
-          // NOTE: legacy prompt_rules -> feed_prompts audience sync intentionally disabled.
+          // Prompt rules were removed in favor of prompt-owned targeting.
+          // Drop the legacy table during startup so the schema matches runtime behavior.
+          try { await db.query(`DROP TABLE IF EXISTS prompt_rules`) } catch {}
 
           // --- Prompt decision sessions (plan_114C) ---
           await db.query(`
@@ -810,9 +713,7 @@ export async function ensureSchema(db: DB) {
               watch_seconds INT UNSIGNED NOT NULL DEFAULT 0,
               prompts_shown_this_session INT UNSIGNED NOT NULL DEFAULT 0,
               slides_since_last_prompt INT UNSIGNED NOT NULL DEFAULT 0,
-              pass_through_counts_json JSON NULL,
               converted_prompt_ids_json JSON NULL,
-              last_prompt_dismissed_at DATETIME NULL,
               last_prompt_shown_at DATETIME NULL,
               last_shown_prompt_id BIGINT UNSIGNED NULL,
               last_decision_reason VARCHAR(64) NULL,
@@ -837,19 +738,12 @@ export async function ensureSchema(db: DB) {
           await db.query(`ALTER TABLE prompt_decision_sessions ADD COLUMN IF NOT EXISTS watch_seconds INT UNSIGNED NOT NULL DEFAULT 0`)
           await db.query(`ALTER TABLE prompt_decision_sessions ADD COLUMN IF NOT EXISTS prompts_shown_this_session INT UNSIGNED NOT NULL DEFAULT 0`)
           await db.query(`ALTER TABLE prompt_decision_sessions ADD COLUMN IF NOT EXISTS slides_since_last_prompt INT UNSIGNED NOT NULL DEFAULT 0`)
-          await db.query(`ALTER TABLE prompt_decision_sessions ADD COLUMN IF NOT EXISTS pass_through_counts_json JSON NULL`)
           await db.query(`ALTER TABLE prompt_decision_sessions ADD COLUMN IF NOT EXISTS converted_prompt_ids_json JSON NULL`)
-          await db.query(`ALTER TABLE prompt_decision_sessions ADD COLUMN IF NOT EXISTS last_prompt_dismissed_at DATETIME NULL`)
           await db.query(`ALTER TABLE prompt_decision_sessions ADD COLUMN IF NOT EXISTS last_prompt_shown_at DATETIME NULL`)
           await db.query(`ALTER TABLE prompt_decision_sessions ADD COLUMN IF NOT EXISTS last_shown_prompt_id BIGINT UNSIGNED NULL`)
           await db.query(`ALTER TABLE prompt_decision_sessions ADD COLUMN IF NOT EXISTS last_decision_reason VARCHAR(64) NULL`)
-          try {
-            await db.query(`
-              UPDATE prompt_decision_sessions
-                 SET last_prompt_shown_at = last_prompt_dismissed_at
-               WHERE last_prompt_shown_at IS NULL AND last_prompt_dismissed_at IS NOT NULL
-            `)
-          } catch {}
+          try { await db.query(`ALTER TABLE prompt_decision_sessions DROP COLUMN pass_through_counts_json`) } catch {}
+          try { await db.query(`ALTER TABLE prompt_decision_sessions DROP COLUMN last_prompt_dismissed_at`) } catch {}
           try { await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_prompt_decision_session_surface ON prompt_decision_sessions (session_id, surface)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_prompt_decision_surface_updated ON prompt_decision_sessions (surface, updated_at)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_prompt_decision_updated ON prompt_decision_sessions (updated_at)`); } catch {}

@@ -124,7 +124,7 @@ async function handleDecision(req: any, res: any, next: any) {
       span.setAttribute('app.surface', 'global_feed')
       span.setAttribute('app.operation', 'feed.prompt.decide')
       span.setAttribute('app.audience_segment', audienceSegment)
-      span.setAttribute('app.rule_reason', decision.reasonCode)
+      span.setAttribute('app.decision_reason', decision.reasonCode)
       span.setAttribute('app.outcome', decision.shouldInsert ? 'shown' : 'blocked')
       if (decision.promptId != null) span.setAttribute('app.prompt_id', String(decision.promptId))
     }

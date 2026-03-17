@@ -244,9 +244,8 @@ Initial recommended defaults:
 - Keep creative editor unchanged unless type-specific fields are needed.
 
 ## `/admin/prompt-rules`
-- Mark as legacy/compatibility.
-- Optional read-only view during cutover.
-- No new configuration expected post-pivot.
+- Removed in C.2.
+- No runtime routes, editor, or compatibility UI remain after cleanup.
 
 ## `/admin/prompt-analytics` (minimal alignment)
 - Show type dimension where available (filter + table column).
@@ -260,8 +259,7 @@ Add/ensure tags on decision + render + click + pass-through:
 - `app.prompt_type`
 - `app.prompt_category`
 - `app.audience_segment`
-- `app.rule_id`
-- `app.rule_reason`
+- `app.decision_reason`
 - `app.outcome` (`shown|blocked|pass_through|cta_click|flow_start|flow_complete`)
 
 Conversion semantics note:

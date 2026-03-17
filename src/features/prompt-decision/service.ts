@@ -6,7 +6,6 @@ import {
   PROMPT_MIN_SLIDES_BEFORE_FIRST_PROMPT,
   PROMPT_MIN_SLIDES_BETWEEN_PROMPTS,
   PROMPT_MIN_WATCH_SECONDS_BEFORE_FIRST_PROMPT,
-  PROMPT_RULE_SELECTION_STRATEGY,
 } from '../../config'
 import * as promptsSvc from '../prompts/service'
 import * as repo from './repo'
@@ -26,7 +25,6 @@ export const ANON_SESSION_COOKIE = 'anon_session_id'
 export const ANON_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000
 
 type SessionSuppressionState = {
-  passThroughCounts: Record<string, number>
   convertedPromptIds: Set<number>
 }
 
@@ -100,7 +98,7 @@ function parseCounters(raw: any): PromptDecisionInput['counters'] {
     0
   )
   const lastPromptShownAt = normalizeDateTime(
-    countersRaw.last_prompt_shown_at ?? countersRaw.lastPromptShownAt ?? countersRaw.last_prompt_dismissed_at ?? countersRaw.lastPromptDismissedAt,
+    countersRaw.last_prompt_shown_at ?? countersRaw.lastPromptShownAt,
     'last_prompt_shown_at'
   )
   const lastPromptId = normalizePromptId(countersRaw.last_prompt_id ?? countersRaw.lastPromptId)
@@ -112,25 +110,6 @@ function parseCounters(raw: any): PromptDecisionInput['counters'] {
     slidesSinceLastPrompt,
     lastPromptShownAt,
     lastPromptId,
-  }
-}
-
-function parsePassThroughCounts(raw: any): Record<string, number> {
-  if (!raw) return {}
-  try {
-    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
-    if (!parsed || typeof parsed !== 'object') return {}
-    const out: Record<string, number> = {}
-    for (const [k, v] of Object.entries(parsed)) {
-      const key = String(k || '').trim()
-      if (!/^\d+$/.test(key)) continue
-      const n = Number(v)
-      if (!Number.isFinite(n) || n <= 0) continue
-      out[key] = Math.round(n)
-    }
-    return out
-  } catch {
-    return {}
   }
 }
 
@@ -153,24 +132,15 @@ function parseConvertedPromptIds(raw: any): Set<number> {
 
 function suppressionStateFromRow(row: PromptDecisionSessionRow | null): SessionSuppressionState {
   return {
-    passThroughCounts: parsePassThroughCounts(row?.pass_through_counts_json),
     convertedPromptIds: parseConvertedPromptIds(row?.converted_prompt_ids_json),
   }
 }
 
 function serializeSuppressionState(state: SessionSuppressionState): {
-  passThroughCountsJson: string
   convertedPromptIdsJson: string
 } {
-  const sortedCounts = Object.entries(state.passThroughCounts)
-    .sort((a, b) => Number(a[0]) - Number(b[0]))
-    .reduce((acc: Record<string, number>, [k, v]) => {
-      if (v > 0) acc[k] = Math.round(v)
-      return acc
-    }, {})
   const converted = Array.from(state.convertedPromptIds).sort((a, b) => a - b)
   return {
-    passThroughCountsJson: JSON.stringify(sortedCounts),
     convertedPromptIdsJson: JSON.stringify(converted),
   }
 }
@@ -198,7 +168,7 @@ function mergeSessionState(existing: PromptDecisionSessionRow | null, input: Pro
       slidesSinceLastPrompt: input.counters.slidesSinceLastPrompt,
       lastPromptShownAt: input.counters.lastPromptShownAt,
       lastPromptId: input.counters.lastPromptId,
-      suppression: { passThroughCounts: {}, convertedPromptIds: new Set<number>() },
+      suppression: { convertedPromptIds: new Set<number>() },
     }
   }
 
@@ -213,7 +183,7 @@ function mergeSessionState(existing: PromptDecisionSessionRow | null, input: Pro
       input.counters.slidesSinceLastPrompt !== undefined && input.counters.slidesSinceLastPrompt !== null
         ? input.counters.slidesSinceLastPrompt
         : Number(existing.slides_since_last_prompt || 0),
-    lastPromptShownAt: input.counters.lastPromptShownAt || existing.last_prompt_shown_at || existing.last_prompt_dismissed_at || null,
+    lastPromptShownAt: input.counters.lastPromptShownAt || existing.last_prompt_shown_at || null,
     lastPromptId: input.counters.lastPromptId ?? (existing.last_shown_prompt_id == null ? null : Number(existing.last_shown_prompt_id)),
     suppression: suppressionStateFromRow(existing),
   }
@@ -248,12 +218,12 @@ function selectPromptCandidate(
 
   const tieBreak = sorted[0]?.tieBreakStrategy || 'round_robin'
 
-  if (tieBreak === 'round_robin' || PROMPT_RULE_SELECTION_STRATEGY === 'round_robin') {
+  if (tieBreak === 'round_robin') {
     const base = Math.max(0, Math.round(Number(merged.promptsShownThisSession || 0)))
     return sorted[base % sorted.length]
   }
 
-  if (tieBreak === 'weighted_random' || PROMPT_RULE_SELECTION_STRATEGY === 'weighted_random') {
+  if (tieBreak === 'weighted_random') {
     const seed = `${input.sessionId}:${merged.promptsShownThisSession}:${merged.slidesViewed}:${merged.watchSeconds}:weighted_random`
     const hash = deterministicScore(seed)
     const numeric = Number.parseInt(hash.slice(0, 12), 16)
@@ -318,7 +288,6 @@ export async function decidePrompt(input: PromptDecisionInput, opts?: { includeD
       watchSeconds: merged.watchSeconds,
       promptsShownThisSession: merged.promptsShownThisSession,
       slidesSinceLastPrompt: merged.slidesSinceLastPrompt,
-      passThroughCountsJson: suppressionJson.passThroughCountsJson,
       convertedPromptIdsJson: suppressionJson.convertedPromptIdsJson,
       lastPromptShownAt: merged.lastPromptShownAt,
       lastPromptId: merged.lastPromptId,
@@ -331,14 +300,13 @@ export async function decidePrompt(input: PromptDecisionInput, opts?: { includeD
       watchSeconds: merged.watchSeconds,
       promptsShownThisSession: merged.promptsShownThisSession,
       slidesSinceLastPrompt: merged.slidesSinceLastPrompt,
-      passThroughCountsJson: suppressionJson.passThroughCountsJson,
       convertedPromptIdsJson: suppressionJson.convertedPromptIdsJson,
       lastPromptShownAt: merged.lastPromptShownAt,
       lastPromptId: merged.lastPromptId,
     })
   }
 
-  let reasonCode: PromptDecisionReasonCode = 'no_enabled_rule'
+  let reasonCode: PromptDecisionReasonCode = 'no_active_prompt'
   let promptId: number | null = null
   let selectionEngine: 'prompt_pool' = 'prompt_pool'
   let candidateCount = 0
@@ -369,7 +337,7 @@ export async function decidePrompt(input: PromptDecisionInput, opts?: { includeD
       })
 
       if (!prompts.length) {
-        reasonCode = 'no_enabled_rule'
+        reasonCode = 'no_active_prompt'
       } else {
         const candidates: EligiblePromptCandidate[] = []
         for (const prompt of prompts) {
@@ -411,8 +379,6 @@ export async function decidePrompt(input: PromptDecisionInput, opts?: { includeD
     promptId,
     insertAfterIndex: null,
     reasonCode,
-    ruleId: null,
-    ruleName: null,
     sessionId: input.sessionId,
   }
 
@@ -453,7 +419,6 @@ export async function decidePrompt(input: PromptDecisionInput, opts?: { includeD
         candidateCount,
         selectedPriority,
       },
-      selectionStrategy: PROMPT_RULE_SELECTION_STRATEGY,
       reasonCode,
     }
   }
@@ -482,7 +447,6 @@ export async function recordPromptSessionEvent(input: {
 
   const serialized = serializeSuppressionState(suppression)
   await repo.updateSession(Number(existing.id), {
-    passThroughCountsJson: serialized.passThroughCountsJson,
     convertedPromptIdsJson: serialized.convertedPromptIdsJson,
   })
 }
