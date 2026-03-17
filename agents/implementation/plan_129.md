@@ -18,9 +18,9 @@ Primary outcomes:
 - Prompt audience targeting (anonymous + authenticated variants).
 - Prompt type taxonomy and prompt-pool filtering.
 - Decision service updates for multi-state eligibility.
-- Admin UI updates for prompt/rule configuration.
+- Admin UI updates for prompt configuration.
 - Feed client updates to allow targeted authenticated prompts.
-- Suppression policy based on repeated impressions/pass-through.
+- Prompt outcome analytics for impressions, clicks, and pass-through.
 
 ## Out Of Scope (This Plan)
 - Full analytics redesign (covered by `plan_118`/`plan_119`).
@@ -33,14 +33,14 @@ Primary outcomes:
 - Fallback behavior when subscription state is unknown.
 
 2. Rule precedence contract
-- Confirm deterministic ordering when multiple rules match:
+- Confirm deterministic ordering when multiple prompts match:
   - `priority`
   - tie-break
   - prompt-type matching interactions.
 
 3. Pass-through semantics
 - Exact trigger condition (active prompt then scroll away without CTA click).
-- Suppression defaults (`N` pass-throughs, suppression window duration).
+- Analytics trigger threshold and minimum visible duration.
 
 4. Compatibility strategy
 - Keep legacy aliases during rollout:
@@ -61,8 +61,18 @@ Primary outcomes:
 - Confirm dashboard label mapping for existing data.
 
 8. Rollout controls
-- Feature flag name/final default.
-- Initial cohort and rollback criteria.
+- Rollback procedure and validation checklist.
+
+## Status
+- Phase A: complete
+- Phase B: complete
+- Phase C: superseded by Phase C.2
+- Phase C.2: complete
+- Phase D: complete
+- Phase E: complete
+- Phase F: complete for agreed scope
+- Deferred:
+  - CTA completion suppression until a dedicated completion pipeline exists
 
 ## Locked Decisions (Confirmed)
 ### 1) Audience-state source of truth
@@ -73,10 +83,10 @@ Primary outcomes:
 
 ### 2) Rule precedence contract
 - Decision ordering (updated for prompt-pool):
-  1. filter prompts by `surface + audience_segment + prompt_type + schedule + enabled`,
+  1. filter prompts by `surface + audience_segment + schedule + enabled`,
   2. sort by `priority` ascending,
-  3. apply suppression/cooldown/global pacing checks,
-  4. tie-break within same priority (`round_robin` for v1; `weighted_random` optional),
+  3. apply global pacing checks,
+  4. tie-break using prompt-level `tie_break_strategy`,
   5. if no candidate remains, return `reason_code=no_candidate`.
 - Audience-state matching rule:
   - exact match only (no hierarchical fallback),
@@ -106,25 +116,23 @@ Primary outcomes:
 - Rationale: single-developer test environment; prioritize conceptual clarity over migration shims.
 
 ### 5) Rollout control
-- Use a single feature flag:
-  - `PROMPT_AUDIENCE_TARGETING_V1=0|1`
-- Default `0` (off), explicit enable in dev when ready.
-- Rollback path:
-  - set flag back to `0` and restart service.
+- No dedicated feature flag is required for this phase.
+- Rollback uses normal code rollback / restart procedure.
 
 ### 6) Pacing model simplification
-- Remove pacing controls from `prompt_rules` entirely.
 - Use global `.env` controls as single source of truth:
   - `PROMPT_MAX_PROMPTS_PER_SESSION`
+  - `PROMPT_MIN_SLIDES_BEFORE_FIRST_PROMPT`
+  - `PROMPT_MIN_WATCH_SECONDS_BEFORE_FIRST_PROMPT`
   - `PROMPT_MIN_SLIDES_BETWEEN_PROMPTS`
   - `PROMPT_COOLDOWN_SECONDS_AFTER_PROMPT`
   - `PROMPT_PASS_THROUGH_MIN_VISIBLE_MS`
-- Decisioning applies these global gates after rule/candidate selection and before insertion.
+- Decisioning applies these global gates after candidate selection and before insertion.
 
 ### 7) Rule-to-prompt matching simplification
 - Delivery uses prompt-level matching (`prompt_type`, `surface`, `audience_segment`) directly.
-- `category` remains prompt metadata for reporting/editorial grouping only.
-- No category-based gating in decisioning for v1.
+- `campaign_key` is prompt metadata for reporting/editorial grouping only.
+- No campaign-key-based gating in decisioning for v1.
 
 ### 8) Audience UI model
 - Use single-select `audience_segment` (no checkbox combinations).
@@ -184,9 +192,10 @@ Use `feed_prompts` as the primary delivery unit with explicit program dimensions
 4. Delivery Controls
 - Pacing is global and environment-driven (not per-rule):
   - max prompts per session
+  - min slides before first prompt
+  - min watch seconds before first prompt
   - min slides between prompts
   - cooldown seconds between prompts
-  - pass-through suppression threshold
   - minimum visible milliseconds for pass-through counting
 - Prompt pool chooses *which* prompt applies; global pacing controls *when* insertion is allowed.
 
@@ -206,20 +215,17 @@ Use `feed_prompts` as the primary delivery unit with explicit program dimensions
 ## Rules
 - `prompt_rules` are deprecated and removed in C.2.
 - No new feature development on rule-based selection.
-- Any temporary migration shim is short-lived and removed before entering Phase D.
+- No runtime rule-based selection path remains.
 
 ## Decision Session State
 - Keep session counters and `last_prompt_shown_at`.
-- Add lightweight pass-through counters:
-  - per `prompt_id` impressions shown in session,
-  - per `prompt_id` pass-through count,
-  - optional per `prompt_type` suppression counter.
+- Keep converted prompt ids in session state for future completion-based suppression.
 
 ## API Contract
 - Decision request includes resolved viewer context from server session.
 - Decision response includes selected prompt metadata needed by feed insertion.
 - Add debug metadata indicating selected engine path:
-  - `selection_engine=prompt_pool|rule_fallback`
+  - `selection_engine=prompt_pool`
   - `candidate_count`
   - `selection_cursor` (when available)
 
@@ -243,7 +249,7 @@ Default suppression behavior:
 
 Initial recommended defaults:
 - no pass-through-based suppression,
-- suppression duration for completed prompts is session-scoped.
+- completion suppression deferred until future CTA completion pipeline.
 - optional future extension:
   - prompt-level `max_impressions_per_session`
   - prompt-level `max_impressions_per_user`
@@ -303,30 +309,28 @@ Conversion semantics note:
 
 Acceptance:
 - Signed-off enum/spec doc with big-bang migration map.
+- Status: complete
 
 ### Phase B — Schema + Service Contracts
 - Add schema fields:
   - `feed_prompts.prompt_type`
-  - `prompt_rules.prompt_type` (compat)
-  - `prompt_rules.audience_segment` (compat)
 - Add/normalize prompt-level targeting fields on `feed_prompts`:
   - `applies_to_surface`
   - `audience_segment`
   - `priority`
   - `tie_break_strategy`
-- Remove rule-level pacing columns from `prompt_rules` (big-bang cutover).
 - Add migrations/backfill for existing rows.
 - Update type definitions and repo/service mappings.
 - Add/validate new global env settings for prompt pacing.
 
 Acceptance:
-- Existing prompts/rules continue to function unchanged after migration.
+- Existing prompts continue to function unchanged after migration.
+- Status: complete
 
 ### Phase C — Decision Engine Upgrade
-- Replace authenticated hard-block with rule-based audience matching.
+- Replace authenticated hard-block with prompt-based audience matching.
 - Add prompt-type filtering in candidate selection.
-- Implement pass-through suppression checks in eligibility.
-- Persist/update session counters needed for suppression.
+- Persist/update session counters needed for pacing.
 
 Status note:
 - Partially complete; selection architecture is superseded by Phase C.2.
@@ -351,6 +355,7 @@ Acceptance:
 Acceptance:
 - Rotation works across multiple prompts of the same `prompt_type` without requiring multiple rules.
 - Existing behavior remains stable with rule system removed.
+- Status: complete
 
 ### Phase D — Feed Client Integration
 - Remove client-side authenticated short-circuit for prompt decision.
@@ -360,18 +365,22 @@ Acceptance:
 
 Acceptance:
 - Authenticated eligible users can receive prompts without sequence regressions.
+- Status: complete
 
 ### Phase E — Admin UI
-- Prompt editor: add `Prompt Type`.
+- Prompt editor: add `Type`.
 - Prompt editor: expose prompt-level targeting (`surface`, `audience_segment`, `priority`, `tie_break_strategy`).
 - Remove rule editor from admin nav/routes/UI.
 - Update labels/help text to clarify prompt-pool targeting + global pacing model.
+- Replace `Category` with `Campaign Key`.
+- Align `/admin/prompt-analytics` with `Type` and `Campaign Key`.
 
 Acceptance:
 - Admin can configure:
   - anonymous register prompts,
   - authenticated non-subscriber fund-drive prompts,
   - multiple prompts in same cohort/type rotating without extra rules.
+- Status: complete
 
 ### Phase F — QA Matrix + Rollout
 - Test matrix:
@@ -383,13 +392,13 @@ Acceptance:
   - CTA completion suppression is deferred and not required for this phase,
   - feed switching/snapshot restore with prompts present,
   - prompt-pool round-robin parity when multiple prompts match same cohort/type.
-- Rollout with feature flag:
-  - `PROMPT_AUDIENCE_TARGETING_V1=1`.
+- Rollout via normal deploy/restart workflow (no dedicated feature flag).
 
 Acceptance:
 - No prompt sequence regressions.
 - Correct audience-targeted prompt delivery verified in all scenarios.
 - No rule-engine code path remains active.
+- Status: complete for agreed scope
 
 ## Test Cases (Must Pass)
 1. Anonymous + register prompt eligible -> prompt inserted.
@@ -412,7 +421,6 @@ Mitigations:
 - keep suppression tied only to durable completion events.
 
 ## Rollout Plan
-1. Dark-launch schema + decision changes behind flag.
-2. Enable for internal admin accounts first.
-3. Enable for a small % of authenticated sessions.
-4. Promote to default after stability window.
+1. Deploy changes through normal workflow.
+2. Verify admin prompt editing, feed rotation, and prompt analytics after restart.
+3. Use normal git rollback if regressions appear.
