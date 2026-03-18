@@ -35,7 +35,7 @@ const PROMPT_TYPES: readonly PromptType[] = [
 
 function annotateAdminMessageWrite(row: PromptRow, detail: 'admin.messages.create' | 'admin.messages.update' | 'admin.messages.clone' | 'admin.messages.status' | 'admin.messages.delete', actorUserId: number, extra?: Record<string, unknown>) {
   const messageId = Number(row.id || 0)
-  const messageType = normalizePromptType((row as any).prompt_type, 'register_login')
+  const messageType = normalizeMessageType((row as any).prompt_type, 'register_login')
   const appliesToSurface = normalizeSurface((row as any).applies_to_surface, 'global_feed')
   const audienceSegment = normalizeAudienceSegment((row as any).audience_segment, 'anonymous')
   const status = normalizeStatus((row as any).status, 'draft')
@@ -139,10 +139,10 @@ function normalizeCampaignKey(raw: any): string | null {
   return value
 }
 
-function normalizePromptType(raw: any, fallback: PromptType = 'register_login'): PromptType {
+function normalizeMessageType(raw: any, fallback: PromptType = 'register_login'): PromptType {
   const value = String(raw ?? '').trim().toLowerCase()
   if (!value) return fallback
-  if (!isEnumValue(value, PROMPT_TYPES)) throw new DomainError('invalid_prompt_type', 'invalid_prompt_type', 400)
+  if (!isEnumValue(value, PROMPT_TYPES)) throw new DomainError('invalid_message_type', 'invalid_message_type', 400)
   return value
 }
 
@@ -427,7 +427,7 @@ function mapRow(row: PromptRow): PromptDto {
     ctaSecondaryHref: row.cta_secondary_href == null ? null : String(row.cta_secondary_href),
     mediaUploadId: row.media_upload_id == null ? null : Number(row.media_upload_id),
     creative: resolveCreativeFromRow(row),
-    promptType: normalizePromptType((row as any).prompt_type, 'register_login'),
+    promptType: normalizeMessageType((row as any).prompt_type, 'register_login'),
     appliesToSurface: normalizeSurface((row as any).applies_to_surface, 'global_feed'),
     audienceSegment: normalizeAudienceSegment((row as any).audience_segment, 'anonymous'),
     tieBreakStrategy: normalizeTieBreakStrategy((row as any).tie_break_strategy, 'round_robin'),
@@ -453,7 +453,7 @@ export async function listForAdmin(params: {
   campaignKey?: any
 }): Promise<PromptDto[]> {
   const status = params.status == null || params.status === '' ? null : normalizeStatus(params.status)
-  const promptType = params.promptType == null || params.promptType === '' ? null : normalizePromptType(params.promptType)
+  const promptType = params.promptType == null || params.promptType === '' ? null : normalizeMessageType(params.promptType)
   const appliesToSurface = params.appliesToSurface == null || params.appliesToSurface === '' ? null : normalizeSurface(params.appliesToSurface)
   const audienceSegment = params.audienceSegment == null || params.audienceSegment === '' ? null : normalizeAudienceSegment(params.audienceSegment)
   const campaignKey = params.campaignKey == null || params.campaignKey === '' ? null : normalizeCampaignKey(params.campaignKey)
@@ -492,7 +492,7 @@ export async function createForAdmin(input: any, actorUserId: number): Promise<P
   }
 
   const mediaUploadId = normalizeMediaUploadId(input?.mediaUploadId ?? input?.media_upload_id)
-  const promptType = normalizePromptType(input?.promptType ?? input?.prompt_type, 'register_login')
+  const promptType = normalizeMessageType(input?.promptType ?? input?.prompt_type, 'register_login')
   const appliesToSurface = normalizeSurface(input?.appliesToSurface ?? input?.applies_to_surface, 'global_feed')
   const audienceSegment = normalizeAudienceSegment(input?.audienceSegment ?? input?.audience_segment, 'anonymous')
   const tieBreakStrategy = normalizeTieBreakStrategy(input?.tieBreakStrategy ?? input?.tie_break_strategy, 'round_robin')
@@ -591,8 +591,8 @@ export async function updateForAdmin(id: number, patch: any, actorUserId: number
       : ((existing as any).creative_json == null ? null : String((existing as any).creative_json))
   const nextPromptType =
     patch?.promptType !== undefined || patch?.prompt_type !== undefined
-      ? normalizePromptType(patch?.promptType ?? patch?.prompt_type, normalizePromptType((existing as any).prompt_type, 'register_login'))
-      : normalizePromptType((existing as any).prompt_type, 'register_login')
+      ? normalizeMessageType(patch?.promptType ?? patch?.prompt_type, normalizeMessageType((existing as any).prompt_type, 'register_login'))
+      : normalizeMessageType((existing as any).prompt_type, 'register_login')
   const nextAppliesToSurface =
     patch?.appliesToSurface !== undefined || patch?.applies_to_surface !== undefined
       ? normalizeSurface(patch?.appliesToSurface ?? patch?.applies_to_surface, normalizeSurface((existing as any).applies_to_surface, 'global_feed'))
@@ -674,7 +674,7 @@ export async function cloneForAdmin(id: number, actorUserId: number): Promise<Pr
     ctaSecondaryHref: existing.cta_secondary_href == null ? null : String(existing.cta_secondary_href),
     mediaUploadId: existing.media_upload_id == null ? null : Number(existing.media_upload_id),
     creativeJson: (existing as any).creative_json == null ? null : String((existing as any).creative_json),
-    promptType: normalizePromptType((existing as any).prompt_type, 'register_login'),
+    promptType: normalizeMessageType((existing as any).prompt_type, 'register_login'),
     appliesToSurface: normalizeSurface((existing as any).applies_to_surface, 'global_feed'),
     audienceSegment: normalizeAudienceSegment((existing as any).audience_segment, 'anonymous'),
     tieBreakStrategy: normalizeTieBreakStrategy((existing as any).tie_break_strategy, 'round_robin'),
@@ -722,7 +722,7 @@ export async function listActiveForFeed(params?: {
   campaignKey?: any
   limit?: number
 }): Promise<PromptDto[]> {
-  const promptType = params?.promptType == null || params?.promptType === '' ? null : normalizePromptType(params.promptType)
+  const promptType = params?.promptType == null || params?.promptType === '' ? null : normalizeMessageType(params.promptType)
   const appliesToSurface = params?.appliesToSurface == null || params?.appliesToSurface === '' ? null : normalizeSurface(params.appliesToSurface)
   const audienceSegment = params?.audienceSegment == null || params?.audienceSegment === '' ? null : normalizeAudienceSegment(params.audienceSegment)
   const campaignKey = params?.campaignKey == null || params?.campaignKey === '' ? null : normalizeCampaignKey(params.campaignKey)

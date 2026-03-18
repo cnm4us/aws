@@ -55,10 +55,10 @@ function normalizeDateTime(raw: any, key: string): string | null {
   return `${y}-${m}-${d} ${hh}:${mm}:${ss}`
 }
 
-function normalizePromptId(raw: any): number | null {
+function normalizeMessageId(raw: any): number | null {
   if (raw == null || raw === '') return null
   const value = Number(raw)
-  if (!Number.isFinite(value) || value <= 0) throw new DomainError('invalid_last_prompt_id', 'invalid_last_prompt_id', 400)
+  if (!Number.isFinite(value) || value <= 0) throw new DomainError('invalid_last_message_id', 'invalid_last_message_id', 400)
   return Math.round(value)
 }
 
@@ -83,28 +83,28 @@ function parseCounters(raw: any): PromptDecisionInput['counters'] {
   const countersRaw = src.counters && typeof src.counters === 'object' ? src.counters : src
   const slidesViewed = normalizeCounter(countersRaw.slides_viewed ?? countersRaw.slidesViewed, 'slides_viewed', 0, 1000000, 0)
   const watchSeconds = normalizeCounter(countersRaw.watch_seconds ?? countersRaw.watchSeconds, 'watch_seconds', 0, 7 * 24 * 60 * 60, 0)
-  const promptsShownThisSession = normalizeCounter(
+  const messagesShownThisSession = normalizeCounter(
     countersRaw.messages_shown_this_session ??
       countersRaw.messagesShownThisSession,
-    'prompts_shown_this_session',
+    'messages_shown_this_session',
     0,
     10000,
     0
   )
-  const slidesSinceLastPrompt = normalizeCounter(
+  const slidesSinceLastMessage = normalizeCounter(
     countersRaw.slides_since_last_message ??
       countersRaw.slidesSinceLastMessage,
-    'slides_since_last_prompt',
+    'slides_since_last_message',
     0,
     1000000,
     0
   )
-  const lastPromptShownAt = normalizeDateTime(
+  const lastMessageShownAt = normalizeDateTime(
     countersRaw.last_message_shown_at ??
       countersRaw.lastMessageShownAt,
-    'last_prompt_shown_at'
+    'last_message_shown_at'
   )
-  const lastPromptId = normalizePromptId(
+  const lastMessageId = normalizeMessageId(
     countersRaw.last_message_id ??
       countersRaw.lastMessageId
   )
@@ -112,10 +112,10 @@ function parseCounters(raw: any): PromptDecisionInput['counters'] {
   return {
     slidesViewed,
     watchSeconds,
-    promptsShownThisSession,
-    slidesSinceLastPrompt,
-    lastPromptShownAt,
-    lastPromptId,
+    promptsShownThisSession: messagesShownThisSession,
+    slidesSinceLastPrompt: slidesSinceLastMessage,
+    lastPromptShownAt: lastMessageShownAt,
+    lastPromptId: lastMessageId,
   }
 }
 
@@ -280,7 +280,7 @@ export function buildDecisionInput(params: {
   }
 }
 
-export async function decidePrompt(input: PromptDecisionInput, opts?: { includeDebug?: boolean }): Promise<PromptDecisionResult> {
+export async function decideMessage(input: PromptDecisionInput, opts?: { includeDebug?: boolean }): Promise<PromptDecisionResult> {
   const existing = await repo.getSessionByKey(input.sessionId, input.surface)
   const merged = mergeSessionState(existing, input)
   const suppressionJson = serializeSuppressionState(merged.suppression)
@@ -432,7 +432,7 @@ export async function decidePrompt(input: PromptDecisionInput, opts?: { includeD
   return result
 }
 
-export async function recordPromptSessionEvent(input: {
+export async function recordMessageSessionEvent(input: {
   sessionId: string | null | undefined
   surface: PromptDecisionSurface
   promptId: number | null | undefined
@@ -458,5 +458,5 @@ export async function recordPromptSessionEvent(input: {
 }
 
 // Phase F1 compatibility aliases for message terminology.
-export const decideMessage = decidePrompt
-export const recordMessageSessionEvent = recordPromptSessionEvent
+export const decidePrompt = decideMessage
+export const recordPromptSessionEvent = recordMessageSessionEvent

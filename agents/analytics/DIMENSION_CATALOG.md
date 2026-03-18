@@ -21,14 +21,14 @@ Canonical field definitions for analytics events.
 | `space_slug` | string | no | normalized slug | internal | nullable |
 | `space_name` | string | no | short display name | internal | optional convenience |
 
-## Content / Prompt
+## Content / Message
 | field | type | required | allowed values / format | privacy class | notes |
 | --- | --- | --- | --- | --- | --- |
 | `content_id` | int | event-dependent | positive int | internal | publication/content id |
 | `creator_id` | int | no | positive int | internal | content owner |
-| `slide_type` | string | event-dependent | `content`, `prompt`, `sponsor`, `fund_drive` | internal | future-safe enum |
-| `prompt_id` | int | prompt events | positive int | internal | nullable for non-prompt |
-| `prompt_category` | string | no | bounded enum/set | internal | prompt segmentation |
+| `slide_type` | string | event-dependent | `content`, `message`, `sponsor`, `fund_drive` | internal | future-safe enum; legacy rows may still use `prompt` |
+| `prompt_id` | int | message events | positive int | internal | legacy internal storage key for in-feed message id |
+| `prompt_category` | string | no | bounded enum/set | internal | legacy internal segmentation key; campaign-key successor |
 | `cta_kind` | string | no | `primary`, `secondary` | internal | click events only |
 | `milestone_pct` | int | milestone only | `25`, `50`, `75`, `95` | internal | watch milestone |
 | `watch_seconds` | int | some events | >=0 | internal | rounded seconds |

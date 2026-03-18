@@ -377,18 +377,18 @@ async function fetchGlobalFeed(opts: {
   return { items, nextCursor }
 }
 
-async function fetchMessageById(promptId: number): Promise<FeedMessagePayload> {
-  const id = Number(promptId)
-  if (!Number.isFinite(id) || id <= 0) throw new Error('bad_prompt_id')
+async function fetchMessageById(messageId: number): Promise<FeedMessagePayload> {
+  const id = Number(messageId)
+  if (!Number.isFinite(id) || id <= 0) throw new Error('bad_message_id')
   const orientation: 'portrait' | 'landscape' =
     typeof window !== 'undefined' && window.innerWidth > window.innerHeight ? 'landscape' : 'portrait'
   const dpr = typeof window !== 'undefined' && Number.isFinite(window.devicePixelRatio) ? window.devicePixelRatio : 1
   const messageUrl = `/api/feed/messages/${encodeURIComponent(String(id))}?orientation=${encodeURIComponent(orientation)}&dpr=${encodeURIComponent(String(dpr))}`
   const res = await fetch(messageUrl, { credentials: 'same-origin' })
-  if (!res.ok) throw new Error('failed_to_fetch_prompt')
+  if (!res.ok) throw new Error('failed_to_fetch_message')
   const payload = await res.json()
   const p = payload?.message
-  if (!p) throw new Error('missing_prompt_payload')
+  if (!p) throw new Error('missing_message_payload')
   const creative = (p.creative && typeof p.creative === 'object') ? p.creative : {}
   const background = (creative.background && typeof creative.background === 'object') ? creative.background : {}
   const widgets = (creative.widgets && typeof creative.widgets === 'object') ? creative.widgets : {}

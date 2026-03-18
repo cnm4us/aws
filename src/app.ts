@@ -295,12 +295,12 @@ export function buildServer(): express.Application {
 
   async function trackMessageAuthComplete(req: any, userId: number | null) {
     try {
-      const promptIdRaw = req?.body?.message_id
-      if (promptIdRaw == null || promptIdRaw === '') return
+      const messageIdRaw = req?.body?.message_id
+      if (messageIdRaw == null || messageIdRaw === '') return
       await messageAnalyticsSvc.recordMessageEvent({
         event: 'auth_complete',
         surface: 'global_feed',
-        promptId: promptIdRaw,
+        promptId: messageIdRaw,
         promptCampaignKey: req?.body?.message_campaign_key,
         sessionId: req?.body?.message_session_id,
         ctaKind: req?.body?.message_cta_kind,

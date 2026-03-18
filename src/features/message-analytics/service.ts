@@ -59,19 +59,19 @@ function normalizeViewerState(raw: any): PromptAnalyticsViewerState | null {
   throw new DomainError('invalid_viewer_state', 'invalid_viewer_state', 400)
 }
 
-function normalizePromptId(raw: any): number | null {
+function normalizeMessageId(raw: any): number | null {
   if (raw == null || raw === '') return null
   const n = Number(raw)
-  if (!Number.isFinite(n) || n <= 0) throw new DomainError('invalid_prompt_id', 'invalid_prompt_id', 400)
+  if (!Number.isFinite(n) || n <= 0) throw new DomainError('invalid_message_id', 'invalid_message_id', 400)
   return Math.round(n)
 }
 
-function normalizePromptType(raw: any): string | null {
+function normalizeMessageType(raw: any): string | null {
   if (raw == null || raw === '') return null
   const v = String(raw).trim().toLowerCase()
   if (!v) return null
   if (!['register_login', 'fund_drive', 'subscription_upgrade', 'sponsor_message', 'feature_announcement'].includes(v)) {
-    throw new DomainError('invalid_prompt_type', 'invalid_prompt_type', 400)
+    throw new DomainError('invalid_message_type', 'invalid_message_type', 400)
   }
   return v
 }
@@ -80,7 +80,7 @@ function normalizeCampaignKey(raw: any): string | null {
   if (raw == null || raw === '') return null
   const v = String(raw).trim().toLowerCase()
   if (!v) return null
-  if (!/^[a-z0-9_-]{1,64}$/.test(v)) throw new DomainError('invalid_prompt_campaign_key', 'invalid_prompt_campaign_key', 400)
+  if (!/^[a-z0-9_-]{1,64}$/.test(v)) throw new DomainError('invalid_message_campaign_key', 'invalid_message_campaign_key', 400)
   return v
 }
 
@@ -95,14 +95,14 @@ function normalizeSessionId(raw: any): string | null {
 function normalizeEvent(raw: any): PromptAnalyticsInputEvent {
   const v = String(raw || '').trim().toLowerCase()
   if (v === 'impression' || v === 'click' || v === 'pass_through' || v === 'dismiss' || v === 'auth_start' || v === 'auth_complete') return v
-  throw new DomainError('invalid_prompt_event', 'invalid_prompt_event', 400)
+  throw new DomainError('invalid_message_event', 'invalid_message_event', 400)
 }
 
 function normalizeCtaKind(raw: any): PromptAnalyticsCtaKind {
   if (raw == null || raw === '') return null
   const v = String(raw).trim().toLowerCase()
   if (v === 'primary' || v === 'secondary') return v
-  throw new DomainError('invalid_prompt_cta_kind', 'invalid_prompt_cta_kind', 400)
+  throw new DomainError('invalid_message_cta_kind', 'invalid_message_cta_kind', 400)
 }
 
 function mapToEventType(event: PromptAnalyticsInputEvent, ctaKind: PromptAnalyticsCtaKind) {
@@ -155,14 +155,14 @@ function dedupeKey(input: {
     .digest('hex')
 }
 
-async function maybeLookupPromptMeta(promptId: number): Promise<{ promptCampaignKey: string | null }> {
-  const row = await messageRepo.getById(promptId)
-  if (!row) return { promptCampaignKey: null }
-  const promptCampaignKey = row.campaign_key ? String(row.campaign_key).trim().toLowerCase() : null
-  return { promptCampaignKey }
+async function maybeLookupMessageMeta(messageId: number): Promise<{ messageCampaignKey: string | null }> {
+  const row = await messageRepo.getById(messageId)
+  if (!row) return { messageCampaignKey: null }
+  const messageCampaignKey = row.campaign_key ? String(row.campaign_key).trim().toLowerCase() : null
+  return { messageCampaignKey }
 }
 
-type RecordPromptEventInput = {
+type RecordMessageEventInput = {
   event: PromptAnalyticsInputEvent | string
   surface?: PromptAnalyticsSurface | string | null
   viewerState?: PromptAnalyticsViewerState | string | null
@@ -174,7 +174,7 @@ type RecordPromptEventInput = {
   occurredAt?: Date
 }
 
-export async function recordPromptEvent(input: RecordPromptEventInput): Promise<{
+export async function recordMessageEvent(input: RecordMessageEventInput): Promise<{
   inserted: boolean
   countedInRollup: boolean
   inputEvent: PromptAnalyticsInputEvent
@@ -188,8 +188,8 @@ export async function recordPromptEvent(input: RecordPromptEventInput): Promise<
       const event = normalizeEvent(input.event)
       const surface = input.surface == null || input.surface === '' ? 'global_feed' : normalizeSurface(input.surface)
       if (!surface) throw new DomainError('invalid_surface', 'invalid_surface', 400)
-      const promptId = normalizePromptId(input.promptId)
-      if (promptId == null) throw new DomainError('invalid_prompt_id', 'invalid_prompt_id', 400)
+      const promptId = normalizeMessageId(input.promptId)
+      if (promptId == null) throw new DomainError('invalid_message_id', 'invalid_message_id', 400)
 
       const viewerState = input.viewerState == null || input.viewerState === ''
         ? (input.userId != null && Number(input.userId) > 0 ? 'authenticated' : 'anonymous')
@@ -206,8 +206,8 @@ export async function recordPromptEvent(input: RecordPromptEventInput): Promise<
 
       if (!promptCampaignKey) {
         try {
-          const looked = await maybeLookupPromptMeta(promptId)
-          if (!promptCampaignKey) promptCampaignKey = looked.promptCampaignKey
+          const looked = await maybeLookupMessageMeta(promptId)
+          if (!promptCampaignKey) promptCampaignKey = looked.messageCampaignKey
         } catch {}
       }
 
@@ -409,8 +409,8 @@ function normalizeReportRange(input: {
     fromDateTime,
     toDateTimeExclusive,
     surface: normalizeSurface(input.surface),
-    promptId: normalizePromptId(input.promptId),
-    promptType: normalizePromptType(input.promptType),
+    promptId: normalizeMessageId(input.promptId),
+    promptType: normalizeMessageType(input.promptType),
     promptCampaignKey: normalizeCampaignKey(input.promptCampaignKey),
     viewerState: normalizeViewerState(input.viewerState),
   }
@@ -463,7 +463,7 @@ function buildKpis(input: {
   }
 }
 
-export async function getPromptAnalyticsReportForAdmin(input: {
+export async function getMessageAnalyticsReportForAdmin(input: {
   fromDate?: any
   toDate?: any
   surface?: any
@@ -619,7 +619,7 @@ export async function getPromptAnalyticsReportForAdmin(input: {
     } catch (err: any) {
       span.recordException(err)
       span.setAttributes({ 'app.outcome': 'client_error' })
-      span.setStatus({ code: SpanStatusCode.ERROR, message: String(err?.message || err || 'prompt_analytics_query_failed') })
+      span.setStatus({ code: SpanStatusCode.ERROR, message: String(err?.message || err || 'message_analytics_query_failed') })
       throw err
     } finally {
       span.end()
@@ -627,7 +627,7 @@ export async function getPromptAnalyticsReportForAdmin(input: {
   })
 }
 
-export function buildPromptAnalyticsCsv(report: PromptAnalyticsReport): string {
+export function buildMessageAnalyticsCsv(report: PromptAnalyticsReport): string {
   const header = [
     'message_id',
     'message_name',
@@ -693,6 +693,6 @@ export function buildPromptAnalyticsCsv(report: PromptAnalyticsReport): string {
 }
 
 // Phase F1 compatibility aliases for message terminology.
-export const recordMessageEvent = recordPromptEvent
-export const getMessageAnalyticsReportForAdmin = getPromptAnalyticsReportForAdmin
-export const buildMessageAnalyticsCsv = buildPromptAnalyticsCsv
+export const recordPromptEvent = recordMessageEvent
+export const getPromptAnalyticsReportForAdmin = getMessageAnalyticsReportForAdmin
+export const buildPromptAnalyticsCsv = buildMessageAnalyticsCsv

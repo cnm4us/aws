@@ -4085,7 +4085,7 @@ pagesRouter.get('/admin/messages/:id', async (req: any, res: any) => {
     res.set('Content-Type', 'text/html; charset=utf-8')
     res.send(doc)
   } catch (err) {
-    logError(req.log || pagesLogger, err, 'admin message detail failed', { path: req.path, prompt_id: id })
+    logError(req.log || pagesLogger, err, 'admin message detail failed', { path: req.path, message_id: id })
     res.status(404).send('Message not found')
   }
 })
