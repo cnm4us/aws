@@ -138,7 +138,7 @@ export const PROMPT_COOLDOWN_SECONDS_AFTER_PROMPT = envInt('PROMPT_COOLDOWN_SECO
 export const PROMPT_PASS_THROUGH_MIN_VISIBLE_MS = envInt('PROMPT_PASS_THROUGH_MIN_VISIBLE_MS', 800, { min: 0, max: 30000 })
 
 export type ImageVariantFormat = 'webp' | 'png'
-export type ImageVariantUsage = 'prompt_bg' | 'graphic_overlay' | 'logo' | 'lower_third'
+export type ImageVariantUsage = 'message_bg' | 'graphic_overlay' | 'logo' | 'lower_third'
 export type ImageVariantFit = 'cover' | 'contain' | 'inside'
 
 export type ImageVariantProfile = {
@@ -163,65 +163,65 @@ function envEnum<T extends string>(name: string, allowed: readonly T[], defaultV
 
 // Plan 116: automatic image derivatives for UI surfaces.
 export const IMAGE_VARIANTS_ENABLED = envBool('IMAGE_VARIANTS_ENABLED', false)
-export const IMAGE_VARIANTS_PROMPT_ENABLED = envBool('IMAGE_VARIANTS_PROMPT_ENABLED', IMAGE_VARIANTS_ENABLED)
+export const IMAGE_VARIANTS_MESSAGE_ENABLED = envBool('IMAGE_VARIANTS_MESSAGE_ENABLED', IMAGE_VARIANTS_ENABLED)
 export const IMAGE_VARIANTS_ASSETS_ENABLED = envBool('IMAGE_VARIANTS_ASSETS_ENABLED', IMAGE_VARIANTS_ENABLED)
 export const IMAGE_VARIANTS_REQUIRE_READY = envBool('IMAGE_VARIANTS_REQUIRE_READY', false)
 export const IMAGE_VARIANTS_WITHOUT_ENLARGEMENT = envBool('IMAGE_VARIANTS_WITHOUT_ENLARGEMENT', true)
 export const IMAGE_VARIANTS_STORAGE_PREFIX = (process.env.IMAGE_VARIANTS_STORAGE_PREFIX ?? 'derived/uploads/').replace(/^\/+/, '').replace(/\/+/g, '/')
 
 const IMAGE_VARIANTS_FORMAT_DEFAULT = envEnum('IMAGE_VARIANTS_FORMAT', ['webp', 'png'] as const, 'webp')
-const IMAGE_VARIANTS_QUALITY_PROMPT_BG = envInt('IMAGE_VARIANTS_QUALITY_PROMPT_BG', 80, { min: 1, max: 100 })
+const IMAGE_VARIANTS_QUALITY_MESSAGE_BG = envInt('IMAGE_VARIANTS_QUALITY_MESSAGE_BG', 80, { min: 1, max: 100 })
 const IMAGE_VARIANTS_QUALITY_GRAPHIC_OVERLAY = envInt('IMAGE_VARIANTS_QUALITY_GRAPHIC_OVERLAY', 82, { min: 1, max: 100 })
 const IMAGE_VARIANTS_QUALITY_LOGO = envInt('IMAGE_VARIANTS_QUALITY_LOGO', 82, { min: 1, max: 100 })
 const IMAGE_VARIANTS_QUALITY_LOWER_THIRD = envInt('IMAGE_VARIANTS_QUALITY_LOWER_THIRD', 84, { min: 1, max: 100 })
 
 export const IMAGE_VARIANT_PROFILES: readonly ImageVariantProfile[] = [
   {
-    key: 'prompt_bg_p_1x',
-    usage: 'prompt_bg',
+    key: 'message_bg_p_1x',
+    usage: 'message_bg',
     orientation: 'portrait',
     dpr: 1,
     width: 720,
     height: 1280,
     fit: 'cover',
     format: IMAGE_VARIANTS_FORMAT_DEFAULT,
-    quality: IMAGE_VARIANTS_QUALITY_PROMPT_BG,
+    quality: IMAGE_VARIANTS_QUALITY_MESSAGE_BG,
     alpha: false,
   },
   {
-    key: 'prompt_bg_p_2x',
-    usage: 'prompt_bg',
+    key: 'message_bg_p_2x',
+    usage: 'message_bg',
     orientation: 'portrait',
     dpr: 2,
     width: 1080,
     height: 1920,
     fit: 'cover',
     format: IMAGE_VARIANTS_FORMAT_DEFAULT,
-    quality: IMAGE_VARIANTS_QUALITY_PROMPT_BG,
+    quality: IMAGE_VARIANTS_QUALITY_MESSAGE_BG,
     alpha: false,
   },
   {
-    key: 'prompt_bg_l_1x',
-    usage: 'prompt_bg',
+    key: 'message_bg_l_1x',
+    usage: 'message_bg',
     orientation: 'landscape',
     dpr: 1,
     width: 1280,
     height: 720,
     fit: 'cover',
     format: IMAGE_VARIANTS_FORMAT_DEFAULT,
-    quality: IMAGE_VARIANTS_QUALITY_PROMPT_BG,
+    quality: IMAGE_VARIANTS_QUALITY_MESSAGE_BG,
     alpha: false,
   },
   {
-    key: 'prompt_bg_l_2x',
-    usage: 'prompt_bg',
+    key: 'message_bg_l_2x',
+    usage: 'message_bg',
     orientation: 'landscape',
     dpr: 2,
     width: 1920,
     height: 1080,
     fit: 'cover',
     format: IMAGE_VARIANTS_FORMAT_DEFAULT,
-    quality: IMAGE_VARIANTS_QUALITY_PROMPT_BG,
+    quality: IMAGE_VARIANTS_QUALITY_MESSAGE_BG,
     alpha: false,
   },
   {

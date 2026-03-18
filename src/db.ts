@@ -293,7 +293,7 @@ export async function ensureSchema(db: DB) {
 		  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_video_role_production ON uploads (video_role, create_video_production_id, id)`); } catch {}
 		  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_system_library ON uploads (is_system_library, source_org, status, id)`); } catch {}
 
-      // Plan 116: upload image variants (profiled derivatives for prompt/background/logo/lower-third usage).
+      // Plan 116 / Plan 133: upload image variants (profiled derivatives for message/background/logo/lower-third usage).
       await db.query(`
         CREATE TABLE IF NOT EXISTS upload_image_variants (
           id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -320,8 +320,22 @@ export async function ensureSchema(db: DB) {
       `)
       // Prefer non-reserved column name; keep back-compat for earlier "usage" attempts.
       try { await db.query(`ALTER TABLE upload_image_variants CHANGE COLUMN \`usage\` variant_usage VARCHAR(32) NOT NULL`) } catch {}
-      try { await db.query(`ALTER TABLE upload_image_variants ADD COLUMN IF NOT EXISTS variant_usage VARCHAR(32) NOT NULL DEFAULT 'prompt_bg'`) } catch {}
+      try { await db.query(`ALTER TABLE upload_image_variants ADD COLUMN IF NOT EXISTS variant_usage VARCHAR(32) NOT NULL DEFAULT 'message_bg'`) } catch {}
       try { await db.query(`UPDATE upload_image_variants SET variant_usage = \`usage\` WHERE (variant_usage IS NULL OR variant_usage = '')`) } catch {}
+      try { await db.query(`UPDATE upload_image_variants SET variant_usage = 'message_bg' WHERE variant_usage = 'prompt_bg'`) } catch {}
+      try { await db.query(`UPDATE upload_image_variants SET profile_key = 'message_bg_p_1x' WHERE profile_key = 'prompt_bg_p_1x'`) } catch {}
+      try { await db.query(`UPDATE upload_image_variants SET profile_key = 'message_bg_p_2x' WHERE profile_key = 'prompt_bg_p_2x'`) } catch {}
+      try { await db.query(`UPDATE upload_image_variants SET profile_key = 'message_bg_l_1x' WHERE profile_key = 'prompt_bg_l_1x'`) } catch {}
+      try { await db.query(`UPDATE upload_image_variants SET profile_key = 'message_bg_l_2x' WHERE profile_key = 'prompt_bg_l_2x'`) } catch {}
+      try {
+        await db.query(`
+          UPDATE upload_image_variants
+             SET status = 'failed',
+                 error_code = 'legacy_message_bg_regen'
+           WHERE profile_key IN ('message_bg_p_1x','message_bg_p_2x','message_bg_l_1x','message_bg_l_2x')
+             AND s3_key LIKE '%/prompt_bg_%'
+        `)
+      } catch {}
       try { await db.query(`ALTER TABLE upload_image_variants ADD COLUMN IF NOT EXISTS format ENUM('webp','png','jpeg','avif') NOT NULL DEFAULT 'webp'`) } catch {}
       try { await db.query(`ALTER TABLE upload_image_variants ADD COLUMN IF NOT EXISTS width INT UNSIGNED NULL`) } catch {}
       try { await db.query(`ALTER TABLE upload_image_variants ADD COLUMN IF NOT EXISTS height INT UNSIGNED NULL`) } catch {}

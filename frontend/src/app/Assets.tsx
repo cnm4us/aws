@@ -405,7 +405,7 @@ function getPreviewDpr(): number {
 
 function buildImagePreviewUrl(
   uploadId: number,
-  usage: 'prompt_bg' | 'graphic_overlay' | 'logo' | 'lower_third',
+  usage: 'message_bg' | 'graphic_overlay' | 'logo' | 'lower_third',
   orientation: 'portrait' | 'landscape' = 'portrait'
 ): string {
   const id = encodeURIComponent(String(uploadId))

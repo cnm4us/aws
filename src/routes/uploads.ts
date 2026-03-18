@@ -314,9 +314,9 @@ async function handleImageVariantUrl(req: any, res: any) {
     const orientation: 'portrait' | 'landscape' | null =
       orientationRaw === 'landscape' ? 'landscape' : (orientationRaw === 'portrait' ? 'portrait' : null)
     const usageRaw = String(req.query?.usage || '').toLowerCase().trim()
-    const usage: 'prompt_bg' | 'graphic_overlay' | 'logo' | 'lower_third' | null =
-      usageRaw === 'prompt_bg' || usageRaw === 'graphic_overlay' || usageRaw === 'logo' || usageRaw === 'lower_third'
-        ? (usageRaw as 'prompt_bg' | 'graphic_overlay' | 'logo' | 'lower_third')
+    const usage: 'message_bg' | 'graphic_overlay' | 'logo' | 'lower_third' | null =
+      usageRaw === 'message_bg' || usageRaw === 'graphic_overlay' || usageRaw === 'logo' || usageRaw === 'lower_third'
+        ? (usageRaw as 'message_bg' | 'graphic_overlay' | 'logo' | 'lower_third')
         : null
     if (usageRaw && !usage) return res.status(400).send('bad_usage')
     const dprRaw = Number(req.query?.dpr)
@@ -325,7 +325,7 @@ async function handleImageVariantUrl(req: any, res: any) {
     // Permission gate mirrors other authenticated upload endpoints.
     await uploadsSvc.get(id, {}, { userId: Number(req.user!.id) })
 
-    const signed = await uploadsSvc.getUploadPublicPromptBackgroundCdnUrl(id, { mode, usage, orientation, dpr })
+    const signed = await uploadsSvc.getUploadPublicMessageBackgroundCdnUrl(id, { mode, usage, orientation, dpr })
     res.set('Cache-Control', 'no-store')
     res.status(302).set('Location', signed.url)
     return res.end()
@@ -339,8 +339,8 @@ async function handleImageVariantUrl(req: any, res: any) {
 }
 
 uploadsRouter.get('/api/uploads/:id/image', requireAuth, handleImageVariantUrl)
-// Backward-compatible alias; prefer `/api/uploads/:id/image`.
-uploadsRouter.get('/api/uploads/:id/prompt-bg', requireAuth, handleImageVariantUrl)
+// Explicit message background redirect helper; prefer `/api/uploads/:id/image`.
+uploadsRouter.get('/api/uploads/:id/message-bg', requireAuth, handleImageVariantUrl)
 
 uploadsRouter.get('/api/uploads/:id/edit-proxy', requireAuth, async (req, res) => {
   try {

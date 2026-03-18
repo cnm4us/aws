@@ -17,7 +17,7 @@ function expectedProfileKeys(kind: 'image' | 'logo', imageRole: string | null): 
   if (String(imageRole || '').trim().toLowerCase() === 'lower_third') {
     return IMAGE_VARIANT_PROFILES.filter((p) => p.usage === 'lower_third').map((p) => p.key)
   }
-  return IMAGE_VARIANT_PROFILES.filter((p) => p.usage === 'prompt_bg' || p.usage === 'graphic_overlay').map((p) => p.key)
+  return IMAGE_VARIANT_PROFILES.filter((p) => p.usage === 'message_bg' || p.usage === 'graphic_overlay').map((p) => p.key)
 }
 
 async function hasPendingDerivativeJob(db: any, uploadId: number): Promise<boolean> {

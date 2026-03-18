@@ -13,7 +13,7 @@ import type {
   UploadImageVariantStatus,
 } from './types'
 
-const ALLOWED_USES: readonly ImageVariantUsage[] = ['prompt_bg', 'graphic_overlay', 'logo', 'lower_third']
+const ALLOWED_USES: readonly ImageVariantUsage[] = ['message_bg', 'graphic_overlay', 'logo', 'lower_third']
 const ALLOWED_FORMATS: readonly ImageVariantFormat[] = ['webp', 'png']
 
 function normalizeUploadId(raw: any): number {

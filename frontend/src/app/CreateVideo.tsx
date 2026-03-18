@@ -1318,7 +1318,7 @@ export default function CreateVideo() {
   const buildImagePreviewUrl = useCallback(
     (
       uploadId: number,
-      usage: 'prompt_bg' | 'graphic_overlay' | 'logo' | 'lower_third' = 'graphic_overlay'
+      usage: 'message_bg' | 'graphic_overlay' | 'logo' | 'lower_third' = 'graphic_overlay'
     ) =>
       `/api/uploads/${encodeURIComponent(String(uploadId))}/image?mode=image&usage=${encodeURIComponent(usage)}&orientation=portrait&dpr=${encodeURIComponent(String(imagePreviewDpr))}`,
     [imagePreviewDpr]
@@ -3942,7 +3942,7 @@ export default function CreateVideo() {
 
   const timelineBackgroundImageUrl = useMemo(() => {
     if (!timelineBackgroundUploadId) return null
-    return buildImagePreviewUrl(timelineBackgroundUploadId, 'prompt_bg')
+    return buildImagePreviewUrl(timelineBackgroundUploadId, 'message_bg')
   }, [buildImagePreviewUrl, timelineBackgroundUploadId])
 
   const hasTimelineBackgroundPreview =
@@ -4081,7 +4081,7 @@ export default function CreateVideo() {
       const uploadId = Number((clip as any).bgFillImageUploadId)
       if (!(Number.isFinite(uploadId) && uploadId > 0)) return null
       const id = Math.round(uploadId)
-      const url = buildImagePreviewUrl(id, 'prompt_bg')
+      const url = buildImagePreviewUrl(id, 'message_bg')
       return { kind: 'image', url }
     }
     return null
@@ -4100,7 +4100,7 @@ export default function CreateVideo() {
       const uploadId = Number((clip as any).bgFillImageUploadId)
       if (!(Number.isFinite(uploadId) && uploadId > 0)) return null
       const id = Math.round(uploadId)
-      const url = buildImagePreviewUrl(id, 'prompt_bg')
+      const url = buildImagePreviewUrl(id, 'message_bg')
       return { kind: 'image', url }
     }
     return null

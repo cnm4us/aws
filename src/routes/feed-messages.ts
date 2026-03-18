@@ -183,21 +183,21 @@ feedMessagesRouter.get(feedMessageFetchPaths, async (req: any, res: any, next: a
         if (backgroundMode === 'image') {
           try {
             const [signedCurrent, signedPortrait, signedLandscape] = await Promise.all([
-              uploadsSvc.getUploadPublicPromptBackgroundCdnUrl(Number(upload.id), {
+              uploadsSvc.getUploadPublicMessageBackgroundCdnUrl(Number(upload.id), {
                 mode: 'image',
-                usage: 'prompt_bg',
+                usage: 'message_bg',
                 orientation,
                 dpr,
               }),
-              uploadsSvc.getUploadPublicPromptBackgroundCdnUrl(Number(upload.id), {
+              uploadsSvc.getUploadPublicMessageBackgroundCdnUrl(Number(upload.id), {
                 mode: 'image',
-                usage: 'prompt_bg',
+                usage: 'message_bg',
                 orientation: 'portrait',
                 dpr,
               }),
-              uploadsSvc.getUploadPublicPromptBackgroundCdnUrl(Number(upload.id), {
+              uploadsSvc.getUploadPublicMessageBackgroundCdnUrl(Number(upload.id), {
                 mode: 'image',
-                usage: 'prompt_bg',
+                usage: 'message_bg',
                 orientation: 'landscape',
                 dpr,
               }),
@@ -213,10 +213,10 @@ feedMessagesRouter.get(feedMessageFetchPaths, async (req: any, res: any, next: a
         } else if (backgroundMode === 'video') {
           try {
             const [signedVideo, signedPoster] = await Promise.all([
-              uploadsSvc.getUploadPublicPromptBackgroundCdnUrl(Number(upload.id), {
+              uploadsSvc.getUploadPublicMessageBackgroundCdnUrl(Number(upload.id), {
                 mode: 'video',
               }),
-              uploadsSvc.getUploadPublicPromptPosterCdnUrl(Number(upload.id)).catch(() => null),
+              uploadsSvc.getUploadPublicMessagePosterCdnUrl(Number(upload.id)).catch(() => null),
             ])
             publicBackgroundUrl = signedVideo.url
             publicPosterUrl = signedPoster?.url || null

@@ -20,7 +20,7 @@ import {
   MAX_UPLOAD_MB,
   UPLOAD_PREFIX,
   IMAGE_VARIANTS_ENABLED,
-  IMAGE_VARIANTS_PROMPT_ENABLED,
+  IMAGE_VARIANTS_MESSAGE_ENABLED,
   IMAGE_VARIANTS_ASSETS_ENABLED,
   IMAGE_VARIANTS_REQUIRE_READY,
 } from '../../config'
@@ -451,11 +451,11 @@ export async function getUploadSignedCdnUrl(
   return signUploadsCdnUrl(key)
 }
 
-export async function getUploadPublicPromptBackgroundCdnUrl(
+export async function getUploadPublicMessageBackgroundCdnUrl(
   uploadId: number,
   params: {
     mode: 'image' | 'video'
-    usage?: 'prompt_bg' | 'graphic_overlay' | 'logo' | 'lower_third' | null
+    usage?: 'message_bg' | 'graphic_overlay' | 'logo' | 'lower_third' | null
     orientation?: 'portrait' | 'landscape' | null
     dpr?: number | null
   }
@@ -478,22 +478,22 @@ export async function getUploadPublicPromptBackgroundCdnUrl(
     const imageRole = String((row as any).image_role || '').trim().toLowerCase()
     const requestedUsageRaw = String(params?.usage || '').trim().toLowerCase()
     const requestedUsage =
-      requestedUsageRaw === 'prompt_bg' ||
+      requestedUsageRaw === 'message_bg' ||
       requestedUsageRaw === 'graphic_overlay' ||
       requestedUsageRaw === 'logo' ||
       requestedUsageRaw === 'lower_third'
-        ? (requestedUsageRaw as 'prompt_bg' | 'graphic_overlay' | 'logo' | 'lower_third')
+        ? (requestedUsageRaw as 'message_bg' | 'graphic_overlay' | 'logo' | 'lower_third')
         : null
-    const inferredUsage: 'prompt_bg' | 'graphic_overlay' | 'logo' | 'lower_third' | null =
+    const inferredUsage: 'message_bg' | 'graphic_overlay' | 'logo' | 'lower_third' | null =
       rowKind === 'logo'
         ? 'logo'
         : rowKind === 'image'
-          ? (imageRole === 'lower_third' ? 'lower_third' : 'prompt_bg')
+          ? (imageRole === 'lower_third' ? 'lower_third' : 'message_bg')
           : null
     const usage = requestedUsage || inferredUsage
     const variantsEnabledForUsage =
-      usage === 'prompt_bg'
-        ? Boolean(IMAGE_VARIANTS_PROMPT_ENABLED || IMAGE_VARIANTS_ASSETS_ENABLED)
+      usage === 'message_bg'
+        ? Boolean(IMAGE_VARIANTS_MESSAGE_ENABLED || IMAGE_VARIANTS_ASSETS_ENABLED)
         : usage === 'graphic_overlay' || usage === 'logo' || usage === 'lower_third'
           ? Boolean(IMAGE_VARIANTS_ASSETS_ENABLED)
           : false
@@ -632,7 +632,7 @@ export async function getUploadPublicPromptBackgroundCdnUrl(
   throw new DomainError('bad_request')
 }
 
-export async function getUploadPublicPromptPosterCdnUrl(
+export async function getUploadPublicMessagePosterCdnUrl(
   uploadId: number
 ): Promise<{ url: string; expiresAt: number }> {
   if (!uploadsCdnConfigured()) throw new DomainError('cdn_not_configured')
@@ -649,7 +649,7 @@ export async function getUploadPublicPromptPosterCdnUrl(
     bucket: String(UPLOAD_BUCKET),
     key: thumbKey,
     objectKind: 'upload_thumb',
-    attrs: { 'app.operation': 'uploads.prompt_poster.get' },
+    attrs: { 'app.operation': 'uploads.message_poster.get' },
   })
 
   if (!exists.exists) {

@@ -1,6 +1,6 @@
 # Plan 133: Clean Message Conversion Finish Pass
 
-Status: Active — Phases A-D Complete
+Status: Active — Phases A-E Complete
 
 ## Goal
 Finish the prompt-to-message conversion so active runtime code, canonical analytics, debug tooling, and asset naming all use message-first terminology.
@@ -219,7 +219,7 @@ Test gate:
 Acceptance:
 - canonical analytics events and fields are message-first
 
-## Phase E — Asset Naming Cleanup
+## Phase E — Asset Naming Cleanup (Complete)
 - rename asset/derivative usage from `prompt_bg` to `message_bg`
 - rename derived preset keys from `prompt_bg_*` to `message_bg_*`
 - add/update upload helper naming and routes accordingly

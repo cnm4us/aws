@@ -3282,7 +3282,7 @@ function renderAdminPromptForm(opts: {
   const previewBaseStyle =
     previewUploadId && creativeForm.backgroundMode !== 'none'
       ? (creativeForm.backgroundMode === 'image'
-        ? `background-image:url('/api/uploads/${encodeURIComponent(previewUploadId)}/image?mode=image&usage=prompt_bg&orientation=portrait&dpr=1'); background-size:cover; background-position:center; background-repeat:no-repeat; background-color:#0B1320;`
+        ? `background-image:url('/api/uploads/${encodeURIComponent(previewUploadId)}/image?mode=image&usage=message_bg&orientation=portrait&dpr=1'); background-size:cover; background-position:center; background-repeat:no-repeat; background-color:#0B1320;`
         : `background-image:url('/api/uploads/${encodeURIComponent(previewUploadId)}/thumb'); background-size:cover; background-position:center; background-repeat:no-repeat; background-color:#0B1320;`)
       : (creativeForm.backgroundMode === 'video'
         ? 'background:linear-gradient(135deg,#0a1930,#1e3a8a);'
@@ -3819,7 +3819,7 @@ function renderAdminPromptForm(opts: {
           const orientation = preview.device.clientWidth > preview.device.clientHeight ? 'landscape' : 'portrait';
           const mediaUrl = bgUploadId
             ? (bgMode === 'image'
-              ? ('/api/uploads/' + encodeURIComponent(String(bgUploadId)) + '/image?mode=image&usage=prompt_bg&orientation=' + encodeURIComponent(orientation) + '&dpr=' + encodeURIComponent(String(dpr)))
+              ? ('/api/uploads/' + encodeURIComponent(String(bgUploadId)) + '/image?mode=image&usage=message_bg&orientation=' + encodeURIComponent(orientation) + '&dpr=' + encodeURIComponent(String(dpr)))
               : ('/api/uploads/' + encodeURIComponent(String(bgUploadId)) + '/thumb'))
             : '';
           if ((bgMode === 'image' || bgMode === 'video') && mediaUrl) {

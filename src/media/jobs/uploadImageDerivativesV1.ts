@@ -26,7 +26,7 @@ function normalizeImageRole(raw: unknown): string | null {
 function inferUsage(kind: 'image' | 'logo', imageRole: string | null): ImageVariantUsage[] {
   if (kind === 'logo') return ['logo']
   if (imageRole === 'lower_third') return ['lower_third']
-  return ['prompt_bg', 'graphic_overlay']
+  return ['message_bg', 'graphic_overlay']
 }
 
 function selectProfiles(input: UploadImageDerivativesV1Input): ImageVariantProfile[] {
