@@ -27,8 +27,8 @@ Canonical field definitions for analytics events.
 | `content_id` | int | event-dependent | positive int | internal | publication/content id |
 | `creator_id` | int | no | positive int | internal | content owner |
 | `slide_type` | string | event-dependent | `content`, `message`, `sponsor`, `fund_drive` | internal | future-safe enum; legacy rows may still use `prompt` |
-| `prompt_id` | int | message events | positive int | internal | legacy internal storage key for in-feed message id |
-| `prompt_category` | string | no | bounded enum/set | internal | legacy internal segmentation key; campaign-key successor |
+| `message_id` | int | message events | positive int | internal | in-feed message id |
+| `message_campaign_key` | string | no | slug-like key | internal | message campaign grouping key |
 | `cta_kind` | string | no | `primary`, `secondary` | internal | click events only |
 | `milestone_pct` | int | milestone only | `25`, `50`, `75`, `95` | internal | watch milestone |
 | `watch_seconds` | int | some events | >=0 | internal | rounded seconds |

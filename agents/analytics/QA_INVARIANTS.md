@@ -11,9 +11,9 @@ Use these checks to validate analytics quality after instrumentation or schema c
 ## Logical Invariants
 - `slide_complete <= slide_impression` (same filter scope).
 - `slide_play_start <= slide_impression`.
-- `prompt_click <= prompt_impression`.
-- `prompt_auth_start <= prompt_click` (or document exceptions).
-- `prompt_pass_through <= prompt_impression`.
+- `message_click_primary + message_click_secondary <= message_impression`.
+- `auth_start_from_message <= message_click_primary + message_click_secondary` (or document exceptions).
+- `message_dismiss <= message_impression`.
 - `feed_session_end <= feed_session_start` (allow some drop due to unload).
 - `verification_completed <= verification_started` (same method/window).
 - `verification_failed <= verification_started` (same method/window).

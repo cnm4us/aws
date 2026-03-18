@@ -5,12 +5,12 @@ export type MessageAnalyticsCtaKind = 'primary' | 'secondary' | null
 export type MessageAnalyticsInputEvent = 'impression' | 'click' | 'pass_through' | 'dismiss' | 'auth_start' | 'auth_complete'
 
 export type MessageAnalyticsEventType =
-  | 'prompt_impression'
-  | 'prompt_click_primary'
-  | 'prompt_click_secondary'
-  | 'prompt_dismiss'
-  | 'auth_start_from_prompt'
-  | 'auth_complete_from_prompt'
+  | 'message_impression'
+  | 'message_click_primary'
+  | 'message_click_secondary'
+  | 'message_dismiss'
+  | 'auth_start_from_message'
+  | 'auth_complete_from_message'
 
 export type MessageAnalyticsEventRow = {
   id: number

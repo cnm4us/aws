@@ -106,11 +106,11 @@ function normalizeCtaKind(raw: any): MessageAnalyticsCtaKind {
 }
 
 function mapToEventType(event: MessageAnalyticsInputEvent, ctaKind: MessageAnalyticsCtaKind) {
-  if (event === 'impression') return 'prompt_impression' as const
-  if (event === 'pass_through' || event === 'dismiss') return 'prompt_dismiss' as const
-  if (event === 'auth_start') return 'auth_start_from_prompt' as const
-  if (event === 'auth_complete') return 'auth_complete_from_prompt' as const
-  return ctaKind === 'secondary' ? 'prompt_click_secondary' : 'prompt_click_primary'
+  if (event === 'impression') return 'message_impression' as const
+  if (event === 'pass_through' || event === 'dismiss') return 'message_dismiss' as const
+  if (event === 'auth_start') return 'auth_start_from_message' as const
+  if (event === 'auth_complete') return 'auth_complete_from_message' as const
+  return ctaKind === 'secondary' ? 'message_click_secondary' : 'message_click_primary'
 }
 
 function computeRate(numerator: number, denominator: number): number {
@@ -219,10 +219,10 @@ export async function recordMessageEvent(input: RecordMessageEventInput): Promis
         viewerState,
         sessionId,
         userId,
-        promptId: messageId,
+        messageId,
         meta: {
           input_event: event,
-          ...(messageCampaignKey ? { prompt_campaign_key: messageCampaignKey } : {}),
+          ...(messageCampaignKey ? { message_campaign_key: messageCampaignKey } : {}),
           ...(ctaKind ? { cta_kind: ctaKind } : {}),
           source_route: 'feed_message_events',
         },
@@ -236,19 +236,19 @@ export async function recordMessageEvent(input: RecordMessageEventInput): Promis
       const key = dedupeKey({
         eventType,
         surface,
-        messageId: canonical.promptId || messageId,
+        messageId: canonical.messageId || messageId,
         ctaKind,
         identity,
         bucketStartMs: bucket.bucketStartMs,
       })
 
       let attributed = true
-      if (eventType === 'auth_complete_from_prompt') {
+      if (eventType === 'auth_complete_from_message') {
         const sinceMs = nowMs - AUTH_ATTRIBUTION_WINDOW_HOURS * 60 * 60 * 1000
         const hasStart = await repo.hasRecentAuthStart({
           sessionId: canonical.sessionId,
           userId: canonical.userId,
-          messageId: canonical.promptId || messageId,
+          messageId: canonical.messageId || messageId,
           sinceDateTimeUtc: toUtcDateTimeString(new Date(sinceMs)),
         })
         attributed = hasStart
@@ -260,7 +260,7 @@ export async function recordMessageEvent(input: RecordMessageEventInput): Promis
         viewerState: canonical.viewerState,
         sessionId: canonical.sessionId,
         userId: canonical.userId,
-        messageId: canonical.promptId || messageId,
+        messageId: canonical.messageId || messageId,
         messageCampaignKey,
         ctaKind,
         attributed,
@@ -269,7 +269,7 @@ export async function recordMessageEvent(input: RecordMessageEventInput): Promis
         dedupeKey: key,
       })
 
-      const countInRollup = eventType !== 'auth_complete_from_prompt' || attributed
+      const countInRollup = eventType !== 'auth_complete_from_message' || attributed
       if (inserted.inserted && countInRollup) {
         await tracer.startActiveSpan(
           'analytics.rollup',
@@ -286,7 +286,7 @@ export async function recordMessageEvent(input: RecordMessageEventInput): Promis
               await repo.upsertDailyCount({
                 dateUtc: dayUtc,
                 surface,
-                messageId: canonical.promptId || messageId,
+                messageId: canonical.messageId || messageId,
                 messageCampaignKey,
                 viewerState: canonical.viewerState,
                 eventType,
@@ -319,7 +319,7 @@ export async function recordMessageEvent(input: RecordMessageEventInput): Promis
 
       span.setAttributes({
         'app.surface': surface,
-        'app.message_id': String(canonical.promptId || messageId),
+        'app.message_id': String(canonical.messageId || messageId),
         ...(messageCampaignKey ? { 'app.message_campaign_key': messageCampaignKey } : {}),
         'app.outcome': inserted.inserted ? 'success' : 'redirect',
         'app.event_name': canonical.eventName,
@@ -334,7 +334,7 @@ export async function recordMessageEvent(input: RecordMessageEventInput): Promis
           app_operation: 'analytics.ingest',
           app_operation_detail: 'message.analytics.ingest',
           app_surface: surface,
-          app_message_id: canonical.promptId || messageId,
+          app_message_id: canonical.messageId || messageId,
           app_message_campaign_key: messageCampaignKey,
           app_event_name: canonical.eventName,
           message_event_type: eventType,
@@ -353,7 +353,7 @@ export async function recordMessageEvent(input: RecordMessageEventInput): Promis
         inputEvent: event,
         eventType,
         surface,
-        messageId: canonical.promptId || messageId,
+        messageId: canonical.messageId || messageId,
         attributed,
       }
     } catch (err: any) {

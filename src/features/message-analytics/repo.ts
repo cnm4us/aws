@@ -106,7 +106,7 @@ export async function hasRecentAuthStart(input: {
     const [rows] = await db.query(
       `SELECT id
          FROM feed_message_events
-        WHERE event_type = 'auth_start_from_prompt'
+        WHERE event_type = 'auth_start_from_message'
           AND message_id = ?
           AND session_id = ?
           AND occurred_at >= ?
@@ -121,7 +121,7 @@ export async function hasRecentAuthStart(input: {
     const [rows] = await db.query(
       `SELECT id
          FROM feed_message_events
-        WHERE event_type = 'auth_start_from_prompt'
+        WHERE event_type = 'auth_start_from_message'
           AND message_id = ?
           AND user_id = ?
           AND occurred_at >= ?
@@ -192,12 +192,12 @@ export async function getTotalsFromDaily(filter: MessageAnalyticsQueryFilter): P
   const { whereSql, args } = buildDailyWhere(filter)
   const [rows] = await db.query(
     `SELECT
-        COALESCE(SUM(CASE WHEN event_type = 'prompt_impression' THEN total_events ELSE 0 END), 0) AS impressions,
-        COALESCE(SUM(CASE WHEN event_type = 'prompt_click_primary' THEN total_events ELSE 0 END), 0) AS clicks_primary,
-        COALESCE(SUM(CASE WHEN event_type = 'prompt_click_secondary' THEN total_events ELSE 0 END), 0) AS clicks_secondary,
-        COALESCE(SUM(CASE WHEN event_type = 'prompt_dismiss' THEN total_events ELSE 0 END), 0) AS dismiss,
-        COALESCE(SUM(CASE WHEN event_type = 'auth_start_from_prompt' THEN total_events ELSE 0 END), 0) AS auth_start,
-        COALESCE(SUM(CASE WHEN event_type = 'auth_complete_from_prompt' THEN total_events ELSE 0 END), 0) AS auth_complete
+        COALESCE(SUM(CASE WHEN event_type = 'message_impression' THEN total_events ELSE 0 END), 0) AS impressions,
+        COALESCE(SUM(CASE WHEN event_type = 'message_click_primary' THEN total_events ELSE 0 END), 0) AS clicks_primary,
+        COALESCE(SUM(CASE WHEN event_type = 'message_click_secondary' THEN total_events ELSE 0 END), 0) AS clicks_secondary,
+        COALESCE(SUM(CASE WHEN event_type = 'message_dismiss' THEN total_events ELSE 0 END), 0) AS dismiss,
+        COALESCE(SUM(CASE WHEN event_type = 'auth_start_from_message' THEN total_events ELSE 0 END), 0) AS auth_start,
+        COALESCE(SUM(CASE WHEN event_type = 'auth_complete_from_message' THEN total_events ELSE 0 END), 0) AS auth_complete
       FROM feed_message_daily_stats
       WHERE ${whereSql}`,
     args
@@ -214,12 +214,12 @@ export async function getByMessageFromDaily(filter: MessageAnalyticsQueryFilter)
         MAX(p.type) AS message_type,
         MAX(NULLIF(s.message_campaign_key, '')) AS message_campaign_key,
         MAX(p.name) AS message_name,
-        COALESCE(SUM(CASE WHEN s.event_type = 'prompt_impression' THEN s.total_events ELSE 0 END), 0) AS impressions,
-        COALESCE(SUM(CASE WHEN s.event_type = 'prompt_click_primary' THEN s.total_events ELSE 0 END), 0) AS clicks_primary,
-        COALESCE(SUM(CASE WHEN s.event_type = 'prompt_click_secondary' THEN s.total_events ELSE 0 END), 0) AS clicks_secondary,
-        COALESCE(SUM(CASE WHEN s.event_type = 'prompt_dismiss' THEN s.total_events ELSE 0 END), 0) AS dismiss,
-        COALESCE(SUM(CASE WHEN s.event_type = 'auth_start_from_prompt' THEN s.total_events ELSE 0 END), 0) AS auth_start,
-        COALESCE(SUM(CASE WHEN s.event_type = 'auth_complete_from_prompt' THEN s.total_events ELSE 0 END), 0) AS auth_complete
+        COALESCE(SUM(CASE WHEN s.event_type = 'message_impression' THEN s.total_events ELSE 0 END), 0) AS impressions,
+        COALESCE(SUM(CASE WHEN s.event_type = 'message_click_primary' THEN s.total_events ELSE 0 END), 0) AS clicks_primary,
+        COALESCE(SUM(CASE WHEN s.event_type = 'message_click_secondary' THEN s.total_events ELSE 0 END), 0) AS clicks_secondary,
+        COALESCE(SUM(CASE WHEN s.event_type = 'message_dismiss' THEN s.total_events ELSE 0 END), 0) AS dismiss,
+        COALESCE(SUM(CASE WHEN s.event_type = 'auth_start_from_message' THEN s.total_events ELSE 0 END), 0) AS auth_start,
+        COALESCE(SUM(CASE WHEN s.event_type = 'auth_complete_from_message' THEN s.total_events ELSE 0 END), 0) AS auth_complete
       FROM feed_message_daily_stats s
       LEFT JOIN feed_messages p ON p.id = s.message_id
       WHERE ${whereSql}
@@ -237,11 +237,11 @@ export async function getByDayFromDaily(filter: MessageAnalyticsQueryFilter): Pr
   const [rows] = await db.query(
     `SELECT
         date_utc,
-        COALESCE(SUM(CASE WHEN event_type = 'prompt_impression' THEN total_events ELSE 0 END), 0) AS impressions,
-        COALESCE(SUM(CASE WHEN event_type IN ('prompt_click_primary','prompt_click_secondary') THEN total_events ELSE 0 END), 0) AS clicks_total,
-        COALESCE(SUM(CASE WHEN event_type = 'prompt_dismiss' THEN total_events ELSE 0 END), 0) AS dismiss,
-        COALESCE(SUM(CASE WHEN event_type = 'auth_start_from_prompt' THEN total_events ELSE 0 END), 0) AS auth_start,
-        COALESCE(SUM(CASE WHEN event_type = 'auth_complete_from_prompt' THEN total_events ELSE 0 END), 0) AS auth_complete
+        COALESCE(SUM(CASE WHEN event_type = 'message_impression' THEN total_events ELSE 0 END), 0) AS impressions,
+        COALESCE(SUM(CASE WHEN event_type IN ('message_click_primary','message_click_secondary') THEN total_events ELSE 0 END), 0) AS clicks_total,
+        COALESCE(SUM(CASE WHEN event_type = 'message_dismiss' THEN total_events ELSE 0 END), 0) AS dismiss,
+        COALESCE(SUM(CASE WHEN event_type = 'auth_start_from_message' THEN total_events ELSE 0 END), 0) AS auth_start,
+        COALESCE(SUM(CASE WHEN event_type = 'auth_complete_from_message' THEN total_events ELSE 0 END), 0) AS auth_complete
       FROM feed_message_daily_stats
       WHERE ${whereSql}
       GROUP BY date_utc
@@ -258,11 +258,11 @@ export async function getUniqueTotalsFromRaw(filter: MessageAnalyticsQueryFilter
   const { whereSql, args } = buildRawWhere(filter)
   const [rows] = await db.query(
     `SELECT
-        COUNT(DISTINCT CASE WHEN event_type = 'prompt_impression' THEN ${SESSION_KEY_EXPR} END) AS impressions_unique,
-        COUNT(DISTINCT CASE WHEN event_type IN ('prompt_click_primary','prompt_click_secondary') THEN ${SESSION_KEY_EXPR} END) AS clicks_total_unique,
-        COUNT(DISTINCT CASE WHEN event_type = 'prompt_dismiss' THEN ${SESSION_KEY_EXPR} END) AS dismiss_unique,
-        COUNT(DISTINCT CASE WHEN event_type = 'auth_start_from_prompt' THEN ${SESSION_KEY_EXPR} END) AS auth_start_unique,
-        COUNT(DISTINCT CASE WHEN event_type = 'auth_complete_from_prompt' AND attributed = 1 THEN ${SESSION_KEY_EXPR} END) AS auth_complete_unique
+        COUNT(DISTINCT CASE WHEN event_type = 'message_impression' THEN ${SESSION_KEY_EXPR} END) AS impressions_unique,
+        COUNT(DISTINCT CASE WHEN event_type IN ('message_click_primary','message_click_secondary') THEN ${SESSION_KEY_EXPR} END) AS clicks_total_unique,
+        COUNT(DISTINCT CASE WHEN event_type = 'message_dismiss' THEN ${SESSION_KEY_EXPR} END) AS dismiss_unique,
+        COUNT(DISTINCT CASE WHEN event_type = 'auth_start_from_message' THEN ${SESSION_KEY_EXPR} END) AS auth_start_unique,
+        COUNT(DISTINCT CASE WHEN event_type = 'auth_complete_from_message' AND attributed = 1 THEN ${SESSION_KEY_EXPR} END) AS auth_complete_unique
       FROM feed_message_events
       WHERE ${whereSql}`,
     args
@@ -276,11 +276,11 @@ export async function getUniqueByMessageFromRaw(filter: MessageAnalyticsQueryFil
   const [rows] = await db.query(
     `SELECT
         message_id AS message_id,
-        COUNT(DISTINCT CASE WHEN event_type = 'prompt_impression' THEN ${SESSION_KEY_EXPR} END) AS impressions_unique,
-        COUNT(DISTINCT CASE WHEN event_type IN ('prompt_click_primary','prompt_click_secondary') THEN ${SESSION_KEY_EXPR} END) AS clicks_total_unique,
-        COUNT(DISTINCT CASE WHEN event_type = 'prompt_dismiss' THEN ${SESSION_KEY_EXPR} END) AS dismiss_unique,
-        COUNT(DISTINCT CASE WHEN event_type = 'auth_start_from_prompt' THEN ${SESSION_KEY_EXPR} END) AS auth_start_unique,
-        COUNT(DISTINCT CASE WHEN event_type = 'auth_complete_from_prompt' AND attributed = 1 THEN ${SESSION_KEY_EXPR} END) AS auth_complete_unique
+        COUNT(DISTINCT CASE WHEN event_type = 'message_impression' THEN ${SESSION_KEY_EXPR} END) AS impressions_unique,
+        COUNT(DISTINCT CASE WHEN event_type IN ('message_click_primary','message_click_secondary') THEN ${SESSION_KEY_EXPR} END) AS clicks_total_unique,
+        COUNT(DISTINCT CASE WHEN event_type = 'message_dismiss' THEN ${SESSION_KEY_EXPR} END) AS dismiss_unique,
+        COUNT(DISTINCT CASE WHEN event_type = 'auth_start_from_message' THEN ${SESSION_KEY_EXPR} END) AS auth_start_unique,
+        COUNT(DISTINCT CASE WHEN event_type = 'auth_complete_from_message' AND attributed = 1 THEN ${SESSION_KEY_EXPR} END) AS auth_complete_unique
       FROM feed_message_events
       WHERE ${whereSql}
       GROUP BY message_id`,

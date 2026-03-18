@@ -22,11 +22,12 @@ Use this matrix to map each event to:
 | `slide_play_start` | user tap/play starts playback | `event_at`, `session_id`, `content_id`, `slide_type` | `surface`, `space_*`, device fields | Plays, play-through metrics | User intent event |
 | `slide_watch_milestone` | watch threshold crossed | `event_at`, `session_id`, `content_id`, `milestone_pct` | `surface`, `space_*`, device fields | Completion funnel | Expected milestones: 25/50/75/95 |
 | `slide_complete` | >=95% watched | `event_at`, `session_id`, `content_id` | `surface`, `space_*`, device fields | Completion rate | One per session/content |
-| `prompt_impression` | in-feed message shown | `event_at`, `session_id`, `prompt_id`, `prompt_category`, `surface` | `space_*`, device fields | Message funnel | Canonical event name remains legacy `prompt_*`; for `slide_type=message` |
-| `prompt_pass_through` | user scrolls past in-feed message | `event_at`, `session_id`, `prompt_id`, `surface` | `prompt_category`, device fields | Message dismissal proxy | Canonical event name remains legacy `prompt_*` |
-| `prompt_click` | in-feed message CTA clicked | `event_at`, `session_id`, `prompt_id`, `cta_kind` | `prompt_category`, device fields | Message conversion | Canonical event name remains legacy `prompt_*`; `cta_kind=primary|secondary` |
-| `prompt_auth_start` | register/login flow started from in-feed message | `event_at`, `session_id`, `prompt_id` | `prompt_category`, device fields | Auth funnel | Canonical event name remains legacy `prompt_*` |
-| `prompt_auth_complete` | auth completed and return observed from in-feed message | `event_at`, `session_id`, `prompt_id` | `prompt_category`, device fields | Message ROI | Canonical event name remains legacy `prompt_*`; optional depending on callback flow |
+| `message_impression` | in-feed message shown | `event_at`, `session_id`, `message_id`, `message_campaign_key`, `surface` | `space_*`, device fields | Message funnel | For `slide_type=message` |
+| `message_dismiss` | user scrolls past in-feed message | `event_at`, `session_id`, `message_id`, `surface` | `message_campaign_key`, device fields | Message dismissal proxy | Includes pass-through / dismiss semantics |
+| `message_click_primary` | in-feed message primary CTA clicked | `event_at`, `session_id`, `message_id`, `cta_kind` | `message_campaign_key`, device fields | Message conversion | `cta_kind=primary` |
+| `message_click_secondary` | in-feed message secondary CTA clicked | `event_at`, `session_id`, `message_id`, `cta_kind` | `message_campaign_key`, device fields | Message conversion | `cta_kind=secondary` |
+| `auth_start_from_message` | register/login flow started from in-feed message | `event_at`, `session_id`, `message_id` | `message_campaign_key`, device fields | Auth funnel |  |
+| `auth_complete_from_message` | auth completed and return observed from in-feed message | `event_at`, `session_id`, `message_id` | `message_campaign_key`, device fields | Message ROI | Optional depending on callback flow |
 
 ## TODO
 - Add creator workflow events (`create_video_export_started/completed`).

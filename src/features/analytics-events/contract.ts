@@ -5,12 +5,12 @@ export type AnalyticsEventName =
   | 'feed_slide_impression'
   | 'feed_slide_complete'
   | 'feed_session_end'
-  | 'prompt_impression'
-  | 'prompt_click_primary'
-  | 'prompt_click_secondary'
-  | 'prompt_dismiss'
-  | 'auth_start_from_prompt'
-  | 'auth_complete_from_prompt'
+  | 'message_impression'
+  | 'message_click_primary'
+  | 'message_click_secondary'
+  | 'message_dismiss'
+  | 'auth_start_from_message'
+  | 'auth_complete_from_message'
 
 export type AnalyticsSurface = 'global_feed' | 'group_feed' | 'channel_feed' | 'my_feed'
 export type AnalyticsViewerState = 'anonymous' | 'authenticated'
@@ -24,7 +24,7 @@ export type CanonicalAnalyticsEvent = {
   viewerState: AnalyticsViewerState
   sessionId: string | null
   userId: number | null
-  promptId: number | null
+  messageId: number | null
   contentId: number | null
   spaceId: number | null
   spaceType: 'group' | 'channel' | 'personal' | null
@@ -33,7 +33,7 @@ export type CanonicalAnalyticsEvent = {
   meta: AnalyticsMeta
 }
 
-const META_ALLOWLIST = new Set(['input_event', 'prompt_campaign_key', 'prompt_category', 'cta_kind', 'source_route'])
+const META_ALLOWLIST = new Set(['input_event', 'message_campaign_key', 'cta_kind', 'source_route'])
 
 function asDate(raw: any): Date {
   if (raw instanceof Date && Number.isFinite(raw.getTime())) return raw
@@ -110,12 +110,12 @@ function asEventName(raw: any): AnalyticsEventName {
     v === 'feed_slide_impression' ||
     v === 'feed_slide_complete' ||
     v === 'feed_session_end' ||
-    v === 'prompt_impression' ||
-    v === 'prompt_click_primary' ||
-    v === 'prompt_click_secondary' ||
-    v === 'prompt_dismiss' ||
-    v === 'auth_start_from_prompt' ||
-    v === 'auth_complete_from_prompt'
+    v === 'message_impression' ||
+    v === 'message_click_primary' ||
+    v === 'message_click_secondary' ||
+    v === 'message_dismiss' ||
+    v === 'auth_start_from_message' ||
+    v === 'auth_complete_from_message'
   ) {
     return v
   }
@@ -158,7 +158,7 @@ export function buildCanonicalAnalyticsEvent(input: {
   viewerState: AnalyticsViewerState | string
   sessionId?: string | null
   userId?: number | null
-  promptId?: number | null
+  messageId?: number | null
   contentId?: number | null
   spaceId?: number | null
   spaceType?: 'group' | 'channel' | 'personal' | string | null
@@ -173,7 +173,7 @@ export function buildCanonicalAnalyticsEvent(input: {
     viewerState: asViewerState(input.viewerState),
     sessionId: asSessionId(input.sessionId),
     userId: asUserId(input.userId),
-    promptId: asPositiveId(input.promptId, 'invalid_analytics_prompt_id'),
+    messageId: asPositiveId(input.messageId, 'invalid_analytics_message_id'),
     contentId: asPositiveId(input.contentId, 'invalid_analytics_content_id'),
     spaceId: asPositiveId(input.spaceId, 'invalid_analytics_space_id'),
     spaceType: asSpaceType(input.spaceType),

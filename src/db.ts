@@ -977,12 +977,12 @@ export async function ensureSchema(db: DB) {
             CREATE TABLE IF NOT EXISTS feed_message_events (
               id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
               event_type ENUM(
-                'prompt_impression',
-                'prompt_click_primary',
-                'prompt_click_secondary',
-                'prompt_dismiss',
-                'auth_start_from_prompt',
-                'auth_complete_from_prompt'
+                'message_impression',
+                'message_click_primary',
+                'message_click_secondary',
+                'message_dismiss',
+                'auth_start_from_message',
+                'auth_complete_from_message'
               ) NOT NULL,
               surface ENUM('global_feed') NOT NULL DEFAULT 'global_feed',
               viewer_state ENUM('anonymous','authenticated') NOT NULL DEFAULT 'anonymous',
@@ -1006,7 +1006,7 @@ export async function ensureSchema(db: DB) {
               KEY idx_feed_message_events_campaign_key_occurred (message_campaign_key, occurred_at, id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
           `)
-          await db.query(`ALTER TABLE feed_message_events ADD COLUMN IF NOT EXISTS event_type ENUM('prompt_impression','prompt_click_primary','prompt_click_secondary','prompt_dismiss','auth_start_from_prompt','auth_complete_from_prompt') NOT NULL`)
+          await db.query(`ALTER TABLE feed_message_events ADD COLUMN IF NOT EXISTS event_type ENUM('message_impression','message_click_primary','message_click_secondary','message_dismiss','auth_start_from_message','auth_complete_from_message') NOT NULL`)
           await db.query(`ALTER TABLE feed_message_events ADD COLUMN IF NOT EXISTS surface ENUM('global_feed') NOT NULL DEFAULT 'global_feed'`)
           await db.query(`ALTER TABLE feed_message_events ADD COLUMN IF NOT EXISTS viewer_state ENUM('anonymous','authenticated') NOT NULL DEFAULT 'anonymous'`)
           await db.query(`ALTER TABLE feed_message_events ADD COLUMN IF NOT EXISTS session_id VARCHAR(120) NULL`)
@@ -1020,6 +1020,60 @@ export async function ensureSchema(db: DB) {
           await db.query(`ALTER TABLE feed_message_events ADD COLUMN IF NOT EXISTS occurred_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP`)
           await db.query(`ALTER TABLE feed_message_events ADD COLUMN IF NOT EXISTS dedupe_bucket_start DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP`)
           await db.query(`ALTER TABLE feed_message_events ADD COLUMN IF NOT EXISTS dedupe_key CHAR(64) NULL`)
+          try {
+            await db.query(
+              `ALTER TABLE feed_message_events
+                 MODIFY COLUMN event_type ENUM(
+                   'prompt_impression',
+                   'prompt_click_primary',
+                   'prompt_click_secondary',
+                   'prompt_dismiss',
+                   'auth_start_from_prompt',
+                   'auth_complete_from_prompt',
+                   'message_impression',
+                   'message_click_primary',
+                   'message_click_secondary',
+                   'message_dismiss',
+                   'auth_start_from_message',
+                   'auth_complete_from_message'
+                 ) NOT NULL`
+            )
+          } catch {}
+          try {
+            await db.query(`
+              UPDATE feed_message_events
+                 SET event_type = CASE event_type
+                   WHEN 'prompt_impression' THEN 'message_impression'
+                   WHEN 'prompt_click_primary' THEN 'message_click_primary'
+                   WHEN 'prompt_click_secondary' THEN 'message_click_secondary'
+                   WHEN 'prompt_dismiss' THEN 'message_dismiss'
+                   WHEN 'auth_start_from_prompt' THEN 'auth_start_from_message'
+                   WHEN 'auth_complete_from_prompt' THEN 'auth_complete_from_message'
+                   ELSE event_type
+                 END
+               WHERE event_type IN (
+                 'prompt_impression',
+                 'prompt_click_primary',
+                 'prompt_click_secondary',
+                 'prompt_dismiss',
+                 'auth_start_from_prompt',
+                 'auth_complete_from_prompt'
+               )
+            `)
+          } catch {}
+          try {
+            await db.query(
+              `ALTER TABLE feed_message_events
+                 MODIFY COLUMN event_type ENUM(
+                   'message_impression',
+                   'message_click_primary',
+                   'message_click_secondary',
+                   'message_dismiss',
+                   'auth_start_from_message',
+                   'auth_complete_from_message'
+                 ) NOT NULL`
+            )
+          } catch {}
           try { await db.query(`ALTER TABLE feed_message_events DROP COLUMN prompt_kind`); } catch {}
           try { await db.query(`DROP INDEX uniq_feed_prompt_events_dedupe_key ON feed_message_events`) } catch {}
           try { await db.query(`DROP INDEX idx_feed_prompt_events_occurred ON feed_message_events`) } catch {}
@@ -1056,12 +1110,12 @@ export async function ensureSchema(db: DB) {
               message_campaign_key VARCHAR(64) NOT NULL DEFAULT '',
               viewer_state ENUM('anonymous','authenticated') NOT NULL DEFAULT 'anonymous',
               event_type ENUM(
-                'prompt_impression',
-                'prompt_click_primary',
-                'prompt_click_secondary',
-                'prompt_dismiss',
-                'auth_start_from_prompt',
-                'auth_complete_from_prompt'
+                'message_impression',
+                'message_click_primary',
+                'message_click_secondary',
+                'message_dismiss',
+                'auth_start_from_message',
+                'auth_complete_from_message'
               ) NOT NULL,
               total_events BIGINT UNSIGNED NOT NULL DEFAULT 0,
               created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -1081,8 +1135,62 @@ export async function ensureSchema(db: DB) {
           await db.query(`ALTER TABLE feed_message_daily_stats ADD COLUMN IF NOT EXISTS message_id BIGINT UNSIGNED NOT NULL DEFAULT 0`)
           await db.query(`ALTER TABLE feed_message_daily_stats ADD COLUMN IF NOT EXISTS message_campaign_key VARCHAR(64) NOT NULL DEFAULT ''`)
           await db.query(`ALTER TABLE feed_message_daily_stats ADD COLUMN IF NOT EXISTS viewer_state ENUM('anonymous','authenticated') NOT NULL DEFAULT 'anonymous'`)
-          await db.query(`ALTER TABLE feed_message_daily_stats ADD COLUMN IF NOT EXISTS event_type ENUM('prompt_impression','prompt_click_primary','prompt_click_secondary','prompt_dismiss','auth_start_from_prompt','auth_complete_from_prompt') NOT NULL`)
+          await db.query(`ALTER TABLE feed_message_daily_stats ADD COLUMN IF NOT EXISTS event_type ENUM('message_impression','message_click_primary','message_click_secondary','message_dismiss','auth_start_from_message','auth_complete_from_message') NOT NULL`)
           await db.query(`ALTER TABLE feed_message_daily_stats ADD COLUMN IF NOT EXISTS total_events BIGINT UNSIGNED NOT NULL DEFAULT 0`)
+          try {
+            await db.query(
+              `ALTER TABLE feed_message_daily_stats
+                 MODIFY COLUMN event_type ENUM(
+                   'prompt_impression',
+                   'prompt_click_primary',
+                   'prompt_click_secondary',
+                   'prompt_dismiss',
+                   'auth_start_from_prompt',
+                   'auth_complete_from_prompt',
+                   'message_impression',
+                   'message_click_primary',
+                   'message_click_secondary',
+                   'message_dismiss',
+                   'auth_start_from_message',
+                   'auth_complete_from_message'
+                 ) NOT NULL`
+            )
+          } catch {}
+          try {
+            await db.query(`
+              UPDATE feed_message_daily_stats
+                 SET event_type = CASE event_type
+                   WHEN 'prompt_impression' THEN 'message_impression'
+                   WHEN 'prompt_click_primary' THEN 'message_click_primary'
+                   WHEN 'prompt_click_secondary' THEN 'message_click_secondary'
+                   WHEN 'prompt_dismiss' THEN 'message_dismiss'
+                   WHEN 'auth_start_from_prompt' THEN 'auth_start_from_message'
+                   WHEN 'auth_complete_from_prompt' THEN 'auth_complete_from_message'
+                   ELSE event_type
+                 END
+               WHERE event_type IN (
+                 'prompt_impression',
+                 'prompt_click_primary',
+                 'prompt_click_secondary',
+                 'prompt_dismiss',
+                 'auth_start_from_prompt',
+                 'auth_complete_from_prompt'
+               )
+            `)
+          } catch {}
+          try {
+            await db.query(
+              `ALTER TABLE feed_message_daily_stats
+                 MODIFY COLUMN event_type ENUM(
+                   'message_impression',
+                   'message_click_primary',
+                   'message_click_secondary',
+                   'message_dismiss',
+                   'auth_start_from_message',
+                   'auth_complete_from_message'
+                 ) NOT NULL`
+            )
+          } catch {}
           try {
             await db.query(`ALTER TABLE feed_message_daily_stats DROP PRIMARY KEY, DROP COLUMN prompt_kind, ADD PRIMARY KEY (date_utc, surface, message_id, message_campaign_key, viewer_state, event_type)`)
           } catch {
@@ -1120,7 +1228,7 @@ export async function ensureSchema(db: DB) {
                  event_type,
                  COUNT(*) AS total_events
                FROM feed_message_events
-               WHERE event_type <> 'auth_complete_from_prompt' OR attributed = 1
+               WHERE event_type <> 'auth_complete_from_message' OR attributed = 1
                GROUP BY DATE(occurred_at), surface, message_id, COALESCE(message_campaign_key, ''), viewer_state, event_type
                ON DUPLICATE KEY UPDATE total_events = VALUES(total_events), updated_at = CURRENT_TIMESTAMP`
             )

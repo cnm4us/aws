@@ -1,6 +1,6 @@
 # Plan 133: Clean Message Conversion Finish Pass
 
-Status: Active — Phases A-C Complete
+Status: Active — Phases A-D Complete
 
 ## Goal
 Finish the prompt-to-message conversion so active runtime code, canonical analytics, debug tooling, and asset naming all use message-first terminology.
@@ -196,7 +196,7 @@ Test gate:
 Acceptance:
 - browser debug and local debugging docs are message-first only
 
-## Phase D — Canonical Analytics Rename
+## Phase D — Canonical Analytics Rename (Complete)
 - rename canonical analytics event names from prompt-first to message-first
 - rename canonical analytics field names from prompt-first to message-first
 - update message analytics repo/service/types accordingly
