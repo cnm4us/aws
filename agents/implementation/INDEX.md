@@ -30,6 +30,7 @@ This file is a lightweight index for ongoing work and “what’s next”.
 - `agents/implementation/plan_130.md` — Rename prompts to messages
 - `agents/implementation/plan_131.md` — Message-first API path cleanup
 - `agents/implementation/plan_132.md` — Message wire contract and residual naming cleanup
+- `agents/implementation/plan_133.md` — Clean message conversion finish pass
 - `agents/implementation/plan_115.md` — Hybrid analytics foundation (internal source of truth + optional external sink)
 - `agents/implementation/plan_116.md` — Automatic image derivatives for prompt/graphics/logo performance
 
