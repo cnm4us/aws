@@ -669,9 +669,9 @@ const ADMIN_NAV_ITEMS: Array<{ key: AdminNavKey; label: string; href: string }> 
 	{ key: 'lower_thirds', label: 'Lower Thirds', href: '/admin/lower-thirds' },
 	{ key: 'audio_configs', label: 'Audio Configs', href: '/admin/audio-configs' },
 	{ key: 'media_jobs', label: 'Media Jobs', href: '/admin/media-jobs' },
-  { key: 'prompts', label: 'Prompts', href: '/admin/prompts' },
+  { key: 'prompts', label: 'Messages', href: '/admin/prompts' },
   { key: 'analytics', label: 'Analytics', href: '/admin/analytics' },
-  { key: 'prompt_analytics', label: 'Prompt Analytics', href: '/admin/prompt-analytics' },
+  { key: 'prompt_analytics', label: 'Message Analytics', href: '/admin/prompt-analytics' },
   { key: 'analytics_sink', label: 'Analytics Sink', href: '/admin/analytics-sink' },
   { key: 'settings', label: 'Settings', href: '/admin/settings' },
   { key: 'dev', label: 'Dev', href: '/admin/dev' },
@@ -2987,9 +2987,9 @@ pagesRouter.get('/admin', async (_req: any, res: any) => {
     { title: 'Lower Thirds', href: '/admin/lower-thirds', desc: 'Manage system lower third templates (SVG + descriptor)' },
     { title: 'Audio Configs', href: '/admin/audio-configs', desc: 'Presets for Mix/Replace + ducking (creators pick when producing)' },
     { title: 'Media Jobs', href: '/admin/media-jobs', desc: 'Debug ffmpeg mastering jobs (logs, retries, purge)' },
-    { title: 'Prompts', href: '/admin/prompts', desc: 'In-feed registration/login prompt catalog and lifecycle controls' },
+    { title: 'Messages', href: '/admin/prompts', desc: 'Manage in-feed message units, targeting, and lifecycle controls' },
     { title: 'Analytics', href: '/admin/analytics', desc: 'Cross-metric baseline feed + prompt conversion view with daily trend' },
-    { title: 'Prompt Analytics', href: '/admin/prompt-analytics', desc: 'Funnel metrics, conversion rates, and overexposure detection for prompts' },
+    { title: 'Message Analytics', href: '/admin/prompt-analytics', desc: 'Funnel metrics, conversion rates, and overexposure detection for in-feed messages' },
     { title: 'Analytics Sink', href: '/admin/analytics-sink', desc: 'Optional external sink health and counters (secondary analytics path)' },
     { title: 'Settings', href: '/admin/settings', desc: 'Coming soon' },
     { title: 'Dev', href: '/admin/dev', desc: 'Dev stats and guarded tools' },
@@ -3291,7 +3291,7 @@ function renderAdminPromptForm(opts: {
           : 'background:linear-gradient(130deg,#101828,#1f2937);'))
 
   let body = `<h1>${escapeHtml(opts.title)}</h1>`
-  body += `<div class="toolbar"><div><a href="${escapeHtml(opts.backHref)}">← Back to prompts</a></div><div></div></div>`
+  body += `<div class="toolbar"><div><a href="${escapeHtml(opts.backHref)}">← Back to messages</a></div><div></div></div>`
   if (opts.error) body += `<div class="error">${escapeHtml(String(opts.error))}</div>`
   if (opts.notice) body += `<div class="notice">${escapeHtml(String(opts.notice))}</div>`
   body += `<style>
@@ -3576,7 +3576,7 @@ function renderAdminPromptForm(opts: {
     : `top:${msgTopPct}%`
   body += `<div id="prompt-preview-message" style="display:${creativeForm.messageEnabled ? 'block' : 'none'}; position:absolute; left:14px; right:14px; ${msgPosStyle}; z-index:2; border:1px solid rgba(255,255,255,0.24); border-radius:10px; background:${hexToRgba(creativeForm.messageBgColor, creativeForm.messageBgOpacity)}; color:${escapeHtml(creativeForm.messageTextColor)}; padding:10px">`
   body += `<div id="prompt-preview-message-label" style="font-size:12px; opacity:0.9; margin-bottom:4px">${escapeHtml(String(creativeForm.messageLabel || 'Message'))}</div>`
-  body += `<div id="prompt-preview-message-headline" style="font-size:24px; line-height:1.18; font-weight:800; margin-bottom:8px">${escapeHtml(String(values.headline || 'Prompt headline'))}</div>`
+  body += `<div id="prompt-preview-message-headline" style="font-size:24px; line-height:1.18; font-weight:800; margin-bottom:8px">${escapeHtml(String(values.headline || 'Message headline'))}</div>`
   body += `<div id="prompt-preview-message-body"${values.body ? '' : ' hidden'} style="opacity:0.9; margin-bottom:8px">${escapeHtml(String(values.body || ''))}</div>`
   body += `<div style="display:flex; gap:8px; justify-content:space-between; align-items:center"><span id="prompt-preview-primary-btn" class="btn" style="border:1px solid rgba(255,255,255,0.45); border-radius:11px; background:rgba(0,0,0,0.5); padding:8px 12px">${escapeHtml(String(values.ctaPrimaryLabel || values.cta_primary_label || 'Primary'))}</span>`
   body += `<span id="prompt-preview-secondary-btn" class="btn" style="border:1px solid rgba(255,255,255,0.45); border-radius:11px; background:rgba(0,0,0,0.5); padding:8px 12px; display:${(values.ctaSecondaryLabel || values.cta_secondary_label) ? 'inline-flex' : 'none'}">${escapeHtml(String(values.ctaSecondaryLabel || values.cta_secondary_label || 'Secondary'))}</span>`
@@ -3788,7 +3788,7 @@ function renderAdminPromptForm(opts: {
         preview.auth.style.color = authText;
 
         const label = v('creativeMessageLabel', 'Message');
-        const headline = v('headline', 'Prompt headline');
+        const headline = v('headline', 'Message headline');
         const body = String(v('body', '') || '').trim();
         const primary = v('ctaPrimaryLabel', 'Primary');
         const secondary = String(v('ctaSecondaryLabel', '') || '').trim();
@@ -3939,8 +3939,8 @@ pagesRouter.get('/admin/prompts', async (req: any, res: any) => {
       campaignKey,
     })
 
-    let body = '<h1>Prompts</h1>'
-    body += '<div class="toolbar"><div><span class="pill">Prompt Registry</span></div><div><a href="/admin/prompts/new">New prompt</a></div></div>'
+    let body = '<h1>Messages</h1>'
+    body += '<div class="toolbar"><div><span class="pill">Message Registry</span></div><div><a href="/admin/prompts/new">New message</a></div></div>'
     if (notice) body += `<div class="notice">${escapeHtml(notice)}</div>`
     if (error) body += `<div class="error">${escapeHtml(error)}</div>`
     body += `<form method="get" action="/admin/prompts" class="section" style="margin:12px 0">`
@@ -3973,7 +3973,7 @@ pagesRouter.get('/admin/prompts', async (req: any, res: any) => {
     body += `</div></form>`
 
     if (!items.length) {
-      body += '<p>No prompts found for current filters.</p>'
+      body += '<p>No messages found for current filters.</p>'
     } else {
       body += '<table><thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Audience</th><th>Surface</th><th>Campaign Key</th><th>Priority</th><th>Status</th><th>Window</th><th>Updated</th></tr></thead><tbody>'
       for (const item of items) {
@@ -3994,12 +3994,12 @@ pagesRouter.get('/admin/prompts', async (req: any, res: any) => {
       body += '</tbody></table>'
     }
 
-    const doc = renderAdminPage({ title: 'Prompts', bodyHtml: body, active: 'prompts' })
+    const doc = renderAdminPage({ title: 'Messages', bodyHtml: body, active: 'prompts' })
     res.set('Content-Type', 'text/html; charset=utf-8')
     res.send(doc)
   } catch (err) {
     logError(req.log || pagesLogger, err, 'admin prompts list failed', { path: req.path })
-    res.status(500).send('Failed to load prompts')
+    res.status(500).send('Failed to load messages')
   }
 })
 
@@ -4007,7 +4007,7 @@ pagesRouter.get('/admin/prompts/new', async (req: any, res: any) => {
   const cookies = parseCookies(req.headers.cookie)
   const csrfToken = cookies['csrf'] || ''
   const doc = renderAdminPromptForm({
-    title: 'New Prompt',
+    title: 'New Message',
     action: '/admin/prompts',
     csrfToken,
     backHref: '/admin/prompts',
@@ -4041,15 +4041,15 @@ pagesRouter.post('/admin/prompts', async (req: any, res: any) => {
   const payload = buildPromptCreateOrUpdatePayload(req.body || {})
   try {
     const created = await promptsSvc.createForAdmin(payload, Number(req.user?.id || 0))
-    res.redirect(`/admin/prompts/${created.id}?notice=${encodeURIComponent('Prompt created.')}`)
+    res.redirect(`/admin/prompts/${created.id}?notice=${encodeURIComponent('Message created.')}`)
   } catch (err: any) {
     const doc = renderAdminPromptForm({
-      title: 'New Prompt',
+      title: 'New Message',
       action: '/admin/prompts',
       csrfToken,
       backHref: '/admin/prompts',
       values: payload,
-      error: String(err?.message || 'Failed to create prompt'),
+      error: String(err?.message || 'Failed to create message'),
     })
     res.status(400).set('Content-Type', 'text/html; charset=utf-8').send(doc)
   }
@@ -4057,13 +4057,13 @@ pagesRouter.post('/admin/prompts', async (req: any, res: any) => {
 
 pagesRouter.get('/admin/prompts/:id', async (req: any, res: any) => {
   const id = Number(req.params.id)
-  if (!Number.isFinite(id) || id <= 0) return res.status(400).send('Bad prompt id')
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).send('Bad message id')
   try {
     const prompt = await promptsSvc.getForAdmin(id)
     const cookies = parseCookies(req.headers.cookie)
     const csrfToken = cookies['csrf'] || ''
     const doc = renderAdminPromptForm({
-      title: `Edit Prompt #${id}`,
+      title: `Edit Message #${id}`,
       action: `/admin/prompts/${id}`,
       csrfToken,
       backHref: '/admin/prompts',
@@ -4076,13 +4076,13 @@ pagesRouter.get('/admin/prompts/:id', async (req: any, res: any) => {
     res.send(doc)
   } catch (err) {
     logError(req.log || pagesLogger, err, 'admin prompt detail failed', { path: req.path, prompt_id: id })
-    res.status(404).send('Prompt not found')
+    res.status(404).send('Message not found')
   }
 })
 
 pagesRouter.post('/admin/prompts/:id', async (req: any, res: any) => {
   const id = Number(req.params.id)
-  if (!Number.isFinite(id) || id <= 0) return res.status(400).send('Bad prompt id')
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).send('Bad message id')
   const cookies = parseCookies(req.headers.cookie)
   const csrfToken = cookies['csrf'] || ''
   const payload = buildPromptCreateOrUpdatePayload(req.body || {})
@@ -4091,12 +4091,12 @@ pagesRouter.post('/admin/prompts/:id', async (req: any, res: any) => {
     res.redirect(`/admin/prompts/${id}?notice=${encodeURIComponent('Saved.')}`)
   } catch (err: any) {
     const doc = renderAdminPromptForm({
-      title: `Edit Prompt #${id}`,
+      title: `Edit Message #${id}`,
       action: `/admin/prompts/${id}`,
       csrfToken,
       backHref: '/admin/prompts',
       values: { ...payload, id },
-      error: String(err?.message || 'Failed to save prompt'),
+      error: String(err?.message || 'Failed to save message'),
       showClone: true,
     })
     res.status(400).set('Content-Type', 'text/html; charset=utf-8').send(doc)
@@ -4110,7 +4110,7 @@ pagesRouter.post('/admin/prompts/:id/clone', async (req: any, res: any) => {
     const cloned = await promptsSvc.cloneForAdmin(id, Number(req.user?.id || 0))
     res.redirect(`/admin/prompts/${cloned.id}?notice=${encodeURIComponent(`Cloned from #${id}.`)}`)
   } catch (err: any) {
-    res.redirect(`/admin/prompts/${id}?error=${encodeURIComponent(String(err?.message || 'Failed to clone prompt'))}`)
+    res.redirect(`/admin/prompts/${id}?error=${encodeURIComponent(String(err?.message || 'Failed to clone message'))}`)
   }
 })
 
@@ -4471,7 +4471,7 @@ pagesRouter.get('/admin/prompt-analytics', async (req: any, res: any) => {
 
     if (String(req.query?.format || '').toLowerCase() === 'csv') {
       const csv = promptAnalyticsSvc.buildPromptAnalyticsCsv(report)
-      const filename = `prompt-analytics-${report.range.fromDate}_to_${report.range.toDate}.csv`
+      const filename = `message-analytics-${report.range.fromDate}_to_${report.range.toDate}.csv`
       res.setHeader('Content-Type', 'text/csv; charset=utf-8')
       res.setHeader('Content-Disposition', `attachment; filename=\"${filename}\"`)
       return res.send(csv)
@@ -4486,8 +4486,8 @@ pagesRouter.get('/admin/prompt-analytics', async (req: any, res: any) => {
     if (report.range.promptCampaignKey) q.set('prompt_campaign_key', report.range.promptCampaignKey)
     if (report.range.viewerState) q.set('viewer_state', report.range.viewerState)
 
-    let body = '<h1>Prompt Analytics</h1>'
-    body += '<div class="toolbar"><div><span class="pill">Prompt Funnel</span></div><div></div></div>'
+    let body = '<h1>Message Analytics</h1>'
+    body += '<div class="toolbar"><div><span class="pill">Message Funnel</span></div><div></div></div>'
     body += `<form method="get" action="/admin/prompt-analytics" class="section" style="margin:12px 0">`
     body += `<div style="display:grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); gap:10px; align-items:end">`
     body += `<label>From (UTC)<input type="date" name="from" value="${escapeHtml(report.range.fromDate)}" /></label>`
@@ -4501,7 +4501,7 @@ pagesRouter.get('/admin/prompt-analytics', async (req: any, res: any) => {
       <option value="anonymous"${report.range.viewerState === 'anonymous' ? ' selected' : ''}>Anonymous</option>
       <option value="authenticated"${report.range.viewerState === 'authenticated' ? ' selected' : ''}>Authenticated</option>
     </select></label>`
-    body += `<label>Prompt ID<input type="number" name="prompt_id" min="1" value="${escapeHtml(report.range.promptId == null ? '' : String(report.range.promptId))}" /></label>`
+    body += `<label>Message ID<input type="number" name="prompt_id" min="1" value="${escapeHtml(report.range.promptId == null ? '' : String(report.range.promptId))}" /></label>`
     body += `<label>Type<select name="prompt_type"><option value="">All</option>`
     for (const opt of PROMPT_TYPE_OPTIONS) {
       body += `<option value="${escapeHtml(opt.value)}"${report.range.promptType === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
@@ -4524,9 +4524,9 @@ pagesRouter.get('/admin/prompt-analytics', async (req: any, res: any) => {
     body += `</div>`
 
     if (!report.byPrompt.length) {
-      body += '<p>No prompt analytics events found in this range.</p>'
+      body += '<p>No message analytics events found in this range.</p>'
     } else {
-      body += '<table><thead><tr><th>Prompt</th><th>Type</th><th>Campaign Key</th><th>Impressions</th><th>Clicks</th><th>CTR</th><th>Pass-through</th><th>Pass-through Rate</th><th>Auth Start</th><th>Auth Complete</th><th>Auth Completion Rate</th><th>Status</th></tr></thead><tbody>'
+      body += '<table><thead><tr><th>Message</th><th>Type</th><th>Campaign Key</th><th>Impressions</th><th>Clicks</th><th>CTR</th><th>Pass-through</th><th>Pass-through Rate</th><th>Auth Start</th><th>Auth Complete</th><th>Auth Completion Rate</th><th>Status</th></tr></thead><tbody>'
       for (const row of report.byPrompt) {
         const status = row.rates.dismissRate >= 0.5 && row.rates.authCompletionRate < 0.01 ? 'Overexposed' : 'Healthy'
         const label = row.promptName ? `${row.promptName} (#${row.promptId})` : `#${row.promptId}`
@@ -4565,12 +4565,12 @@ pagesRouter.get('/admin/prompt-analytics', async (req: any, res: any) => {
       body += '</tbody></table></div>'
     }
 
-    const doc = renderAdminPage({ title: 'Prompt Analytics', bodyHtml: body, active: 'prompt_analytics' })
+    const doc = renderAdminPage({ title: 'Message Analytics', bodyHtml: body, active: 'prompt_analytics' })
     res.set('Content-Type', 'text/html; charset=utf-8')
     return res.send(doc)
   } catch (err) {
     logError(req.log || pagesLogger, err, 'admin prompt analytics failed', { path: req.path })
-    return res.status(500).send('Failed to load prompt analytics')
+    return res.status(500).send('Failed to load message analytics')
   }
 })
 

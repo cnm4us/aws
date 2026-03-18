@@ -85,12 +85,23 @@ Long term:
 ## Implementation Strategy
 
 ### Phase A — Terminology Contract
-- Lock final naming model:
-  - `Message` = top-level unit
-  - `In-Feed Message` = delivery behavior
-  - `Type` = structured subtype
-  - `Campaign Key` = editorial/analytics grouping
-- Inventory all user-facing `Prompt` references.
+Status: Complete
+
+Locked decisions:
+- `Message` = top-level admin/product term
+- `In-Feed Message` = delivery-specific distinction when needed
+- `Direct Messages` = reserved for future private user-to-user messaging
+- `Type` = structured subtype
+- `Campaign Key` = editorial/analytics grouping
+- Primary admin routes:
+  - `/admin/messages`
+  - `/admin/messages/:id`
+  - `/admin/message-analytics`
+- Legacy prompt routes remain temporary redirects during transition.
+- Internal `prompt_*` naming remains in place until later phases.
+
+Implementation note:
+- Inventory all remaining user-facing `Prompt` references during Phase B/E cleanup.
 
 Acceptance:
 - Signed-off terminology contract and rename inventory.
@@ -242,6 +253,7 @@ Recommended default:
 ### Recommended compatibility behavior
 - `/admin/prompts` -> redirect to `/admin/messages`
 - `/admin/prompt-analytics` -> redirect to `/admin/message-analytics`
+- These redirects are transitional and should be removed in a later cleanup pass after the new message routes are established.
 
 ## Observability Guidance
 Use pragmatic split:

@@ -665,7 +665,7 @@ export async function cloneForAdmin(id: number, actorUserId: number): Promise<Pr
   if (!existing) throw new NotFoundError('prompt_not_found')
 
   const row = await repo.create({
-    name: `${String(existing.name || 'Prompt')} (Copy)`,
+    name: `${String(existing.name || 'Message')} (Copy)`,
     headline: existing.headline,
     body: existing.body == null ? null : String(existing.body),
     ctaPrimaryLabel: String(existing.cta_primary_label || ''),
