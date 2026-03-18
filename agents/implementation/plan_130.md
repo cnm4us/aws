@@ -107,6 +107,8 @@ Acceptance:
 - Signed-off terminology contract and rename inventory.
 
 ### Phase B — Admin UX Rename
+Status: Complete
+
 - Rename user-facing admin labels:
   - `Prompts` -> `Messages`
   - `Prompt Analytics` -> `Message Analytics` or `In-Feed Message Analytics`
@@ -119,6 +121,8 @@ Acceptance:
 - No user-facing admin copy still uses `Prompt` unless intentionally technical.
 
 ### Phase C — Admin Route Strategy
+Status: Complete
+
 - Add `/admin/messages` as the primary route.
 - Decide whether `/admin/prompts` should:
   - redirect to `/admin/messages`, or
@@ -132,6 +136,8 @@ Acceptance:
 - Admin can manage messages from `/admin/messages`.
 
 ### Phase D — Analytics/UI Copy Alignment
+Status: Complete
+
 - Rename analytics page labels:
   - `Prompt` column/header -> `Message`
   - `Prompt ID` -> `Message ID`
@@ -142,6 +148,8 @@ Acceptance:
 - Reporting language matches the new admin vocabulary.
 
 ### Phase E — Documentation Cleanup
+Status: Complete
+
 - Update active implementation docs and feature docs to use `Message` terminology where appropriate.
 - Keep historical plans unchanged unless a correction is necessary.
 - Add a short note documenting that internal storage still uses `prompt_*` names for now.

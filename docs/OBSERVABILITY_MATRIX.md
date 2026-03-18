@@ -132,13 +132,10 @@ Scope notes:
 - `visualizer_presets.delete`
 - `visualizer_presets.reset`
 
-### Prompt / admin operations
+### Message / admin operations (current telemetry names)
 - `admin.prompts.list`
 - `admin.prompts.get`
 - `admin.prompts.write`
-- `admin.prompt_rules.list`
-- `admin.prompt_rules.get`
-- `admin.prompt_rules.write`
 - `feed.global.list`
 - `feed.prompt.decide`
 - `feed.prompt.fetch`
@@ -149,6 +146,10 @@ Scope notes:
 - `analytics.rollup`
 - `analytics.sink.dispatch`
 - `analytics.sink.health`
+
+Note:
+- Product/admin terminology is now `Message` / `In-Feed Message`.
+- Current telemetry and storage still use legacy `prompt_*` names until later rename phases.
 
 ### Media job operations
 - `create_video.export.process`
@@ -175,7 +176,8 @@ Scope notes:
 - `feed.activity.rollup`
 - `feed.prompt.render`
 - `feed.prompt.click`
-- `feed.prompt.dismiss`
+- `feed.prompt.pass_through`
+- `feed.prompt.dismiss` (legacy compatibility)
 - `feed.prompt.auth_start`
 - `feed.prompt.auth_complete`
 - `prompt.analytics.ingest`

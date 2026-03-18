@@ -1,8 +1,8 @@
-# Feature 13: Feed Campaign Inserts (Future Expansion of Prompts)
+# Feature 13: Feed Campaign Inserts (Future Expansion of In-Feed Messages)
 
 ## Summary
-Evolve today’s prompt insertion capability into a broader feed campaign system that can support:
-- registration/login prompts
+Evolve today’s in-feed message capability into a broader feed campaign system that can support:
+- registration/login messages
 - fund drive messages
 - limited corporate sponsor slides
 - other house/community messages
@@ -34,13 +34,13 @@ Feed inserts should support that model by enabling:
   - should see only tightly controlled sponsor placements.
 
 ## Scope Expansion Concept
-Current `Prompts` can later expand into a generalized `Feed Campaigns` model with campaign types such as:
+Current `Messages` can later expand into a generalized `Feed Campaigns` model with campaign types such as:
 - `auth_prompt`
 - `fund_drive`
 - `sponsor`
 - `house_message`
 
-Current prompt/rule mechanics are a strong base for this evolution.
+Current in-feed message targeting and insertion mechanics are a strong base for this evolution.
 
 ## High-Level Functional Needs (Future)
 - campaign type and category taxonomy
@@ -72,8 +72,19 @@ Current prompt/rule mechanics are a strong base for this evolution.
 
 ## Relationship to Current Work
 This feature is a strategic extension of:
-- `admin/prompts`
-- prompt decision/insertion logic
-- prompt analytics
+- `admin/messages`
+- in-feed message decision/insertion logic
+- message analytics
 
-Implementation planning will happen later when prioritization moves from prompt UX polish to campaign system expansion.
+Implementation planning will happen later when prioritization moves from message UX polish to campaign system expansion.
+
+## Current Naming Note
+User-facing/admin terminology should use `Message` / `In-Feed Message`.
+
+Current implementation details still use legacy internal names such as:
+- `feed_prompts`
+- `prompt_decision_sessions`
+- `feed_prompt_events`
+- `feed_prompt_daily_stats`
+
+That internal naming is transitional and should not drive product/admin language.
