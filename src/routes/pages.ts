@@ -3906,13 +3906,9 @@ function renderAdminPromptForm(opts: {
     body += `<form method="post" action="/admin/messages/${id}/clone" style="margin:0">`
     if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
     body += `<button class="btn" type="submit">Clone</button></form>`
-    for (const s of ['draft', 'active', 'paused', 'archived']) {
-      if (String(values.status || '') === s) continue
-      body += `<form method="post" action="/admin/messages/${id}/status" style="margin:0">`
-      if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
-      body += `<input type="hidden" name="status" value="${escapeHtml(s)}" />`
-      body += `<button class="btn" type="submit">Set ${escapeHtml(s)}</button></form>`
-    }
+    body += `<form method="post" action="/admin/messages/${id}/delete" style="margin:0" onsubmit="return confirm('Delete this message? This cannot be undone.');">`
+    if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
+    body += `<button class="btn danger" type="submit">Delete</button></form>`
     body += `</div></div>`
   }
 
@@ -4136,6 +4132,17 @@ pagesRouter.post(['/admin/messages/:id/status', '/admin/prompts/:id/status'], as
     res.redirect(`/admin/messages/${id}?notice=${encodeURIComponent('Status updated.')}`)
   } catch (err: any) {
     res.redirect(`/admin/messages/${id}?error=${encodeURIComponent(String(err?.message || 'Failed to update status'))}`)
+  }
+})
+
+pagesRouter.post(['/admin/messages/:id/delete', '/admin/prompts/:id/delete'], async (req: any, res: any) => {
+  const id = Number(req.params.id)
+  if (!Number.isFinite(id) || id <= 0) return res.redirect('/admin/messages?error=bad_id')
+  try {
+    await messagesSvc.deleteMessageForAdmin(id, Number(req.user?.id || 0))
+    res.redirect(`/admin/messages?notice=${encodeURIComponent(`Deleted message #${id}.`)}`)
+  } catch (err: any) {
+    res.redirect(`/admin/messages/${id}?error=${encodeURIComponent(String(err?.message || 'Failed to delete message'))}`)
   }
 })
 

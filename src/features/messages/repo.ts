@@ -66,7 +66,7 @@ export async function list(params?: {
 
   const [rows] = await db.query(
     `SELECT *
-       FROM feed_prompts
+       FROM feed_messages
       WHERE ${where.join(' AND ')}
       ORDER BY priority ASC, id DESC
       LIMIT ?`,
@@ -77,14 +77,14 @@ export async function list(params?: {
 
 export async function getById(id: number): Promise<PromptRow | null> {
   const db = getPool()
-  const [rows] = await db.query(`SELECT * FROM feed_prompts WHERE id = ? LIMIT 1`, [id])
+  const [rows] = await db.query(`SELECT * FROM feed_messages WHERE id = ? LIMIT 1`, [id])
   return ((rows as any[])[0] as PromptRow) || null
 }
 
 export async function create(input: PromptCreateInput): Promise<PromptRow> {
   const db = getPool()
   const [result] = await db.query(
-    `INSERT INTO feed_prompts
+    `INSERT INTO feed_messages
       (
         name, headline, body,
         cta_primary_label, cta_primary_href,
@@ -154,10 +154,16 @@ export async function update(id: number, patch: PromptUpdateInput): Promise<Prom
     return row
   }
 
-  await db.query(`UPDATE feed_prompts SET ${sets.join(', ')} WHERE id = ?`, [...args, id])
+  await db.query(`UPDATE feed_messages SET ${sets.join(', ')} WHERE id = ?`, [...args, id])
   const row = await getById(id)
   if (!row) throw new Error('not_found')
   return row
+}
+
+export async function remove(id: number): Promise<boolean> {
+  const db = getPool()
+  const [result] = await db.query(`DELETE FROM feed_messages WHERE id = ?`, [id])
+  return Number((result as any)?.affectedRows || 0) > 0
 }
 
 export async function listActiveForFeed(params?: {
@@ -194,7 +200,7 @@ export async function listActiveForFeed(params?: {
   }
   const [rows] = await db.query(
     `SELECT *
-       FROM feed_prompts
+       FROM feed_messages
       WHERE ${where.join(' AND ')}
       ORDER BY priority ASC, id DESC
       LIMIT ?`,

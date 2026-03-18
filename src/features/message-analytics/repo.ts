@@ -34,7 +34,7 @@ export async function insertEvent(input: {
 }): Promise<{ inserted: boolean }> {
   const db = getPool()
   const [result] = await db.query(
-    `INSERT IGNORE INTO feed_prompt_events
+    `INSERT IGNORE INTO feed_message_events
       (
         event_type, surface, viewer_state,
         session_id, user_id,
@@ -73,7 +73,7 @@ export async function upsertDailyCount(input: {
 }): Promise<void> {
   const db = getPool()
   await db.query(
-    `INSERT INTO feed_prompt_daily_stats
+    `INSERT INTO feed_message_daily_stats
       (
         date_utc, surface, prompt_id, prompt_campaign_key,
         viewer_state, event_type, total_events
@@ -105,7 +105,7 @@ export async function hasRecentAuthStart(input: {
   if (input.sessionId) {
     const [rows] = await db.query(
       `SELECT id
-         FROM feed_prompt_events
+         FROM feed_message_events
         WHERE event_type = 'auth_start_from_prompt'
           AND prompt_id = ?
           AND session_id = ?
@@ -120,7 +120,7 @@ export async function hasRecentAuthStart(input: {
   if (input.userId != null && Number.isFinite(Number(input.userId)) && Number(input.userId) > 0) {
     const [rows] = await db.query(
       `SELECT id
-         FROM feed_prompt_events
+         FROM feed_message_events
         WHERE event_type = 'auth_start_from_prompt'
           AND prompt_id = ?
           AND user_id = ?
@@ -147,7 +147,7 @@ function buildDailyWhere(filter: PromptAnalyticsQueryFilter): { whereSql: string
     args.push(filter.promptId)
   }
   if (filter.promptType) {
-    where.push(`EXISTS (SELECT 1 FROM feed_prompts p_filter WHERE p_filter.id = prompt_id AND p_filter.prompt_type = ?)`)
+    where.push(`EXISTS (SELECT 1 FROM feed_messages p_filter WHERE p_filter.id = prompt_id AND p_filter.prompt_type = ?)`)
     args.push(filter.promptType)
   }
   if (filter.promptCampaignKey) {
@@ -173,7 +173,7 @@ function buildRawWhere(filter: PromptAnalyticsQueryFilter): { whereSql: string; 
     args.push(filter.promptId)
   }
   if (filter.promptType) {
-    where.push(`EXISTS (SELECT 1 FROM feed_prompts p_filter WHERE p_filter.id = prompt_id AND p_filter.prompt_type = ?)`)
+    where.push(`EXISTS (SELECT 1 FROM feed_messages p_filter WHERE p_filter.id = prompt_id AND p_filter.prompt_type = ?)`)
     args.push(filter.promptType)
   }
   if (filter.promptCampaignKey) {
@@ -198,7 +198,7 @@ export async function getTotalsFromDaily(filter: PromptAnalyticsQueryFilter): Pr
         COALESCE(SUM(CASE WHEN event_type = 'prompt_dismiss' THEN total_events ELSE 0 END), 0) AS dismiss,
         COALESCE(SUM(CASE WHEN event_type = 'auth_start_from_prompt' THEN total_events ELSE 0 END), 0) AS auth_start,
         COALESCE(SUM(CASE WHEN event_type = 'auth_complete_from_prompt' THEN total_events ELSE 0 END), 0) AS auth_complete
-      FROM feed_prompt_daily_stats
+      FROM feed_message_daily_stats
       WHERE ${whereSql}`,
     args
   )
@@ -220,8 +220,8 @@ export async function getByPromptFromDaily(filter: PromptAnalyticsQueryFilter): 
         COALESCE(SUM(CASE WHEN s.event_type = 'prompt_dismiss' THEN s.total_events ELSE 0 END), 0) AS dismiss,
         COALESCE(SUM(CASE WHEN s.event_type = 'auth_start_from_prompt' THEN s.total_events ELSE 0 END), 0) AS auth_start,
         COALESCE(SUM(CASE WHEN s.event_type = 'auth_complete_from_prompt' THEN s.total_events ELSE 0 END), 0) AS auth_complete
-      FROM feed_prompt_daily_stats s
-      LEFT JOIN feed_prompts p ON p.id = s.prompt_id
+      FROM feed_message_daily_stats s
+      LEFT JOIN feed_messages p ON p.id = s.prompt_id
       WHERE ${whereSql}
       GROUP BY s.prompt_id
       ORDER BY impressions DESC, clicks_primary DESC, clicks_secondary DESC, s.prompt_id DESC
@@ -242,7 +242,7 @@ export async function getByDayFromDaily(filter: PromptAnalyticsQueryFilter): Pro
         COALESCE(SUM(CASE WHEN event_type = 'prompt_dismiss' THEN total_events ELSE 0 END), 0) AS dismiss,
         COALESCE(SUM(CASE WHEN event_type = 'auth_start_from_prompt' THEN total_events ELSE 0 END), 0) AS auth_start,
         COALESCE(SUM(CASE WHEN event_type = 'auth_complete_from_prompt' THEN total_events ELSE 0 END), 0) AS auth_complete
-      FROM feed_prompt_daily_stats
+      FROM feed_message_daily_stats
       WHERE ${whereSql}
       GROUP BY date_utc
       ORDER BY date_utc ASC`,
@@ -263,7 +263,7 @@ export async function getUniqueTotalsFromRaw(filter: PromptAnalyticsQueryFilter)
         COUNT(DISTINCT CASE WHEN event_type = 'prompt_dismiss' THEN ${SESSION_KEY_EXPR} END) AS dismiss_unique,
         COUNT(DISTINCT CASE WHEN event_type = 'auth_start_from_prompt' THEN ${SESSION_KEY_EXPR} END) AS auth_start_unique,
         COUNT(DISTINCT CASE WHEN event_type = 'auth_complete_from_prompt' AND attributed = 1 THEN ${SESSION_KEY_EXPR} END) AS auth_complete_unique
-      FROM feed_prompt_events
+      FROM feed_message_events
       WHERE ${whereSql}`,
     args
   )
@@ -281,7 +281,7 @@ export async function getUniqueByPromptFromRaw(filter: PromptAnalyticsQueryFilte
         COUNT(DISTINCT CASE WHEN event_type = 'prompt_dismiss' THEN ${SESSION_KEY_EXPR} END) AS dismiss_unique,
         COUNT(DISTINCT CASE WHEN event_type = 'auth_start_from_prompt' THEN ${SESSION_KEY_EXPR} END) AS auth_start_unique,
         COUNT(DISTINCT CASE WHEN event_type = 'auth_complete_from_prompt' AND attributed = 1 THEN ${SESSION_KEY_EXPR} END) AS auth_complete_unique
-      FROM feed_prompt_events
+      FROM feed_message_events
       WHERE ${whereSql}
       GROUP BY prompt_id`,
     args
@@ -294,6 +294,6 @@ export async function purgeExpiredData(input?: { rawRetentionDays?: number; roll
   const rawDays = Math.max(7, Math.min(365, Number(input?.rawRetentionDays || 90)))
   const rollupDays = Math.max(30, Math.min(3650, Number(input?.rollupRetentionDays || 365)))
 
-  await db.query(`DELETE FROM feed_prompt_events WHERE occurred_at < (UTC_TIMESTAMP() - INTERVAL ? DAY)`, [rawDays])
-  await db.query(`DELETE FROM feed_prompt_daily_stats WHERE date_utc < (UTC_DATE() - INTERVAL ? DAY)`, [rollupDays])
+  await db.query(`DELETE FROM feed_message_events WHERE occurred_at < (UTC_TIMESTAMP() - INTERVAL ? DAY)`, [rawDays])
+  await db.query(`DELETE FROM feed_message_daily_stats WHERE date_utc < (UTC_DATE() - INTERVAL ? DAY)`, [rollupDays])
 }

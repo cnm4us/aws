@@ -77,3 +77,14 @@ adminMessagesRouter.post('/api/admin/prompts/:id/status', async (req, res, next)
     return next(err)
   }
 })
+
+adminMessagesRouter.delete('/api/admin/prompts/:id', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id)
+    if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'bad_id' })
+    await messagesSvc.deleteMessageForAdmin(id, Number(req.user?.id || 0))
+    return res.status(204).send()
+  } catch (err) {
+    return next(err)
+  }
+})

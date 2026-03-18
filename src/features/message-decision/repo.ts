@@ -5,7 +5,7 @@ export async function getSessionByKey(sessionId: string, surface: PromptDecision
   const db = getPool()
   const [rows] = await db.query(
     `SELECT *
-       FROM prompt_decision_sessions
+       FROM message_decision_sessions
       WHERE session_id = ? AND surface = ?
       LIMIT 1`,
     [sessionId, surface]
@@ -28,7 +28,7 @@ export async function createSession(input: {
 }): Promise<PromptDecisionSessionRow> {
   const db = getPool()
   await db.query(
-    `INSERT INTO prompt_decision_sessions
+    `INSERT INTO message_decision_sessions
       (
         session_id, surface, viewer_state,
         slides_viewed, watch_seconds,
@@ -82,5 +82,5 @@ export async function updateSession(id: number, patch: {
   if (patch.lastDecisionReason !== undefined) { sets.push('last_decision_reason = ?'); args.push(patch.lastDecisionReason) }
 
   if (!sets.length) return
-  await db.query(`UPDATE prompt_decision_sessions SET ${sets.join(', ')} WHERE id = ?`, [...args, id])
+  await db.query(`UPDATE message_decision_sessions SET ${sets.join(', ')} WHERE id = ?`, [...args, id])
 }

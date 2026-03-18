@@ -224,7 +224,7 @@ export async function recordPromptEvent(input: RecordPromptEventInput): Promise<
           input_event: event,
           ...(promptCampaignKey ? { prompt_campaign_key: promptCampaignKey } : {}),
           ...(ctaKind ? { cta_kind: ctaKind } : {}),
-          source_route: 'feed_prompt_events',
+          source_route: 'feed_message_events',
         },
       })
 
@@ -278,7 +278,7 @@ export async function recordPromptEvent(input: RecordPromptEventInput): Promise<
               'app.operation': 'analytics.rollup',
               'app.operation_detail': 'prompt.analytics.rollup',
               'app.surface': surface,
-              'analytics.rollup.table': 'feed_prompt_daily_stats',
+              'analytics.rollup.table': 'feed_message_daily_stats',
             },
           },
           async (rollupSpan) => {

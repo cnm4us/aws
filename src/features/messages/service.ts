@@ -33,7 +33,7 @@ const PROMPT_TYPES: readonly PromptType[] = [
   'feature_announcement',
 ]
 
-function annotateAdminPromptWrite(row: PromptRow, detail: 'admin.prompts.create' | 'admin.prompts.update' | 'admin.prompts.clone' | 'admin.prompts.status', actorUserId: number, extra?: Record<string, unknown>) {
+function annotateAdminPromptWrite(row: PromptRow, detail: 'admin.prompts.create' | 'admin.prompts.update' | 'admin.prompts.clone' | 'admin.prompts.status' | 'admin.prompts.delete', actorUserId: number, extra?: Record<string, unknown>) {
   const promptId = Number(row.id || 0)
   const promptType = normalizePromptType((row as any).prompt_type, 'register_login')
   const appliesToSurface = normalizeSurface((row as any).applies_to_surface, 'global_feed')
@@ -706,6 +706,15 @@ export async function updateStatusForAdmin(id: number, statusRaw: any, actorUser
   return mapRow(row)
 }
 
+export async function deleteForAdmin(id: number, actorUserId: number): Promise<void> {
+  if (!actorUserId) throw new ForbiddenError()
+  const existing = await repo.getById(id)
+  if (!existing) throw new NotFoundError('prompt_not_found')
+  const removed = await repo.remove(id)
+  if (!removed) throw new NotFoundError('prompt_not_found')
+  annotateAdminPromptWrite(existing, 'admin.prompts.delete', actorUserId)
+}
+
 export async function listActiveForFeed(params?: {
   promptType?: any
   appliesToSurface?: any
@@ -742,5 +751,6 @@ export const createMessageForAdmin = createForAdmin
 export const updateMessageForAdmin = updateForAdmin
 export const cloneMessageForAdmin = cloneForAdmin
 export const updateMessageStatusForAdmin = updateStatusForAdmin
+export const deleteMessageForAdmin = deleteForAdmin
 export const listActiveMessagesForFeed = listActiveForFeed
 export const getActiveMessageForFeedById = getActiveForFeedById
