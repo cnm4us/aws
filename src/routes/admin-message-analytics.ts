@@ -4,8 +4,8 @@ import { requireAuth, requireSiteAdmin } from '../middleware/auth'
 import * as messageAnalyticsSvc from '../features/message-analytics/service'
 
 export const adminMessageAnalyticsRouter = Router()
-const adminMessageAnalyticsPaths = ['/api/admin/prompt-analytics', '/api/admin/message-analytics']
-const adminMessageAnalyticsCsvPaths = ['/api/admin/prompt-analytics.csv', '/api/admin/message-analytics.csv']
+const adminMessageAnalyticsPaths = ['/api/admin/message-analytics']
+const adminMessageAnalyticsCsvPaths = ['/api/admin/message-analytics.csv']
 
 adminMessageAnalyticsRouter.use(adminMessageAnalyticsPaths, requireAuth, requireSiteAdmin)
 adminMessageAnalyticsRouter.use(adminMessageAnalyticsCsvPaths, requireAuth, requireSiteAdmin)

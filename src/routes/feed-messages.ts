@@ -20,9 +20,9 @@ import { getLogger } from '../lib/logger'
 export const feedMessagesRouter = Router()
 const feedMessagesLogger = getLogger({ component: 'routes.feed_messages' })
 const MESSAGE_DEBUG_ENABLED = String(process.env.MESSAGE_DEBUG || process.env.PROMPT_DEBUG || '0') === '1'
-const feedMessageDecisionPaths = ['/api/feed/prompt-decision', '/api/feed/message-decision']
-const feedMessageFetchPaths = ['/api/feed/prompts/:id', '/api/feed/messages/:id']
-const feedMessageEventPaths = ['/api/feed/prompt-events', '/api/feed/message-events']
+const feedMessageDecisionPaths = ['/api/feed/message-decision']
+const feedMessageFetchPaths = ['/api/feed/messages/:id']
+const feedMessageEventPaths = ['/api/feed/message-events']
 
 let globalSubscriptionSpaceCache: { spaceId: number | null; expiresAtMs: number } = { spaceId: null, expiresAtMs: 0 }
 

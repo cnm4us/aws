@@ -3,10 +3,10 @@ import { requireAuth, requireSiteAdmin } from '../middleware/auth'
 import * as messagesSvc from '../features/messages/service'
 
 export const adminMessagesRouter = Router()
-const adminMessageCollectionPaths = ['/api/admin/prompts', '/api/admin/messages']
-const adminMessageDetailPaths = ['/api/admin/prompts/:id', '/api/admin/messages/:id']
-const adminMessageClonePaths = ['/api/admin/prompts/:id/clone', '/api/admin/messages/:id/clone']
-const adminMessageStatusPaths = ['/api/admin/prompts/:id/status', '/api/admin/messages/:id/status']
+const adminMessageCollectionPaths = ['/api/admin/messages']
+const adminMessageDetailPaths = ['/api/admin/messages/:id']
+const adminMessageClonePaths = ['/api/admin/messages/:id/clone']
+const adminMessageStatusPaths = ['/api/admin/messages/:id/status']
 
 adminMessagesRouter.use(adminMessageCollectionPaths, requireAuth, requireSiteAdmin)
 adminMessagesRouter.use(adminMessageDetailPaths, requireAuth, requireSiteAdmin)

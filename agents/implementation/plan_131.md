@@ -1,6 +1,6 @@
 # Plan 131: Message-First API Path Cleanup
 
-Status: Draft
+Status: Complete
 
 ## Goal
 Reduce remaining `prompt` terminology in runtime HTTP span names and API usage by introducing message-first API paths, migrating first-party callers to them, and then removing legacy prompt-path aliases after verification.
@@ -148,6 +148,8 @@ Acceptance:
 - safe to remove prompt-path aliases
 
 ### Phase E — Remove Legacy Prompt API Aliases
+Status: Complete
+
 - remove prompt-path aliases after verification
 - update observability docs to drop alias language where appropriate
 - keep a short changelog note documenting the cutoff
@@ -195,12 +197,12 @@ Acceptance:
   - `POST /api/feed/message-events`
   - `GET /api/admin/message-analytics`
 - prompt-path aliases still work during transition
-- prompt-path aliases are removed only after message-first paths are proven stable
+- prompt-path aliases are removed and old prompt-path requests fail as expected
 
 ## Acceptance Criteria
 1. First-party callers use message-first API paths.
 2. Jaeger operation search becomes message-first for newly generated traffic.
-3. Prompt-path aliases are kept only during the transition window.
+3. Prompt-path aliases are kept only during the transition window and then removed.
 4. Alias removal happens only after explicit verification.
 5. Historical Jaeger prompt operations are understood as retained old traces, not active regressions.
 

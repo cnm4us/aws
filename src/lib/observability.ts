@@ -184,27 +184,26 @@ function classifyHttpOperation(methodRaw: string, pathname: string): string | nu
     { method: 'POST', re: /^\/api\/visualizer-presets\/[^/]+\/reset$/, op: 'visualizer_presets.reset' },
 
     // Admin messages (plan_114A / plan_130)
-    { method: 'GET', re: /^\/api\/admin\/(?:prompts|messages)$/, op: 'admin.messages.list' },
-    { method: 'POST', re: /^\/api\/admin\/(?:prompts|messages)$/, op: 'admin.messages.write' },
-    { method: 'GET', re: /^\/api\/admin\/(?:prompts|messages)\/[^/]+$/, op: 'admin.messages.get' },
-    { method: 'PATCH', re: /^\/api\/admin\/(?:prompts|messages)\/[^/]+$/, op: 'admin.messages.write' },
-    { method: 'POST', re: /^\/api\/admin\/(?:prompts|messages)\/[^/]+\/clone$/, op: 'admin.messages.write' },
-    { method: 'POST', re: /^\/api\/admin\/(?:prompts|messages)\/[^/]+\/status$/, op: 'admin.messages.write' },
-    { method: 'POST', re: /^\/api\/admin\/(?:prompts|messages)\/[^/]+\/delete$/, op: 'admin.messages.write' },
-    { method: 'DELETE', re: /^\/api\/admin\/(?:prompts|messages)\/[^/]+$/, op: 'admin.messages.write' },
+    { method: 'GET', re: /^\/api\/admin\/messages$/, op: 'admin.messages.list' },
+    { method: 'POST', re: /^\/api\/admin\/messages$/, op: 'admin.messages.write' },
+    { method: 'GET', re: /^\/api\/admin\/messages\/[^/]+$/, op: 'admin.messages.get' },
+    { method: 'PATCH', re: /^\/api\/admin\/messages\/[^/]+$/, op: 'admin.messages.write' },
+    { method: 'POST', re: /^\/api\/admin\/messages\/[^/]+\/clone$/, op: 'admin.messages.write' },
+    { method: 'POST', re: /^\/api\/admin\/messages\/[^/]+\/status$/, op: 'admin.messages.write' },
+    { method: 'DELETE', re: /^\/api\/admin\/messages\/[^/]+$/, op: 'admin.messages.write' },
 
     // Admin message analytics (plan_114E / plan_130)
-    { method: 'GET', re: /^\/api\/admin\/(?:prompt-analytics|message-analytics)$/, op: 'message.analytics.query' },
-    { method: 'GET', re: /^\/api\/admin\/(?:prompt-analytics|message-analytics)\.csv$/, op: 'message.analytics.query' },
+    { method: 'GET', re: /^\/api\/admin\/message-analytics$/, op: 'message.analytics.query' },
+    { method: 'GET', re: /^\/api\/admin\/message-analytics\.csv$/, op: 'message.analytics.query' },
     { method: 'GET', re: /^\/api\/admin\/feed-analytics$/, op: 'feed.activity.query' },
     { method: 'GET', re: /^\/api\/admin\/analytics-sink\/health$/, op: 'analytics.sink.health' },
 
     // Feed message decision (plan_114C / plan_130)
     { method: 'GET', re: /^\/api\/feed\/global$/, op: 'feed.global.list' },
-    { method: 'POST', re: /^\/api\/feed\/(?:prompt-decision|message-decision)$/, op: 'feed.message.decide' },
-    { method: 'GET', re: /^\/api\/feed\/(?:prompt-decision|message-decision)$/, op: 'feed.message.decide' },
-    { method: 'GET', re: /^\/api\/feed\/(?:prompts|messages)\/[^/]+$/, op: 'feed.message.fetch' },
-    { method: 'POST', re: /^\/api\/feed\/(?:prompt-events|message-events)$/, op: 'feed.message.event' },
+    { method: 'POST', re: /^\/api\/feed\/message-decision$/, op: 'feed.message.decide' },
+    { method: 'GET', re: /^\/api\/feed\/message-decision$/, op: 'feed.message.decide' },
+    { method: 'GET', re: /^\/api\/feed\/messages\/[^/]+$/, op: 'feed.message.fetch' },
+    { method: 'POST', re: /^\/api\/feed\/message-events$/, op: 'feed.message.event' },
     { method: 'POST', re: /^\/api\/feed\/activity-events$/, op: 'feed.activity.event' },
   ]
   for (const rule of rules) {
