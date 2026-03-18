@@ -42,7 +42,7 @@ import { can } from './security/permissions'
 import { PERM } from './security/perm'
 import { domainErrorMiddleware } from './core/http';
 import { getLogger, logError } from './lib/logger';
-import * as promptAnalyticsSvc from './features/prompt-analytics/service'
+import * as messageAnalyticsSvc from './features/message-analytics/service'
 
 const appLogger = getLogger({ component: 'app' })
 
@@ -293,11 +293,11 @@ export function buildServer(): express.Application {
     }
   });
 
-  async function trackPromptAuthComplete(req: any, userId: number | null) {
+  async function trackMessageAuthComplete(req: any, userId: number | null) {
     try {
       const promptIdRaw = req?.body?.prompt_id
       if (promptIdRaw == null || promptIdRaw === '') return
-      await promptAnalyticsSvc.recordPromptEvent({
+      await messageAnalyticsSvc.recordMessageEvent({
         event: 'auth_complete',
         surface: 'global_feed',
         promptId: promptIdRaw,
@@ -351,7 +351,7 @@ export function buildServer(): express.Application {
       // Assign default roles using new catalog
       await db.query(`INSERT IGNORE INTO user_roles (user_id, role_id) SELECT ?, id FROM roles WHERE name IN ('site_member')`, [userId]);
       await db.query(`INSERT IGNORE INTO user_space_roles (user_id, space_id, role_id) SELECT ?, ?, id FROM roles WHERE name IN ('space_member','space_poster')`, [userId, spaceId]);
-      await trackPromptAuthComplete(req, userId)
+      await trackMessageAuthComplete(req, userId)
       res.json({ ok: true, userId, space: { id: spaceId, slug } });
     } catch (err: any) {
       const msg = String(err?.message || err);
@@ -409,7 +409,7 @@ export function buildServer(): express.Application {
         maxAge,
         path: '/',
       });
-      await trackPromptAuthComplete(req, Number(row.id))
+      await trackMessageAuthComplete(req, Number(row.id))
       res.json({ ok: true, userId: row.id });
     } catch (err) {
       logError(req.log || appLogger, err, 'login_error', { path: req.path })

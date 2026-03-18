@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { context, trace } from '@opentelemetry/api'
 import { requireAuth, requireSiteAdmin } from '../middleware/auth'
-import * as promptAnalyticsSvc from '../features/prompt-analytics/service'
+import * as messageAnalyticsSvc from '../features/message-analytics/service'
 
 export const adminPromptAnalyticsRouter = Router()
 
@@ -9,7 +9,7 @@ adminPromptAnalyticsRouter.use('/api/admin/prompt-analytics', requireAuth, requi
 
 adminPromptAnalyticsRouter.get('/api/admin/prompt-analytics', async (req, res, next) => {
   try {
-    const report = await promptAnalyticsSvc.getPromptAnalyticsReportForAdmin({
+    const report = await messageAnalyticsSvc.getMessageAnalyticsReportForAdmin({
       fromDate: req.query?.from,
       toDate: req.query?.to,
       surface: req.query?.surface,
@@ -33,7 +33,7 @@ adminPromptAnalyticsRouter.get('/api/admin/prompt-analytics', async (req, res, n
 
 adminPromptAnalyticsRouter.get('/api/admin/prompt-analytics.csv', async (req, res, next) => {
   try {
-    const report = await promptAnalyticsSvc.getPromptAnalyticsReportForAdmin({
+    const report = await messageAnalyticsSvc.getMessageAnalyticsReportForAdmin({
       fromDate: req.query?.from,
       toDate: req.query?.to,
       surface: req.query?.surface,
@@ -42,7 +42,7 @@ adminPromptAnalyticsRouter.get('/api/admin/prompt-analytics.csv', async (req, re
       promptCampaignKey: req.query?.prompt_campaign_key ?? req.query?.prompt_category,
       viewerState: req.query?.viewer_state,
     })
-    const csv = promptAnalyticsSvc.buildPromptAnalyticsCsv(report)
+    const csv = messageAnalyticsSvc.buildMessageAnalyticsCsv(report)
     const span = trace.getSpan(context.active())
     if (span) {
       span.setAttribute('app.operation', 'analytics.query')

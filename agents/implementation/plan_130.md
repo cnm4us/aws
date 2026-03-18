@@ -192,6 +192,8 @@ Acceptance:
 - frontend code uses message terminology without feed regressions
 
 #### Phase F3 — Backend Service/Module Rename Layer
+Status: Complete
+
 - Rename backend service/repo/module names:
   - `prompts` -> `messages`
   - `prompt-analytics` -> `message-analytics`

@@ -52,6 +52,7 @@ export type PromptDecisionResult = {
 
 // Phase F1 compatibility aliases for message terminology.
 export type MessageDecisionSurface = PromptDecisionSurface
+export type MessageAudienceSegment = PromptAudienceSegment
 export type MessageDecisionAudienceSegment = PromptAudienceSegment
 export type MessageDecisionReasonCode = PromptDecisionReasonCode
 export type MessageDecisionSessionRow = PromptDecisionSessionRow

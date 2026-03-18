@@ -17,8 +17,8 @@ import * as audioTagsRepo from '../features/audio-tags/repo'
 import * as licenseSourcesSvc from '../features/license-sources/service'
 import * as licenseSourcesRepo from '../features/license-sources/repo'
 import * as lowerThirdsSvc from '../features/lower-thirds/service'
-import * as promptsSvc from '../features/prompts/service'
-import * as promptAnalyticsSvc from '../features/prompt-analytics/service'
+import * as messagesSvc from '../features/messages/service'
+import * as messageAnalyticsSvc from '../features/message-analytics/service'
 import * as feedActivitySvc from '../features/feed-activity/service'
 import { getAnalyticsSinkHealth } from '../features/analytics-sink/service'
 import { GetObjectCommand, DeleteObjectsCommand, ListObjectsV2Command } from '@aws-sdk/client-s3'
@@ -3933,7 +3933,7 @@ pagesRouter.get('/admin/messages', async (req: any, res: any) => {
     const campaignKey = req.query?.campaign_key ? String(req.query.campaign_key) : ''
     const notice = req.query?.notice ? String(req.query.notice) : ''
     const error = req.query?.error ? String(req.query.error) : ''
-    const items = await promptsSvc.listForAdmin({
+    const items = await messagesSvc.listMessagesForAdmin({
       includeArchived,
       limit: 500,
       status,
@@ -4048,7 +4048,7 @@ pagesRouter.post(['/admin/messages', '/admin/prompts'], async (req: any, res: an
   const csrfToken = cookies['csrf'] || ''
   const payload = buildPromptCreateOrUpdatePayload(req.body || {})
   try {
-    const created = await promptsSvc.createForAdmin(payload, Number(req.user?.id || 0))
+    const created = await messagesSvc.createMessageForAdmin(payload, Number(req.user?.id || 0))
     res.redirect(`/admin/messages/${created.id}?notice=${encodeURIComponent('Message created.')}`)
   } catch (err: any) {
     const doc = renderAdminPromptForm({
@@ -4073,7 +4073,7 @@ pagesRouter.get('/admin/messages/:id', async (req: any, res: any) => {
   const id = Number(req.params.id)
   if (!Number.isFinite(id) || id <= 0) return res.status(400).send('Bad message id')
   try {
-    const prompt = await promptsSvc.getForAdmin(id)
+    const prompt = await messagesSvc.getMessageForAdmin(id)
     const cookies = parseCookies(req.headers.cookie)
     const csrfToken = cookies['csrf'] || ''
     const doc = renderAdminPromptForm({
@@ -4101,7 +4101,7 @@ pagesRouter.post(['/admin/messages/:id', '/admin/prompts/:id'], async (req: any,
   const csrfToken = cookies['csrf'] || ''
   const payload = buildPromptCreateOrUpdatePayload(req.body || {})
   try {
-    await promptsSvc.updateForAdmin(id, payload, Number(req.user?.id || 0))
+    await messagesSvc.updateMessageForAdmin(id, payload, Number(req.user?.id || 0))
     res.redirect(`/admin/messages/${id}?notice=${encodeURIComponent('Saved.')}`)
   } catch (err: any) {
     const doc = renderAdminPromptForm({
@@ -4121,7 +4121,7 @@ pagesRouter.post(['/admin/messages/:id/clone', '/admin/prompts/:id/clone'], asyn
   const id = Number(req.params.id)
   if (!Number.isFinite(id) || id <= 0) return res.redirect('/admin/messages?error=bad_id')
   try {
-    const cloned = await promptsSvc.cloneForAdmin(id, Number(req.user?.id || 0))
+    const cloned = await messagesSvc.cloneMessageForAdmin(id, Number(req.user?.id || 0))
     res.redirect(`/admin/messages/${cloned.id}?notice=${encodeURIComponent(`Cloned from #${id}.`)}`)
   } catch (err: any) {
     res.redirect(`/admin/messages/${id}?error=${encodeURIComponent(String(err?.message || 'Failed to clone message'))}`)
@@ -4132,7 +4132,7 @@ pagesRouter.post(['/admin/messages/:id/status', '/admin/prompts/:id/status'], as
   const id = Number(req.params.id)
   if (!Number.isFinite(id) || id <= 0) return res.redirect('/admin/messages?error=bad_id')
   try {
-    await promptsSvc.updateStatusForAdmin(id, req.body?.status, Number(req.user?.id || 0))
+    await messagesSvc.updateMessageStatusForAdmin(id, req.body?.status, Number(req.user?.id || 0))
     res.redirect(`/admin/messages/${id}?notice=${encodeURIComponent('Status updated.')}`)
   } catch (err: any) {
     res.redirect(`/admin/messages/${id}?error=${encodeURIComponent(String(err?.message || 'Failed to update status'))}`)
@@ -4222,7 +4222,7 @@ pagesRouter.get('/admin/analytics', async (req: any, res: any) => {
       byDay: [],
     }
     const promptReport = promptSurfaceEligible
-      ? await promptAnalyticsSvc.getPromptAnalyticsReportForAdmin({
+      ? await messageAnalyticsSvc.getMessageAnalyticsReportForAdmin({
           fromDate: feedReport.range.fromDate,
           toDate: feedReport.range.toDate,
           surface: selectedSurface,
@@ -4240,7 +4240,7 @@ pagesRouter.get('/admin/analytics', async (req: any, res: any) => {
       feedActivitySvc.getFeedActivityReportForAdmin({ ...splitBase, viewerState: 'anonymous' }),
       feedActivitySvc.getFeedActivityReportForAdmin({ ...splitBase, viewerState: 'authenticated' }),
       promptSurfaceEligible
-        ? promptAnalyticsSvc.getPromptAnalyticsReportForAdmin({
+        ? messageAnalyticsSvc.getMessageAnalyticsReportForAdmin({
             fromDate: splitBase.fromDate,
             toDate: splitBase.toDate,
             surface: splitBase.surface,
@@ -4248,7 +4248,7 @@ pagesRouter.get('/admin/analytics', async (req: any, res: any) => {
           })
         : Promise.resolve({ ...emptyPromptReport, range: { ...emptyPromptReport.range, viewerState: 'anonymous' as const } }),
       promptSurfaceEligible
-        ? promptAnalyticsSvc.getPromptAnalyticsReportForAdmin({
+        ? messageAnalyticsSvc.getMessageAnalyticsReportForAdmin({
             fromDate: splitBase.fromDate,
             toDate: splitBase.toDate,
             surface: splitBase.surface,
@@ -4494,7 +4494,7 @@ pagesRouter.get('/admin/prompt-analytics', async (req: any, res: any) => {
 
 pagesRouter.get('/admin/message-analytics', async (req: any, res: any) => {
   try {
-    const report = await promptAnalyticsSvc.getPromptAnalyticsReportForAdmin({
+    const report = await messageAnalyticsSvc.getMessageAnalyticsReportForAdmin({
       fromDate: req.query?.from,
       toDate: req.query?.to,
       surface: req.query?.surface,
@@ -4505,7 +4505,7 @@ pagesRouter.get('/admin/message-analytics', async (req: any, res: any) => {
     })
 
     if (String(req.query?.format || '').toLowerCase() === 'csv') {
-      const csv = promptAnalyticsSvc.buildPromptAnalyticsCsv(report)
+      const csv = messageAnalyticsSvc.buildMessageAnalyticsCsv(report)
       const filename = `message-analytics-${report.range.fromDate}_to_${report.range.toDate}.csv`
       res.setHeader('Content-Type', 'text/csv; charset=utf-8')
       res.setHeader('Content-Disposition', `attachment; filename=\"${filename}\"`)

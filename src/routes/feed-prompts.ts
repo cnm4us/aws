@@ -7,13 +7,13 @@ import {
   buildDecisionInput,
   ANON_SESSION_COOKIE,
   ANON_SESSION_TTL_MS,
-  decidePrompt,
-  recordPromptSessionEvent,
-} from '../features/prompt-decision/service'
-import type { PromptAudienceSegment, PromptDecisionSurface } from '../features/prompt-decision/types'
-import * as promptsSvc from '../features/prompts/service'
+  decideMessage,
+  recordMessageSessionEvent,
+} from '../features/message-decision/service'
+import type { MessageAudienceSegment, MessageDecisionSurface } from '../features/message-decision/types'
+import * as messagesSvc from '../features/messages/service'
 import * as uploadsSvc from '../features/uploads/service'
-import * as promptAnalyticsSvc from '../features/prompt-analytics/service'
+import * as messageAnalyticsSvc from '../features/message-analytics/service'
 import * as spacesRepo from '../features/spaces/repo'
 import { getLogger } from '../lib/logger'
 
@@ -39,7 +39,7 @@ async function getGlobalSubscriptionSpaceId(): Promise<number | null> {
   return globalSubscriptionSpaceCache.spaceId
 }
 
-async function resolveAudienceSegment(userIdRaw: any): Promise<PromptAudienceSegment> {
+async function resolveAudienceSegment(userIdRaw: any): Promise<MessageAudienceSegment> {
   const userId = Number(userIdRaw || 0)
   if (!Number.isFinite(userId) || userId <= 0) return 'anonymous'
   const globalSpaceId = await getGlobalSubscriptionSpaceId()
@@ -98,7 +98,7 @@ async function handleDecision(req: any, res: any, next: any) {
       }
     }
 
-    const decision = await decidePrompt(input, { includeDebug })
+    const decision = await decideMessage(input, { includeDebug })
 
     if (PROMPT_DEBUG_ENABLED) {
       ;(req.log || feedPromptsLogger).debug(
@@ -154,7 +154,7 @@ feedPromptsRouter.get('/api/feed/prompts/:id', async (req: any, res: any, next: 
     const dprRaw = Number(req.query?.dpr)
     const dpr = Number.isFinite(dprRaw) && dprRaw > 0 ? dprRaw : null
 
-    const prompt = await promptsSvc.getActiveForFeedById(id)
+    const prompt = await messagesSvc.getActiveMessageForFeedById(id)
 
     let media: any = null
     const backgroundMode = String(prompt.creative?.background?.mode || 'none').toLowerCase()
@@ -276,7 +276,7 @@ feedPromptsRouter.post('/api/feed/prompt-events', async (req: any, res: any, nex
     const ctaKind = body.cta_kind ? String(body.cta_kind) : null
     const sessionId = body.session_id ? String(body.session_id).trim() : null
 
-    const tracked = await promptAnalyticsSvc.recordPromptEvent({
+    const tracked = await messageAnalyticsSvc.recordMessageEvent({
       event: body.event,
       promptId: body.prompt_id,
       promptCampaignKey,
@@ -286,9 +286,9 @@ feedPromptsRouter.post('/api/feed/prompt-events', async (req: any, res: any, nex
       viewerState: req.user?.id ? 'authenticated' : 'anonymous',
       userId: req.user?.id ? Number(req.user.id) : null,
     })
-    await recordPromptSessionEvent({
+    await recordMessageSessionEvent({
       sessionId,
-      surface: String(body.surface || 'global_feed').trim().toLowerCase() as PromptDecisionSurface,
+      surface: String(body.surface || 'global_feed').trim().toLowerCase() as MessageDecisionSurface,
       promptId: body.prompt_id,
       event: body.event,
     })

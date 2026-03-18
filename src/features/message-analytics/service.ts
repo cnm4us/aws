@@ -4,7 +4,7 @@ import { DomainError } from '../../core/errors'
 import { getLogger } from '../../lib/logger'
 import { buildCanonicalAnalyticsEvent } from '../analytics-events/contract'
 import { dispatchCanonicalAnalyticsEvent } from '../analytics-sink/service'
-import * as promptRepo from '../prompts/repo'
+import * as messageRepo from '../messages/repo'
 import type {
   PromptAnalyticsCtaKind,
   PromptAnalyticsDayRow,
@@ -156,7 +156,7 @@ function dedupeKey(input: {
 }
 
 async function maybeLookupPromptMeta(promptId: number): Promise<{ promptCampaignKey: string | null }> {
-  const row = await promptRepo.getById(promptId)
+  const row = await messageRepo.getById(promptId)
   if (!row) return { promptCampaignKey: null }
   const promptCampaignKey = row.campaign_key ? String(row.campaign_key).trim().toLowerCase() : null
   return { promptCampaignKey }

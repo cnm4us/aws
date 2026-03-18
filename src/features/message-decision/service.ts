@@ -7,7 +7,7 @@ import {
   PROMPT_MIN_SLIDES_BETWEEN_PROMPTS,
   PROMPT_MIN_WATCH_SECONDS_BEFORE_FIRST_PROMPT,
 } from '../../config'
-import * as promptsSvc from '../prompts/service'
+import * as messagesSvc from '../messages/service'
 import * as repo from './repo'
 import type {
   PromptAudienceSegment,
@@ -330,17 +330,17 @@ export async function decidePrompt(input: PromptDecisionInput, opts?: { includeD
     ) {
       reasonCode = 'below_threshold'
     } else {
-      const prompts = await promptsSvc.listActiveForFeed({
+      const messages = await messagesSvc.listActiveForFeed({
         limit: 300,
         appliesToSurface: input.surface,
         audienceSegment: merged.audienceSegment,
       })
 
-      if (!prompts.length) {
+      if (!messages.length) {
         reasonCode = 'no_active_prompt'
       } else {
         const candidates: EligiblePromptCandidate[] = []
-        for (const prompt of prompts) {
+        for (const prompt of messages) {
           const candidateId = Number(prompt.id || 0)
           if (!Number.isFinite(candidateId) || candidateId <= 0) continue
           if (isPromptSuppressed(candidateId, merged.suppression)) continue
