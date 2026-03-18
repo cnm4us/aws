@@ -81,10 +81,10 @@ Implementation planning will happen later when prioritization moves from message
 ## Current Naming Note
 User-facing/admin terminology should use `Message` / `In-Feed Message`.
 
-Current implementation details still use legacy internal names such as:
-- `feed_prompts`
-- `prompt_decision_sessions`
-- `feed_prompt_events`
-- `feed_prompt_daily_stats`
+Current implementation details are message-first at the table/module level:
+- `feed_messages`
+- `message_decision_sessions`
+- `feed_message_events`
+- `feed_message_daily_stats`
 
-That internal naming is transitional and should not drive product/admin language.
+Compatibility payload fields may still use some legacy `prompt_*` keys where changing wire contracts is not yet necessary.

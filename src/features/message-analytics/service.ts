@@ -17,8 +17,8 @@ import type {
 } from './types'
 import * as repo from './repo'
 
-const analyticsLogger = getLogger({ component: 'features.prompt_analytics' })
-const tracer = trace.getTracer('aws.prompt.analytics')
+const analyticsLogger = getLogger({ component: 'features.message_analytics' })
+const tracer = trace.getTracer('aws.message.analytics')
 
 const DEDUPE_WINDOW_SECONDS = 5
 const AUTH_ATTRIBUTION_WINDOW_HOURS = 24
@@ -183,7 +183,7 @@ export async function recordPromptEvent(input: RecordPromptEventInput): Promise<
   promptId: number
   attributed: boolean
 }> {
-  return tracer.startActiveSpan('prompt.analytics.ingest', { attributes: { 'app.operation': 'analytics.ingest', 'app.operation_detail': 'prompt.analytics.ingest' } }, async (span) => {
+  return tracer.startActiveSpan('message.analytics.ingest', { attributes: { 'app.operation': 'analytics.ingest', 'app.operation_detail': 'message.analytics.ingest' } }, async (span) => {
     try {
       const event = normalizeEvent(input.event)
       const surface = input.surface == null || input.surface === '' ? 'global_feed' : normalizeSurface(input.surface)
@@ -276,7 +276,7 @@ export async function recordPromptEvent(input: RecordPromptEventInput): Promise<
           {
             attributes: {
               'app.operation': 'analytics.rollup',
-              'app.operation_detail': 'prompt.analytics.rollup',
+              'app.operation_detail': 'message.analytics.rollup',
               'app.surface': surface,
               'analytics.rollup.table': 'feed_message_daily_stats',
             },
@@ -309,7 +309,7 @@ export async function recordPromptEvent(input: RecordPromptEventInput): Promise<
       if (inserted.inserted) {
         void dispatchCanonicalAnalyticsEvent({
           event: canonical,
-          source: 'prompt.analytics.ingest',
+          source: 'message.analytics.ingest',
         }).catch(() => {})
       }
 
@@ -319,32 +319,32 @@ export async function recordPromptEvent(input: RecordPromptEventInput): Promise<
 
       span.setAttributes({
         'app.surface': surface,
-        'app.prompt_id': String(canonical.promptId || promptId),
-        ...(promptCampaignKey ? { 'app.prompt_campaign_key': promptCampaignKey } : {}),
+        'app.message_id': String(canonical.promptId || promptId),
+        ...(promptCampaignKey ? { 'app.message_campaign_key': promptCampaignKey } : {}),
         'app.outcome': inserted.inserted ? 'success' : 'redirect',
         'app.event_name': canonical.eventName,
-        'prompt.analytics.event_type': eventType,
-        'prompt.analytics.deduped': inserted.inserted ? false : true,
-        'prompt.analytics.attributed': attributed,
+        'message.analytics.event_type': eventType,
+        'message.analytics.deduped': inserted.inserted ? false : true,
+        'message.analytics.attributed': attributed,
       })
       span.setStatus({ code: SpanStatusCode.OK })
 
       analyticsLogger.info(
         {
           app_operation: 'analytics.ingest',
-          app_operation_detail: 'prompt.analytics.ingest',
+          app_operation_detail: 'message.analytics.ingest',
           app_surface: surface,
-          app_prompt_id: canonical.promptId || promptId,
-          app_prompt_campaign_key: promptCampaignKey,
+          app_message_id: canonical.promptId || promptId,
+          app_message_campaign_key: promptCampaignKey,
           app_event_name: canonical.eventName,
-          prompt_event_type: eventType,
-          prompt_event_deduped: !inserted.inserted,
-          prompt_event_attributed: attributed,
+          message_event_type: eventType,
+          message_event_deduped: !inserted.inserted,
+          message_event_attributed: attributed,
           viewer_state: canonical.viewerState,
           user_id: canonical.userId,
           session_id: canonical.sessionId,
         },
-        'prompt.analytics.ingest'
+        'message.analytics.ingest'
       )
 
       return {
@@ -359,7 +359,7 @@ export async function recordPromptEvent(input: RecordPromptEventInput): Promise<
     } catch (err: any) {
       span.recordException(err)
       span.setAttributes({ 'app.outcome': 'client_error' })
-      span.setStatus({ code: SpanStatusCode.ERROR, message: String(err?.message || err || 'prompt_analytics_ingest_failed') })
+      span.setStatus({ code: SpanStatusCode.ERROR, message: String(err?.message || err || 'message_analytics_ingest_failed') })
       throw err
     } finally {
       span.end()
@@ -472,7 +472,7 @@ export async function getPromptAnalyticsReportForAdmin(input: {
   promptCampaignKey?: any
   viewerState?: any
 }): Promise<PromptAnalyticsReport> {
-  return tracer.startActiveSpan('prompt.analytics.query', { attributes: { 'app.operation': 'analytics.query', 'app.operation_detail': 'prompt.analytics.query' } }, async (span) => {
+  return tracer.startActiveSpan('message.analytics.query', { attributes: { 'app.operation': 'analytics.query', 'app.operation_detail': 'message.analytics.query' } }, async (span) => {
     try {
       const range = normalizeReportRange(input)
       const [totalsRaw, byPromptRaw, byDayRaw, uniqueTotalsRaw, uniqueByPromptRaw] = await Promise.all([
@@ -577,11 +577,11 @@ export async function getPromptAnalyticsReportForAdmin(input: {
 
       span.setAttributes({
         ...(range.surface ? { 'app.surface': range.surface } : {}),
-        ...(range.promptId != null ? { 'app.prompt_id': String(range.promptId) } : {}),
-        ...(range.promptType ? { 'app.prompt_type': range.promptType } : {}),
-        ...(range.promptCampaignKey ? { 'app.prompt_campaign_key': range.promptCampaignKey } : {}),
-        ...(range.viewerState ? { 'prompt.analytics.viewer_state': range.viewerState } : {}),
-        'prompt.analytics.result_rows': byPrompt.length,
+        ...(range.promptId != null ? { 'app.message_id': String(range.promptId) } : {}),
+        ...(range.promptType ? { 'app.message_type': range.promptType } : {}),
+        ...(range.promptCampaignKey ? { 'app.message_campaign_key': range.promptCampaignKey } : {}),
+        ...(range.viewerState ? { 'message.analytics.viewer_state': range.viewerState } : {}),
+        'message.analytics.result_rows': byPrompt.length,
         'app.outcome': 'success',
       })
       span.setStatus({ code: SpanStatusCode.OK })
@@ -589,17 +589,17 @@ export async function getPromptAnalyticsReportForAdmin(input: {
       analyticsLogger.info(
         {
           app_operation: 'analytics.query',
-          app_operation_detail: 'prompt.analytics.query',
+          app_operation_detail: 'message.analytics.query',
           app_surface: range.surface,
-          app_prompt_id: range.promptId,
-          app_prompt_type: range.promptType,
-          app_prompt_campaign_key: range.promptCampaignKey,
+          app_message_id: range.promptId,
+          app_message_type: range.promptType,
+          app_message_campaign_key: range.promptCampaignKey,
           viewer_state: range.viewerState,
           range_from_date: range.fromDate,
           range_to_date: range.toDate,
           result_rows: byPrompt.length,
         },
-        'prompt.analytics.query'
+        'message.analytics.query'
       )
 
       return {

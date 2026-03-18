@@ -183,26 +183,28 @@ function classifyHttpOperation(methodRaw: string, pathname: string): string | nu
     { method: 'DELETE', re: /^\/api\/visualizer-presets\/[^/]+$/, op: 'visualizer_presets.delete' },
     { method: 'POST', re: /^\/api\/visualizer-presets\/[^/]+\/reset$/, op: 'visualizer_presets.reset' },
 
-    // Admin prompts (plan_114A)
-    { method: 'GET', re: /^\/api\/admin\/prompts$/, op: 'admin.prompts.list' },
-    { method: 'POST', re: /^\/api\/admin\/prompts$/, op: 'admin.prompts.write' },
-    { method: 'GET', re: /^\/api\/admin\/prompts\/[^/]+$/, op: 'admin.prompts.get' },
-    { method: 'PATCH', re: /^\/api\/admin\/prompts\/[^/]+$/, op: 'admin.prompts.write' },
-    { method: 'POST', re: /^\/api\/admin\/prompts\/[^/]+\/clone$/, op: 'admin.prompts.write' },
-    { method: 'POST', re: /^\/api\/admin\/prompts\/[^/]+\/status$/, op: 'admin.prompts.write' },
+    // Admin messages (plan_114A / plan_130)
+    { method: 'GET', re: /^\/api\/admin\/prompts$/, op: 'admin.messages.list' },
+    { method: 'POST', re: /^\/api\/admin\/prompts$/, op: 'admin.messages.write' },
+    { method: 'GET', re: /^\/api\/admin\/prompts\/[^/]+$/, op: 'admin.messages.get' },
+    { method: 'PATCH', re: /^\/api\/admin\/prompts\/[^/]+$/, op: 'admin.messages.write' },
+    { method: 'POST', re: /^\/api\/admin\/prompts\/[^/]+\/clone$/, op: 'admin.messages.write' },
+    { method: 'POST', re: /^\/api\/admin\/prompts\/[^/]+\/status$/, op: 'admin.messages.write' },
+    { method: 'POST', re: /^\/api\/admin\/prompts\/[^/]+\/delete$/, op: 'admin.messages.write' },
+    { method: 'DELETE', re: /^\/api\/admin\/prompts\/[^/]+$/, op: 'admin.messages.write' },
 
-    // Admin prompt analytics (plan_114E)
-    { method: 'GET', re: /^\/api\/admin\/prompt-analytics$/, op: 'prompt.analytics.query' },
-    { method: 'GET', re: /^\/api\/admin\/prompt-analytics\.csv$/, op: 'prompt.analytics.query' },
+    // Admin message analytics (plan_114E / plan_130)
+    { method: 'GET', re: /^\/api\/admin\/prompt-analytics$/, op: 'message.analytics.query' },
+    { method: 'GET', re: /^\/api\/admin\/prompt-analytics\.csv$/, op: 'message.analytics.query' },
     { method: 'GET', re: /^\/api\/admin\/feed-analytics$/, op: 'feed.activity.query' },
     { method: 'GET', re: /^\/api\/admin\/analytics-sink\/health$/, op: 'analytics.sink.health' },
 
-    // Feed prompt decision (plan_114C)
+    // Feed message decision (plan_114C / plan_130)
     { method: 'GET', re: /^\/api\/feed\/global$/, op: 'feed.global.list' },
-    { method: 'POST', re: /^\/api\/feed\/prompt-decision$/, op: 'feed.prompt.decide' },
-    { method: 'GET', re: /^\/api\/feed\/prompt-decision$/, op: 'feed.prompt.decide' },
-    { method: 'GET', re: /^\/api\/feed\/prompts\/[^/]+$/, op: 'feed.prompt.fetch' },
-    { method: 'POST', re: /^\/api\/feed\/prompt-events$/, op: 'feed.prompt.event' },
+    { method: 'POST', re: /^\/api\/feed\/prompt-decision$/, op: 'feed.message.decide' },
+    { method: 'GET', re: /^\/api\/feed\/prompt-decision$/, op: 'feed.message.decide' },
+    { method: 'GET', re: /^\/api\/feed\/prompts\/[^/]+$/, op: 'feed.message.fetch' },
+    { method: 'POST', re: /^\/api\/feed\/prompt-events$/, op: 'feed.message.event' },
     { method: 'POST', re: /^\/api\/feed\/activity-events$/, op: 'feed.activity.event' },
   ]
   for (const rule of rules) {
@@ -223,9 +225,9 @@ function classifySurface(pathname: string, req: any, operation: string | null): 
     return 'assets'
   }
   if (operation?.startsWith('admin.')) return 'admin'
-  if (operation?.startsWith('prompt.analytics.')) return 'admin'
+  if (operation?.startsWith('message.analytics.')) return 'admin'
   if (operation?.startsWith('feed.global.')) return 'global_feed'
-  if (operation?.startsWith('feed.prompt.')) return 'global_feed'
+  if (operation?.startsWith('feed.message.')) return 'global_feed'
   if (operation?.startsWith('feed.activity.query')) return 'admin'
   if (operation?.startsWith('feed.activity.')) return 'global_feed'
   if (operation?.startsWith('analytics.sink.')) return 'admin'

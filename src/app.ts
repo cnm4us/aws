@@ -309,7 +309,7 @@ export function buildServer(): express.Application {
       })
     } catch (err) {
       const log = req.log || appLogger
-      log.warn({ err, path: req.path }, 'prompt_auth_complete_track_failed')
+      log.warn({ err, path: req.path }, 'message_auth_complete_track_failed')
     }
   }
 

@@ -116,9 +116,9 @@ location.reload()
 
 ## Current Event Categories
 
-### `prompt`
+### `message`
 
-In-feed message decision flow (legacy `prompt` event category):
+In-feed message decision flow:
 
 - `decision:request`
 - `decision:response`
@@ -133,7 +133,7 @@ Feed sequence engine flow:
 - `sequence_active_key_changed`
 - `sequence_window_shift`
 - `sequence_message_inserted`
-- `sequence_prompt_inserted`
+- `sequence_prompt_inserted` (legacy compatibility)
 
 ### `index`
 
@@ -142,12 +142,13 @@ Client re-anchor / active index flow:
 - `reanchor:start`
 - `reanchor:end`
 - `index:active_changed`
-- `prompt_anchor:*`
+- `message_anchor:*`
 
 ## Current DOM Debug Events
 
 `Feed.tsx` currently emits:
 
+- `feed:message-debug`
 - `feed:prompt-debug`
 - `feed:sequence-hook`
 - `feed:index-debug`
@@ -209,7 +210,7 @@ npm run serve:jaeger:log
 
 ```js
 localStorage.setItem('browser:debug', '1')
-localStorage.setItem('prompt:debug', '1')
+localStorage.setItem('message:debug', '1')
 location.reload()
 ```
 
@@ -243,7 +244,7 @@ ls -1t debug/console | head
 Example:
 
 ```json
-{"ts":"2026-03-16T23:29:58.783Z","category":"prompt","event":"decision:insert:applied", ...}
+{"ts":"2026-03-16T23:29:58.783Z","category":"message","event":"decision:insert:applied", ...}
 ```
 
 ## Guardrails
@@ -256,7 +257,7 @@ Example:
 ## Current Limitations
 
 - browser debug transport is server-mediated, not direct local file access
-- categories currently used most heavily by the feed/prompt system
+- categories currently used most heavily by the feed/message system
 - this is a debug tool, not a product analytics pipeline
 
 ## Good Use Cases

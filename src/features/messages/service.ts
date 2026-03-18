@@ -16,7 +16,7 @@ import type {
   PromptWidgetPosition,
 } from './types'
 
-const promptsLogger = getLogger({ component: 'features.prompts' })
+const messagesLogger = getLogger({ component: 'features.messages' })
 
 const STATUSES: readonly PromptStatus[] = ['draft', 'active', 'paused', 'archived']
 const BACKGROUND_MODES: readonly PromptBackgroundMode[] = ['none', 'image', 'video']
@@ -33,9 +33,9 @@ const PROMPT_TYPES: readonly PromptType[] = [
   'feature_announcement',
 ]
 
-function annotateAdminPromptWrite(row: PromptRow, detail: 'admin.prompts.create' | 'admin.prompts.update' | 'admin.prompts.clone' | 'admin.prompts.status' | 'admin.prompts.delete', actorUserId: number, extra?: Record<string, unknown>) {
-  const promptId = Number(row.id || 0)
-  const promptType = normalizePromptType((row as any).prompt_type, 'register_login')
+function annotateAdminMessageWrite(row: PromptRow, detail: 'admin.messages.create' | 'admin.messages.update' | 'admin.messages.clone' | 'admin.messages.status' | 'admin.messages.delete', actorUserId: number, extra?: Record<string, unknown>) {
+  const messageId = Number(row.id || 0)
+  const messageType = normalizePromptType((row as any).prompt_type, 'register_login')
   const appliesToSurface = normalizeSurface((row as any).applies_to_surface, 'global_feed')
   const audienceSegment = normalizeAudienceSegment((row as any).audience_segment, 'anonymous')
   const status = normalizeStatus((row as any).status, 'draft')
@@ -45,32 +45,32 @@ function annotateAdminPromptWrite(row: PromptRow, detail: 'admin.prompts.create'
 
   const span = trace.getSpan(context.active())
   if (span) {
-    span.setAttribute('app.operation', 'admin.prompts.write')
+    span.setAttribute('app.operation', 'admin.messages.write')
     span.setAttribute('app.operation_detail', detail)
-    span.setAttribute('app.prompt_id', String(promptId))
-    span.setAttribute('app.prompt_type', promptType)
+    span.setAttribute('app.message_id', String(messageId))
+    span.setAttribute('app.message_type', messageType)
     span.setAttribute('app.applies_to_surface', appliesToSurface)
     span.setAttribute('app.audience_segment', audienceSegment)
-    span.setAttribute('app.prompt_status', status)
-    span.setAttribute('app.prompt_priority', String(priority))
+    span.setAttribute('app.message_status', status)
+    span.setAttribute('app.message_priority', String(priority))
     span.setAttribute('app.outcome', 'success')
-    if (campaignKey) span.setAttribute('app.prompt_campaign_key', campaignKey)
+    if (campaignKey) span.setAttribute('app.message_campaign_key', campaignKey)
   }
 
-  promptsLogger.info(
+  messagesLogger.info(
     {
       event: detail,
-      prompt_id: promptId,
+      message_id: messageId,
       user_id: actorUserId,
-      app_operation: 'admin.prompts.write',
+      app_operation: 'admin.messages.write',
       app_operation_detail: detail,
-      app_prompt_type: promptType,
+      app_message_type: messageType,
       app_applies_to_surface: appliesToSurface,
       app_audience_segment: audienceSegment,
-      app_prompt_status: status,
-      app_prompt_priority: priority,
-      app_prompt_campaign_key: campaignKey,
-      prompt_name: name,
+      app_message_status: status,
+      app_message_priority: priority,
+      app_message_campaign_key: campaignKey,
+      message_name: name,
       ...(extra || {}),
     },
     detail
@@ -410,7 +410,7 @@ function resolveCreativeFromRow(row: PromptRow): PromptCreative {
   try {
     return normalizeCreative((row as any).creative_json, legacy)
   } catch (err: any) {
-    promptsLogger.warn({ event: 'prompts.creative.fallback', prompt_id: Number(row.id || 0), reason: String(err?.message || 'invalid_creative') }, 'prompts.creative.fallback')
+    messagesLogger.warn({ event: 'messages.creative.fallback', message_id: Number(row.id || 0), reason: String(err?.message || 'invalid_creative') }, 'messages.creative.fallback')
     return buildLegacyCreative(legacy)
   }
 }
@@ -533,7 +533,7 @@ export async function createForAdmin(input: any, actorUserId: number): Promise<P
     updatedBy: actorUserId,
   })
 
-  annotateAdminPromptWrite(row, 'admin.prompts.create', actorUserId)
+  annotateAdminMessageWrite(row, 'admin.messages.create', actorUserId)
   return mapRow(row)
 }
 
@@ -655,7 +655,7 @@ export async function updateForAdmin(id: number, patch: any, actorUserId: number
     updatedBy: actorUserId,
   })
 
-  annotateAdminPromptWrite(row, 'admin.prompts.update', actorUserId)
+  annotateAdminMessageWrite(row, 'admin.messages.update', actorUserId)
   return mapRow(row)
 }
 
@@ -687,7 +687,7 @@ export async function cloneForAdmin(id: number, actorUserId: number): Promise<Pr
     updatedBy: actorUserId,
   })
 
-  annotateAdminPromptWrite(row, 'admin.prompts.clone', actorUserId, { cloned_from_prompt_id: id })
+  annotateAdminMessageWrite(row, 'admin.messages.clone', actorUserId, { cloned_from_message_id: id })
   return mapRow(row)
 }
 
@@ -702,7 +702,7 @@ export async function updateStatusForAdmin(id: number, statusRaw: any, actorUser
     updatedBy: actorUserId,
   })
 
-  annotateAdminPromptWrite(row, 'admin.prompts.status', actorUserId)
+  annotateAdminMessageWrite(row, 'admin.messages.status', actorUserId)
   return mapRow(row)
 }
 
@@ -712,7 +712,7 @@ export async function deleteForAdmin(id: number, actorUserId: number): Promise<v
   if (!existing) throw new NotFoundError('prompt_not_found')
   const removed = await repo.remove(id)
   if (!removed) throw new NotFoundError('prompt_not_found')
-  annotateAdminPromptWrite(existing, 'admin.prompts.delete', actorUserId)
+  annotateAdminMessageWrite(existing, 'admin.messages.delete', actorUserId)
 }
 
 export async function listActiveForFeed(params?: {

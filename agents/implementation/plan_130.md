@@ -1,5 +1,7 @@
 # Plan 130: Rename Prompts to Messages
 
+Status: Complete
+
 ## Goal
 Rename the feature concept from `Prompts` to `Messages` so the system language matches current reality:
 - the feature is no longer only a login/register prompt,
@@ -63,24 +65,19 @@ Rationale:
 - Terminology cleanup in user-facing copy
 
 ## Out Of Scope (This Plan)
-- Deep DB table renames
-- Deep TypeScript module/directory rename across all backend/frontend files
-- Analytics event name migration
 - Runtime behavior changes to pacing, targeting, or sequence insertion
 
-## Current-State Recommendation
-Short term:
-- Keep internal tables and event names as-is:
-  - `feed_prompts`
-  - `prompt_decision_sessions`
-  - `feed_prompt_events`
-  - `feed_prompt_daily_stats`
-- Rename the admin/product layer to `Messages`
+## Current State
+The rename is now complete across:
+- admin/product language
+- admin routes
+- frontend and backend message modules
+- storage table names
+- telemetry and observability naming
 
-Long term:
-- Only rename internals if:
-  - prompt/message vocabulary becomes a persistent source of engineering confusion,
-  - or a broader multi-surface message platform justifies the migration cost.
+Compatibility kept:
+- legacy feed/API paths still use some `prompt-*` route segments
+- some wire payload keys still use `prompt_*` names where changing contracts was not necessary
 
 ## Implementation Strategy
 
@@ -246,6 +243,8 @@ Acceptance:
 - internal storage names are aligned and runtime remains stable
 
 #### Phase F6 — Telemetry/Event Rename
+Status: Complete
+
 - Rename remaining telemetry/event names from `prompt_*` to `message_*` where desired.
 - Update dashboards/docs accordingly.
 
@@ -256,10 +255,6 @@ Test gate:
 
 Acceptance:
 - observability naming aligns with final model
-
-Recommended default:
-- stop after Phases A-E unless there is clear engineering value in continuing
-- if proceeding, complete F1-F4 before deciding whether F5/F6 are worth the migration cost
 
 ## Route / Naming Guidance
 
@@ -279,12 +274,13 @@ Use pragmatic split:
 1. User-facing/admin labels
 - `message`
 
-2. Existing stable telemetry/storage names
-- keep current `prompt_*` names in this phase unless they are directly exposed to users
+2. Telemetry/storage names
+- use `message_*` names for spans, logs, and tables
+- keep legacy `prompt_*` payload keys only where compatibility still matters
 
 Reason:
-- observability churn is expensive and low-value here
-- admin label clarity matters more than full telemetry rename right now
+- message-first observability reduces ambiguity now that the product and storage model are also message-first
+- limited compatibility aliases avoid unnecessary client/server churn
 
 ## Risks
 - Partial rename can create mixed vocabulary (`prompt` in code, `message` in UI).
@@ -302,9 +298,9 @@ Reason:
 2. Analytics/admin pages use message-oriented labels.
 3. Existing behavior is unchanged.
 4. Legacy admin prompt URLs still work via redirect or documented alias.
-5. Internal schema and runtime remain stable unless a separate follow-up plan is approved.
+5. Internal schema, runtime module names, and observability naming are aligned to `message`.
+6. Legacy compatibility is limited to route aliases and selected wire payload keys.
 
 ## Recommendation
-Implement Phases A-E first.  
-For deep internal renames, proceed only phase-by-phase with testing after each increment.  
-Default recommendation: stop after F4 unless F5/F6 are clearly justified.
+Plan complete.  
+Future cleanup, if desired, should target remaining legacy API path segments and request payload keys.

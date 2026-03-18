@@ -1,6 +1,6 @@
 # Observability Matrix
 
-Last updated: 2026-03-10
+Last updated: 2026-03-18
 
 This matrix is the canonical lookup for **application-defined observability tags** emitted by this codebase.
 
@@ -18,6 +18,12 @@ Scope notes:
 | `app.operation_family` | `mediajobs.attempt.process` | enum | Grouping for media job operation families. |
 | `app.surface` | `create_video`, `assets`, `admin`, `global_feed`, `group_feed`, `channel_feed`, `my_feed`, `unknown` | enum | User surface derived from route/referer context. |
 | `app.outcome` | `success`, `redirect`, `client_error`, `server_error`, `success_red_00_20`, `success_red_20_40`, `success_red_40_60`, `success_red_60_80`, `success_red_80_95`, `success_red_95_100` | enum | Derived from HTTP status or explicit span outcome. Reduction buckets are emitted by `uploads.image_variant.select`. |
+| `app.message_id` | positive integer encoded as string | string | In-feed message identifier when known. |
+| `app.message_type` | `register_login`, `fund_drive`, `subscription_upgrade`, `sponsor_message`, `feature_announcement` | enum | Structured in-feed message type. |
+| `app.message_campaign_key` | slug-like string | string | Optional campaign/variant key on the message. |
+| `app.message_status` | `draft`, `active`, `paused`, `archived` | enum | Admin message status when a write operation is annotated. |
+| `app.message_priority` | integer encoded as string | string | Message priority used by selection ordering. |
+| `app.message_session_id` | non-empty string | string | Per-session message decision / analytics session id when known. |
 | `app.request.class` | `static_asset`, `probe`, `root` | enum | Set only when trace toggles include those classes. |
 | `error.class` | `validation`, `auth`, `forbidden`, `not_found`, `conflict`, `rate_limit`, `upstream`, `internal`, `client`, `timeout`, `network` | enum | Some values are route-status-derived; others from external error classification. |
 | `http.status_code` | `100..599` | integer | Set by HTTP/external spans. |
@@ -132,14 +138,14 @@ Scope notes:
 - `visualizer_presets.delete`
 - `visualizer_presets.reset`
 
-### Message / admin operations (current telemetry names)
-- `admin.prompts.list`
-- `admin.prompts.get`
-- `admin.prompts.write`
+### Message / admin operations
+- `admin.messages.list`
+- `admin.messages.get`
+- `admin.messages.write`
 - `feed.global.list`
-- `feed.prompt.decide`
-- `feed.prompt.fetch`
-- `feed.prompt.event`
+- `feed.message.decide`
+- `feed.message.fetch`
+- `feed.message.event`
 - `feed.activity.event`
 - `analytics.ingest`
 - `analytics.query`
@@ -148,8 +154,9 @@ Scope notes:
 - `analytics.sink.health`
 
 Note:
-- Product/admin terminology is now `Message` / `In-Feed Message`.
-- Current telemetry and storage still use legacy `prompt_*` names until later rename phases.
+- Product/admin terminology is `Message` / `In-Feed Message`.
+- Table names and telemetry names are message-first.
+- Some request payload fields and analytics event payload keys still use legacy `prompt_*` names for compatibility.
 
 ### Media job operations
 - `create_video.export.process`
@@ -174,16 +181,16 @@ Note:
 - `feed.activity.ingest`
 - `feed.activity.query`
 - `feed.activity.rollup`
-- `feed.prompt.render`
-- `feed.prompt.click`
-- `feed.prompt.pass_through`
-- `feed.prompt.dismiss` (legacy compatibility)
-- `feed.prompt.auth_start`
-- `feed.prompt.auth_complete`
-- `prompt.analytics.ingest`
-- `prompt.analytics.query`
-- `prompt.analytics.query.csv`
-- `prompt.analytics.rollup`
+- `feed.message.render`
+- `feed.message.click`
+- `feed.message.pass_through`
+- `feed.message.dismiss` (legacy compatibility)
+- `feed.message.auth_start`
+- `feed.message.auth_complete`
+- `message.analytics.ingest`
+- `message.analytics.query`
+- `message.analytics.query.csv`
+- `message.analytics.rollup`
 - `analytics.sink.health`
 
 ## `subprocess.purpose` Catalog

@@ -13,14 +13,14 @@ export type ClientDebugEventPayload = {
   level: ClientDebugLevel
   path: string
   browser_session_id: string
-  prompt_session_id?: string | null
+  message_session_id?: string | null
   user_id?: number | null
   payload?: Record<string, any> | null
 }
 
 export type ClientDebugContext = {
   path: string
-  promptSessionId?: string | null
+  messageSessionId?: string | null
   userId?: number | null
   surface?: string | null
   spaceId?: number | null
@@ -184,7 +184,7 @@ export function installClientDebugDomBridges(
       level: 'debug',
       path: ctx.path,
       browser_session_id: browserSessionId,
-      prompt_session_id: ctx.promptSessionId || null,
+      message_session_id: ctx.messageSessionId || null,
       user_id: ctx.userId ?? null,
       payload: {
         surface: ctx.surface || null,

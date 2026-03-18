@@ -19,7 +19,7 @@ import { getLogger } from '../lib/logger'
 
 export const feedMessagesRouter = Router()
 const feedMessagesLogger = getLogger({ component: 'routes.feed_messages' })
-const PROMPT_DEBUG_ENABLED = String(process.env.PROMPT_DEBUG || '0') === '1'
+const MESSAGE_DEBUG_ENABLED = String(process.env.MESSAGE_DEBUG || process.env.PROMPT_DEBUG || '0') === '1'
 
 let globalSubscriptionSpaceCache: { spaceId: number | null; expiresAtMs: number } = { spaceId: null, expiresAtMs: 0 }
 
@@ -90,7 +90,7 @@ async function handleDecision(req: any, res: any, next: any) {
     }
 
     let includeDebug = false
-    if (String(process.env.PROMPT_DEBUG || '0') === '1' && req.user?.id) {
+    if (String(process.env.MESSAGE_DEBUG || process.env.PROMPT_DEBUG || '0') === '1' && req.user?.id) {
       try {
         includeDebug = await can(Number(req.user.id), PERM.VIDEO_DELETE_ANY)
       } catch {
@@ -100,33 +100,33 @@ async function handleDecision(req: any, res: any, next: any) {
 
     const decision = await decideMessage(input, { includeDebug })
 
-    if (PROMPT_DEBUG_ENABLED) {
+    if (MESSAGE_DEBUG_ENABLED) {
       ;(req.log || feedMessagesLogger).debug(
         {
           app_surface: input.surface,
-          app_operation: 'feed.prompt.decide',
+          app_operation: 'feed.message.decide',
           audience_segment: audienceSegment,
           session_id: input.sessionId,
           counters: input.counters,
           decision: {
             should_insert: decision.shouldInsert,
-            prompt_id: decision.promptId,
+            message_id: decision.promptId,
             reason_code: decision.reasonCode,
           },
           decision_debug: decision.debug || null,
         },
-        'prompt.decision.debug'
+        'message.decision.debug'
       )
     }
 
     const span = trace.getSpan(context.active())
     if (span) {
       span.setAttribute('app.surface', 'global_feed')
-      span.setAttribute('app.operation', 'feed.prompt.decide')
+      span.setAttribute('app.operation', 'feed.message.decide')
       span.setAttribute('app.audience_segment', audienceSegment)
       span.setAttribute('app.decision_reason', decision.reasonCode)
       span.setAttribute('app.outcome', decision.shouldInsert ? 'shown' : 'blocked')
-      if (decision.promptId != null) span.setAttribute('app.prompt_id', String(decision.promptId))
+      if (decision.promptId != null) span.setAttribute('app.message_id', String(decision.promptId))
     }
 
     return res.json({
@@ -243,9 +243,9 @@ feedMessagesRouter.get('/api/feed/prompts/:id', async (req: any, res: any, next:
     const span = trace.getSpan(context.active())
     if (span) {
       span.setAttribute('app.surface', 'global_feed')
-      span.setAttribute('app.operation', 'feed.prompt.fetch')
-      span.setAttribute('app.prompt_id', String(prompt.id))
-      span.setAttribute('app.prompt_type', String((prompt as any).promptType || 'register_login'))
+      span.setAttribute('app.operation', 'feed.message.fetch')
+      span.setAttribute('app.message_id', String(prompt.id))
+      span.setAttribute('app.message_type', String((prompt as any).promptType || 'register_login'))
       span.setAttribute('app.outcome', 'shown')
     }
 
@@ -294,12 +294,12 @@ feedMessagesRouter.post('/api/feed/prompt-events', async (req: any, res: any, ne
     })
 
     const opByEvent: Record<string, string> = {
-      impression: 'feed.prompt.render',
-      click: 'feed.prompt.click',
-      pass_through: 'feed.prompt.pass_through',
-      dismiss: 'feed.prompt.dismiss',
-      auth_start: 'feed.prompt.auth_start',
-      auth_complete: 'feed.prompt.auth_complete',
+      impression: 'feed.message.render',
+      click: 'feed.message.click',
+      pass_through: 'feed.message.pass_through',
+      dismiss: 'feed.message.dismiss',
+      auth_start: 'feed.message.auth_start',
+      auth_complete: 'feed.message.auth_complete',
     }
     const outcomeByEvent: Record<string, string> = {
       impression: 'shown',
@@ -314,28 +314,28 @@ feedMessagesRouter.post('/api/feed/prompt-events', async (req: any, res: any, ne
     if (span) {
       span.setAttribute('app.surface', tracked.surface)
       span.setAttribute('app.operation', 'analytics.ingest')
-      span.setAttribute('app.operation_detail', opByEvent[tracked.inputEvent] || 'feed.prompt.event')
-      span.setAttribute('app.prompt_id', String(tracked.promptId))
+      span.setAttribute('app.operation_detail', opByEvent[tracked.inputEvent] || 'feed.message.event')
+      span.setAttribute('app.message_id', String(tracked.promptId))
       span.setAttribute('app.outcome', outcomeByEvent[tracked.inputEvent] || 'shown')
-      if (sessionId) span.setAttribute('app.prompt_session_id', sessionId)
+      if (sessionId) span.setAttribute('app.message_session_id', sessionId)
     }
 
     ;(req.log || feedMessagesLogger).info(
       {
         app_surface: tracked.surface,
         app_operation: 'analytics.ingest',
-        app_operation_detail: opByEvent[tracked.inputEvent] || 'feed.prompt.event',
+        app_operation_detail: opByEvent[tracked.inputEvent] || 'feed.message.event',
         app_outcome: outcomeByEvent[tracked.inputEvent] || 'shown',
-        prompt_id: tracked.promptId,
-        prompt_campaign_key: promptCampaignKey,
+        message_id: tracked.promptId,
+        message_campaign_key: promptCampaignKey,
         cta_kind: ctaKind,
-        prompt_session_id: sessionId,
-        prompt_event_type: tracked.eventType,
-        prompt_event_deduped: !tracked.inserted,
-        prompt_event_attributed: tracked.attributed,
+        message_session_id: sessionId,
+        message_event_type: tracked.eventType,
+        message_event_deduped: !tracked.inserted,
+        message_event_attributed: tracked.attributed,
         viewer_user_id: req.user?.id ? Number(req.user.id) : null,
       },
-      'feed.prompt.event'
+      'feed.message.event'
     )
 
     return res.json({

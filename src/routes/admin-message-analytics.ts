@@ -21,7 +21,7 @@ adminMessageAnalyticsRouter.get('/api/admin/prompt-analytics', async (req, res, 
     const span = trace.getSpan(context.active())
     if (span) {
       span.setAttribute('app.operation', 'analytics.query')
-      span.setAttribute('app.operation_detail', 'prompt.analytics.query')
+      span.setAttribute('app.operation_detail', 'message.analytics.query')
       span.setAttribute('app.surface', 'admin')
       span.setAttribute('app.outcome', 'success')
     }
@@ -46,11 +46,11 @@ adminMessageAnalyticsRouter.get('/api/admin/prompt-analytics.csv', async (req, r
     const span = trace.getSpan(context.active())
     if (span) {
       span.setAttribute('app.operation', 'analytics.query')
-      span.setAttribute('app.operation_detail', 'prompt.analytics.query.csv')
+      span.setAttribute('app.operation_detail', 'message.analytics.query.csv')
       span.setAttribute('app.surface', 'admin')
       span.setAttribute('app.outcome', 'success')
     }
-    const filename = `prompt-analytics-${report.range.fromDate}_to_${report.range.toDate}.csv`
+    const filename = `message-analytics-${report.range.fromDate}_to_${report.range.toDate}.csv`
     res.setHeader('Content-Type', 'text/csv; charset=utf-8')
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
     return res.send(csv)

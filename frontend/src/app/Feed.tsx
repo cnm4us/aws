@@ -755,7 +755,7 @@ export default function Feed() {
   const messageDecisionLastContentKeyRef = useRef<string | null>(null)
   const browserDebugContextRef = useRef<{
     path: string
-    promptSessionId: string | null
+    messageSessionId: string | null
     userId: number | null
     surface: string | null
     spaceId: number | null
@@ -764,7 +764,7 @@ export default function Feed() {
     spaceName: string | null
   }>({
     path: typeof window !== 'undefined' ? `${window.location.pathname || '/'}${window.location.search || ''}` : '/',
-    promptSessionId: null,
+    messageSessionId: null,
     userId: null,
     surface: null,
     spaceId: null,
@@ -1078,7 +1078,7 @@ export default function Feed() {
   useEffect(() => {
     browserDebugContextRef.current = {
       path: typeof window !== 'undefined' ? `${window.location.pathname || '/'}${window.location.search || ''}` : '/',
-      promptSessionId: messageSessionId,
+      messageSessionId,
       userId: myUserId,
       surface: feedActivityContext?.surface || null,
       spaceId: feedActivityContext?.spaceId ?? null,
@@ -1091,8 +1091,8 @@ export default function Feed() {
   useEffect(() => {
     return installClientDebugDomBridges(
       [
-        { domEventName: 'feed:message-debug', category: 'prompt' },
-        { domEventName: 'feed:prompt-debug', category: 'prompt' },
+        { domEventName: 'feed:message-debug', category: 'message' },
+        { domEventName: 'feed:prompt-debug', category: 'message' },
         { domEventName: 'feed:sequence-hook', category: 'sequence' },
         { domEventName: 'feed:index-debug', category: 'index' },
       ],
@@ -2705,7 +2705,7 @@ export default function Feed() {
             return acc
           }, [])
           const sequenceKeyAtResolvedIndex = activeIdxBySequenceKey != null ? computeSequenceKeyForListAtIndex(prev, activeIdxBySequenceKey) : null
-          emitIndexDebug('prompt_anchor:resolved', {
+          emitIndexDebug('message_anchor:resolved', {
             message_id: message.id,
             active_content_key: activeContentKey,
             active_sequence_key: activeAnchorSequenceKey,
@@ -2763,7 +2763,7 @@ export default function Feed() {
           ]
           const nextActiveIdx = computeSequenceIndexByKeyForList(next, activeAnchorSequenceKey)
           const nextActiveIdxById = next.findIndex((it) => Number(it.id) === activeSlideId)
-          emitIndexDebug('prompt_anchor:next_index', {
+          emitIndexDebug('message_anchor:next_index', {
             message_id: message.id,
             active_content_key: activeContentKey,
             active_sequence_key: activeAnchorSequenceKey,
@@ -2775,7 +2775,7 @@ export default function Feed() {
             next_length: next.length,
           })
           if (nextActiveIdx >= 0) {
-            emitIndexDebug('prompt_anchor:set_index', {
+            emitIndexDebug('message_anchor:set_index', {
               message_id: message.id,
               active_content_key: activeContentKey,
               active_sequence_key: activeAnchorSequenceKey,
