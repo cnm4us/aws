@@ -2,11 +2,11 @@ import { Router } from 'express'
 import { requireAuth, requireSiteAdmin } from '../middleware/auth'
 import * as messagesSvc from '../features/messages/service'
 
-export const adminPromptsRouter = Router()
+export const adminMessagesRouter = Router()
 
-adminPromptsRouter.use('/api/admin/prompts', requireAuth, requireSiteAdmin)
+adminMessagesRouter.use('/api/admin/prompts', requireAuth, requireSiteAdmin)
 
-adminPromptsRouter.get('/api/admin/prompts', async (req, res, next) => {
+adminMessagesRouter.get('/api/admin/prompts', async (req, res, next) => {
   try {
     const includeArchived = String(req.query?.include_archived || '0') === '1'
     const limitRaw = req.query?.limit ? Number(req.query.limit) : undefined
@@ -25,7 +25,7 @@ adminPromptsRouter.get('/api/admin/prompts', async (req, res, next) => {
   }
 })
 
-adminPromptsRouter.post('/api/admin/prompts', async (req, res, next) => {
+adminMessagesRouter.post('/api/admin/prompts', async (req, res, next) => {
   try {
     const prompt = await messagesSvc.createMessageForAdmin(req.body || {}, Number(req.user?.id || 0))
     return res.status(201).json({ prompt })
@@ -34,7 +34,7 @@ adminPromptsRouter.post('/api/admin/prompts', async (req, res, next) => {
   }
 })
 
-adminPromptsRouter.get('/api/admin/prompts/:id', async (req, res, next) => {
+adminMessagesRouter.get('/api/admin/prompts/:id', async (req, res, next) => {
   try {
     const id = Number(req.params.id)
     if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'bad_id' })
@@ -45,7 +45,7 @@ adminPromptsRouter.get('/api/admin/prompts/:id', async (req, res, next) => {
   }
 })
 
-adminPromptsRouter.patch('/api/admin/prompts/:id', async (req, res, next) => {
+adminMessagesRouter.patch('/api/admin/prompts/:id', async (req, res, next) => {
   try {
     const id = Number(req.params.id)
     if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'bad_id' })
@@ -56,7 +56,7 @@ adminPromptsRouter.patch('/api/admin/prompts/:id', async (req, res, next) => {
   }
 })
 
-adminPromptsRouter.post('/api/admin/prompts/:id/clone', async (req, res, next) => {
+adminMessagesRouter.post('/api/admin/prompts/:id/clone', async (req, res, next) => {
   try {
     const id = Number(req.params.id)
     if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'bad_id' })
@@ -67,7 +67,7 @@ adminPromptsRouter.post('/api/admin/prompts/:id/clone', async (req, res, next) =
   }
 })
 
-adminPromptsRouter.post('/api/admin/prompts/:id/status', async (req, res, next) => {
+adminMessagesRouter.post('/api/admin/prompts/:id/status', async (req, res, next) => {
   try {
     const id = Number(req.params.id)
     if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'bad_id' })

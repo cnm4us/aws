@@ -17,8 +17,8 @@ import * as messageAnalyticsSvc from '../features/message-analytics/service'
 import * as spacesRepo from '../features/spaces/repo'
 import { getLogger } from '../lib/logger'
 
-export const feedPromptsRouter = Router()
-const feedPromptsLogger = getLogger({ component: 'routes.feed_prompts' })
+export const feedMessagesRouter = Router()
+const feedMessagesLogger = getLogger({ component: 'routes.feed_messages' })
 const PROMPT_DEBUG_ENABLED = String(process.env.PROMPT_DEBUG || '0') === '1'
 
 let globalSubscriptionSpaceCache: { spaceId: number | null; expiresAtMs: number } = { spaceId: null, expiresAtMs: 0 }
@@ -101,7 +101,7 @@ async function handleDecision(req: any, res: any, next: any) {
     const decision = await decideMessage(input, { includeDebug })
 
     if (PROMPT_DEBUG_ENABLED) {
-      ;(req.log || feedPromptsLogger).debug(
+      ;(req.log || feedMessagesLogger).debug(
         {
           app_surface: input.surface,
           app_operation: 'feed.prompt.decide',
@@ -142,10 +142,10 @@ async function handleDecision(req: any, res: any, next: any) {
   }
 }
 
-feedPromptsRouter.post('/api/feed/prompt-decision', handleDecision)
-feedPromptsRouter.get('/api/feed/prompt-decision', handleDecision)
+feedMessagesRouter.post('/api/feed/prompt-decision', handleDecision)
+feedMessagesRouter.get('/api/feed/prompt-decision', handleDecision)
 
-feedPromptsRouter.get('/api/feed/prompts/:id', async (req: any, res: any, next: any) => {
+feedMessagesRouter.get('/api/feed/prompts/:id', async (req: any, res: any, next: any) => {
   try {
     const id = Number(req.params.id)
     if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'bad_id' })
@@ -269,7 +269,7 @@ feedPromptsRouter.get('/api/feed/prompts/:id', async (req: any, res: any, next: 
   }
 })
 
-feedPromptsRouter.post('/api/feed/prompt-events', async (req: any, res: any, next: any) => {
+feedMessagesRouter.post('/api/feed/prompt-events', async (req: any, res: any, next: any) => {
   try {
     const body = (req.body || {}) as any
     const promptCampaignKey = body.prompt_campaign_key ? String(body.prompt_campaign_key) : (body.prompt_category ? String(body.prompt_category) : null)
@@ -320,7 +320,7 @@ feedPromptsRouter.post('/api/feed/prompt-events', async (req: any, res: any, nex
       if (sessionId) span.setAttribute('app.prompt_session_id', sessionId)
     }
 
-    ;(req.log || feedPromptsLogger).info(
+    ;(req.log || feedMessagesLogger).info(
       {
         app_surface: tracked.surface,
         app_operation: 'analytics.ingest',

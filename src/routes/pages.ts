@@ -3903,12 +3903,12 @@ function renderAdminPromptForm(opts: {
   if (opts.showClone && id) {
     body += `<div class="section"><div class="section-title">Actions</div>`
     body += `<div style="display:flex; gap:8px; flex-wrap:wrap">`
-    body += `<form method="post" action="/admin/prompts/${id}/clone" style="margin:0">`
+    body += `<form method="post" action="/admin/messages/${id}/clone" style="margin:0">`
     if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
     body += `<button class="btn" type="submit">Clone</button></form>`
     for (const s of ['draft', 'active', 'paused', 'archived']) {
       if (String(values.status || '') === s) continue
-      body += `<form method="post" action="/admin/prompts/${id}/status" style="margin:0">`
+      body += `<form method="post" action="/admin/messages/${id}/status" style="margin:0">`
       if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
       body += `<input type="hidden" name="status" value="${escapeHtml(s)}" />`
       body += `<button class="btn" type="submit">Set ${escapeHtml(s)}</button></form>`

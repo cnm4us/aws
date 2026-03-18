@@ -210,6 +210,8 @@ Acceptance:
 - service/module naming aligns with product language while schema remains stable
 
 #### Phase F4 — Route Rename + Compatibility Redirects
+Status: Complete
+
 - Make message routes primary:
   - `/admin/messages`
   - `/admin/message-analytics`

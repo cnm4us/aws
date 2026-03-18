@@ -3,11 +3,11 @@ import { context, trace } from '@opentelemetry/api'
 import { requireAuth, requireSiteAdmin } from '../middleware/auth'
 import * as messageAnalyticsSvc from '../features/message-analytics/service'
 
-export const adminPromptAnalyticsRouter = Router()
+export const adminMessageAnalyticsRouter = Router()
 
-adminPromptAnalyticsRouter.use('/api/admin/prompt-analytics', requireAuth, requireSiteAdmin)
+adminMessageAnalyticsRouter.use('/api/admin/prompt-analytics', requireAuth, requireSiteAdmin)
 
-adminPromptAnalyticsRouter.get('/api/admin/prompt-analytics', async (req, res, next) => {
+adminMessageAnalyticsRouter.get('/api/admin/prompt-analytics', async (req, res, next) => {
   try {
     const report = await messageAnalyticsSvc.getMessageAnalyticsReportForAdmin({
       fromDate: req.query?.from,
@@ -31,7 +31,7 @@ adminPromptAnalyticsRouter.get('/api/admin/prompt-analytics', async (req, res, n
   }
 })
 
-adminPromptAnalyticsRouter.get('/api/admin/prompt-analytics.csv', async (req, res, next) => {
+adminMessageAnalyticsRouter.get('/api/admin/prompt-analytics.csv', async (req, res, next) => {
   try {
     const report = await messageAnalyticsSvc.getMessageAnalyticsReportForAdmin({
       fromDate: req.query?.from,
