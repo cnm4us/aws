@@ -177,6 +177,8 @@ Acceptance:
 - engineering-facing language starts converging without runtime churn
 
 #### Phase F2 — Frontend Rename Layer
+Status: Complete
+
 - Rename frontend-facing prompt types/functions/modules to message terminology where practical.
 - Preserve wire compatibility if needed for one phase.
 - Keep backend storage/runtime names stable.

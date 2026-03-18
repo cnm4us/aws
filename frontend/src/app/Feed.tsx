@@ -36,11 +36,11 @@ type UploadItem = {
   hasStory?: boolean | null
   storyPreview?: string | null
   hasCaptions?: boolean | null
-  itemType?: 'video' | 'prompt'
-  prompt?: FeedPromptPayload | null
+  itemType?: 'video' | 'message'
+  message?: FeedMessagePayload | null
 }
 
-type FeedPromptPayload = {
+type FeedMessagePayload = {
   id: number
   campaignKey: string | null
   backgroundMode: 'none' | 'image' | 'video'
@@ -89,8 +89,13 @@ function feedSequenceHeader(tag?: FeedSequenceEngineTag): Record<string, string>
   return { [FEED_SEQUENCE_ENGINE_HEADER]: tag }
 }
 
-function isPromptDebugEnabled(): boolean {
+function isMessageDebugEnabled(): boolean {
   return isClientDebugEnabled({
+    envFlag: 'VITE_MESSAGE_DEBUG',
+    queryParam: 'message_debug',
+    storageKey: 'message:debug',
+    globalFlag: '__MESSAGE_DEBUG__',
+  }) || isClientDebugEnabled({
     envFlag: 'VITE_PROMPT_DEBUG',
     queryParam: 'prompt_debug',
     storageKey: 'prompt:debug',
@@ -98,16 +103,21 @@ function isPromptDebugEnabled(): boolean {
   })
 }
 
-function emitPromptDebug(name: string, detail?: Record<string, any>) {
+function emitMessageDebug(name: string, detail?: Record<string, any>) {
+  const enabled = isMessageDebugEnabled()
+  dispatchClientDebugDomEvent('feed:message-debug', name, detail, {
+    enabled,
+    consoleLabel: '[message-debug]',
+  })
   dispatchClientDebugDomEvent('feed:prompt-debug', name, detail, {
-    enabled: isPromptDebugEnabled(),
+    enabled,
     consoleLabel: '[prompt-debug]',
   })
 }
 
 function emitIndexDebug(name: string, detail?: Record<string, any>) {
   dispatchClientDebugDomEvent('feed:index-debug', name, detail, {
-    enabled: isClientDebugEnabled({ storageKey: 'browser:debug', queryParam: 'browser_debug', globalFlag: '__BROWSER_DEBUG__' }) || isPromptDebugEnabled(),
+    enabled: isClientDebugEnabled({ storageKey: 'browser:debug', queryParam: 'browser_debug', globalFlag: '__BROWSER_DEBUG__' }) || isMessageDebugEnabled(),
     consoleLabel: '[index-debug]',
   })
 }
@@ -145,7 +155,7 @@ type FeedMode =
   | { kind: 'global' }
   | { kind: 'space'; spaceId: number; spaceUlid?: string | null }
 
-type SequenceKind = 'content' | 'prompt'
+type SequenceKind = 'content' | 'message'
 type SequenceItem = {
   sequenceKey: string
   baseKey: string
@@ -157,6 +167,7 @@ type SequenceHookName =
   | 'sequence_active_key_changed'
   | 'sequence_window_shift'
   | 'sequence_prompt_inserted'
+  | 'sequence_message_inserted'
 
 const FEED_RENDER_WINDOW_BEHIND = 2
 const FEED_RENDER_WINDOW_AHEAD = 4
@@ -229,7 +240,7 @@ function clampNum(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value))
 }
 
-function promptWidgetPlacement(
+function messageWidgetPlacement(
   position: 'top' | 'middle' | 'bottom',
   offsetPct: number,
   mode: 'message' | 'auth'
@@ -366,14 +377,14 @@ async function fetchGlobalFeed(opts: {
   return { items, nextCursor }
 }
 
-async function fetchPromptById(promptId: number): Promise<FeedPromptPayload> {
+async function fetchMessageById(promptId: number): Promise<FeedMessagePayload> {
   const id = Number(promptId)
   if (!Number.isFinite(id) || id <= 0) throw new Error('bad_prompt_id')
   const orientation: 'portrait' | 'landscape' =
     typeof window !== 'undefined' && window.innerWidth > window.innerHeight ? 'landscape' : 'portrait'
   const dpr = typeof window !== 'undefined' && Number.isFinite(window.devicePixelRatio) ? window.devicePixelRatio : 1
-  const promptUrl = `/api/feed/prompts/${encodeURIComponent(String(id))}?orientation=${encodeURIComponent(orientation)}&dpr=${encodeURIComponent(String(dpr))}`
-  const res = await fetch(promptUrl, { credentials: 'same-origin' })
+  const messageUrl = `/api/feed/prompts/${encodeURIComponent(String(id))}?orientation=${encodeURIComponent(orientation)}&dpr=${encodeURIComponent(String(dpr))}`
+  const res = await fetch(messageUrl, { credentials: 'same-origin' })
   if (!res.ok) throw new Error('failed_to_fetch_prompt')
   const payload = await res.json()
   const p = payload?.prompt
@@ -437,10 +448,10 @@ async function fetchPromptById(promptId: number): Promise<FeedPromptPayload> {
   }
 }
 
-async function sendPromptEvent(input: {
+async function sendMessageEvent(input: {
   event: 'impression' | 'click' | 'pass_through' | 'auth_start' | 'auth_complete'
-  promptId: number
-  promptCampaignKey: string | null
+  messageId: number
+  messageCampaignKey: string | null
   sessionId: string | null
   ctaKind?: 'primary' | 'secondary'
 }, opts?: { sequenceEngineTag?: FeedSequenceEngineTag }) {
@@ -456,8 +467,8 @@ async function sendPromptEvent(input: {
       body: JSON.stringify({
         event: input.event,
         surface: 'global_feed',
-        prompt_id: input.promptId,
-        prompt_campaign_key: input.promptCampaignKey,
+        prompt_id: input.messageId,
+        prompt_campaign_key: input.messageCampaignKey,
         session_id: input.sessionId,
         cta_kind: input.ctaKind || null,
       }),
@@ -523,14 +534,14 @@ function applyMineFilter(items: UploadItem[], mineOnly: boolean, myUserId: numbe
   return items.filter((it) => it.ownerId === myUserId)
 }
 
-function isPromptItem(it: UploadItem | null | undefined): boolean {
+function isMessageItem(it: UploadItem | null | undefined): boolean {
   if (!it) return false
-  return Boolean(it.prompt && it.itemType === 'prompt')
+  return Boolean(it.message && it.itemType === 'message')
 }
 
 function computeSequenceBaseKey(it: UploadItem): string {
-  if (isPromptItem(it)) {
-    const pid = it.prompt?.id != null ? Number(it.prompt.id) : 0
+  if (isMessageItem(it)) {
+    const pid = it.message?.id != null ? Number(it.message.id) : 0
     return `prompt:${pid}:${String(it.id)}`
   }
   const vid = (it as any).videoId ? String((it as any).videoId) : null
@@ -568,7 +579,7 @@ function computeSequenceIndexByKeyForList(list: UploadItem[], targetKey: string 
 }
 
 function computeContentDecisionKey(item: UploadItem | null | undefined, activeSequenceKey: string | null | undefined): string | null {
-  if (!item || isPromptItem(item)) return null
+  if (!item || isMessageItem(item)) return null
   if (activeSequenceKey) return `seq:${activeSequenceKey}`
   const publicationId = item.publicationId != null ? Number(item.publicationId) : null
   if (publicationId != null && Number.isFinite(publicationId) && publicationId > 0) return `pub:${publicationId}`
@@ -729,7 +740,7 @@ export default function Feed() {
   const itemsFeedKeyRef = useRef<string>('')
   const indexReasonRef = useRef<string>('initial')
   const [commentsSortOpen, setCommentsSortOpen] = useState(false)
-  const [promptSessionId, setPromptSessionId] = useState<string | null>(null)
+  const [messageSessionId, setMessageSessionId] = useState<string | null>(null)
   const [feedActivitySessionId, setFeedActivitySessionId] = useState<string | null>(null)
   const [activeSequenceKey, setActiveSequenceKey] = useState<string | null>(null)
   const feedActivitySessionIdRef = useRef<string | null>(null)
@@ -740,8 +751,8 @@ export default function Feed() {
     spaceSlug: string | null
     spaceName: string | null
   } | null>(null)
-  const promptDecisionBusyRef = useRef<boolean>(false)
-  const promptDecisionLastContentKeyRef = useRef<string | null>(null)
+  const messageDecisionBusyRef = useRef<boolean>(false)
+  const messageDecisionLastContentKeyRef = useRef<string | null>(null)
   const browserDebugContextRef = useRef<{
     path: string
     promptSessionId: string | null
@@ -761,12 +772,12 @@ export default function Feed() {
     spaceSlug: null,
     spaceName: null,
   })
-  const promptSeenImpressionRef = useRef<Set<string>>(new Set())
-  const promptSeenPassThroughRef = useRef<Set<string>>(new Set())
-  const activePromptExposureRef = useRef<{
+  const messageSeenImpressionRef = useRef<Set<string>>(new Set())
+  const messageSeenPassThroughRef = useRef<Set<string>>(new Set())
+  const activeMessageExposureRef = useRef<{
     sequenceKey: string
-    promptId: number
-    promptCampaignKey: string | null
+    messageId: number
+    messageCampaignKey: string | null
     visibleAtMs: number
     clicked: boolean
     completed: boolean
@@ -776,18 +787,18 @@ export default function Feed() {
   const feedActivitySeenImpressionRef = useRef<Set<number>>(new Set())
   const feedActivitySeenCompleteRef = useRef<Set<number>>(new Set())
   const feedActivityWatchSecondsRef = useRef<number>(0)
-  const promptCountersRef = useRef<{
+  const messageCountersRef = useRef<{
     slidesViewed: number
     watchSeconds: number
-    promptsShown: number
+    messagesShown: number
     slidesSinceLastPrompt: number
-    lastPromptId: number | null
+    lastMessageId: number | null
   }>({
     slidesViewed: 0,
     watchSeconds: 0,
-    promptsShown: 0,
+    messagesShown: 0,
     slidesSinceLastPrompt: 999,
-    lastPromptId: null,
+    lastMessageId: null,
   })
   const lastCountedContentKeyRef = useRef<string | null>(null)
   const sequenceSyncOriginRef = useRef<'index' | 'key' | null>(null)
@@ -806,7 +817,7 @@ export default function Feed() {
       return {
         sequenceKey,
         baseKey,
-        kind: isPromptItem(item) ? 'prompt' : 'content',
+        kind: isMessageItem(item) ? 'message' : 'content',
         item,
         sourceIndex,
       }
@@ -970,19 +981,24 @@ export default function Feed() {
 
   useEffect(() => {
     if (!sequenceEngineV1Enabled) return
-    const promptItems = sequenceItems.filter((seq) => seq.kind === 'prompt')
-    const nextSet = new Set(promptItems.map((seq) => seq.sequenceKey))
+    const messageItems = sequenceItems.filter((seq) => seq.kind === 'message')
+    const nextSet = new Set(messageItems.map((seq) => seq.sequenceKey))
     if (!sequenceHookReadyRef.current) {
       seenPromptSequenceKeysRef.current = nextSet
       sequenceHookReadyRef.current = true
       return
     }
     const prevSet = seenPromptSequenceKeysRef.current
-    for (const seq of promptItems) {
+    for (const seq of messageItems) {
       if (prevSet.has(seq.sequenceKey)) continue
+      emitSequenceHook('sequence_message_inserted', {
+        sequence_key: seq.sequenceKey,
+        message_id: seq.item.message?.id ?? null,
+        source_index: seq.sourceIndex,
+      })
       emitSequenceHook('sequence_prompt_inserted', {
         sequence_key: seq.sequenceKey,
-        prompt_id: seq.item.prompt?.id ?? null,
+        prompt_id: seq.item.message?.id ?? null,
         source_index: seq.sourceIndex,
       })
     }
@@ -1062,7 +1078,7 @@ export default function Feed() {
   useEffect(() => {
     browserDebugContextRef.current = {
       path: typeof window !== 'undefined' ? `${window.location.pathname || '/'}${window.location.search || ''}` : '/',
-      promptSessionId,
+      promptSessionId: messageSessionId,
       userId: myUserId,
       surface: feedActivityContext?.surface || null,
       spaceId: feedActivityContext?.spaceId ?? null,
@@ -1070,11 +1086,12 @@ export default function Feed() {
       spaceSlug: feedActivityContext?.spaceSlug || null,
       spaceName: feedActivityContext?.spaceName || null,
     }
-  }, [feedActivityContext, myUserId, promptSessionId])
+  }, [feedActivityContext, myUserId, messageSessionId])
 
   useEffect(() => {
     return installClientDebugDomBridges(
       [
+        { domEventName: 'feed:message-debug', category: 'prompt' },
         { domEventName: 'feed:prompt-debug', category: 'prompt' },
         { domEventName: 'feed:sequence-hook', category: 'sequence' },
         { domEventName: 'feed:index-debug', category: 'index' },
@@ -1086,7 +1103,7 @@ export default function Feed() {
             storageKey: 'browser:debug',
             queryParam: 'browser_debug',
             globalFlag: '__BROWSER_DEBUG__',
-          }) || isPromptDebugEnabled(),
+          }) || isMessageDebugEnabled(),
       }
     )
   }, [])
@@ -2313,42 +2330,42 @@ export default function Feed() {
     return 'none'
   }
 
-  const handlePromptCtaClick = useCallback((prompt: FeedPromptPayload, href: string, ctaKind: 'primary' | 'secondary') => {
+  const handleMessageCtaClick = useCallback((message: FeedMessagePayload, href: string, ctaKind: 'primary' | 'secondary') => {
     const targetHref = String(href || '').trim()
     if (!targetHref) return
-    const activeExposure = activePromptExposureRef.current
-    if (activeExposure && activeExposure.promptId === Number(prompt.id)) {
+    const activeExposure = activeMessageExposureRef.current
+    if (activeExposure && activeExposure.messageId === Number(message.id)) {
       activeExposure.clicked = true
     }
-    void sendPromptEvent({
+    void sendMessageEvent({
       event: 'click',
-      promptId: prompt.id,
-      promptCampaignKey: prompt.campaignKey || null,
-      sessionId: promptSessionId,
+      messageId: message.id,
+      messageCampaignKey: message.campaignKey || null,
+      sessionId: messageSessionId,
       ctaKind,
     }, { sequenceEngineTag: feedSequenceEngineTag })
     const lowerHref = targetHref.toLowerCase()
     if (lowerHref.startsWith('/register') || lowerHref.startsWith('/login')) {
-      void sendPromptEvent({
+      void sendMessageEvent({
         event: 'auth_start',
-        promptId: prompt.id,
-        promptCampaignKey: prompt.campaignKey || null,
-        sessionId: promptSessionId,
+        messageId: message.id,
+        messageCampaignKey: message.campaignKey || null,
+        sessionId: messageSessionId,
       }, { sequenceEngineTag: feedSequenceEngineTag })
     }
     try {
       const url = new URL(targetHref, window.location.origin)
       if (url.origin === window.location.origin) {
-        url.searchParams.set('prompt_id', String(prompt.id))
-        if (prompt.campaignKey) url.searchParams.set('prompt_campaign_key', prompt.campaignKey)
-        if (promptSessionId) url.searchParams.set('prompt_session_id', promptSessionId)
+        url.searchParams.set('prompt_id', String(message.id))
+        if (message.campaignKey) url.searchParams.set('prompt_campaign_key', message.campaignKey)
+        if (messageSessionId) url.searchParams.set('prompt_session_id', messageSessionId)
         url.searchParams.set('prompt_cta_kind', ctaKind)
         window.location.href = `${url.pathname}${url.search}${url.hash || ''}`
         return
       }
     } catch {}
     window.location.href = targetHref
-  }, [promptSessionId, feedSequenceEngineTag])
+  }, [messageSessionId, feedSequenceEngineTag])
 
   const closeFeedActivitySession = useCallback((reason: 'pagehide' | 'beforeunload' | 'unmount' | 'mode_change' | 'visibility_hidden') => {
     if (!feedActivityStartedRef.current) return
@@ -2443,7 +2460,7 @@ export default function Feed() {
     const timer = window.setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
       if (isGlobalBillboard) {
-        promptCountersRef.current.watchSeconds += 1
+        messageCountersRef.current.watchSeconds += 1
       }
       if (feedActivityStartedRef.current && !feedActivityEndedRef.current) {
         feedActivityWatchSecondsRef.current += 1
@@ -2459,103 +2476,103 @@ export default function Feed() {
     const current = activeItem
     if (!current) return
     // In-feed message cards should not count toward threshold counters;
-    // only content slides should advance "slides viewed/between prompts".
-    if (isPromptItem(current)) return
+    // only content slides should advance "slides viewed/between messages".
+    if (isMessageItem(current)) return
     const currentContentKey = computeContentDecisionKey(current, activeSequenceKey)
     if (!currentContentKey) return
     if (lastCountedContentKeyRef.current === currentContentKey) return
     lastCountedContentKeyRef.current = currentContentKey
-    if (promptCountersRef.current.slidesViewed <= 0) {
-      promptCountersRef.current.slidesViewed = 1
+    if (messageCountersRef.current.slidesViewed <= 0) {
+      messageCountersRef.current.slidesViewed = 1
       return
     }
-    promptCountersRef.current.slidesViewed += 1
-    promptCountersRef.current.slidesSinceLastPrompt += 1
+    messageCountersRef.current.slidesViewed += 1
+    messageCountersRef.current.slidesSinceLastPrompt += 1
   }, [activeItem, activeSequenceKey, items.length, isGlobalBillboard])
 
   // Reset per-slide decision guard when leaving global feed.
   useEffect(() => {
     if (!isGlobalBillboard) {
-      promptDecisionLastContentKeyRef.current = null
+      messageDecisionLastContentKeyRef.current = null
     }
   }, [isGlobalBillboard])
 
   // In-feed message analytics: record impression/pass-through by message sequence instance.
   useEffect(() => {
     const now = Date.now()
-    const previous = activePromptExposureRef.current
+    const previous = activeMessageExposureRef.current
     const current = activeItem
-    const nextIsPrompt = isPromptItem(current) && Boolean(current?.prompt) && typeof activeSequenceKey === 'string' && activeSequenceKey.trim().length > 0
-    const nextSequenceKey = nextIsPrompt ? String(activeSequenceKey).trim() : null
+    const nextIsMessage = isMessageItem(current) && Boolean(current?.message) && typeof activeSequenceKey === 'string' && activeSequenceKey.trim().length > 0
+    const nextSequenceKey = nextIsMessage ? String(activeSequenceKey).trim() : null
 
     if (previous && previous.sequenceKey !== nextSequenceKey) {
       const visibleForMs = Math.max(0, now - previous.visibleAtMs)
-      if (!previous.clicked && !previous.completed && visibleForMs >= 800 && !promptSeenPassThroughRef.current.has(previous.sequenceKey)) {
-        promptSeenPassThroughRef.current.add(previous.sequenceKey)
-        void sendPromptEvent({
+      if (!previous.clicked && !previous.completed && visibleForMs >= 800 && !messageSeenPassThroughRef.current.has(previous.sequenceKey)) {
+        messageSeenPassThroughRef.current.add(previous.sequenceKey)
+        void sendMessageEvent({
           event: 'pass_through',
-          promptId: previous.promptId,
-          promptCampaignKey: previous.promptCampaignKey,
-          sessionId: promptSessionId,
+          messageId: previous.messageId,
+          messageCampaignKey: previous.messageCampaignKey,
+          sessionId: messageSessionId,
         }, { sequenceEngineTag: feedSequenceEngineTag })
-        emitPromptDebug('pass_through:recorded', {
-          prompt_id: previous.promptId,
-          prompt_sequence_key: previous.sequenceKey,
+        emitMessageDebug('pass_through:recorded', {
+          message_id: previous.messageId,
+          message_sequence_key: previous.sequenceKey,
           visible_for_ms: visibleForMs,
         })
       } else {
-        emitPromptDebug('pass_through:skipped', {
-          prompt_id: previous.promptId,
-          prompt_sequence_key: previous.sequenceKey,
+        emitMessageDebug('pass_through:skipped', {
+          message_id: previous.messageId,
+          message_sequence_key: previous.sequenceKey,
           visible_for_ms: visibleForMs,
           clicked: previous.clicked,
           completed: previous.completed,
-          already_recorded: promptSeenPassThroughRef.current.has(previous.sequenceKey),
+          already_recorded: messageSeenPassThroughRef.current.has(previous.sequenceKey),
         })
       }
     }
 
-    if (!nextIsPrompt || !current?.prompt || !nextSequenceKey) {
-      activePromptExposureRef.current = null
+    if (!nextIsMessage || !current?.message || !nextSequenceKey) {
+      activeMessageExposureRef.current = null
       return
     }
 
-    const prompt = current.prompt
-    if (!promptSeenImpressionRef.current.has(nextSequenceKey)) {
-      promptSeenImpressionRef.current.add(nextSequenceKey)
-      void sendPromptEvent({
+    const message = current.message
+    if (!messageSeenImpressionRef.current.has(nextSequenceKey)) {
+      messageSeenImpressionRef.current.add(nextSequenceKey)
+      void sendMessageEvent({
         event: 'impression',
-        promptId: prompt.id,
-        promptCampaignKey: prompt.campaignKey || null,
-        sessionId: promptSessionId,
+        messageId: message.id,
+        messageCampaignKey: message.campaignKey || null,
+        sessionId: messageSessionId,
       }, { sequenceEngineTag: feedSequenceEngineTag })
-      emitPromptDebug('impression:recorded', {
-        prompt_id: prompt.id,
-        prompt_sequence_key: nextSequenceKey,
+      emitMessageDebug('impression:recorded', {
+        message_id: message.id,
+        message_sequence_key: nextSequenceKey,
       })
     }
 
     if (previous && previous.sequenceKey === nextSequenceKey) {
-      activePromptExposureRef.current = previous
+      activeMessageExposureRef.current = previous
       return
     }
 
-    activePromptExposureRef.current = {
+    activeMessageExposureRef.current = {
       sequenceKey: nextSequenceKey,
-      promptId: Number(prompt.id),
-      promptCampaignKey: prompt.campaignKey || null,
+      messageId: Number(message.id),
+      messageCampaignKey: message.campaignKey || null,
       visibleAtMs: now,
       clicked: false,
       completed: false,
     }
-  }, [activeItem, activeSequenceKey, promptSessionId, feedSequenceEngineTag])
+  }, [activeItem, activeSequenceKey, messageSessionId, feedSequenceEngineTag])
 
   // Feed baseline activity: emit slide impression once per session per publication.
   useEffect(() => {
     if (!feedActivityContext) return
     if (!feedActivitySessionId) return
     const current = activeItem
-    if (!current || isPromptItem(current)) return
+    if (!current || isMessageItem(current)) return
     const publicationId = current.publicationId != null ? Number(current.publicationId) : null
     if (!publicationId || !Number.isFinite(publicationId) || publicationId <= 0) return
     if (feedActivitySeenImpressionRef.current.has(publicationId)) return
@@ -2572,57 +2589,57 @@ export default function Feed() {
     }, { sequenceEngineTag: feedSequenceEngineTag })
   }, [feedActivityContext, activeItem, feedActivitySessionId, feedSequenceEngineTag])
 
-  // Ask decision service whether to insert a prompt in the global feed.
+  // Ask the decision service whether to insert an in-feed message in the global feed.
   useEffect(() => {
     if (!isGlobalBillboard) {
-      emitPromptDebug('decision:skip:not_global')
+      emitMessageDebug('decision:skip:not_global')
       return
     }
     if (!meLoaded) {
-      emitPromptDebug('decision:skip:me_not_loaded')
+      emitMessageDebug('decision:skip:me_not_loaded')
       return
     }
     if (initialLoading) {
-      emitPromptDebug('decision:skip:initial_loading')
+      emitMessageDebug('decision:skip:initial_loading')
       return
     }
     if (!items.length) {
-      emitPromptDebug('decision:skip:no_items')
+      emitMessageDebug('decision:skip:no_items')
       return
     }
-    if (!activeItem || isPromptItem(activeItem)) {
-      emitPromptDebug('decision:skip:active_not_content')
+    if (!activeItem || isMessageItem(activeItem)) {
+      emitMessageDebug('decision:skip:active_not_content')
       return
     }
-    if (promptDecisionBusyRef.current) {
-      emitPromptDebug('decision:skip:busy')
+    if (messageDecisionBusyRef.current) {
+      emitMessageDebug('decision:skip:busy')
       return
     }
     const activeContentKey = computeContentDecisionKey(activeItem, activeSequenceKey)
     if (!activeContentKey) {
-      emitPromptDebug('decision:skip:invalid_active_content_key', { active_id: activeItem.id, active_sequence_key: activeSequenceKey })
+      emitMessageDebug('decision:skip:invalid_active_content_key', { active_id: activeItem.id, active_sequence_key: activeSequenceKey })
       return
     }
-    if (promptDecisionLastContentKeyRef.current === activeContentKey) {
-      emitPromptDebug('decision:skip:same_content_slide', { active_content_key: activeContentKey })
+    if (messageDecisionLastContentKeyRef.current === activeContentKey) {
+      emitMessageDebug('decision:skip:same_content_slide', { active_content_key: activeContentKey })
       return
     }
 
     let canceled = false
     const timer = window.setTimeout(async () => {
       if (canceled) return
-      promptDecisionLastContentKeyRef.current = activeContentKey
-      promptDecisionBusyRef.current = true
+      messageDecisionLastContentKeyRef.current = activeContentKey
+      messageDecisionBusyRef.current = true
       try {
-        const counters = promptCountersRef.current
-        emitPromptDebug('decision:request', {
+        const counters = messageCountersRef.current
+        emitMessageDebug('decision:request', {
           active_content_key: activeContentKey,
-          session_id: promptSessionId,
+          session_id: messageSessionId,
           slides_viewed: counters.slidesViewed,
           watch_seconds: counters.watchSeconds,
-          prompts_shown_this_session: counters.promptsShown,
+          messages_shown_this_session: counters.messagesShown,
           slides_since_last_prompt: counters.slidesSinceLastPrompt,
-          last_prompt_id: counters.lastPromptId,
+          last_message_id: counters.lastMessageId,
         })
         const res = await fetch('/api/feed/prompt-decision', {
           method: 'POST',
@@ -2633,46 +2650,46 @@ export default function Feed() {
           },
           body: JSON.stringify({
             surface: 'global_feed',
-            session_id: promptSessionId,
+            session_id: messageSessionId,
             slides_viewed: counters.slidesViewed,
             watch_seconds: counters.watchSeconds,
-            prompts_shown_this_session: counters.promptsShown,
+            prompts_shown_this_session: counters.messagesShown,
             slides_since_last_prompt: counters.slidesSinceLastPrompt,
-            last_prompt_id: counters.lastPromptId,
+            last_prompt_id: counters.lastMessageId,
           }),
         })
         if (!res.ok) {
-          emitPromptDebug('decision:response:not_ok', { status: res.status, active_content_key: activeContentKey })
+          emitMessageDebug('decision:response:not_ok', { status: res.status, active_content_key: activeContentKey })
           return
         }
         const decision = await res.json()
         if (canceled) return
-        emitPromptDebug('decision:response', {
+        emitMessageDebug('decision:response', {
           active_content_key: activeContentKey,
           should_insert: Boolean(decision?.should_insert),
           reason_code: decision?.reason_code || null,
-          prompt_id: decision?.prompt_id ?? null,
+          message_id: decision?.prompt_id ?? null,
           session_id: decision?.session_id ?? null,
           debug: decision?.debug || null,
         })
         if (typeof decision?.session_id === 'string' && decision.session_id.trim()) {
-          setPromptSessionId(decision.session_id.trim())
+          setMessageSessionId(decision.session_id.trim())
         }
         if (!decision?.should_insert) {
-          emitPromptDebug('decision:no_insert', {
+          emitMessageDebug('decision:no_insert', {
             active_content_slide_id: Number(activeItem?.id),
             active_content_key: activeContentKey,
             reason_code: decision?.reason_code || null,
           })
           return
         }
-        const promptId = Number(decision?.prompt_id)
-        if (!Number.isFinite(promptId) || promptId <= 0) {
-          emitPromptDebug('decision:skip:invalid_prompt_id', { prompt_id: decision?.prompt_id })
+        const messageId = Number(decision?.prompt_id)
+        if (!Number.isFinite(messageId) || messageId <= 0) {
+          emitMessageDebug('decision:skip:invalid_message_id', { message_id: decision?.prompt_id })
           return
         }
 
-        const prompt = await fetchPromptById(promptId)
+        const message = await fetchMessageById(messageId)
         if (canceled) return
 
         const activeAnchorSequenceKey = activeSequenceKey
@@ -2689,7 +2706,7 @@ export default function Feed() {
           }, [])
           const sequenceKeyAtResolvedIndex = activeIdxBySequenceKey != null ? computeSequenceKeyForListAtIndex(prev, activeIdxBySequenceKey) : null
           emitIndexDebug('prompt_anchor:resolved', {
-            prompt_id: prompt.id,
+            message_id: message.id,
             active_content_key: activeContentKey,
             active_sequence_key: activeAnchorSequenceKey,
             active_content_slide_id: activeSlideId,
@@ -2704,50 +2721,50 @@ export default function Feed() {
             prev_length: prev.length,
           })
 
-          // Keep cadence stable: only one pending prompt is allowed ahead of the active slide.
-          // If we are due for a new decision, we collapse future prompt stack and place one
-          // selected prompt immediately after the active content slide.
+          // Keep cadence stable: only one pending message is allowed ahead of the active slide.
+          // If we are due for a new decision, collapse any future message stack and place one
+          // selected message immediately after the active content slide.
           const immediate = prev[insertAt]
-          const immediatePromptId = isPromptItem(immediate) ? Number(immediate?.prompt?.id || 0) : 0
-          const hasAdditionalPromptAhead = prev.some((it, idx) => idx > insertAt && isPromptItem(it))
-          if (immediatePromptId === Number(prompt.id) && !hasAdditionalPromptAhead) {
-            counters.promptsShown += 1
+          const immediateMessageId = isMessageItem(immediate) ? Number(immediate?.message?.id || 0) : 0
+          const hasAdditionalMessageAhead = prev.some((it, idx) => idx > insertAt && isMessageItem(it))
+          if (immediateMessageId === Number(message.id) && !hasAdditionalMessageAhead) {
+            counters.messagesShown += 1
             counters.slidesSinceLastPrompt = 0
-            counters.lastPromptId = prompt.id
-            emitPromptDebug('decision:insert:already_present', {
+            counters.lastMessageId = message.id
+            emitMessageDebug('decision:insert:already_present', {
               active_content_slide_id: activeSlideId,
               active_content_key: activeContentKey,
-              prompt_id: prompt.id,
-              prompts_shown_this_session: counters.promptsShown,
+              message_id: message.id,
+              messages_shown_this_session: counters.messagesShown,
             })
             return prev
           }
 
-          let syntheticUploadId = -Math.floor(Date.now() + prompt.id)
+          let syntheticUploadId = -Math.floor(Date.now() + message.id)
           while (prev.some((it) => Number(it.id) === syntheticUploadId)) syntheticUploadId -= 1
-          const promptItem: UploadItem = {
+          const messageItem: UploadItem = {
             id: syntheticUploadId,
             url: '',
-            itemType: 'prompt',
-            prompt,
+            itemType: 'message',
+            message,
           }
 
-          const withoutAheadPrompts: UploadItem[] = []
+          const withoutAheadMessages: UploadItem[] = []
           for (let i = 0; i < prev.length; i += 1) {
             const it = prev[i]
-            if (i > baseIdx && isPromptItem(it)) continue
-            withoutAheadPrompts.push(it)
+            if (i > baseIdx && isMessageItem(it)) continue
+            withoutAheadMessages.push(it)
           }
-          const cleanInsertAt = Math.max(0, Math.min(baseIdx + 1, withoutAheadPrompts.length))
+          const cleanInsertAt = Math.max(0, Math.min(baseIdx + 1, withoutAheadMessages.length))
           const next = [
-            ...withoutAheadPrompts.slice(0, cleanInsertAt),
-            promptItem,
-            ...withoutAheadPrompts.slice(cleanInsertAt),
+            ...withoutAheadMessages.slice(0, cleanInsertAt),
+            messageItem,
+            ...withoutAheadMessages.slice(cleanInsertAt),
           ]
           const nextActiveIdx = computeSequenceIndexByKeyForList(next, activeAnchorSequenceKey)
           const nextActiveIdxById = next.findIndex((it) => Number(it.id) === activeSlideId)
           emitIndexDebug('prompt_anchor:next_index', {
-            prompt_id: prompt.id,
+            message_id: message.id,
             active_content_key: activeContentKey,
             active_sequence_key: activeAnchorSequenceKey,
             active_content_slide_id: activeSlideId,
@@ -2759,7 +2776,7 @@ export default function Feed() {
           })
           if (nextActiveIdx >= 0) {
             emitIndexDebug('prompt_anchor:set_index', {
-              prompt_id: prompt.id,
+              message_id: message.id,
               active_content_key: activeContentKey,
               active_sequence_key: activeAnchorSequenceKey,
               active_content_slide_id: activeSlideId,
@@ -2767,23 +2784,23 @@ export default function Feed() {
             })
             setIndex((cur) => (cur === nextActiveIdx ? cur : nextActiveIdx))
           }
-          counters.promptsShown += 1
+          counters.messagesShown += 1
           counters.slidesSinceLastPrompt = 0
-          counters.lastPromptId = prompt.id
-          emitPromptDebug('decision:insert:applied', {
+          counters.lastMessageId = message.id
+          emitMessageDebug('decision:insert:applied', {
             active_content_slide_id: activeSlideId,
             active_content_key: activeContentKey,
-            prompt_id: prompt.id,
+            message_id: message.id,
             insert_index: cleanInsertAt,
-            prompts_shown_this_session: counters.promptsShown,
+            messages_shown_this_session: counters.messagesShown,
           })
           return next
         })
       } catch (err: any) {
-        emitPromptDebug('decision:error', { message: String(err?.message || err || 'unknown_error') })
+        emitMessageDebug('decision:error', { message: String(err?.message || err || 'unknown_error') })
       }
       finally {
-        promptDecisionBusyRef.current = false
+        messageDecisionBusyRef.current = false
       }
     }, 120)
 
@@ -2791,7 +2808,7 @@ export default function Feed() {
       canceled = true
       window.clearTimeout(timer)
     }
-  }, [isGlobalBillboard, meLoaded, isAuthed, initialLoading, items, activeItem, activeSequenceIndex, activeSequenceKey, promptSessionId, feedSequenceEngineTag])
+  }, [isGlobalBillboard, meLoaded, isAuthed, initialLoading, items, activeItem, activeSequenceIndex, activeSequenceKey, messageSessionId, feedSequenceEngineTag])
 
   // HLSVideo handles attaching source on Safari and via hls.js elsewhere
 
@@ -3007,8 +3024,8 @@ export default function Feed() {
         const it = seq.item
         const i = seq.sourceIndex
         const sequenceKey = seq.sequenceKey
-        const prompt = it.prompt
-        if (prompt && isPromptItem(it)) {
+        const prompt = it.message
+        if (prompt && isMessageItem(it)) {
           const slideId = `prompt-${prompt.id}-${it.id}`
           const promptPosterByOrientation =
             (isPortrait ? (prompt.media?.posterPortrait || prompt.media?.posterLandscape) : (prompt.media?.posterLandscape || prompt.media?.posterPortrait)) ||
@@ -3037,8 +3054,8 @@ export default function Feed() {
             : {
                 background: 'linear-gradient(180deg, rgba(8,12,18,0.95) 0%, rgba(6,8,12,0.98) 100%)',
               }
-          const messagePlacement = promptWidgetPlacement(prompt.widgets.message.position, prompt.widgets.message.yOffsetPct, 'message')
-          const authPlacement = promptWidgetPlacement(prompt.widgets.auth.position, prompt.widgets.auth.yOffsetPct, 'auth')
+          const messagePlacement = messageWidgetPlacement(prompt.widgets.message.position, prompt.widgets.message.yOffsetPct, 'message')
+          const authPlacement = messageWidgetPlacement(prompt.widgets.auth.position, prompt.widgets.auth.yOffsetPct, 'auth')
           return (
             <div
               key={slideId}
@@ -3204,7 +3221,7 @@ export default function Feed() {
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation()
-                              handlePromptCtaClick(prompt, prompt.ctaPrimaryHref, 'primary')
+                              handleMessageCtaClick(prompt, prompt.ctaPrimaryHref, 'primary')
                             }}
                             style={{
                               border: '1px solid rgba(255,255,255,0.45)',
@@ -3224,7 +3241,7 @@ export default function Feed() {
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation()
-                                handlePromptCtaClick(prompt, prompt.ctaSecondaryHref || '', 'secondary')
+                                handleMessageCtaClick(prompt, prompt.ctaSecondaryHref || '', 'secondary')
                               }}
                             style={{
                               border: '1px solid rgba(255,255,255,0.45)',
@@ -3271,7 +3288,7 @@ export default function Feed() {
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation()
-                              handlePromptCtaClick(prompt, '/register?return=/', 'primary')
+                              handleMessageCtaClick(prompt, '/register?return=/', 'primary')
                             }}
                             style={{
                               justifySelf: 'start',
@@ -3291,7 +3308,7 @@ export default function Feed() {
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation()
-                              handlePromptCtaClick(prompt, '/login?return=/', 'secondary')
+                              handleMessageCtaClick(prompt, '/login?return=/', 'secondary')
                             }}
                             style={{
                               justifySelf: 'end',

@@ -91,7 +91,14 @@ localStorage.setItem('browser:debug', '1')
 location.reload()
 ```
 
-### Prompt debug
+### Message debug
+
+```js
+localStorage.setItem('message:debug', '1')
+location.reload()
+```
+
+Legacy alias:
 
 ```js
 localStorage.setItem('prompt:debug', '1')
@@ -102,6 +109,7 @@ location.reload()
 
 ```js
 localStorage.removeItem('browser:debug')
+localStorage.removeItem('message:debug')
 localStorage.removeItem('prompt:debug')
 location.reload()
 ```
@@ -124,6 +132,7 @@ Feed sequence engine flow:
 
 - `sequence_active_key_changed`
 - `sequence_window_shift`
+- `sequence_message_inserted`
 - `sequence_prompt_inserted`
 
 ### `index`
