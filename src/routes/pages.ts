@@ -669,9 +669,9 @@ const ADMIN_NAV_ITEMS: Array<{ key: AdminNavKey; label: string; href: string }> 
 	{ key: 'lower_thirds', label: 'Lower Thirds', href: '/admin/lower-thirds' },
 	{ key: 'audio_configs', label: 'Audio Configs', href: '/admin/audio-configs' },
 	{ key: 'media_jobs', label: 'Media Jobs', href: '/admin/media-jobs' },
-  { key: 'prompts', label: 'Messages', href: '/admin/prompts' },
+  { key: 'prompts', label: 'Messages', href: '/admin/messages' },
   { key: 'analytics', label: 'Analytics', href: '/admin/analytics' },
-  { key: 'prompt_analytics', label: 'Message Analytics', href: '/admin/prompt-analytics' },
+  { key: 'prompt_analytics', label: 'Message Analytics', href: '/admin/message-analytics' },
   { key: 'analytics_sink', label: 'Analytics Sink', href: '/admin/analytics-sink' },
   { key: 'settings', label: 'Settings', href: '/admin/settings' },
   { key: 'dev', label: 'Dev', href: '/admin/dev' },
@@ -2987,9 +2987,9 @@ pagesRouter.get('/admin', async (_req: any, res: any) => {
     { title: 'Lower Thirds', href: '/admin/lower-thirds', desc: 'Manage system lower third templates (SVG + descriptor)' },
     { title: 'Audio Configs', href: '/admin/audio-configs', desc: 'Presets for Mix/Replace + ducking (creators pick when producing)' },
     { title: 'Media Jobs', href: '/admin/media-jobs', desc: 'Debug ffmpeg mastering jobs (logs, retries, purge)' },
-    { title: 'Messages', href: '/admin/prompts', desc: 'Manage in-feed message units, targeting, and lifecycle controls' },
+    { title: 'Messages', href: '/admin/messages', desc: 'Manage in-feed message units, targeting, and lifecycle controls' },
     { title: 'Analytics', href: '/admin/analytics', desc: 'Cross-metric baseline feed + prompt conversion view with daily trend' },
-    { title: 'Message Analytics', href: '/admin/prompt-analytics', desc: 'Funnel metrics, conversion rates, and overexposure detection for in-feed messages' },
+    { title: 'Message Analytics', href: '/admin/message-analytics', desc: 'Funnel metrics, conversion rates, and overexposure detection for in-feed messages' },
     { title: 'Analytics Sink', href: '/admin/analytics-sink', desc: 'Optional external sink health and counters (secondary analytics path)' },
     { title: 'Settings', href: '/admin/settings', desc: 'Coming soon' },
     { title: 'Dev', href: '/admin/dev', desc: 'Dev stats and guarded tools' },
@@ -3920,6 +3920,10 @@ function renderAdminPromptForm(opts: {
 }
 
 pagesRouter.get('/admin/prompts', async (req: any, res: any) => {
+  return redirectPreservingQuery(res, '/admin/messages', req.query)
+})
+
+pagesRouter.get('/admin/messages', async (req: any, res: any) => {
   try {
     const includeArchived = String(req.query?.include_archived || '0') === '1'
     const status = req.query?.status ? String(req.query.status) : ''
@@ -3940,10 +3944,10 @@ pagesRouter.get('/admin/prompts', async (req: any, res: any) => {
     })
 
     let body = '<h1>Messages</h1>'
-    body += '<div class="toolbar"><div><span class="pill">Message Registry</span></div><div><a href="/admin/prompts/new">New message</a></div></div>'
+    body += '<div class="toolbar"><div><span class="pill">Message Registry</span></div><div><a href="/admin/messages/new">New message</a></div></div>'
     if (notice) body += `<div class="notice">${escapeHtml(notice)}</div>`
     if (error) body += `<div class="error">${escapeHtml(error)}</div>`
-    body += `<form method="get" action="/admin/prompts" class="section" style="margin:12px 0">`
+    body += `<form method="get" action="/admin/messages" class="section" style="margin:12px 0">`
     body += `<div style="display:flex; gap:10px; flex-wrap:wrap; align-items:end">`
     body += `<label style="min-width:160px">Status<select name="status">
       <option value="">All</option>
@@ -3980,7 +3984,7 @@ pagesRouter.get('/admin/prompts', async (req: any, res: any) => {
         const windowLabel = item.startsAt || item.endsAt ? `${item.startsAt || '—'} → ${item.endsAt || '—'}` : 'Always'
         body += `<tr>
           <td>${item.id}</td>
-          <td><a href="/admin/prompts/${item.id}">${escapeHtml(item.name)}</a></td>
+          <td><a href="/admin/messages/${item.id}">${escapeHtml(item.name)}</a></td>
           <td>${escapeHtml(item.promptType)}</td>
           <td>${escapeHtml(item.audienceSegment)}</td>
           <td>${escapeHtml(item.appliesToSurface)}</td>
@@ -4004,13 +4008,17 @@ pagesRouter.get('/admin/prompts', async (req: any, res: any) => {
 })
 
 pagesRouter.get('/admin/prompts/new', async (req: any, res: any) => {
+  return redirectPreservingQuery(res, '/admin/messages/new', req.query)
+})
+
+pagesRouter.get('/admin/messages/new', async (req: any, res: any) => {
   const cookies = parseCookies(req.headers.cookie)
   const csrfToken = cookies['csrf'] || ''
   const doc = renderAdminPromptForm({
     title: 'New Message',
-    action: '/admin/prompts',
+    action: '/admin/messages',
     csrfToken,
-    backHref: '/admin/prompts',
+    backHref: '/admin/messages',
     values: {
       name: '',
       headline: '',
@@ -4035,19 +4043,19 @@ pagesRouter.get('/admin/prompts/new', async (req: any, res: any) => {
   res.send(doc)
 })
 
-pagesRouter.post('/admin/prompts', async (req: any, res: any) => {
+pagesRouter.post(['/admin/messages', '/admin/prompts'], async (req: any, res: any) => {
   const cookies = parseCookies(req.headers.cookie)
   const csrfToken = cookies['csrf'] || ''
   const payload = buildPromptCreateOrUpdatePayload(req.body || {})
   try {
     const created = await promptsSvc.createForAdmin(payload, Number(req.user?.id || 0))
-    res.redirect(`/admin/prompts/${created.id}?notice=${encodeURIComponent('Message created.')}`)
+    res.redirect(`/admin/messages/${created.id}?notice=${encodeURIComponent('Message created.')}`)
   } catch (err: any) {
     const doc = renderAdminPromptForm({
       title: 'New Message',
-      action: '/admin/prompts',
+      action: '/admin/messages',
       csrfToken,
-      backHref: '/admin/prompts',
+      backHref: '/admin/messages',
       values: payload,
       error: String(err?.message || 'Failed to create message'),
     })
@@ -4058,15 +4066,21 @@ pagesRouter.post('/admin/prompts', async (req: any, res: any) => {
 pagesRouter.get('/admin/prompts/:id', async (req: any, res: any) => {
   const id = Number(req.params.id)
   if (!Number.isFinite(id) || id <= 0) return res.status(400).send('Bad message id')
+  return redirectPreservingQuery(res, `/admin/messages/${id}`, req.query)
+})
+
+pagesRouter.get('/admin/messages/:id', async (req: any, res: any) => {
+  const id = Number(req.params.id)
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).send('Bad message id')
   try {
     const prompt = await promptsSvc.getForAdmin(id)
     const cookies = parseCookies(req.headers.cookie)
     const csrfToken = cookies['csrf'] || ''
     const doc = renderAdminPromptForm({
       title: `Edit Message #${id}`,
-      action: `/admin/prompts/${id}`,
+      action: `/admin/messages/${id}`,
       csrfToken,
-      backHref: '/admin/prompts',
+      backHref: '/admin/messages',
       values: prompt,
       notice: req.query?.notice ? String(req.query.notice) : '',
       error: req.query?.error ? String(req.query.error) : '',
@@ -4080,7 +4094,7 @@ pagesRouter.get('/admin/prompts/:id', async (req: any, res: any) => {
   }
 })
 
-pagesRouter.post('/admin/prompts/:id', async (req: any, res: any) => {
+pagesRouter.post(['/admin/messages/:id', '/admin/prompts/:id'], async (req: any, res: any) => {
   const id = Number(req.params.id)
   if (!Number.isFinite(id) || id <= 0) return res.status(400).send('Bad message id')
   const cookies = parseCookies(req.headers.cookie)
@@ -4088,13 +4102,13 @@ pagesRouter.post('/admin/prompts/:id', async (req: any, res: any) => {
   const payload = buildPromptCreateOrUpdatePayload(req.body || {})
   try {
     await promptsSvc.updateForAdmin(id, payload, Number(req.user?.id || 0))
-    res.redirect(`/admin/prompts/${id}?notice=${encodeURIComponent('Saved.')}`)
+    res.redirect(`/admin/messages/${id}?notice=${encodeURIComponent('Saved.')}`)
   } catch (err: any) {
     const doc = renderAdminPromptForm({
       title: `Edit Message #${id}`,
-      action: `/admin/prompts/${id}`,
+      action: `/admin/messages/${id}`,
       csrfToken,
-      backHref: '/admin/prompts',
+      backHref: '/admin/messages',
       values: { ...payload, id },
       error: String(err?.message || 'Failed to save message'),
       showClone: true,
@@ -4103,25 +4117,25 @@ pagesRouter.post('/admin/prompts/:id', async (req: any, res: any) => {
   }
 })
 
-pagesRouter.post('/admin/prompts/:id/clone', async (req: any, res: any) => {
+pagesRouter.post(['/admin/messages/:id/clone', '/admin/prompts/:id/clone'], async (req: any, res: any) => {
   const id = Number(req.params.id)
-  if (!Number.isFinite(id) || id <= 0) return res.redirect('/admin/prompts?error=bad_id')
+  if (!Number.isFinite(id) || id <= 0) return res.redirect('/admin/messages?error=bad_id')
   try {
     const cloned = await promptsSvc.cloneForAdmin(id, Number(req.user?.id || 0))
-    res.redirect(`/admin/prompts/${cloned.id}?notice=${encodeURIComponent(`Cloned from #${id}.`)}`)
+    res.redirect(`/admin/messages/${cloned.id}?notice=${encodeURIComponent(`Cloned from #${id}.`)}`)
   } catch (err: any) {
-    res.redirect(`/admin/prompts/${id}?error=${encodeURIComponent(String(err?.message || 'Failed to clone message'))}`)
+    res.redirect(`/admin/messages/${id}?error=${encodeURIComponent(String(err?.message || 'Failed to clone message'))}`)
   }
 })
 
-pagesRouter.post('/admin/prompts/:id/status', async (req: any, res: any) => {
+pagesRouter.post(['/admin/messages/:id/status', '/admin/prompts/:id/status'], async (req: any, res: any) => {
   const id = Number(req.params.id)
-  if (!Number.isFinite(id) || id <= 0) return res.redirect('/admin/prompts?error=bad_id')
+  if (!Number.isFinite(id) || id <= 0) return res.redirect('/admin/messages?error=bad_id')
   try {
     await promptsSvc.updateStatusForAdmin(id, req.body?.status, Number(req.user?.id || 0))
-    res.redirect(`/admin/prompts/${id}?notice=${encodeURIComponent('Status updated.')}`)
+    res.redirect(`/admin/messages/${id}?notice=${encodeURIComponent('Status updated.')}`)
   } catch (err: any) {
-    res.redirect(`/admin/prompts/${id}?error=${encodeURIComponent(String(err?.message || 'Failed to update status'))}`)
+    res.redirect(`/admin/messages/${id}?error=${encodeURIComponent(String(err?.message || 'Failed to update status'))}`)
   }
 })
 
@@ -4134,6 +4148,23 @@ function pctText(rate: number): string {
 function csvCell(value: any): string {
   const raw = value == null ? '' : String(value)
   return `"${raw.replace(/"/g, '""')}"`
+}
+
+function redirectPreservingQuery(res: any, targetPath: string, query: any) {
+  const qs = new URLSearchParams()
+  for (const [key, value] of Object.entries(query || {})) {
+    if (value == null) continue
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        if (item == null) continue
+        qs.append(key, String(item))
+      }
+      continue
+    }
+    qs.set(key, String(value))
+  }
+  const suffix = qs.toString()
+  return res.redirect(suffix ? `${targetPath}?${suffix}` : targetPath)
 }
 
 function round2(value: number): number {
@@ -4458,6 +4489,10 @@ pagesRouter.get('/admin/analytics', async (req: any, res: any) => {
 })
 
 pagesRouter.get('/admin/prompt-analytics', async (req: any, res: any) => {
+  return redirectPreservingQuery(res, '/admin/message-analytics', req.query)
+})
+
+pagesRouter.get('/admin/message-analytics', async (req: any, res: any) => {
   try {
     const report = await promptAnalyticsSvc.getPromptAnalyticsReportForAdmin({
       fromDate: req.query?.from,
@@ -4488,7 +4523,7 @@ pagesRouter.get('/admin/prompt-analytics', async (req: any, res: any) => {
 
     let body = '<h1>Message Analytics</h1>'
     body += '<div class="toolbar"><div><span class="pill">Message Funnel</span></div><div></div></div>'
-    body += `<form method="get" action="/admin/prompt-analytics" class="section" style="margin:12px 0">`
+    body += `<form method="get" action="/admin/message-analytics" class="section" style="margin:12px 0">`
     body += `<div style="display:grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); gap:10px; align-items:end">`
     body += `<label>From (UTC)<input type="date" name="from" value="${escapeHtml(report.range.fromDate)}" /></label>`
     body += `<label>To (UTC)<input type="date" name="to" value="${escapeHtml(report.range.toDate)}" /></label>`
@@ -4511,7 +4546,7 @@ pagesRouter.get('/admin/prompt-analytics', async (req: any, res: any) => {
     body += `</div>`
     body += `<div style="display:flex; gap:10px; margin-top:10px; flex-wrap:wrap">`
     body += `<button class="btn" type="submit">Apply</button>`
-    body += `<a class="btn" href="/admin/prompt-analytics?${escapeHtml(`${q.toString()}&format=csv`)}">Export CSV</a>`
+    body += `<a class="btn" href="/admin/message-analytics?${escapeHtml(`${q.toString()}&format=csv`)}">Export CSV</a>`
     body += `</div>`
     body += `</form>`
 
