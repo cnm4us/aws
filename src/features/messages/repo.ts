@@ -1,6 +1,34 @@
 import { getPool } from '../../db'
 import type { PromptRow } from './types'
 
+const MESSAGE_SELECT_SQL = `
+  SELECT
+    id,
+    name,
+    headline,
+    body,
+    cta_primary_label,
+    cta_primary_href,
+    cta_secondary_label,
+    cta_secondary_href,
+    media_upload_id,
+    creative_json,
+    type AS prompt_type,
+    applies_to_surface,
+    audience_segment,
+    tie_break_strategy,
+    campaign_key,
+    priority,
+    status,
+    starts_at,
+    ends_at,
+    created_by,
+    updated_by,
+    created_at,
+    updated_at
+  FROM feed_messages
+`
+
 type PromptCreateInput = {
   name: string
   headline: string
@@ -48,7 +76,7 @@ export async function list(params?: {
     args.push(params.status)
   }
   if (params?.promptType) {
-    where.push('prompt_type = ?')
+    where.push('type = ?')
     args.push(params.promptType)
   }
   if (params?.appliesToSurface) {
@@ -65,8 +93,7 @@ export async function list(params?: {
   }
 
   const [rows] = await db.query(
-    `SELECT *
-       FROM feed_messages
+    `${MESSAGE_SELECT_SQL}
       WHERE ${where.join(' AND ')}
       ORDER BY priority ASC, id DESC
       LIMIT ?`,
@@ -77,7 +104,7 @@ export async function list(params?: {
 
 export async function getById(id: number): Promise<PromptRow | null> {
   const db = getPool()
-  const [rows] = await db.query(`SELECT * FROM feed_messages WHERE id = ? LIMIT 1`, [id])
+  const [rows] = await db.query(`${MESSAGE_SELECT_SQL} WHERE id = ? LIMIT 1`, [id])
   return ((rows as any[])[0] as PromptRow) || null
 }
 
@@ -89,7 +116,7 @@ export async function create(input: PromptCreateInput): Promise<PromptRow> {
         name, headline, body,
         cta_primary_label, cta_primary_href,
         cta_secondary_label, cta_secondary_href,
-        media_upload_id, creative_json, prompt_type, applies_to_surface, audience_segment, tie_break_strategy, campaign_key, priority, status,
+        media_upload_id, creative_json, type, applies_to_surface, audience_segment, tie_break_strategy, campaign_key, priority, status,
         starts_at, ends_at, created_by, updated_by
       )
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -137,7 +164,7 @@ export async function update(id: number, patch: PromptUpdateInput): Promise<Prom
   if (patch.ctaSecondaryHref !== undefined) { sets.push('cta_secondary_href = ?'); args.push(patch.ctaSecondaryHref) }
   if (patch.mediaUploadId !== undefined) { sets.push('media_upload_id = ?'); args.push(patch.mediaUploadId) }
   if (patch.creativeJson !== undefined) { sets.push('creative_json = ?'); args.push(patch.creativeJson) }
-  if (patch.promptType !== undefined) { sets.push('prompt_type = ?'); args.push(patch.promptType) }
+  if (patch.promptType !== undefined) { sets.push('type = ?'); args.push(patch.promptType) }
   if (patch.appliesToSurface !== undefined) { sets.push('applies_to_surface = ?'); args.push(patch.appliesToSurface) }
   if (patch.audienceSegment !== undefined) { sets.push('audience_segment = ?'); args.push(patch.audienceSegment) }
   if (patch.tieBreakStrategy !== undefined) { sets.push('tie_break_strategy = ?'); args.push(patch.tieBreakStrategy) }
@@ -187,7 +214,7 @@ export async function listActiveForFeed(params?: {
     args.push(params.campaignKey)
   }
   if (params?.promptType) {
-    where.push('prompt_type = ?')
+    where.push('type = ?')
     args.push(params.promptType)
   }
   if (params?.appliesToSurface) {
@@ -199,8 +226,7 @@ export async function listActiveForFeed(params?: {
     args.push(params.audienceSegment)
   }
   const [rows] = await db.query(
-    `SELECT *
-       FROM feed_messages
+    `${MESSAGE_SELECT_SQL}
       WHERE ${where.join(' AND ')}
       ORDER BY priority ASC, id DESC
       LIMIT ?`,

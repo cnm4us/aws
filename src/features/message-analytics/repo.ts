@@ -38,7 +38,7 @@ export async function insertEvent(input: {
       (
         event_type, surface, viewer_state,
         session_id, user_id,
-        prompt_id, prompt_campaign_key,
+        message_id, message_campaign_key,
         cta_kind, attributed,
         occurred_at, dedupe_bucket_start, dedupe_key
       )
@@ -75,7 +75,7 @@ export async function upsertDailyCount(input: {
   await db.query(
     `INSERT INTO feed_message_daily_stats
       (
-        date_utc, surface, prompt_id, prompt_campaign_key,
+        date_utc, surface, message_id, message_campaign_key,
         viewer_state, event_type, total_events
       )
       VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -107,7 +107,7 @@ export async function hasRecentAuthStart(input: {
       `SELECT id
          FROM feed_message_events
         WHERE event_type = 'auth_start_from_prompt'
-          AND prompt_id = ?
+          AND message_id = ?
           AND session_id = ?
           AND occurred_at >= ?
         ORDER BY id DESC
@@ -122,7 +122,7 @@ export async function hasRecentAuthStart(input: {
       `SELECT id
          FROM feed_message_events
         WHERE event_type = 'auth_start_from_prompt'
-          AND prompt_id = ?
+          AND message_id = ?
           AND user_id = ?
           AND occurred_at >= ?
         ORDER BY id DESC
@@ -143,15 +143,15 @@ function buildDailyWhere(filter: PromptAnalyticsQueryFilter): { whereSql: string
     args.push(filter.surface)
   }
   if (filter.promptId != null) {
-    where.push('prompt_id = ?')
+    where.push('message_id = ?')
     args.push(filter.promptId)
   }
   if (filter.promptType) {
-    where.push(`EXISTS (SELECT 1 FROM feed_messages p_filter WHERE p_filter.id = prompt_id AND p_filter.prompt_type = ?)`)
+    where.push(`EXISTS (SELECT 1 FROM feed_messages p_filter WHERE p_filter.id = message_id AND p_filter.type = ?)`)
     args.push(filter.promptType)
   }
   if (filter.promptCampaignKey) {
-    where.push('prompt_campaign_key = ?')
+    where.push('message_campaign_key = ?')
     args.push(filter.promptCampaignKey)
   }
   if (filter.viewerState) {
@@ -169,15 +169,15 @@ function buildRawWhere(filter: PromptAnalyticsQueryFilter): { whereSql: string; 
     args.push(filter.surface)
   }
   if (filter.promptId != null) {
-    where.push('prompt_id = ?')
+    where.push('message_id = ?')
     args.push(filter.promptId)
   }
   if (filter.promptType) {
-    where.push(`EXISTS (SELECT 1 FROM feed_messages p_filter WHERE p_filter.id = prompt_id AND p_filter.prompt_type = ?)`)
+    where.push(`EXISTS (SELECT 1 FROM feed_messages p_filter WHERE p_filter.id = message_id AND p_filter.type = ?)`)
     args.push(filter.promptType)
   }
   if (filter.promptCampaignKey) {
-    where.push('prompt_campaign_key = ?')
+    where.push('message_campaign_key = ?')
     args.push(filter.promptCampaignKey)
   }
   if (filter.viewerState) {
@@ -210,9 +210,9 @@ export async function getByPromptFromDaily(filter: PromptAnalyticsQueryFilter): 
   const { whereSql, args } = buildDailyWhere(filter)
   const [rows] = await db.query(
     `SELECT
-        s.prompt_id,
-        MAX(p.prompt_type) AS prompt_type,
-        MAX(NULLIF(s.prompt_campaign_key, '')) AS prompt_campaign_key,
+        s.message_id AS prompt_id,
+        MAX(p.type) AS prompt_type,
+        MAX(NULLIF(s.message_campaign_key, '')) AS prompt_campaign_key,
         MAX(p.name) AS prompt_name,
         COALESCE(SUM(CASE WHEN s.event_type = 'prompt_impression' THEN s.total_events ELSE 0 END), 0) AS impressions,
         COALESCE(SUM(CASE WHEN s.event_type = 'prompt_click_primary' THEN s.total_events ELSE 0 END), 0) AS clicks_primary,
@@ -221,10 +221,10 @@ export async function getByPromptFromDaily(filter: PromptAnalyticsQueryFilter): 
         COALESCE(SUM(CASE WHEN s.event_type = 'auth_start_from_prompt' THEN s.total_events ELSE 0 END), 0) AS auth_start,
         COALESCE(SUM(CASE WHEN s.event_type = 'auth_complete_from_prompt' THEN s.total_events ELSE 0 END), 0) AS auth_complete
       FROM feed_message_daily_stats s
-      LEFT JOIN feed_messages p ON p.id = s.prompt_id
+      LEFT JOIN feed_messages p ON p.id = s.message_id
       WHERE ${whereSql}
-      GROUP BY s.prompt_id
-      ORDER BY impressions DESC, clicks_primary DESC, clicks_secondary DESC, s.prompt_id DESC
+      GROUP BY s.message_id
+      ORDER BY impressions DESC, clicks_primary DESC, clicks_secondary DESC, s.message_id DESC
       LIMIT 1000`,
     args
   )
@@ -275,7 +275,7 @@ export async function getUniqueByPromptFromRaw(filter: PromptAnalyticsQueryFilte
   const { whereSql, args } = buildRawWhere(filter)
   const [rows] = await db.query(
     `SELECT
-        prompt_id,
+        message_id AS prompt_id,
         COUNT(DISTINCT CASE WHEN event_type = 'prompt_impression' THEN ${SESSION_KEY_EXPR} END) AS impressions_unique,
         COUNT(DISTINCT CASE WHEN event_type IN ('prompt_click_primary','prompt_click_secondary') THEN ${SESSION_KEY_EXPR} END) AS clicks_total_unique,
         COUNT(DISTINCT CASE WHEN event_type = 'prompt_dismiss' THEN ${SESSION_KEY_EXPR} END) AS dismiss_unique,
@@ -283,7 +283,7 @@ export async function getUniqueByPromptFromRaw(filter: PromptAnalyticsQueryFilte
         COUNT(DISTINCT CASE WHEN event_type = 'auth_complete_from_prompt' AND attributed = 1 THEN ${SESSION_KEY_EXPR} END) AS auth_complete_unique
       FROM feed_message_events
       WHERE ${whereSql}
-      GROUP BY prompt_id`,
+      GROUP BY message_id`,
     args
   )
   return rows as any[]

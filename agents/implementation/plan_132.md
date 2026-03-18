@@ -1,6 +1,6 @@
 # Plan 132: Message Wire Contract and Residual Naming Cleanup
 
-Status: Draft
+Status: Complete
 
 ## Goal
 Clean up the remaining `prompt_*` naming residue that still exists after the completed UI, route, module, table, telemetry, and API-path renames.
@@ -74,6 +74,30 @@ Current locations include:
 - changing retention or reporting logic
 - deep DB column rename in the same pass as public wire cleanup unless explicitly approved phase-by-phase
 
+## Phase A Locked Decisions
+- This plan covers active JSON/query/callback wire contracts first. Server-rendered admin form field names are out of scope unless they surface in analytics query params.
+- Feed decision request keys will move to:
+  - `messages_shown_this_session`
+  - `slides_since_last_message`
+  - `last_message_id`
+  - `last_message_shown_at`
+- Feed decision response will expose `message_id` as the primary identifier.
+- Feed fetch responses will expose:
+  - top-level `message`
+  - `message.type`
+  - `message.campaign_key`
+- Feed event, auth-complete, and browser debug payloads will use:
+  - `message_id`
+  - `message_campaign_key`
+  - `message_session_id`
+- Admin analytics query params will move to:
+  - `message_id`
+  - `message_type`
+  - `message_campaign_key`
+- Legacy `prompt_*` keys will remain as temporary compatibility aliases during Phases B-C and will be removed in Phase D.
+- `prompt_category` remains a temporary compatibility alias only where required to bridge old campaign-key callers. No new `message_category` field will be introduced.
+- DB column renames are explicitly deferred to optional Phase F. Phases B-E will not rename storage columns.
+
 ## Recommended Naming Contract
 ### Feed decision payloads
 Replace:
@@ -115,7 +139,7 @@ Replace:
 - residual `prompt_*` event payload fields -> `message_*`
 
 ## Implementation Strategy
-### Phase A — Contract Lock
+### Phase A — Contract Lock (Complete)
 - confirm the message-first key set above
 - decide whether fetch payload should expose `message.type` or `message.message_type`
 - confirm legacy `prompt_*` keys remain as temporary aliases during migration
@@ -127,9 +151,10 @@ Recommendation:
 - DB column rename should be a later optional phase, not bundled into the first contract migration
 
 Acceptance:
-- signed wire-contract decision with explicit compatibility policy
+- complete
+- wire-contract decision recorded with explicit compatibility policy
 
-### Phase B — Add Message-First Wire Aliases
+### Phase B — Add Message-First Wire Aliases (Complete)
 - make feed decision accept both prompt and message counter keys
 - make feed decision response include `message_id` while optionally preserving `prompt_id`
 - make feed fetch return `message` payload while optionally preserving `prompt`
@@ -144,9 +169,10 @@ Test gate:
 - feed and analytics flows remain stable
 
 Acceptance:
+- complete
 - message-first wire keys exist without breaking compatibility
 
-### Phase C — Migrate First-Party Callers
+### Phase C — Migrate First-Party Callers (Complete)
 - switch frontend feed caller payloads to `message_*`
 - switch auth return/callback payloads to `message_*`
 - switch admin analytics links/forms/query builders to `message_*`
@@ -159,9 +185,10 @@ Test gate:
 - browser debug still works
 
 Acceptance:
+- complete
 - first-party traffic is message-first at the wire level
 
-### Phase D — Remove Legacy Prompt Wire Aliases
+### Phase D — Remove Legacy Prompt Wire Aliases (Complete)
 - remove prompt-key aliases from request parsing where first-party migration is complete
 - remove prompt-key aliases from response payloads
 - remove prompt-key aliases from active docs/examples
@@ -173,9 +200,10 @@ Test gate:
 - feed, admin analytics, and auth-complete flows remain stable
 
 Acceptance:
+- complete
 - public wire contracts are message-first
 
-### Phase E — Low-Risk Internal Naming Cleanup
+### Phase E — Low-Risk Internal Naming Cleanup (Complete)
 - rename local variables, helper names, and validation errors from prompt-first to message-first where this does not require schema changes
 - examples:
   - `promptId` -> `messageId`
@@ -188,9 +216,10 @@ Test gate:
 - no behavior change
 
 Acceptance:
+- complete
 - internal code no longer drifts toward prompt-first naming unnecessarily
 
-### Phase F — Optional Schema / Column Rename
+### Phase F — Optional Schema / Column Rename (Complete)
 This is the highest-risk phase and should only proceed if the remaining DB naming is still creating real confusion.
 
 Potential targets:
@@ -213,6 +242,7 @@ Test gate:
 - feed/admin/analytics behavior is unchanged
 
 Acceptance:
+- complete
 - storage schema is message-first
 
 ## Risks
