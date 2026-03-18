@@ -57,18 +57,7 @@ async function resolveAudienceSegment(userIdRaw: any): Promise<MessageAudienceSe
 
 async function handleDecision(req: any, res: any, next: any) {
   try {
-    const body = req.method === 'GET'
-      ? {
-          surface: req.query?.surface,
-          session_id: req.query?.session_id,
-          slides_viewed: req.query?.slides_viewed,
-          watch_seconds: req.query?.watch_seconds,
-          prompts_shown_this_session: req.query?.prompts_shown_this_session,
-          slides_since_last_prompt: req.query?.slides_since_last_prompt,
-          last_prompt_shown_at: req.query?.last_prompt_shown_at,
-          last_prompt_id: req.query?.last_prompt_id,
-        }
-      : (req.body || {})
+    const body = req.method === 'GET' ? (req.query || {}) : (req.body || {})
 
     const cookies = parseCookies(req.headers.cookie)
     const cookieSessionId = cookies[ANON_SESSION_COOKIE] ? String(cookies[ANON_SESSION_COOKIE]).trim() : null
@@ -134,6 +123,7 @@ async function handleDecision(req: any, res: any, next: any) {
 
     return res.json({
       should_insert: decision.shouldInsert,
+      message_id: decision.promptId,
       prompt_id: decision.promptId,
       insert_after_index: decision.insertAfterIndex,
       reason_code: decision.reasonCode,
@@ -253,6 +243,19 @@ feedMessagesRouter.get(feedMessageFetchPaths, async (req: any, res: any, next: a
     }
 
     return res.json({
+      message: {
+        id: prompt.id,
+        type: (prompt as any).promptType || 'register_login',
+        campaign_key: prompt.campaignKey,
+        headline: prompt.headline,
+        body: prompt.body,
+        cta_primary_label: prompt.ctaPrimaryLabel,
+        cta_primary_href: prompt.ctaPrimaryHref,
+        cta_secondary_label: prompt.ctaSecondaryLabel,
+        cta_secondary_href: prompt.ctaSecondaryHref,
+        creative: prompt.creative,
+        media,
+      },
       prompt: {
         id: prompt.id,
         prompt_type: (prompt as any).promptType || 'register_login',
@@ -275,13 +278,18 @@ feedMessagesRouter.get(feedMessageFetchPaths, async (req: any, res: any, next: a
 feedMessagesRouter.post(feedMessageEventPaths, async (req: any, res: any, next: any) => {
   try {
     const body = (req.body || {}) as any
-    const promptCampaignKey = body.prompt_campaign_key ? String(body.prompt_campaign_key) : (body.prompt_category ? String(body.prompt_category) : null)
-    const ctaKind = body.cta_kind ? String(body.cta_kind) : null
-    const sessionId = body.session_id ? String(body.session_id).trim() : null
+    const promptCampaignKey = body.message_campaign_key
+      ? String(body.message_campaign_key)
+      : (body.prompt_campaign_key ? String(body.prompt_campaign_key) : (body.prompt_category ? String(body.prompt_category) : null))
+    const ctaKind = body.message_cta_kind ? String(body.message_cta_kind) : (body.prompt_cta_kind ? String(body.prompt_cta_kind) : (body.cta_kind ? String(body.cta_kind) : null))
+    const sessionId = body.message_session_id
+      ? String(body.message_session_id).trim()
+      : (body.prompt_session_id ? String(body.prompt_session_id).trim() : (body.session_id ? String(body.session_id).trim() : null))
+    const messageId = body.message_id ?? body.prompt_id
 
     const tracked = await messageAnalyticsSvc.recordMessageEvent({
       event: body.event,
-      promptId: body.prompt_id,
+      promptId: messageId,
       promptCampaignKey,
       ctaKind,
       surface: body.surface || 'global_feed',
@@ -292,7 +300,7 @@ feedMessagesRouter.post(feedMessageEventPaths, async (req: any, res: any, next: 
     await recordMessageSessionEvent({
       sessionId,
       surface: String(body.surface || 'global_feed').trim().toLowerCase() as MessageDecisionSurface,
-      promptId: body.prompt_id,
+      promptId: messageId,
       event: body.event,
     })
 

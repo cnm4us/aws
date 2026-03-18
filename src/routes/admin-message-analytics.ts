@@ -16,9 +16,9 @@ adminMessageAnalyticsRouter.get(adminMessageAnalyticsPaths, async (req, res, nex
       fromDate: req.query?.from,
       toDate: req.query?.to,
       surface: req.query?.surface,
-      promptId: req.query?.prompt_id,
-      promptType: req.query?.prompt_type,
-      promptCampaignKey: req.query?.prompt_campaign_key ?? req.query?.prompt_category,
+      promptId: req.query?.message_id ?? req.query?.prompt_id,
+      promptType: req.query?.message_type ?? req.query?.prompt_type,
+      promptCampaignKey: req.query?.message_campaign_key ?? req.query?.prompt_campaign_key ?? req.query?.prompt_category,
       viewerState: req.query?.viewer_state,
     })
     const span = trace.getSpan(context.active())
@@ -40,9 +40,9 @@ adminMessageAnalyticsRouter.get(adminMessageAnalyticsCsvPaths, async (req, res, 
       fromDate: req.query?.from,
       toDate: req.query?.to,
       surface: req.query?.surface,
-      promptId: req.query?.prompt_id,
-      promptType: req.query?.prompt_type,
-      promptCampaignKey: req.query?.prompt_campaign_key ?? req.query?.prompt_category,
+      promptId: req.query?.message_id ?? req.query?.prompt_id,
+      promptType: req.query?.message_type ?? req.query?.prompt_type,
+      promptCampaignKey: req.query?.message_campaign_key ?? req.query?.prompt_campaign_key ?? req.query?.prompt_category,
       viewerState: req.query?.viewer_state,
     })
     const csv = messageAnalyticsSvc.buildMessageAnalyticsCsv(report)

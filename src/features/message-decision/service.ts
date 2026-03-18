@@ -84,24 +84,38 @@ function parseCounters(raw: any): PromptDecisionInput['counters'] {
   const slidesViewed = normalizeCounter(countersRaw.slides_viewed ?? countersRaw.slidesViewed, 'slides_viewed', 0, 1000000, 0)
   const watchSeconds = normalizeCounter(countersRaw.watch_seconds ?? countersRaw.watchSeconds, 'watch_seconds', 0, 7 * 24 * 60 * 60, 0)
   const promptsShownThisSession = normalizeCounter(
-    countersRaw.prompts_shown_this_session ?? countersRaw.promptsShownThisSession,
+    countersRaw.messages_shown_this_session ??
+      countersRaw.messagesShownThisSession ??
+      countersRaw.prompts_shown_this_session ??
+      countersRaw.promptsShownThisSession,
     'prompts_shown_this_session',
     0,
     10000,
     0
   )
   const slidesSinceLastPrompt = normalizeCounter(
-    countersRaw.slides_since_last_prompt ?? countersRaw.slidesSinceLastPrompt,
+    countersRaw.slides_since_last_message ??
+      countersRaw.slidesSinceLastMessage ??
+      countersRaw.slides_since_last_prompt ??
+      countersRaw.slidesSinceLastPrompt,
     'slides_since_last_prompt',
     0,
     1000000,
     0
   )
   const lastPromptShownAt = normalizeDateTime(
-    countersRaw.last_prompt_shown_at ?? countersRaw.lastPromptShownAt,
+    countersRaw.last_message_shown_at ??
+      countersRaw.lastMessageShownAt ??
+      countersRaw.last_prompt_shown_at ??
+      countersRaw.lastPromptShownAt,
     'last_prompt_shown_at'
   )
-  const lastPromptId = normalizePromptId(countersRaw.last_prompt_id ?? countersRaw.lastPromptId)
+  const lastPromptId = normalizePromptId(
+    countersRaw.last_message_id ??
+      countersRaw.lastMessageId ??
+      countersRaw.last_prompt_id ??
+      countersRaw.lastPromptId
+  )
 
   return {
     slidesViewed,
@@ -248,7 +262,13 @@ export function buildDecisionInput(params: {
 }): { input: PromptDecisionInput; createdSessionId: string | null } {
   const surface = normalizeSurface(params.body?.surface)
 
-  const bodySessionRaw = String(params.body?.session_id ?? params.body?.sessionId ?? '').trim()
+  const bodySessionRaw = String(
+    params.body?.message_session_id ??
+      params.body?.messageSessionId ??
+      params.body?.session_id ??
+      params.body?.sessionId ??
+      ''
+  ).trim()
   const bodySessionId = bodySessionRaw && isValidSessionId(bodySessionRaw) ? bodySessionRaw : null
 
   let sessionId = params.cookieSessionId && isValidSessionId(params.cookieSessionId)

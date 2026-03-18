@@ -295,15 +295,15 @@ export function buildServer(): express.Application {
 
   async function trackMessageAuthComplete(req: any, userId: number | null) {
     try {
-      const promptIdRaw = req?.body?.prompt_id
+      const promptIdRaw = req?.body?.message_id ?? req?.body?.prompt_id
       if (promptIdRaw == null || promptIdRaw === '') return
       await messageAnalyticsSvc.recordMessageEvent({
         event: 'auth_complete',
         surface: 'global_feed',
         promptId: promptIdRaw,
-        promptCampaignKey: req?.body?.prompt_campaign_key ?? req?.body?.prompt_category,
-        sessionId: req?.body?.prompt_session_id,
-        ctaKind: req?.body?.prompt_cta_kind,
+        promptCampaignKey: req?.body?.message_campaign_key ?? req?.body?.prompt_campaign_key ?? req?.body?.prompt_category,
+        sessionId: req?.body?.message_session_id ?? req?.body?.prompt_session_id,
+        ctaKind: req?.body?.message_cta_kind ?? req?.body?.prompt_cta_kind,
         viewerState: userId != null && Number(userId) > 0 ? 'authenticated' : 'anonymous',
         userId: userId != null && Number.isFinite(Number(userId)) ? Number(userId) : null,
       })
