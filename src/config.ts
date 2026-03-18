@@ -129,13 +129,13 @@ export const TERMS_UPLOAD_VERSION = process.env.TERMS_UPLOAD_VERSION || '2026-01
 // Create Video export (ffmpeg)
 export const CREATE_VIDEO_BG_COLOR = process.env.CREATE_VIDEO_BG_COLOR || '#000000'
 
-// Prompt pacing (Plan 129): global gating controls used by prompt decisioning.
-export const PROMPT_MAX_PROMPTS_PER_SESSION = envInt('PROMPT_MAX_PROMPTS_PER_SESSION', 2, { min: 0, max: 1000 })
-export const PROMPT_MIN_SLIDES_BEFORE_FIRST_PROMPT = envInt('PROMPT_MIN_SLIDES_BEFORE_FIRST_PROMPT', 6, { min: 0, max: 10000 })
-export const PROMPT_MIN_WATCH_SECONDS_BEFORE_FIRST_PROMPT = envInt('PROMPT_MIN_WATCH_SECONDS_BEFORE_FIRST_PROMPT', 45, { min: 0, max: 7 * 24 * 60 * 60 })
-export const PROMPT_MIN_SLIDES_BETWEEN_PROMPTS = envInt('PROMPT_MIN_SLIDES_BETWEEN_PROMPTS', 15, { min: 0, max: 10000 })
-export const PROMPT_COOLDOWN_SECONDS_AFTER_PROMPT = envInt('PROMPT_COOLDOWN_SECONDS_AFTER_PROMPT', 900, { min: 0, max: 7 * 24 * 60 * 60 })
-export const PROMPT_PASS_THROUGH_MIN_VISIBLE_MS = envInt('PROMPT_PASS_THROUGH_MIN_VISIBLE_MS', 800, { min: 0, max: 30000 })
+// Message pacing: global gating controls used by message decisioning.
+export const MESSAGE_MAX_MESSAGES_PER_SESSION = envInt('MESSAGE_MAX_MESSAGES_PER_SESSION', 2, { min: 0, max: 1000 })
+export const MESSAGE_MIN_SLIDES_BEFORE_FIRST_MESSAGE = envInt('MESSAGE_MIN_SLIDES_BEFORE_FIRST_MESSAGE', 6, { min: 0, max: 10000 })
+export const MESSAGE_MIN_WATCH_SECONDS_BEFORE_FIRST_MESSAGE = envInt('MESSAGE_MIN_WATCH_SECONDS_BEFORE_FIRST_MESSAGE', 45, { min: 0, max: 7 * 24 * 60 * 60 })
+export const MESSAGE_MIN_SLIDES_BETWEEN_MESSAGES = envInt('MESSAGE_MIN_SLIDES_BETWEEN_MESSAGES', 15, { min: 0, max: 10000 })
+export const MESSAGE_COOLDOWN_SECONDS_AFTER_MESSAGE = envInt('MESSAGE_COOLDOWN_SECONDS_AFTER_MESSAGE', 900, { min: 0, max: 7 * 24 * 60 * 60 })
+export const MESSAGE_PASS_THROUGH_MIN_VISIBLE_MS = envInt('MESSAGE_PASS_THROUGH_MIN_VISIBLE_MS', 800, { min: 0, max: 30000 })
 
 export type ImageVariantFormat = 'webp' | 'png'
 export type ImageVariantUsage = 'message_bg' | 'graphic_overlay' | 'logo' | 'lower_third'

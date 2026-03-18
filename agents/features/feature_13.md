@@ -87,4 +87,4 @@ Current implementation details are message-first at the table/module level:
 - `feed_message_events`
 - `feed_message_daily_stats`
 
-Compatibility payload fields may still use some legacy `prompt_*` keys where changing wire contracts is not yet necessary.
+Active runtime payloads, routes, and tables are message-first. Remaining prompt-era strings are limited to migration logic and historical planning context.

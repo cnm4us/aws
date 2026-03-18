@@ -1,6 +1,6 @@
 # Plan 133: Clean Message Conversion Finish Pass
 
-Status: Active — Phases A-E Complete
+Status: Complete
 
 ## Goal
 Finish the prompt-to-message conversion so active runtime code, canonical analytics, debug tooling, and asset naming all use message-first terminology.
@@ -243,7 +243,7 @@ Test gate:
 Acceptance:
 - asset and derivative naming is message-first
 
-## Phase F — Final Sweep And Changelog
+## Phase F — Final Sweep And Changelog (Complete)
 - remove leftover compatibility comments that are no longer true
 - prune obsolete migration shims if they only supported prompt-era compatibility inside DEV
 - update active docs:
@@ -258,6 +258,13 @@ Test gate:
 
 Acceptance:
 - message conversion is effectively complete for active runtime systems
+
+Closeout note:
+- active runtime routes, payloads, analytics contracts, asset usages, and admin surfaces are message-first
+- intentionally retained prompt-era strings are now limited to:
+  - explicit DB migration logic in `src/db.ts`
+  - historical documentation context
+  - unrelated browser APIs such as `window.prompt(...)`
 
 ## Risks
 1. Analytics rename breakage

@@ -11,9 +11,9 @@ function envInt(name: string, fallback: number): number {
 async function main() {
   const db = getPool()
 
-  const globalSpaceId = envInt('PROMPT_AUDIENCE_GLOBAL_SPACE_ID', 29)
-  const nonSubscriberUserId = envInt('PROMPT_AUDIENCE_NON_SUB_USER_ID', 7)
-  const subscriberUserId = envInt('PROMPT_AUDIENCE_SUB_USER_ID', 8)
+  const globalSpaceId = envInt('MESSAGE_AUDIENCE_GLOBAL_SPACE_ID', 29)
+  const nonSubscriberUserId = envInt('MESSAGE_AUDIENCE_NON_SUB_USER_ID', 7)
+  const subscriberUserId = envInt('MESSAGE_AUDIENCE_SUB_USER_ID', 8)
 
   if (globalSpaceId <= 0 || nonSubscriberUserId <= 0 || subscriberUserId <= 0) {
     throw new Error('invalid_seed_ids')

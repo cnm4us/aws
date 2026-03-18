@@ -213,7 +213,7 @@ function normalizeDateWindow(startsAtRaw: any, endsAtRaw: any): { startsAt: stri
   return { startsAt, endsAt }
 }
 
-type PromptLegacyFields = {
+type LegacyMessageFields = {
   headline: string
   body: string | null
   ctaPrimaryLabel: string
@@ -289,7 +289,7 @@ function parseCreativeRaw(raw: any): any | null {
   throw new DomainError('invalid_creative_json', 'invalid_creative_json', 400)
 }
 
-function buildLegacyCreative(legacy: PromptLegacyFields): MessageCreative {
+function buildLegacyCreative(legacy: LegacyMessageFields): MessageCreative {
   return {
     version: 1,
     background: {
@@ -327,7 +327,7 @@ function buildLegacyCreative(legacy: PromptLegacyFields): MessageCreative {
   }
 }
 
-function normalizeCreative(raw: any, legacy: PromptLegacyFields): MessageCreative {
+function normalizeCreative(raw: any, legacy: LegacyMessageFields): MessageCreative {
   const parsed = parseCreativeRaw(raw)
   const base = buildLegacyCreative(legacy)
   if (!parsed) return base
@@ -398,7 +398,7 @@ function normalizeCreative(raw: any, legacy: PromptLegacyFields): MessageCreativ
 }
 
 function resolveCreativeFromRow(row: MessageRow): MessageCreative {
-  const legacy: PromptLegacyFields = {
+  const legacy: LegacyMessageFields = {
     headline: String(row.headline || ''),
     body: row.body == null ? null : String(row.body),
     ctaPrimaryLabel: String(row.cta_primary_label || ''),
@@ -472,7 +472,7 @@ export async function listForAdmin(params: {
 
 export async function getForAdmin(id: number): Promise<MessageDto> {
   const row = await repo.getById(id)
-  if (!row) throw new NotFoundError('prompt_not_found')
+  if (!row) throw new NotFoundError('message_not_found')
   return mapRow(row)
 }
 
@@ -540,7 +540,7 @@ export async function createForAdmin(input: any, actorUserId: number): Promise<M
 export async function updateForAdmin(id: number, patch: any, actorUserId: number): Promise<MessageDto> {
   if (!actorUserId) throw new ForbiddenError()
   const existing = await repo.getById(id)
-  if (!existing) throw new NotFoundError('prompt_not_found')
+  if (!existing) throw new NotFoundError('message_not_found')
 
   const nextName = patch?.name !== undefined ? normalizeName(patch.name) : existing.name
   const nextHeadline = patch?.headline !== undefined ? normalizeHeadline(patch.headline) : existing.headline
@@ -665,7 +665,7 @@ export async function updateForAdmin(id: number, patch: any, actorUserId: number
 export async function cloneForAdmin(id: number, actorUserId: number): Promise<MessageDto> {
   if (!actorUserId) throw new ForbiddenError()
   const existing = await repo.getById(id)
-  if (!existing) throw new NotFoundError('prompt_not_found')
+  if (!existing) throw new NotFoundError('message_not_found')
 
   const row = await repo.create({
     name: `${String(existing.name || 'Message')} (Copy)`,
@@ -698,7 +698,7 @@ export async function updateStatusForAdmin(id: number, statusRaw: any, actorUser
   if (!actorUserId) throw new ForbiddenError()
   const status = normalizeStatus(statusRaw)
   const existing = await repo.getById(id)
-  if (!existing) throw new NotFoundError('prompt_not_found')
+  if (!existing) throw new NotFoundError('message_not_found')
 
   const row = await repo.update(id, {
     status,
@@ -712,9 +712,9 @@ export async function updateStatusForAdmin(id: number, statusRaw: any, actorUser
 export async function deleteForAdmin(id: number, actorUserId: number): Promise<void> {
   if (!actorUserId) throw new ForbiddenError()
   const existing = await repo.getById(id)
-  if (!existing) throw new NotFoundError('prompt_not_found')
+  if (!existing) throw new NotFoundError('message_not_found')
   const removed = await repo.remove(id)
-  if (!removed) throw new NotFoundError('prompt_not_found')
+  if (!removed) throw new NotFoundError('message_not_found')
   annotateAdminMessageWrite(existing, 'admin.messages.delete', actorUserId)
 }
 
@@ -737,13 +737,13 @@ export async function getActiveForFeedById(id: number): Promise<MessageDto> {
   const messageId = Number(id)
   if (!Number.isFinite(messageId) || messageId <= 0) throw new DomainError('bad_id', 'bad_id', 400)
   const row = await repo.getById(messageId)
-  if (!row) throw new NotFoundError('prompt_not_found')
-  if (row.status !== 'active') throw new NotFoundError('prompt_not_found')
+  if (!row) throw new NotFoundError('message_not_found')
+  if (row.status !== 'active') throw new NotFoundError('message_not_found')
   const now = Date.now()
   const startsAtMs = row.starts_at ? Date.parse(String(row.starts_at).replace(' ', 'T') + 'Z') : null
   const endsAtMs = row.ends_at ? Date.parse(String(row.ends_at).replace(' ', 'T') + 'Z') : null
-  if (startsAtMs != null && Number.isFinite(startsAtMs) && startsAtMs > now) throw new NotFoundError('prompt_not_found')
-  if (endsAtMs != null && Number.isFinite(endsAtMs) && endsAtMs < now) throw new NotFoundError('prompt_not_found')
+  if (startsAtMs != null && Number.isFinite(startsAtMs) && startsAtMs > now) throw new NotFoundError('message_not_found')
+  if (endsAtMs != null && Number.isFinite(endsAtMs) && endsAtMs < now) throw new NotFoundError('message_not_found')
   return mapRow(row)
 }
 

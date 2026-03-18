@@ -1,11 +1,11 @@
 import crypto from 'crypto'
 import { DomainError } from '../../core/errors'
 import {
-  PROMPT_COOLDOWN_SECONDS_AFTER_PROMPT,
-  PROMPT_MAX_PROMPTS_PER_SESSION,
-  PROMPT_MIN_SLIDES_BEFORE_FIRST_PROMPT,
-  PROMPT_MIN_SLIDES_BETWEEN_PROMPTS,
-  PROMPT_MIN_WATCH_SECONDS_BEFORE_FIRST_PROMPT,
+  MESSAGE_COOLDOWN_SECONDS_AFTER_MESSAGE,
+  MESSAGE_MAX_MESSAGES_PER_SESSION,
+  MESSAGE_MIN_SLIDES_BEFORE_FIRST_MESSAGE,
+  MESSAGE_MIN_SLIDES_BETWEEN_MESSAGES,
+  MESSAGE_MIN_WATCH_SECONDS_BEFORE_FIRST_MESSAGE,
 } from '../../config'
 import * as messagesSvc from '../messages/service'
 import * as repo from './repo'
@@ -182,7 +182,7 @@ function mergeSessionState(existing: MessageDecisionSessionRow | null, input: Me
     audienceSegment: input.audienceSegment,
     slidesViewed: Math.max(Number(existing.slides_viewed || 0), input.counters.slidesViewed),
     watchSeconds: Math.max(Number(existing.watch_seconds || 0), input.counters.watchSeconds),
-    // Server-authoritative counter; incremented when a prompt is actually selected.
+    // Server-authoritative counter; incremented when a message is actually selected.
     // This avoids client refreshes resetting rotation behavior.
     messagesShownThisSession: Number(existing.messages_shown_this_session || 0),
     slidesSinceLastMessage:
@@ -199,18 +199,18 @@ function nowMs(): number {
   return Date.now()
 }
 
-type EligiblePromptCandidate = {
+type EligibleMessageCandidate = {
   messageId: number
   messageType: string
   priority: number
   tieBreakStrategy: 'first' | 'round_robin' | 'weighted_random'
 }
 
-function selectPromptCandidate(
-  candidates: EligiblePromptCandidate[],
+function selectMessageCandidate(
+  candidates: EligibleMessageCandidate[],
   input: MessageDecisionInput,
   merged: ReturnType<typeof mergeSessionState>
-): EligiblePromptCandidate | null {
+): EligibleMessageCandidate | null {
   if (!candidates.length) return null
   if (candidates.length === 1) return candidates[0]
 
@@ -318,21 +318,21 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
   let candidateCount = 0
   let selectedPriority: number | null = null
 
-  if (merged.messagesShownThisSession >= PROMPT_MAX_PROMPTS_PER_SESSION) {
+  if (merged.messagesShownThisSession >= MESSAGE_MAX_MESSAGES_PER_SESSION) {
     reasonCode = 'cap_reached'
   } else {
     const lastShownMs = dateToMs(merged.lastMessageShownAt)
     if (
       lastShownMs != null &&
-      PROMPT_COOLDOWN_SECONDS_AFTER_PROMPT > 0 &&
-      nowMs() - lastShownMs < PROMPT_COOLDOWN_SECONDS_AFTER_PROMPT * 1000
+      MESSAGE_COOLDOWN_SECONDS_AFTER_MESSAGE > 0 &&
+      nowMs() - lastShownMs < MESSAGE_COOLDOWN_SECONDS_AFTER_MESSAGE * 1000
     ) {
       reasonCode = 'cooldown_active'
     } else if (
       (merged.messagesShownThisSession <= 0 &&
-        (merged.slidesViewed < PROMPT_MIN_SLIDES_BEFORE_FIRST_PROMPT ||
-          merged.watchSeconds < PROMPT_MIN_WATCH_SECONDS_BEFORE_FIRST_PROMPT)) ||
-      (merged.messagesShownThisSession > 0 && merged.slidesSinceLastMessage < PROMPT_MIN_SLIDES_BETWEEN_PROMPTS)
+        (merged.slidesViewed < MESSAGE_MIN_SLIDES_BEFORE_FIRST_MESSAGE ||
+          merged.watchSeconds < MESSAGE_MIN_WATCH_SECONDS_BEFORE_FIRST_MESSAGE)) ||
+      (merged.messagesShownThisSession > 0 && merged.slidesSinceLastMessage < MESSAGE_MIN_SLIDES_BETWEEN_MESSAGES)
     ) {
       reasonCode = 'below_threshold'
     } else {
@@ -345,7 +345,7 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
       if (!messages.length) {
         reasonCode = 'no_active_message'
       } else {
-        const candidates: EligiblePromptCandidate[] = []
+        const candidates: EligibleMessageCandidate[] = []
         for (const message of messages) {
           const candidateId = Number(message.id || 0)
           if (!Number.isFinite(candidateId) || candidateId <= 0) continue
@@ -367,7 +367,7 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
         if (!candidateCount) {
           reasonCode = 'no_candidate'
         } else {
-          const selected = selectPromptCandidate(candidates, input, merged)
+          const selected = selectMessageCandidate(candidates, input, merged)
           if (!selected) {
             reasonCode = 'no_candidate'
           } else {

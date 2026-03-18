@@ -532,7 +532,7 @@ function isMessageItem(it: UploadItem | null | undefined): boolean {
 function computeSequenceBaseKey(it: UploadItem): string {
   if (isMessageItem(it)) {
     const pid = it.message?.id != null ? Number(it.message.id) : 0
-    return `prompt:${pid}:${String(it.id)}`
+    return `message:${pid}:${String(it.id)}`
   }
   const vid = (it as any).videoId ? String((it as any).videoId) : null
   const pubId = it.publicationId != null ? String(it.publicationId) : null
@@ -781,13 +781,13 @@ export default function Feed() {
     slidesViewed: number
     watchSeconds: number
     messagesShown: number
-    slidesSinceLastPrompt: number
+    slidesSinceLastMessage: number
     lastMessageId: number | null
   }>({
     slidesViewed: 0,
     watchSeconds: 0,
     messagesShown: 0,
-    slidesSinceLastPrompt: 999,
+    slidesSinceLastMessage: 999,
     lastMessageId: null,
   })
   const lastCountedContentKeyRef = useRef<string | null>(null)
@@ -795,7 +795,7 @@ export default function Feed() {
   const lastHookActiveKeyRef = useRef<string | null>(null)
   const lastHookWindowRef = useRef<{ start: number; end: number } | null>(null)
   const sequenceHookReadyRef = useRef<boolean>(false)
-  const seenPromptSequenceKeysRef = useRef<Set<string>>(new Set())
+  const seenMessageSequenceKeysRef = useRef<Set<string>>(new Set())
 
   const sequenceItems = useMemo<SequenceItem[]>(() => {
     const seen = new Map<string, number>()
@@ -974,11 +974,11 @@ export default function Feed() {
     const messageItems = sequenceItems.filter((seq) => seq.kind === 'message')
     const nextSet = new Set(messageItems.map((seq) => seq.sequenceKey))
     if (!sequenceHookReadyRef.current) {
-      seenPromptSequenceKeysRef.current = nextSet
+      seenMessageSequenceKeysRef.current = nextSet
       sequenceHookReadyRef.current = true
       return
     }
-    const prevSet = seenPromptSequenceKeysRef.current
+    const prevSet = seenMessageSequenceKeysRef.current
     for (const seq of messageItems) {
       if (prevSet.has(seq.sequenceKey)) continue
       emitSequenceHook('sequence_message_inserted', {
@@ -987,7 +987,7 @@ export default function Feed() {
         source_index: seq.sourceIndex,
       })
     }
-    seenPromptSequenceKeysRef.current = nextSet
+    seenMessageSequenceKeysRef.current = nextSet
   }, [sequenceEngineV1Enabled, sequenceItems, emitSequenceHook])
 
   const feedActivityContext = useMemo(() => {
@@ -2471,7 +2471,7 @@ export default function Feed() {
       return
     }
     messageCountersRef.current.slidesViewed += 1
-    messageCountersRef.current.slidesSinceLastPrompt += 1
+    messageCountersRef.current.slidesSinceLastMessage += 1
   }, [activeItem, activeSequenceKey, items.length, isGlobalBillboard])
 
   // Reset per-slide decision guard when leaving global feed.
@@ -2622,7 +2622,7 @@ export default function Feed() {
           slides_viewed: counters.slidesViewed,
           watch_seconds: counters.watchSeconds,
           messages_shown_this_session: counters.messagesShown,
-          slides_since_last_message: counters.slidesSinceLastPrompt,
+          slides_since_last_message: counters.slidesSinceLastMessage,
           last_message_id: counters.lastMessageId,
         })
         const res = await fetch('/api/feed/message-decision', {
@@ -2638,7 +2638,7 @@ export default function Feed() {
             slides_viewed: counters.slidesViewed,
             watch_seconds: counters.watchSeconds,
             messages_shown_this_session: counters.messagesShown,
-            slides_since_last_message: counters.slidesSinceLastPrompt,
+            slides_since_last_message: counters.slidesSinceLastMessage,
             last_message_id: counters.lastMessageId,
           }),
         })
@@ -2713,7 +2713,7 @@ export default function Feed() {
           const hasAdditionalMessageAhead = prev.some((it, idx) => idx > insertAt && isMessageItem(it))
           if (immediateMessageId === Number(message.id) && !hasAdditionalMessageAhead) {
             counters.messagesShown += 1
-            counters.slidesSinceLastPrompt = 0
+            counters.slidesSinceLastMessage = 0
             counters.lastMessageId = message.id
             emitMessageDebug('decision:insert:already_present', {
               active_content_slide_id: activeSlideId,
@@ -2769,7 +2769,7 @@ export default function Feed() {
             setIndex((cur) => (cur === nextActiveIdx ? cur : nextActiveIdx))
           }
           counters.messagesShown += 1
-          counters.slidesSinceLastPrompt = 0
+          counters.slidesSinceLastMessage = 0
           counters.lastMessageId = message.id
           emitMessageDebug('decision:insert:applied', {
             active_content_slide_id: activeSlideId,
@@ -3008,24 +3008,24 @@ export default function Feed() {
         const it = seq.item
         const i = seq.sourceIndex
         const sequenceKey = seq.sequenceKey
-        const prompt = it.message
-        if (prompt && isMessageItem(it)) {
-          const slideId = `prompt-${prompt.id}-${it.id}`
+        const message = it.message
+        if (message && isMessageItem(it)) {
+          const slideId = `message-${message.id}-${it.id}`
           const promptPosterByOrientation =
-            (isPortrait ? (prompt.media?.posterPortrait || prompt.media?.posterLandscape) : (prompt.media?.posterLandscape || prompt.media?.posterPortrait)) ||
-            prompt.media?.posterPortrait ||
-            prompt.media?.posterLandscape ||
+            (isPortrait ? (message.media?.posterPortrait || message.media?.posterLandscape) : (message.media?.posterLandscape || message.media?.posterPortrait)) ||
+            message.media?.posterPortrait ||
+            message.media?.posterLandscape ||
             null
           const promptPoster =
-            prompt.backgroundMode === 'image'
-              ? (prompt.media?.master || promptPosterByOrientation || null)
+            message.backgroundMode === 'image'
+              ? (message.media?.master || promptPosterByOrientation || null)
               : (promptPosterByOrientation || null)
           const promptVideoSrc =
-            prompt.backgroundMode === 'video'
-              ? (prompt.media?.master || null)
+            message.backgroundMode === 'video'
+              ? (message.media?.master || null)
               : null
           const promptVideoTapToPlay =
-            prompt.backgroundMode === 'video' && prompt.backgroundVideoPlayback === 'tap_to_play_sound'
+            message.backgroundMode === 'video' && message.backgroundVideoPlayback === 'tap_to_play_sound'
           const promptVideoAutoplayMuted = Boolean(promptVideoSrc && !promptVideoTapToPlay)
           const panelStyle = promptPoster
             ? {
@@ -3038,15 +3038,15 @@ export default function Feed() {
             : {
                 background: 'linear-gradient(180deg, rgba(8,12,18,0.95) 0%, rgba(6,8,12,0.98) 100%)',
               }
-          const messagePlacement = messageWidgetPlacement(prompt.widgets.message.position, prompt.widgets.message.yOffsetPct, 'message')
-          const authPlacement = messageWidgetPlacement(prompt.widgets.auth.position, prompt.widgets.auth.yOffsetPct, 'auth')
+          const messagePlacement = messageWidgetPlacement(message.widgets.message.position, message.widgets.message.yOffsetPct, 'message')
+          const authPlacement = messageWidgetPlacement(message.widgets.auth.position, message.widgets.auth.yOffsetPct, 'auth')
           return (
             <div
               key={slideId}
               className={styles.slide}
               id={slideId}
               data-sequence-key={sequenceKey}
-              data-prompt-id={String(prompt.id)}
+              data-message-id={String(message.id)}
               data-upload-id={String(it.id)}
             >
               <div className={styles.holder}>
@@ -3164,7 +3164,7 @@ export default function Feed() {
                     style={{
                       position: 'absolute',
                       inset: 0,
-                      background: toRgba(prompt.overlayColor, prompt.overlayOpacity),
+                      background: toRgba(message.overlayColor, message.overlayOpacity),
                     }}
                   />
                   <div
@@ -3175,7 +3175,7 @@ export default function Feed() {
                       boxSizing: 'border-box',
                     }}
                   >
-                    {prompt.widgets.message.enabled ? (
+                    {message.widgets.message.enabled ? (
                       <div
                         style={{
                           position: 'absolute',
@@ -3184,20 +3184,20 @@ export default function Feed() {
                           ...messagePlacement,
                           borderRadius: 12,
                           border: '1px solid rgba(255,255,255,0.26)',
-                          background: toRgba(prompt.widgets.message.bgColor, prompt.widgets.message.bgOpacity),
+                          background: toRgba(message.widgets.message.bgColor, message.widgets.message.bgOpacity),
                           backdropFilter: 'blur(6px)',
-                          color: prompt.widgets.message.textColor,
+                          color: message.widgets.message.textColor,
                           padding: '14px 12px',
                           textAlign: 'left',
                         }}
                       >
                         <div style={{ fontSize: 12, opacity: 0.9, marginBottom: 4 }}>
-                          {prompt.widgets.message.label || 'Join the Community'}
+                          {message.widgets.message.label || 'Join the Community'}
                         </div>
-                        <div style={{ fontSize: 24, lineHeight: 1.18, fontWeight: 800, marginBottom: 8 }}>{prompt.headline}</div>
-                        {prompt.body ? (
+                        <div style={{ fontSize: 24, lineHeight: 1.18, fontWeight: 800, marginBottom: 8 }}>{message.headline}</div>
+                        {message.body ? (
                           <div style={{ fontSize: 16, lineHeight: 1.35, opacity: 0.95, whiteSpace: 'pre-wrap', marginBottom: 14 }}>
-                            {prompt.body}
+                            {message.body}
                           </div>
                         ) : null}
                         <div style={{ display: 'flex', gap: 10, justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
@@ -3205,7 +3205,7 @@ export default function Feed() {
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation()
-                              handleMessageCtaClick(prompt, prompt.ctaPrimaryHref, 'primary')
+                              handleMessageCtaClick(message, message.ctaPrimaryHref, 'primary')
                             }}
                             style={{
                               border: '1px solid rgba(255,255,255,0.45)',
@@ -3218,14 +3218,14 @@ export default function Feed() {
                               cursor: 'pointer',
                             }}
                           >
-                            {prompt.ctaPrimaryLabel}
+                            {message.ctaPrimaryLabel}
                           </button>
-                          {prompt.ctaSecondaryLabel && prompt.ctaSecondaryHref ? (
+                          {message.ctaSecondaryLabel && message.ctaSecondaryHref ? (
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation()
-                                handleMessageCtaClick(prompt, prompt.ctaSecondaryHref || '', 'secondary')
+                                handleMessageCtaClick(message, message.ctaSecondaryHref || '', 'secondary')
                               }}
                             style={{
                               border: '1px solid rgba(255,255,255,0.45)',
@@ -3238,13 +3238,13 @@ export default function Feed() {
                               cursor: 'pointer',
                             }}
                             >
-                              {prompt.ctaSecondaryLabel}
+                              {message.ctaSecondaryLabel}
                             </button>
                           ) : null}
                         </div>
                       </div>
                     ) : null}
-                    {prompt.widgets.auth.enabled ? (
+                    {message.widgets.auth.enabled ? (
                       <div
                         style={{
                           position: 'absolute',
@@ -3253,9 +3253,9 @@ export default function Feed() {
                           ...authPlacement,
                           borderRadius: 12,
                           border: '1px solid rgba(255,255,255,0.26)',
-                          background: toRgba(prompt.widgets.auth.bgColor, prompt.widgets.auth.bgOpacity),
+                          background: toRgba(message.widgets.auth.bgColor, message.widgets.auth.bgOpacity),
                           backdropFilter: 'blur(6px)',
-                          color: prompt.widgets.auth.textColor,
+                          color: message.widgets.auth.textColor,
                           padding: '10px 10px',
                         }}
                       >
@@ -3272,7 +3272,7 @@ export default function Feed() {
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation()
-                              handleMessageCtaClick(prompt, '/register?return=/', 'primary')
+                              handleMessageCtaClick(message, '/register?return=/', 'primary')
                             }}
                             style={{
                               justifySelf: 'start',
@@ -3292,7 +3292,7 @@ export default function Feed() {
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation()
-                              handleMessageCtaClick(prompt, '/login?return=/', 'secondary')
+                              handleMessageCtaClick(message, '/login?return=/', 'secondary')
                             }}
                             style={{
                               justifySelf: 'end',

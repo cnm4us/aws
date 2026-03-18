@@ -252,7 +252,7 @@ Example:
 
 ## Good Use Cases
 
-- prompt decision debugging
+- message decision debugging
 - feed sequencing bugs
 - index / re-anchor bugs
 - future HLS or editor workflows with structured event streams

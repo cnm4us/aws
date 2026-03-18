@@ -156,7 +156,8 @@ Scope notes:
 Note:
 - Product/admin terminology is `Message` / `In-Feed Message`.
 - Table names and telemetry names are message-first.
-- Some request payload fields and analytics event payload keys still use legacy `prompt_*` names for compatibility.
+- Legacy `prompt_*` compatibility has been removed from active request and analytics payloads.
+- Remaining prompt-era strings in runtime code are limited to explicit DB migration logic.
 
 ### Media job operations
 - `create_video.export.process`

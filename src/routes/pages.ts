@@ -646,9 +646,9 @@ type AdminNavKey =
 	| 'lower_thirds'
 	| 'audio_configs'
   | 'media_jobs'
-  | 'prompts'
+  | 'messages'
   | 'analytics'
-  | 'prompt_analytics'
+  | 'message_analytics'
   | 'analytics_sink'
 	| 'settings'
 	| 'dev';
@@ -669,9 +669,9 @@ const ADMIN_NAV_ITEMS: Array<{ key: AdminNavKey; label: string; href: string }> 
 	{ key: 'lower_thirds', label: 'Lower Thirds', href: '/admin/lower-thirds' },
 	{ key: 'audio_configs', label: 'Audio Configs', href: '/admin/audio-configs' },
 	{ key: 'media_jobs', label: 'Media Jobs', href: '/admin/media-jobs' },
-  { key: 'prompts', label: 'Messages', href: '/admin/messages' },
+  { key: 'messages', label: 'Messages', href: '/admin/messages' },
   { key: 'analytics', label: 'Analytics', href: '/admin/analytics' },
-  { key: 'prompt_analytics', label: 'Message Analytics', href: '/admin/message-analytics' },
+  { key: 'message_analytics', label: 'Message Analytics', href: '/admin/message-analytics' },
   { key: 'analytics_sink', label: 'Analytics Sink', href: '/admin/analytics-sink' },
   { key: 'settings', label: 'Settings', href: '/admin/settings' },
   { key: 'dev', label: 'Dev', href: '/admin/dev' },
@@ -3035,7 +3035,7 @@ function toTimeOnlyValue(raw: any): string {
   return dt ? dt.slice(11, 16) : ''
 }
 
-const PROMPT_TYPE_OPTIONS: Array<{ value: string; label: string }> = [
+const MESSAGE_TYPE_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'register_login', label: 'Register / Login' },
   { value: 'fund_drive', label: 'Fund Drive' },
   { value: 'subscription_upgrade', label: 'Subscription Upgrade' },
@@ -3043,17 +3043,17 @@ const PROMPT_TYPE_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'feature_announcement', label: 'Feature Announcement' },
 ]
 
-const PROMPT_AUDIENCE_OPTIONS: Array<{ value: string; label: string }> = [
+const MESSAGE_AUDIENCE_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'anonymous', label: 'Anonymous' },
   { value: 'authenticated_non_subscriber', label: 'Authenticated (Non-Subscriber)' },
   { value: 'authenticated_subscriber', label: 'Authenticated (Subscriber)' },
 ]
 
-const PROMPT_SURFACE_OPTIONS: Array<{ value: string; label: string }> = [
+const MESSAGE_SURFACE_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'global_feed', label: 'Global Feed' },
 ]
 
-const PROMPT_TIE_BREAK_OPTIONS: Array<{ value: string; label: string }> = [
+const MESSAGE_TIE_BREAK_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'round_robin', label: 'Round Robin' },
   { value: 'weighted_random', label: 'Weighted Random' },
   { value: 'first', label: 'First' },
@@ -3088,7 +3088,7 @@ function hexToRgba(hex: string, opacity: number): string {
   return `rgba(${r}, ${g}, ${b}, ${a})`
 }
 
-function extractPromptCreativeForm(values: any): {
+function extractMessageCreativeForm(values: any): {
   backgroundMode: 'none' | 'image' | 'video'
   backgroundVideoPlayback: 'muted_autoplay' | 'tap_to_play_sound'
   backgroundUploadId: string
@@ -3176,8 +3176,8 @@ function extractPromptCreativeForm(values: any): {
   }
 }
 
-function buildPromptCreateOrUpdatePayload(body: any): any {
-  const creativeForm = extractPromptCreativeForm(body || {})
+function buildMessageCreateOrUpdatePayload(body: any): any {
+  const creativeForm = extractMessageCreativeForm(body || {})
   const messageEnabled = parseBoolLoose(body?.creativeMessageEnabled, false)
   const authEnabled = parseBoolLoose(body?.creativeAuthEnabled, false)
   const primaryLabel = String(body?.ctaPrimaryLabel ?? body?.cta_primary_label ?? 'Register')
@@ -3250,7 +3250,7 @@ function buildPromptCreateOrUpdatePayload(body: any): any {
   }
 }
 
-function renderAdminPromptForm(opts: {
+function renderAdminMessageForm(opts: {
   title: string
   action: string
   csrfToken?: string | null
@@ -3263,8 +3263,8 @@ function renderAdminPromptForm(opts: {
   const csrfToken = opts.csrfToken ? String(opts.csrfToken) : ''
   const values = opts.values || {}
   const id = values.id ? Number(values.id) : null
-  const draftKey = id ? `admin_prompt_editor_draft_${id}` : 'admin_prompt_editor_draft_new'
-  const creativeForm = extractPromptCreativeForm(values)
+  const draftKey = id ? `admin_message_editor_draft_${id}` : 'admin_message_editor_draft_new'
+  const creativeForm = extractMessageCreativeForm(values)
   const creativeWarnings: string[] = []
   if (creativeForm.messageEnabled && creativeForm.authEnabled) {
     const samePos = creativeForm.messagePosition === creativeForm.authPosition
@@ -3295,30 +3295,30 @@ function renderAdminPromptForm(opts: {
   if (opts.error) body += `<div class="error">${escapeHtml(String(opts.error))}</div>`
   if (opts.notice) body += `<div class="notice">${escapeHtml(String(opts.notice))}</div>`
   body += `<style>
-    #prompt-editor-form {
+    #message-editor-form {
       max-width: 560px;
       margin: 0 auto;
       box-sizing: border-box;
     }
-    #prompt-editor-form .section {
+    #message-editor-form .section {
       border: 1px solid rgba(96,165,250,0.4);
       background: linear-gradient(180deg, rgba(28,45,58,0.72) 0%, rgba(12,16,20,0.72) 100%);
       border-radius: 12px;
       padding: 12px;
       margin: 10px 0;
     }
-    #prompt-editor-form .section-title {
+    #message-editor-form .section-title {
       color: #fff;
       font-size: 18px;
       font-weight: 900;
       margin-bottom: 10px;
     }
-    #prompt-editor-form .field-hint {
+    #message-editor-form .field-hint {
       color: #bbb;
       font-size: 12px;
       font-weight: 800;
     }
-    #prompt-editor-form label {
+    #message-editor-form label {
       display: grid;
       gap: 6px;
       min-width: 0;
@@ -3326,9 +3326,9 @@ function renderAdminPromptForm(opts: {
       font-weight: 800;
       font-size: 13px;
     }
-    #prompt-editor-form input,
-    #prompt-editor-form select,
-    #prompt-editor-form textarea {
+    #message-editor-form input,
+    #message-editor-form select,
+    #message-editor-form textarea {
       width: 100%;
       max-width: 100%;
       box-sizing: border-box;
@@ -3340,14 +3340,14 @@ function renderAdminPromptForm(opts: {
       font-size: 14px;
       font-weight: 900;
     }
-    #prompt-editor-form input[type="checkbox"] {
+    #message-editor-form input[type="checkbox"] {
       width: auto;
       max-width: none;
       padding: 0;
       border: 0;
       background: transparent;
     }
-    #prompt-editor-form input.color-swatch-input {
+    #message-editor-form input.color-swatch-input {
       width: 48px;
       min-width: 48px;
       height: 36px;
@@ -3356,31 +3356,31 @@ function renderAdminPromptForm(opts: {
       background: transparent;
       border: 1px solid rgba(255,255,255,0.3);
     }
-    #prompt-editor-form .mini-field {
+    #message-editor-form .mini-field {
       display: flex;
       flex-direction: column;
       gap: 6px;
       min-width: 0;
       align-items: flex-start;
     }
-    #prompt-editor-form .mini-field-label {
+    #message-editor-form .mini-field-label {
       color: #e9eef5;
       font-weight: 800;
       font-size: 13px;
       line-height: 1.2;
       margin: 0;
     }
-    #prompt-editor-form .picker-row {
+    #message-editor-form .picker-row {
       display: flex;
       align-items: center;
       gap: 8px;
       width: 100%;
     }
-    #prompt-editor-form .picker-row > input {
+    #message-editor-form .picker-row > input {
       flex: 1 1 auto;
       min-width: 0;
     }
-    #prompt-editor-form .picker-btn {
+    #message-editor-form .picker-btn {
       width: 40px;
       min-width: 40px;
       height: 40px;
@@ -3396,13 +3396,13 @@ function renderAdminPromptForm(opts: {
       color: #fff;
       cursor: pointer;
     }
-    #prompt-editor-form .btn {
+    #message-editor-form .btn {
       border: 1px solid rgba(255,255,255,0.18);
       background: rgba(255,255,255,0.06);
       color: #fff;
       font-weight: 800;
     }
-    #prompt-editor-form .btn.btn-primary-accent {
+    #message-editor-form .btn.btn-primary-accent {
       border: 1px solid rgba(96,165,250,0.95);
       background: rgba(96,165,250,0.14);
       color: #fff;
@@ -3411,25 +3411,25 @@ function renderAdminPromptForm(opts: {
   </style>`
 
   const skipDraftRestore = opts.notice ? '1' : '0'
-  body += `<form id="prompt-editor-form" data-draft-key="${escapeHtml(draftKey)}" data-skip-draft-restore="${skipDraftRestore}" method="post" action="${escapeHtml(opts.action)}">`
+  body += `<form id="message-editor-form" data-draft-key="${escapeHtml(draftKey)}" data-skip-draft-restore="${skipDraftRestore}" method="post" action="${escapeHtml(opts.action)}">`
   if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
   const messageTypeValue = String(values.type || values.messageType || 'register_login').trim().toLowerCase() || 'register_login'
-  const messageTypeOptions = PROMPT_TYPE_OPTIONS.slice()
+  const messageTypeOptions = MESSAGE_TYPE_OPTIONS.slice()
   if (!messageTypeOptions.some((opt) => opt.value === messageTypeValue)) {
     messageTypeOptions.unshift({ value: messageTypeValue, label: `Custom (${messageTypeValue})` })
   }
   const audienceValue = String(values.audienceSegment || values.audience_segment || 'anonymous').trim().toLowerCase() || 'anonymous'
-  const audienceOptions = PROMPT_AUDIENCE_OPTIONS.slice()
+  const audienceOptions = MESSAGE_AUDIENCE_OPTIONS.slice()
   if (!audienceOptions.some((opt) => opt.value === audienceValue)) {
     audienceOptions.unshift({ value: audienceValue, label: `Custom (${audienceValue})` })
   }
   const surfaceValue = String(values.appliesToSurface || values.applies_to_surface || 'global_feed').trim().toLowerCase() || 'global_feed'
-  const surfaceOptions = PROMPT_SURFACE_OPTIONS.slice()
+  const surfaceOptions = MESSAGE_SURFACE_OPTIONS.slice()
   if (!surfaceOptions.some((opt) => opt.value === surfaceValue)) {
     surfaceOptions.unshift({ value: surfaceValue, label: `Custom (${surfaceValue})` })
   }
   const tieBreakValue = String(values.tieBreakStrategy || values.tie_break_strategy || 'round_robin').trim().toLowerCase() || 'round_robin'
-  const tieBreakOptions = PROMPT_TIE_BREAK_OPTIONS.slice()
+  const tieBreakOptions = MESSAGE_TIE_BREAK_OPTIONS.slice()
   if (!tieBreakOptions.some((opt) => opt.value === tieBreakValue)) {
     tieBreakOptions.unshift({ value: tieBreakValue, label: `Custom (${tieBreakValue})` })
   }
@@ -3479,7 +3479,7 @@ function renderAdminPromptForm(opts: {
     <option value="image"${creativeForm.backgroundMode === 'image' ? ' selected' : ''}>Image</option>
     <option value="video"${creativeForm.backgroundMode === 'video' ? ' selected' : ''}>Video</option>
   </select></label>`
-  body += `<label id="prompt-video-playback-row"${creativeForm.backgroundMode === 'video' ? '' : ' style="display:none"'}>Video Playback<select name="creativeBgVideoPlayback">
+  body += `<label id="message-video-playback-row"${creativeForm.backgroundMode === 'video' ? '' : ' style="display:none"'}>Video Playback<select name="creativeBgVideoPlayback">
     <option value="muted_autoplay"${creativeForm.backgroundVideoPlayback === 'muted_autoplay' ? ' selected' : ''}>Muted Autoplay</option>
     <option value="tap_to_play_sound"${creativeForm.backgroundVideoPlayback === 'tap_to_play_sound' ? ' selected' : ''}>Tap to Play (Sound)</option>
   </select></label>`
@@ -3489,8 +3489,8 @@ function renderAdminPromptForm(opts: {
   body += `<div class="mini-field"><div class="mini-field-label">Overlay Opacity</div><input type="number" name="creativeBgOverlayOpacity" min="0" max="1" step="0.05" value="${escapeHtml(String(creativeForm.backgroundOverlayOpacity))}" /></div>`
   body += `</div>`
   body += `<div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px">`
-  body += `<button class="btn" type="button" id="prompt-pick-bg-image">Select Image</button>`
-  body += `<button class="btn" type="button" id="prompt-pick-bg-video">Select Video</button>`
+  body += `<button class="btn" type="button" id="message-pick-bg-image">Select Image</button>`
+  body += `<button class="btn" type="button" id="message-pick-bg-video">Select Video</button>`
   body += `</div>`
   body += `</div>`
 
@@ -3566,27 +3566,27 @@ function renderAdminPromptForm(opts: {
 
   body += `<div class="section-title" style="margin:10px 0 6px">Preview</div>`
   body += `<div style="border:1px solid rgba(96,165,250,0.6); border-radius:12px; background:linear-gradient(180deg, rgba(28,45,58,0.72) 0%, rgba(12,16,20,0.72) 100%); overflow:hidden">`
-  body += `<div id="prompt-preview-device" style="width:100%; max-width:100%; aspect-ratio:9/16; margin:0; ${previewBaseStyle} position:relative">`
-  body += `<div id="prompt-preview-overlay" style="position:absolute; inset:0; background:${hexToRgba(creativeForm.backgroundOverlayColor, creativeForm.backgroundOverlayOpacity)}"></div>`
-  body += `<div id="prompt-preview-mode-badge" style="position:absolute; top:10px; right:10px; z-index:2; border:1px solid rgba(255,255,255,0.25); border-radius:999px; padding:3px 8px; font-size:11px; background:rgba(0,0,0,0.45)">Mode: ${escapeHtml(String(creativeForm.backgroundMode))}${creativeForm.backgroundMode === 'video' ? ` (${escapeHtml(creativeForm.backgroundVideoPlayback === 'tap_to_play_sound' ? 'tap-to-play' : 'muted-autoplay')})` : ''}</div>`
+  body += `<div id="message-preview-device" style="width:100%; max-width:100%; aspect-ratio:9/16; margin:0; ${previewBaseStyle} position:relative">`
+  body += `<div id="message-preview-overlay" style="position:absolute; inset:0; background:${hexToRgba(creativeForm.backgroundOverlayColor, creativeForm.backgroundOverlayOpacity)}"></div>`
+  body += `<div id="message-preview-mode-badge" style="position:absolute; top:10px; right:10px; z-index:2; border:1px solid rgba(255,255,255,0.25); border-radius:999px; padding:3px 8px; font-size:11px; background:rgba(0,0,0,0.45)">Mode: ${escapeHtml(String(creativeForm.backgroundMode))}${creativeForm.backgroundMode === 'video' ? ` (${escapeHtml(creativeForm.backgroundVideoPlayback === 'tap_to_play_sound' ? 'tap-to-play' : 'muted-autoplay')})` : ''}</div>`
   const msgInset = Math.max(0, Math.min(80, Number(creativeForm.messageOffsetPct || 0)))
   const msgTopPct = Math.max(2, Math.min(92, (creativeForm.messagePosition === 'top' ? 2 : 42) + msgInset))
   const msgPosStyle = creativeForm.messagePosition === 'bottom'
     ? `bottom:${Math.max(2, Math.min(92, 2 + msgInset))}%`
     : `top:${msgTopPct}%`
-  body += `<div id="prompt-preview-message" style="display:${creativeForm.messageEnabled ? 'block' : 'none'}; position:absolute; left:14px; right:14px; ${msgPosStyle}; z-index:2; border:1px solid rgba(255,255,255,0.24); border-radius:10px; background:${hexToRgba(creativeForm.messageBgColor, creativeForm.messageBgOpacity)}; color:${escapeHtml(creativeForm.messageTextColor)}; padding:10px">`
-  body += `<div id="prompt-preview-message-label" style="font-size:12px; opacity:0.9; margin-bottom:4px">${escapeHtml(String(creativeForm.messageLabel || 'Message'))}</div>`
-  body += `<div id="prompt-preview-message-headline" style="font-size:24px; line-height:1.18; font-weight:800; margin-bottom:8px">${escapeHtml(String(values.headline || 'Message headline'))}</div>`
-  body += `<div id="prompt-preview-message-body"${values.body ? '' : ' hidden'} style="opacity:0.9; margin-bottom:8px">${escapeHtml(String(values.body || ''))}</div>`
-  body += `<div style="display:flex; gap:8px; justify-content:space-between; align-items:center"><span id="prompt-preview-primary-btn" class="btn" style="border:1px solid rgba(255,255,255,0.45); border-radius:11px; background:rgba(0,0,0,0.5); padding:8px 12px">${escapeHtml(String(values.ctaPrimaryLabel || values.cta_primary_label || 'Primary'))}</span>`
-  body += `<span id="prompt-preview-secondary-btn" class="btn" style="border:1px solid rgba(255,255,255,0.45); border-radius:11px; background:rgba(0,0,0,0.5); padding:8px 12px; display:${(values.ctaSecondaryLabel || values.cta_secondary_label) ? 'inline-flex' : 'none'}">${escapeHtml(String(values.ctaSecondaryLabel || values.cta_secondary_label || 'Secondary'))}</span>`
+  body += `<div id="message-preview-message" style="display:${creativeForm.messageEnabled ? 'block' : 'none'}; position:absolute; left:14px; right:14px; ${msgPosStyle}; z-index:2; border:1px solid rgba(255,255,255,0.24); border-radius:10px; background:${hexToRgba(creativeForm.messageBgColor, creativeForm.messageBgOpacity)}; color:${escapeHtml(creativeForm.messageTextColor)}; padding:10px">`
+  body += `<div id="message-preview-message-label" style="font-size:12px; opacity:0.9; margin-bottom:4px">${escapeHtml(String(creativeForm.messageLabel || 'Message'))}</div>`
+  body += `<div id="message-preview-message-headline" style="font-size:24px; line-height:1.18; font-weight:800; margin-bottom:8px">${escapeHtml(String(values.headline || 'Message headline'))}</div>`
+  body += `<div id="message-preview-message-body"${values.body ? '' : ' hidden'} style="opacity:0.9; margin-bottom:8px">${escapeHtml(String(values.body || ''))}</div>`
+  body += `<div style="display:flex; gap:8px; justify-content:space-between; align-items:center"><span id="message-preview-primary-btn" class="btn" style="border:1px solid rgba(255,255,255,0.45); border-radius:11px; background:rgba(0,0,0,0.5); padding:8px 12px">${escapeHtml(String(values.ctaPrimaryLabel || values.cta_primary_label || 'Primary'))}</span>`
+  body += `<span id="message-preview-secondary-btn" class="btn" style="border:1px solid rgba(255,255,255,0.45); border-radius:11px; background:rgba(0,0,0,0.5); padding:8px 12px; display:${(values.ctaSecondaryLabel || values.cta_secondary_label) ? 'inline-flex' : 'none'}">${escapeHtml(String(values.ctaSecondaryLabel || values.cta_secondary_label || 'Secondary'))}</span>`
   body += `</div></div>`
   const authInset = Math.max(0, Math.min(80, Number(creativeForm.authOffsetPct || 0)))
   const authTopPct = Math.max(2, Math.min(94, (creativeForm.authPosition === 'top' ? 2 : 56) + authInset))
   const authPosStyle = creativeForm.authPosition === 'bottom'
     ? `bottom:${Math.max(2, Math.min(94, 2 + authInset))}%`
     : `top:${authTopPct}%`
-  body += `<div id="prompt-preview-auth" style="display:${creativeForm.authEnabled ? 'block' : 'none'}; position:absolute; left:14px; right:14px; ${authPosStyle}; z-index:2; border:1px solid rgba(255,255,255,0.24); border-radius:10px; background:${hexToRgba(creativeForm.authBgColor, creativeForm.authBgOpacity)}; color:${escapeHtml(creativeForm.authTextColor)}; padding:8px">`
+  body += `<div id="message-preview-auth" style="display:${creativeForm.authEnabled ? 'block' : 'none'}; position:absolute; left:14px; right:14px; ${authPosStyle}; z-index:2; border:1px solid rgba(255,255,255,0.24); border-radius:10px; background:${hexToRgba(creativeForm.authBgColor, creativeForm.authBgOpacity)}; color:${escapeHtml(creativeForm.authTextColor)}; padding:8px">`
   body += `<div style="display:grid; grid-template-columns:1fr 1fr; align-items:center; gap:8px"><span class="btn" style="justify-self:start; border:1px solid rgba(255,255,255,0.45); border-radius:11px; background:rgba(0,0,0,0.5); padding:8px 12px">Register</span><span class="btn" style="justify-self:end; border:1px solid rgba(255,255,255,0.45); border-radius:11px; background:rgba(0,0,0,0.5); padding:8px 12px">Login</span></div>`
   body += `</div>`
   body += `</div>`
@@ -3598,9 +3598,9 @@ function renderAdminPromptForm(opts: {
   body += `</div>`
   body += `<script>
     (function () {
-      const form = document.getElementById('prompt-editor-form');
+      const form = document.getElementById('message-editor-form');
       if (!form) return;
-      const draftKey = form.getAttribute('data-draft-key') || 'admin_prompt_editor_draft_new';
+      const draftKey = form.getAttribute('data-draft-key') || 'admin_message_editor_draft_new';
       const skipDraftRestore = form.getAttribute('data-skip-draft-restore') === '1';
       const q = (name) => form.querySelector('[name="' + name + '"]');
       const v = (name, fallback = '') => {
@@ -3630,20 +3630,20 @@ function renderAdminPromptForm(opts: {
       const preview = {
         messageSection: document.getElementById('message-widget-content-section'),
         authSection: document.getElementById('auth-widget-style-section'),
-        videoPlaybackRow: document.getElementById('prompt-video-playback-row'),
-        device: document.getElementById('prompt-preview-device'),
-        overlay: document.getElementById('prompt-preview-overlay'),
-        modeBadge: document.getElementById('prompt-preview-mode-badge'),
-        message: document.getElementById('prompt-preview-message'),
-        auth: document.getElementById('prompt-preview-auth'),
-        messageLabel: document.getElementById('prompt-preview-message-label'),
-        messageHeadline: document.getElementById('prompt-preview-message-headline'),
-        messageBody: document.getElementById('prompt-preview-message-body'),
-        primaryBtn: document.getElementById('prompt-preview-primary-btn'),
-        secondaryBtn: document.getElementById('prompt-preview-secondary-btn'),
+        videoPlaybackRow: document.getElementById('message-video-playback-row'),
+        device: document.getElementById('message-preview-device'),
+        overlay: document.getElementById('message-preview-overlay'),
+        modeBadge: document.getElementById('message-preview-mode-badge'),
+        message: document.getElementById('message-preview-message'),
+        auth: document.getElementById('message-preview-auth'),
+        messageLabel: document.getElementById('message-preview-message-label'),
+        messageHeadline: document.getElementById('message-preview-message-headline'),
+        messageBody: document.getElementById('message-preview-message-body'),
+        primaryBtn: document.getElementById('message-preview-primary-btn'),
+        secondaryBtn: document.getElementById('message-preview-secondary-btn'),
       };
-      const pickImageBtn = document.getElementById('prompt-pick-bg-image');
-      const pickVideoBtn = document.getElementById('prompt-pick-bg-video');
+      const pickImageBtn = document.getElementById('message-pick-bg-image');
+      const pickVideoBtn = document.getElementById('message-pick-bg-video');
       if (!preview.device || !preview.message || !preview.auth) return;
       let lastBgMode = String(v('creativeBgMode', 'none')).toLowerCase();
 
@@ -3912,12 +3912,8 @@ function renderAdminPromptForm(opts: {
     body += `</div></div>`
   }
 
-  return renderAdminPage({ title: opts.title, bodyHtml: body, active: 'prompts' })
+  return renderAdminPage({ title: opts.title, bodyHtml: body, active: 'messages' })
 }
-
-pagesRouter.get('/admin/prompts', async (req: any, res: any) => {
-  return redirectPreservingQuery(res, '/admin/messages', req.query)
-})
 
 pagesRouter.get('/admin/messages', async (req: any, res: any) => {
   try {
@@ -3953,17 +3949,17 @@ pagesRouter.get('/admin/messages', async (req: any, res: any) => {
       <option value="archived"${status === 'archived' ? ' selected' : ''}>Archived</option>
     </select></label>`
     body += `<label style="min-width:210px">Type<select name="message_type"><option value="">All</option>`
-    for (const opt of PROMPT_TYPE_OPTIONS) {
+    for (const opt of MESSAGE_TYPE_OPTIONS) {
       body += `<option value="${escapeHtml(opt.value)}"${messageType === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
     }
     body += `</select></label>`
     body += `<label style="min-width:230px">Audience<select name="audience_segment"><option value="">All</option>`
-    for (const opt of PROMPT_AUDIENCE_OPTIONS) {
+    for (const opt of MESSAGE_AUDIENCE_OPTIONS) {
       body += `<option value="${escapeHtml(opt.value)}"${audienceSegment === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
     }
     body += `</select></label>`
     body += `<label style="min-width:170px">Surface<select name="applies_to_surface"><option value="">All</option>`
-    for (const opt of PROMPT_SURFACE_OPTIONS) {
+    for (const opt of MESSAGE_SURFACE_OPTIONS) {
       body += `<option value="${escapeHtml(opt.value)}"${appliesToSurface === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
     }
     body += `</select></label>`
@@ -3994,7 +3990,7 @@ pagesRouter.get('/admin/messages', async (req: any, res: any) => {
       body += '</tbody></table>'
     }
 
-    const doc = renderAdminPage({ title: 'Messages', bodyHtml: body, active: 'prompts' })
+    const doc = renderAdminPage({ title: 'Messages', bodyHtml: body, active: 'messages' })
     res.set('Content-Type', 'text/html; charset=utf-8')
     res.send(doc)
   } catch (err) {
@@ -4003,14 +3999,10 @@ pagesRouter.get('/admin/messages', async (req: any, res: any) => {
   }
 })
 
-pagesRouter.get('/admin/prompts/new', async (req: any, res: any) => {
-  return redirectPreservingQuery(res, '/admin/messages/new', req.query)
-})
-
 pagesRouter.get('/admin/messages/new', async (req: any, res: any) => {
   const cookies = parseCookies(req.headers.cookie)
   const csrfToken = cookies['csrf'] || ''
-  const doc = renderAdminPromptForm({
+  const doc = renderAdminMessageForm({
     title: 'New Message',
     action: '/admin/messages',
     csrfToken,
@@ -4039,15 +4031,15 @@ pagesRouter.get('/admin/messages/new', async (req: any, res: any) => {
   res.send(doc)
 })
 
-pagesRouter.post(['/admin/messages', '/admin/prompts'], async (req: any, res: any) => {
+pagesRouter.post('/admin/messages', async (req: any, res: any) => {
   const cookies = parseCookies(req.headers.cookie)
   const csrfToken = cookies['csrf'] || ''
-  const payload = buildPromptCreateOrUpdatePayload(req.body || {})
+  const payload = buildMessageCreateOrUpdatePayload(req.body || {})
   try {
     const created = await messagesSvc.createMessageForAdmin(payload, Number(req.user?.id || 0))
     res.redirect(`/admin/messages/${created.id}?notice=${encodeURIComponent('Message created.')}`)
   } catch (err: any) {
-    const doc = renderAdminPromptForm({
+    const doc = renderAdminMessageForm({
       title: 'New Message',
       action: '/admin/messages',
       csrfToken,
@@ -4059,25 +4051,19 @@ pagesRouter.post(['/admin/messages', '/admin/prompts'], async (req: any, res: an
   }
 })
 
-pagesRouter.get('/admin/prompts/:id', async (req: any, res: any) => {
-  const id = Number(req.params.id)
-  if (!Number.isFinite(id) || id <= 0) return res.status(400).send('Bad message id')
-  return redirectPreservingQuery(res, `/admin/messages/${id}`, req.query)
-})
-
 pagesRouter.get('/admin/messages/:id', async (req: any, res: any) => {
   const id = Number(req.params.id)
   if (!Number.isFinite(id) || id <= 0) return res.status(400).send('Bad message id')
   try {
-    const prompt = await messagesSvc.getMessageForAdmin(id)
+    const message = await messagesSvc.getMessageForAdmin(id)
     const cookies = parseCookies(req.headers.cookie)
     const csrfToken = cookies['csrf'] || ''
-    const doc = renderAdminPromptForm({
+    const doc = renderAdminMessageForm({
       title: `Edit Message #${id}`,
       action: `/admin/messages/${id}`,
       csrfToken,
       backHref: '/admin/messages',
-      values: prompt,
+      values: message,
       notice: req.query?.notice ? String(req.query.notice) : '',
       error: req.query?.error ? String(req.query.error) : '',
       showClone: true,
@@ -4090,17 +4076,17 @@ pagesRouter.get('/admin/messages/:id', async (req: any, res: any) => {
   }
 })
 
-pagesRouter.post(['/admin/messages/:id', '/admin/prompts/:id'], async (req: any, res: any) => {
+pagesRouter.post('/admin/messages/:id', async (req: any, res: any) => {
   const id = Number(req.params.id)
   if (!Number.isFinite(id) || id <= 0) return res.status(400).send('Bad message id')
   const cookies = parseCookies(req.headers.cookie)
   const csrfToken = cookies['csrf'] || ''
-  const payload = buildPromptCreateOrUpdatePayload(req.body || {})
+  const payload = buildMessageCreateOrUpdatePayload(req.body || {})
   try {
     await messagesSvc.updateMessageForAdmin(id, payload, Number(req.user?.id || 0))
     res.redirect(`/admin/messages/${id}?notice=${encodeURIComponent('Saved.')}`)
   } catch (err: any) {
-    const doc = renderAdminPromptForm({
+    const doc = renderAdminMessageForm({
       title: `Edit Message #${id}`,
       action: `/admin/messages/${id}`,
       csrfToken,
@@ -4113,7 +4099,7 @@ pagesRouter.post(['/admin/messages/:id', '/admin/prompts/:id'], async (req: any,
   }
 })
 
-pagesRouter.post(['/admin/messages/:id/clone', '/admin/prompts/:id/clone'], async (req: any, res: any) => {
+pagesRouter.post('/admin/messages/:id/clone', async (req: any, res: any) => {
   const id = Number(req.params.id)
   if (!Number.isFinite(id) || id <= 0) return res.redirect('/admin/messages?error=bad_id')
   try {
@@ -4124,7 +4110,7 @@ pagesRouter.post(['/admin/messages/:id/clone', '/admin/prompts/:id/clone'], asyn
   }
 })
 
-pagesRouter.post(['/admin/messages/:id/status', '/admin/prompts/:id/status'], async (req: any, res: any) => {
+pagesRouter.post('/admin/messages/:id/status', async (req: any, res: any) => {
   const id = Number(req.params.id)
   if (!Number.isFinite(id) || id <= 0) return res.redirect('/admin/messages?error=bad_id')
   try {
@@ -4135,7 +4121,7 @@ pagesRouter.post(['/admin/messages/:id/status', '/admin/prompts/:id/status'], as
   }
 })
 
-pagesRouter.post(['/admin/messages/:id/delete', '/admin/prompts/:id/delete'], async (req: any, res: any) => {
+pagesRouter.post('/admin/messages/:id/delete', async (req: any, res: any) => {
   const id = Number(req.params.id)
   if (!Number.isFinite(id) || id <= 0) return res.redirect('/admin/messages?error=bad_id')
   try {
@@ -4157,23 +4143,6 @@ function csvCell(value: any): string {
   return `"${raw.replace(/"/g, '""')}"`
 }
 
-function redirectPreservingQuery(res: any, targetPath: string, query: any) {
-  const qs = new URLSearchParams()
-  for (const [key, value] of Object.entries(query || {})) {
-    if (value == null) continue
-    if (Array.isArray(value)) {
-      for (const item of value) {
-        if (item == null) continue
-        qs.append(key, String(item))
-      }
-      continue
-    }
-    qs.set(key, String(value))
-  }
-  const suffix = qs.toString()
-  return res.redirect(suffix ? `${targetPath}?${suffix}` : targetPath)
-}
-
 function round2(value: number): number {
   if (!Number.isFinite(value)) return 0
   return Math.round(value * 100) / 100
@@ -4189,12 +4158,12 @@ pagesRouter.get('/admin/analytics', async (req: any, res: any) => {
       viewerState: req.query?.viewer_state,
     })
     const selectedSurface = feedReport.range.surface
-    const promptSurfaceEligible = (selectedSurface == null || selectedSurface === 'global_feed') && feedReport.range.spaceId == null
-    const emptyPromptReport = {
+    const messageSurfaceEligible = (selectedSurface == null || selectedSurface === 'global_feed') && feedReport.range.spaceId == null
+    const emptyMessageReport = {
       range: {
         fromDate: feedReport.range.fromDate,
         toDate: feedReport.range.toDate,
-        surface: promptSurfaceEligible ? selectedSurface : null,
+        surface: messageSurfaceEligible ? selectedSurface : null,
         messageId: null,
         messageType: null,
         messageCampaignKey: null,
@@ -4228,14 +4197,14 @@ pagesRouter.get('/admin/analytics', async (req: any, res: any) => {
       byMessage: [],
       byDay: [],
     }
-    const promptReport = promptSurfaceEligible
+    const messageReport = messageSurfaceEligible
         ? await messageAnalyticsSvc.getMessageAnalyticsReportForAdmin({
           fromDate: feedReport.range.fromDate,
           toDate: feedReport.range.toDate,
           surface: selectedSurface,
           viewerState: feedReport.range.viewerState,
         })
-      : emptyPromptReport
+      : emptyMessageReport
 
     const splitBase = {
       fromDate: feedReport.range.fromDate,
@@ -4243,25 +4212,25 @@ pagesRouter.get('/admin/analytics', async (req: any, res: any) => {
       surface: feedReport.range.surface,
       spaceId: feedReport.range.spaceId,
     }
-    const [feedAnonymous, feedAuthenticated, promptAnonymous, promptAuthenticated] = await Promise.all([
+    const [feedAnonymous, feedAuthenticated, messageAnonymous, messageAuthenticated] = await Promise.all([
       feedActivitySvc.getFeedActivityReportForAdmin({ ...splitBase, viewerState: 'anonymous' }),
       feedActivitySvc.getFeedActivityReportForAdmin({ ...splitBase, viewerState: 'authenticated' }),
-      promptSurfaceEligible
+      messageSurfaceEligible
         ? messageAnalyticsSvc.getMessageAnalyticsReportForAdmin({
             fromDate: splitBase.fromDate,
             toDate: splitBase.toDate,
             surface: splitBase.surface,
             viewerState: 'anonymous',
           })
-        : Promise.resolve({ ...emptyPromptReport, range: { ...emptyPromptReport.range, viewerState: 'anonymous' as const } }),
-      promptSurfaceEligible
+        : Promise.resolve({ ...emptyMessageReport, range: { ...emptyMessageReport.range, viewerState: 'anonymous' as const } }),
+      messageSurfaceEligible
         ? messageAnalyticsSvc.getMessageAnalyticsReportForAdmin({
             fromDate: splitBase.fromDate,
             toDate: splitBase.toDate,
             surface: splitBase.surface,
             viewerState: 'authenticated',
           })
-        : Promise.resolve({ ...emptyPromptReport, range: { ...emptyPromptReport.range, viewerState: 'authenticated' as const } }),
+        : Promise.resolve({ ...emptyMessageReport, range: { ...emptyMessageReport.range, viewerState: 'authenticated' as const } }),
     ])
     const selectedSpaceOptions = (selectedSurface === 'group_feed' || selectedSurface === 'channel_feed')
       ? await feedActivitySvc.listSurfaceSpacesForAdmin({
@@ -4278,10 +4247,10 @@ pagesRouter.get('/admin/analytics', async (req: any, res: any) => {
       feedSlideImpressions: number
       feedSlideCompletes: number
       feedWatchSeconds: number
-      promptImpressions: number
-      promptClicks: number
-      promptAuthStart: number
-      promptAuthComplete: number
+      messageImpressions: number
+      messageClicks: number
+      messageAuthStart: number
+      messageAuthComplete: number
     }>()
 
     for (const row of feedReport.byDay || []) {
@@ -4292,13 +4261,13 @@ pagesRouter.get('/admin/analytics', async (req: any, res: any) => {
         feedSlideImpressions: Number(row.totals.slideImpressions || 0),
         feedSlideCompletes: Number(row.totals.slideCompletes || 0),
         feedWatchSeconds: Number(row.totals.totalWatchSeconds || 0),
-        promptImpressions: 0,
-        promptClicks: 0,
-        promptAuthStart: 0,
-        promptAuthComplete: 0,
+        messageImpressions: 0,
+        messageClicks: 0,
+        messageAuthStart: 0,
+        messageAuthComplete: 0,
       })
     }
-    for (const row of promptReport.byDay || []) {
+    for (const row of messageReport.byDay || []) {
       const current = mergedByDate.get(row.dateUtc) || {
         dateUtc: row.dateUtc,
         feedSessionsStarted: 0,
@@ -4306,15 +4275,15 @@ pagesRouter.get('/admin/analytics', async (req: any, res: any) => {
         feedSlideImpressions: 0,
         feedSlideCompletes: 0,
         feedWatchSeconds: 0,
-        promptImpressions: 0,
-        promptClicks: 0,
-        promptAuthStart: 0,
-        promptAuthComplete: 0,
+        messageImpressions: 0,
+        messageClicks: 0,
+        messageAuthStart: 0,
+        messageAuthComplete: 0,
       }
-      current.promptImpressions = Number(row.totals.impressions || 0)
-      current.promptClicks = Number(row.totals.clicksTotal || 0)
-      current.promptAuthStart = Number(row.totals.authStart || 0)
-      current.promptAuthComplete = Number(row.totals.authComplete || 0)
+      current.messageImpressions = Number(row.totals.impressions || 0)
+      current.messageClicks = Number(row.totals.clicksTotal || 0)
+      current.messageAuthStart = Number(row.totals.authStart || 0)
+      current.messageAuthComplete = Number(row.totals.authComplete || 0)
       mergedByDate.set(row.dateUtc, current)
     }
     const dailyRows = Array.from(mergedByDate.values()).sort((a, b) => a.dateUtc.localeCompare(b.dateUtc))
@@ -4342,9 +4311,9 @@ pagesRouter.get('/admin/analytics', async (req: any, res: any) => {
         const feedCompletionRate = row.feedSlideImpressions > 0 ? row.feedSlideCompletes / row.feedSlideImpressions : 0
         const denom = row.feedSessionsEnded > 0 ? row.feedSessionsEnded : row.feedSessionsStarted
         const feedAvgWatch = denom > 0 ? row.feedWatchSeconds / denom : 0
-        const promptCtr = row.promptImpressions > 0 ? row.promptClicks / row.promptImpressions : 0
-        const promptAuthCompletionRate = row.promptImpressions > 0 ? row.promptAuthComplete / row.promptImpressions : 0
-        const promptCoverage = row.feedSlideImpressions > 0 ? row.promptImpressions / row.feedSlideImpressions : 0
+        const messageCtr = row.messageImpressions > 0 ? row.messageClicks / row.messageImpressions : 0
+        const messageAuthCompletionRate = row.messageImpressions > 0 ? row.messageAuthComplete / row.messageImpressions : 0
+        const messageCoverage = row.feedSlideImpressions > 0 ? row.messageImpressions / row.feedSlideImpressions : 0
         lines.push([
           row.dateUtc,
           row.feedSessionsStarted,
@@ -4354,13 +4323,13 @@ pagesRouter.get('/admin/analytics', async (req: any, res: any) => {
           round2(feedCompletionRate),
           row.feedWatchSeconds,
           round2(feedAvgWatch),
-          row.promptImpressions,
-          row.promptClicks,
-          round2(promptCtr),
-          row.promptAuthStart,
-          row.promptAuthComplete,
-          round2(promptAuthCompletionRate),
-          round2(promptCoverage),
+          row.messageImpressions,
+          row.messageClicks,
+          round2(messageCtr),
+          row.messageAuthStart,
+          row.messageAuthComplete,
+          round2(messageAuthCompletionRate),
+          round2(messageCoverage),
         ].map(csvCell).join(','))
       }
       const filename = `analytics-${feedReport.range.fromDate}_to_${feedReport.range.toDate}.csv`
@@ -4377,7 +4346,7 @@ pagesRouter.get('/admin/analytics', async (req: any, res: any) => {
     if (feedReport.range.viewerState) q.set('viewer_state', feedReport.range.viewerState)
 
     const feedCoverage = feedReport.kpis.totals.slideImpressions > 0
-      ? promptReport.kpis.totals.impressions / feedReport.kpis.totals.slideImpressions
+      ? messageReport.kpis.totals.impressions / feedReport.kpis.totals.slideImpressions
       : 0
 
     let body = '<h1>Analytics</h1>'
@@ -4431,14 +4400,14 @@ pagesRouter.get('/admin/analytics', async (req: any, res: any) => {
     body += `<div class="section" style="margin:0"><div class="section-title">Sessions Started</div><div style="font-size:24px; font-weight:800">${feedReport.kpis.totals.sessionsStarted}</div><div class="field-hint">Ended: ${feedReport.kpis.totals.sessionsEnded}</div></div>`
     body += `<div class="section" style="margin:0"><div class="section-title">Slide Impressions</div><div style="font-size:24px; font-weight:800">${feedReport.kpis.totals.slideImpressions}</div><div class="field-hint">Completes: ${feedReport.kpis.totals.slideCompletes}</div></div>`
     body += `<div class="section" style="margin:0"><div class="section-title">Feed Completion Rate</div><div style="font-size:24px; font-weight:800">${pctText(feedReport.kpis.rates.completionRate)}</div><div class="field-hint">Watch sec: ${feedReport.kpis.totals.totalWatchSeconds}</div></div>`
-    body += `<div class="section" style="margin:0"><div class="section-title">Message Impressions</div><div style="font-size:24px; font-weight:800">${promptReport.kpis.totals.impressions}</div><div class="field-hint">Message Clicks: ${promptReport.kpis.totals.clicksTotal}</div></div>`
-    body += `<div class="section" style="margin:0"><div class="section-title">Message Auth Completions</div><div style="font-size:24px; font-weight:800">${promptReport.kpis.totals.authComplete}</div><div class="field-hint">Auth Starts: ${promptReport.kpis.totals.authStart}</div></div>`
+    body += `<div class="section" style="margin:0"><div class="section-title">Message Impressions</div><div style="font-size:24px; font-weight:800">${messageReport.kpis.totals.impressions}</div><div class="field-hint">Message Clicks: ${messageReport.kpis.totals.clicksTotal}</div></div>`
+    body += `<div class="section" style="margin:0"><div class="section-title">Message Auth Completions</div><div style="font-size:24px; font-weight:800">${messageReport.kpis.totals.authComplete}</div><div class="field-hint">Auth Starts: ${messageReport.kpis.totals.authStart}</div></div>`
     body += `<div class="section" style="margin:0"><div class="section-title">Message Coverage</div><div style="font-size:24px; font-weight:800">${pctText(feedCoverage)}</div><div class="field-hint">Message impressions / slide impressions</div></div>`
     body += `</div>`
 
     const splitRows = [
-      { label: 'Anonymous', feed: feedAnonymous, prompt: promptAnonymous },
-      { label: 'Authenticated', feed: feedAuthenticated, prompt: promptAuthenticated },
+      { label: 'Anonymous', feed: feedAnonymous, message: messageAnonymous },
+      { label: 'Authenticated', feed: feedAuthenticated, message: messageAuthenticated },
     ]
     body += '<div class="section">'
     body += '<div class="section-title">Viewer State Split</div>'
@@ -4446,7 +4415,7 @@ pagesRouter.get('/admin/analytics', async (req: any, res: any) => {
     body += '<table><thead><tr><th>Viewer State</th><th>Sessions</th><th>Slide Impressions</th><th>Slide Completes</th><th>Feed Completion</th><th>Message Impressions</th><th>Message CTR</th><th>Message Auth Complete</th><th>Message Coverage</th></tr></thead><tbody>'
     for (const row of splitRows) {
       const rowCoverage = row.feed.kpis.totals.slideImpressions > 0
-        ? row.prompt.kpis.totals.impressions / row.feed.kpis.totals.slideImpressions
+        ? row.message.kpis.totals.impressions / row.feed.kpis.totals.slideImpressions
         : 0
       body += `<tr>
         <td>${escapeHtml(row.label)}</td>
@@ -4454,9 +4423,9 @@ pagesRouter.get('/admin/analytics', async (req: any, res: any) => {
         <td>${row.feed.kpis.totals.slideImpressions}</td>
         <td>${row.feed.kpis.totals.slideCompletes}</td>
         <td>${pctText(row.feed.kpis.rates.completionRate)}</td>
-        <td>${row.prompt.kpis.totals.impressions}</td>
-        <td>${pctText(row.prompt.kpis.rates.ctr)}</td>
-        <td>${row.prompt.kpis.totals.authComplete}</td>
+        <td>${row.message.kpis.totals.impressions}</td>
+        <td>${pctText(row.message.kpis.rates.ctr)}</td>
+        <td>${row.message.kpis.totals.authComplete}</td>
         <td>${pctText(rowCoverage)}</td>
       </tr>`
     }
@@ -4468,8 +4437,8 @@ pagesRouter.get('/admin/analytics', async (req: any, res: any) => {
       body += '<table><thead><tr><th>Date</th><th>Sessions</th><th>Slide Impressions</th><th>Slide Completes</th><th>Feed Completion</th><th>Watch Sec</th><th>Message Impressions</th><th>Message CTR</th><th>Message Auth Complete</th><th>Message Coverage</th></tr></thead><tbody>'
       for (const row of dailyRows) {
         const feedCompletionRate = row.feedSlideImpressions > 0 ? row.feedSlideCompletes / row.feedSlideImpressions : 0
-        const promptCtr = row.promptImpressions > 0 ? row.promptClicks / row.promptImpressions : 0
-        const promptCoverage = row.feedSlideImpressions > 0 ? row.promptImpressions / row.feedSlideImpressions : 0
+        const messageCtr = row.messageImpressions > 0 ? row.messageClicks / row.messageImpressions : 0
+        const messageCoverage = row.feedSlideImpressions > 0 ? row.messageImpressions / row.feedSlideImpressions : 0
         body += `<tr>
           <td>${escapeHtml(row.dateUtc)}</td>
           <td>${row.feedSessionsStarted} <span class="field-hint">(ended: ${row.feedSessionsEnded})</span></td>
@@ -4477,10 +4446,10 @@ pagesRouter.get('/admin/analytics', async (req: any, res: any) => {
           <td>${row.feedSlideCompletes}</td>
           <td>${pctText(feedCompletionRate)}</td>
           <td>${row.feedWatchSeconds}</td>
-          <td>${row.promptImpressions}</td>
-          <td>${pctText(promptCtr)}</td>
-          <td>${row.promptAuthComplete}</td>
-          <td>${pctText(promptCoverage)}</td>
+          <td>${row.messageImpressions}</td>
+          <td>${pctText(messageCtr)}</td>
+          <td>${row.messageAuthComplete}</td>
+          <td>${pctText(messageCoverage)}</td>
         </tr>`
       }
       body += '</tbody></table>'
@@ -4495,18 +4464,8 @@ pagesRouter.get('/admin/analytics', async (req: any, res: any) => {
   }
 })
 
-pagesRouter.get('/admin/prompt-analytics', async (req: any, res: any) => {
-  return redirectPreservingQuery(res, '/admin/message-analytics', req.query)
-})
-
 pagesRouter.get('/admin/message-analytics', async (req: any, res: any) => {
   try {
-    if (
-      ['prompt_id', 'prompt_type', 'prompt_campaign_key', 'prompt_category']
-        .some((key) => Object.prototype.hasOwnProperty.call(req.query || {}, key) && (req.query as any)[key] != null && (req.query as any)[key] !== '')
-    ) {
-      return res.status(400).send('legacy_prompt_wire_keys_not_supported')
-    }
     const report = await messageAnalyticsSvc.getMessageAnalyticsReportForAdmin({
       fromDate: req.query?.from,
       toDate: req.query?.to,
@@ -4551,7 +4510,7 @@ pagesRouter.get('/admin/message-analytics', async (req: any, res: any) => {
     </select></label>`
     body += `<label>Message ID<input type="number" name="message_id" min="1" value="${escapeHtml(report.range.messageId == null ? '' : String(report.range.messageId))}" /></label>`
     body += `<label>Type<select name="message_type"><option value="">All</option>`
-    for (const opt of PROMPT_TYPE_OPTIONS) {
+    for (const opt of MESSAGE_TYPE_OPTIONS) {
       body += `<option value="${escapeHtml(opt.value)}"${report.range.messageType === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
     }
     body += `</select></label>`
@@ -4613,7 +4572,7 @@ pagesRouter.get('/admin/message-analytics', async (req: any, res: any) => {
       body += '</tbody></table></div>'
     }
 
-    const doc = renderAdminPage({ title: 'Message Analytics', bodyHtml: body, active: 'prompt_analytics' })
+    const doc = renderAdminPage({ title: 'Message Analytics', bodyHtml: body, active: 'message_analytics' })
     res.set('Content-Type', 'text/html; charset=utf-8')
     return res.send(doc)
   } catch (err) {

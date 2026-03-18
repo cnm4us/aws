@@ -13,11 +13,11 @@ This roadmap links strategy docs in this folder to implementation plans.
 ## Execution Plans
 - Foundation and sink controls: `agents/implementation/plan_115.md`
 - Product analytics expansion: `agents/implementation/plan_118.md`
-- Prompt sequencing dependency: `agents/implementation/plan_117.md`
+- Message sequencing dependency: `agents/implementation/plan_117.md`
 
 ## Suggested Sequence
 1. Lock canonical event schema and dimensions.
-2. Align feed/prompt emitters to canonical event names.
+2. Align feed/message emitters to canonical event names.
 3. Harden ingest + dedupe.
 4. Build hourly/daily rollups and reporting endpoints.
 5. Build admin dashboards from rollups.

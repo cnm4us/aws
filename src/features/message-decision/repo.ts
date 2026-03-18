@@ -70,7 +70,7 @@ export async function createSession(input: {
     ]
   )
   const row = await getSessionByKey(input.sessionId, input.surface)
-  if (!row) throw new Error('failed_to_create_prompt_decision_session')
+  if (!row) throw new Error('failed_to_create_message_decision_session')
   return row
 }
 

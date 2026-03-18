@@ -7,20 +7,11 @@ export const adminMessageAnalyticsRouter = Router()
 const adminMessageAnalyticsPaths = ['/api/admin/message-analytics']
 const adminMessageAnalyticsCsvPaths = ['/api/admin/message-analytics.csv']
 
-function hasLegacyPromptAnalyticsQuery(query: any): boolean {
-  if (!query || typeof query !== 'object') return false
-  return ['prompt_id', 'prompt_type', 'prompt_campaign_key', 'prompt_category']
-    .some((key) => Object.prototype.hasOwnProperty.call(query, key) && query[key] != null && query[key] !== '')
-}
-
 adminMessageAnalyticsRouter.use(adminMessageAnalyticsPaths, requireAuth, requireSiteAdmin)
 adminMessageAnalyticsRouter.use(adminMessageAnalyticsCsvPaths, requireAuth, requireSiteAdmin)
 
 adminMessageAnalyticsRouter.get(adminMessageAnalyticsPaths, async (req, res, next) => {
   try {
-    if (hasLegacyPromptAnalyticsQuery(req.query)) {
-      return res.status(400).json({ error: 'legacy_prompt_wire_keys_not_supported' })
-    }
     const report = await messageAnalyticsSvc.getMessageAnalyticsReportForAdmin({
       fromDate: req.query?.from,
       toDate: req.query?.to,
@@ -45,9 +36,6 @@ adminMessageAnalyticsRouter.get(adminMessageAnalyticsPaths, async (req, res, nex
 
 adminMessageAnalyticsRouter.get(adminMessageAnalyticsCsvPaths, async (req, res, next) => {
   try {
-    if (hasLegacyPromptAnalyticsQuery(req.query)) {
-      return res.status(400).json({ error: 'legacy_prompt_wire_keys_not_supported' })
-    }
     const report = await messageAnalyticsSvc.getMessageAnalyticsReportForAdmin({
       fromDate: req.query?.from,
       toDate: req.query?.to,
