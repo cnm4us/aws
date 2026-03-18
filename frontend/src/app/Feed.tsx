@@ -387,7 +387,7 @@ async function fetchMessageById(promptId: number): Promise<FeedMessagePayload> {
   const res = await fetch(messageUrl, { credentials: 'same-origin' })
   if (!res.ok) throw new Error('failed_to_fetch_prompt')
   const payload = await res.json()
-  const p = payload?.message || payload?.prompt
+  const p = payload?.message
   if (!p) throw new Error('missing_prompt_payload')
   const creative = (p.creative && typeof p.creative === 'object') ? p.creative : {}
   const background = (creative.background && typeof creative.background === 'object') ? creative.background : {}
@@ -2668,7 +2668,7 @@ export default function Feed() {
           active_content_key: activeContentKey,
           should_insert: Boolean(decision?.should_insert),
           reason_code: decision?.reason_code || null,
-          message_id: decision?.message_id ?? decision?.prompt_id ?? null,
+          message_id: decision?.message_id ?? null,
           session_id: decision?.session_id ?? null,
           debug: decision?.debug || null,
         })
@@ -2683,9 +2683,9 @@ export default function Feed() {
           })
           return
         }
-        const messageId = Number(decision?.message_id ?? decision?.prompt_id)
+        const messageId = Number(decision?.message_id)
         if (!Number.isFinite(messageId) || messageId <= 0) {
-          emitMessageDebug('decision:skip:invalid_message_id', { message_id: decision?.message_id ?? decision?.prompt_id })
+          emitMessageDebug('decision:skip:invalid_message_id', { message_id: decision?.message_id ?? null })
           return
         }
 

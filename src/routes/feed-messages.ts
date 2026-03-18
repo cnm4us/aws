@@ -26,6 +26,11 @@ const feedMessageEventPaths = ['/api/feed/message-events']
 
 let globalSubscriptionSpaceCache: { spaceId: number | null; expiresAtMs: number } = { spaceId: null, expiresAtMs: 0 }
 
+function hasLegacyPromptWireKeys(input: any, keys: string[]): boolean {
+  if (!input || typeof input !== 'object') return false
+  return keys.some((key) => Object.prototype.hasOwnProperty.call(input, key) && input[key] != null && input[key] !== '')
+}
+
 async function getGlobalSubscriptionSpaceId(): Promise<number | null> {
   const now = Date.now()
   if (globalSubscriptionSpaceCache.expiresAtMs > now) return globalSubscriptionSpaceCache.spaceId
@@ -58,6 +63,17 @@ async function resolveAudienceSegment(userIdRaw: any): Promise<MessageAudienceSe
 async function handleDecision(req: any, res: any, next: any) {
   try {
     const body = req.method === 'GET' ? (req.query || {}) : (req.body || {})
+    if (
+      hasLegacyPromptWireKeys(body, [
+        'prompts_shown_this_session',
+        'slides_since_last_prompt',
+        'last_prompt_id',
+        'last_prompt_shown_at',
+        'prompt_session_id',
+      ])
+    ) {
+      return res.status(400).json({ error: 'legacy_prompt_wire_keys_not_supported' })
+    }
 
     const cookies = parseCookies(req.headers.cookie)
     const cookieSessionId = cookies[ANON_SESSION_COOKIE] ? String(cookies[ANON_SESSION_COOKIE]).trim() : null
@@ -124,7 +140,6 @@ async function handleDecision(req: any, res: any, next: any) {
     return res.json({
       should_insert: decision.shouldInsert,
       message_id: decision.promptId,
-      prompt_id: decision.promptId,
       insert_after_index: decision.insertAfterIndex,
       reason_code: decision.reasonCode,
       session_id: decision.sessionId,
@@ -256,19 +271,6 @@ feedMessagesRouter.get(feedMessageFetchPaths, async (req: any, res: any, next: a
         creative: prompt.creative,
         media,
       },
-      prompt: {
-        id: prompt.id,
-        prompt_type: (prompt as any).promptType || 'register_login',
-        campaign_key: prompt.campaignKey,
-        headline: prompt.headline,
-        body: prompt.body,
-        cta_primary_label: prompt.ctaPrimaryLabel,
-        cta_primary_href: prompt.ctaPrimaryHref,
-        cta_secondary_label: prompt.ctaSecondaryLabel,
-        cta_secondary_href: prompt.ctaSecondaryHref,
-        creative: prompt.creative,
-        media,
-      },
     })
   } catch (err) {
     return next(err)
@@ -278,14 +280,23 @@ feedMessagesRouter.get(feedMessageFetchPaths, async (req: any, res: any, next: a
 feedMessagesRouter.post(feedMessageEventPaths, async (req: any, res: any, next: any) => {
   try {
     const body = (req.body || {}) as any
-    const promptCampaignKey = body.message_campaign_key
-      ? String(body.message_campaign_key)
-      : (body.prompt_campaign_key ? String(body.prompt_campaign_key) : (body.prompt_category ? String(body.prompt_category) : null))
-    const ctaKind = body.message_cta_kind ? String(body.message_cta_kind) : (body.prompt_cta_kind ? String(body.prompt_cta_kind) : (body.cta_kind ? String(body.cta_kind) : null))
+    if (
+      hasLegacyPromptWireKeys(body, [
+        'prompt_id',
+        'prompt_campaign_key',
+        'prompt_session_id',
+        'prompt_cta_kind',
+        'prompt_category',
+      ])
+    ) {
+      return res.status(400).json({ error: 'legacy_prompt_wire_keys_not_supported' })
+    }
+    const promptCampaignKey = body.message_campaign_key ? String(body.message_campaign_key) : null
+    const ctaKind = body.message_cta_kind ? String(body.message_cta_kind) : (body.cta_kind ? String(body.cta_kind) : null)
     const sessionId = body.message_session_id
       ? String(body.message_session_id).trim()
-      : (body.prompt_session_id ? String(body.prompt_session_id).trim() : (body.session_id ? String(body.session_id).trim() : null))
-    const messageId = body.message_id ?? body.prompt_id
+      : (body.session_id ? String(body.session_id).trim() : null)
+    const messageId = body.message_id
 
     const tracked = await messageAnalyticsSvc.recordMessageEvent({
       event: body.event,

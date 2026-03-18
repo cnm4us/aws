@@ -4501,13 +4501,19 @@ pagesRouter.get('/admin/prompt-analytics', async (req: any, res: any) => {
 
 pagesRouter.get('/admin/message-analytics', async (req: any, res: any) => {
   try {
+    if (
+      ['prompt_id', 'prompt_type', 'prompt_campaign_key', 'prompt_category']
+        .some((key) => Object.prototype.hasOwnProperty.call(req.query || {}, key) && (req.query as any)[key] != null && (req.query as any)[key] !== '')
+    ) {
+      return res.status(400).send('legacy_prompt_wire_keys_not_supported')
+    }
     const report = await messageAnalyticsSvc.getMessageAnalyticsReportForAdmin({
       fromDate: req.query?.from,
       toDate: req.query?.to,
       surface: req.query?.surface,
-      promptId: req.query?.message_id ?? req.query?.prompt_id,
-      promptType: req.query?.message_type ?? req.query?.prompt_type,
-      promptCampaignKey: req.query?.message_campaign_key ?? req.query?.prompt_campaign_key ?? req.query?.prompt_category,
+      promptId: req.query?.message_id,
+      promptType: req.query?.message_type,
+      promptCampaignKey: req.query?.message_campaign_key,
       viewerState: req.query?.viewer_state,
     })
 

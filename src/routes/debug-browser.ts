@@ -10,7 +10,6 @@ type BrowserDebugEventInput = {
   path?: unknown
   browser_session_id?: unknown
   message_session_id?: unknown
-  prompt_session_id?: unknown
   user_id?: unknown
   payload?: unknown
 }
@@ -94,7 +93,7 @@ function normalizeRecord(input: BrowserDebugEventInput): BrowserDebugEventRecord
   const ts = tsCandidate || new Date().toISOString()
   const pathValue = String(input?.path || '').trim()
   const browserSessionId = String(input?.browser_session_id || '').trim()
-  const messageSessionId = String(input?.message_session_id || input?.prompt_session_id || '').trim()
+  const messageSessionId = String(input?.message_session_id || '').trim()
   const userIdRaw = Number(input?.user_id)
   return {
     ts,
