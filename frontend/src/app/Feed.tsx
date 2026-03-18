@@ -2438,7 +2438,7 @@ export default function Feed() {
     }
   }, [feedActivityContext, meLoaded, closeFeedActivitySession, startFeedActivitySession])
 
-  // Prompt counters + feed activity watch seconds.
+  // In-feed message counters + feed activity watch seconds.
   useEffect(() => {
     const timer = window.setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
@@ -2452,13 +2452,13 @@ export default function Feed() {
     return () => window.clearInterval(timer)
   }, [isGlobalBillboard])
 
-  // Prompt counters: track per-session slide traversal.
+  // In-feed message counters: track per-session slide traversal.
   useEffect(() => {
     if (!isGlobalBillboard) return
     if (!items.length) return
     const current = activeItem
     if (!current) return
-    // Prompt cards should not count toward threshold counters;
+    // In-feed message cards should not count toward threshold counters;
     // only content slides should advance "slides viewed/between prompts".
     if (isPromptItem(current)) return
     const currentContentKey = computeContentDecisionKey(current, activeSequenceKey)
@@ -2480,7 +2480,7 @@ export default function Feed() {
     }
   }, [isGlobalBillboard])
 
-  // Prompt analytics: record impression/pass-through by prompt sequence instance.
+  // In-feed message analytics: record impression/pass-through by message sequence instance.
   useEffect(() => {
     const now = Date.now()
     const previous = activePromptExposureRef.current

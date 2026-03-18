@@ -110,7 +110,7 @@ location.reload()
 
 ### `prompt`
 
-Prompt decision flow:
+In-feed message decision flow (legacy `prompt` event category):
 
 - `decision:request`
 - `decision:response`

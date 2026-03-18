@@ -99,3 +99,17 @@ export type PromptDto = {
   createdAt: string
   updatedAt: string
 }
+
+// Phase F1 compatibility aliases: user-facing terminology is "message" while
+// runtime modules and storage remain prompt-named until later rename phases.
+export type MessageStatus = PromptStatus
+export type MessageWidgetPosition = PromptWidgetPosition
+export type MessageBackgroundMode = PromptBackgroundMode
+export type MessageVideoPlaybackMode = PromptVideoPlaybackMode
+export type MessageSurface = PromptSurface
+export type MessageAudienceSegment = PromptAudienceSegment
+export type MessageTieBreakStrategy = PromptTieBreakStrategy
+export type MessageType = PromptType
+export type MessageCreative = PromptCreative
+export type MessageRow = PromptRow
+export type MessageDto = PromptDto

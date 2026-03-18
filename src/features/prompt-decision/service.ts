@@ -450,3 +450,7 @@ export async function recordPromptSessionEvent(input: {
     convertedPromptIdsJson: serialized.convertedPromptIdsJson,
   })
 }
+
+// Phase F1 compatibility aliases for message terminology.
+export const decideMessage = decidePrompt
+export const recordMessageSessionEvent = recordPromptSessionEvent

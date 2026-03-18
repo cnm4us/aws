@@ -734,3 +734,13 @@ export async function getActiveForFeedById(id: number): Promise<PromptDto> {
   if (endsAtMs != null && Number.isFinite(endsAtMs) && endsAtMs < now) throw new NotFoundError('prompt_not_found')
   return mapRow(row)
 }
+
+// Phase F1 compatibility aliases for message terminology.
+export const listMessagesForAdmin = listForAdmin
+export const getMessageForAdmin = getForAdmin
+export const createMessageForAdmin = createForAdmin
+export const updateMessageForAdmin = updateForAdmin
+export const cloneMessageForAdmin = cloneForAdmin
+export const updateMessageStatusForAdmin = updateStatusForAdmin
+export const listActiveMessagesForFeed = listActiveForFeed
+export const getActiveMessageForFeedById = getActiveForFeedById

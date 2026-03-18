@@ -707,11 +707,11 @@ export async function ensureSchema(db: DB) {
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_prompts_active_type ON feed_prompts (status, prompt_type, starts_at, ends_at, priority, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_prompts_surface_audience_type_active ON feed_prompts (applies_to_surface, audience_segment, status, prompt_type, starts_at, ends_at, priority, id)`); } catch {}
 
-          // Prompt rules were removed in favor of prompt-owned targeting.
+          // Legacy prompt rules were removed in favor of message-owned targeting.
           // Drop the legacy table during startup so the schema matches runtime behavior.
           try { await db.query(`DROP TABLE IF EXISTS prompt_rules`) } catch {}
 
-          // --- Prompt decision sessions (plan_114C) ---
+          // --- In-feed message decision sessions (legacy prompt-named table retained for now) ---
           await db.query(`
             CREATE TABLE IF NOT EXISTS prompt_decision_sessions (
               id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -757,7 +757,7 @@ export async function ensureSchema(db: DB) {
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_prompt_decision_surface_updated ON prompt_decision_sessions (surface, updated_at)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_prompt_decision_updated ON prompt_decision_sessions (updated_at)`); } catch {}
 
-          // --- Prompt analytics events + rollups (plan_114E) ---
+          // --- In-feed message analytics events + rollups (legacy prompt-named tables retained for now) ---
           await db.query(`
             CREATE TABLE IF NOT EXISTS feed_prompt_events (
               id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,

@@ -4002,7 +4002,7 @@ pagesRouter.get('/admin/messages', async (req: any, res: any) => {
     res.set('Content-Type', 'text/html; charset=utf-8')
     res.send(doc)
   } catch (err) {
-    logError(req.log || pagesLogger, err, 'admin prompts list failed', { path: req.path })
+    logError(req.log || pagesLogger, err, 'admin messages list failed', { path: req.path })
     res.status(500).send('Failed to load messages')
   }
 })
@@ -4089,7 +4089,7 @@ pagesRouter.get('/admin/messages/:id', async (req: any, res: any) => {
     res.set('Content-Type', 'text/html; charset=utf-8')
     res.send(doc)
   } catch (err) {
-    logError(req.log || pagesLogger, err, 'admin prompt detail failed', { path: req.path, prompt_id: id })
+    logError(req.log || pagesLogger, err, 'admin message detail failed', { path: req.path, prompt_id: id })
     res.status(404).send('Message not found')
   }
 })
@@ -4604,7 +4604,7 @@ pagesRouter.get('/admin/message-analytics', async (req: any, res: any) => {
     res.set('Content-Type', 'text/html; charset=utf-8')
     return res.send(doc)
   } catch (err) {
-    logError(req.log || pagesLogger, err, 'admin prompt analytics failed', { path: req.path })
+    logError(req.log || pagesLogger, err, 'admin message analytics failed', { path: req.path })
     return res.status(500).send('Failed to load message analytics')
   }
 })

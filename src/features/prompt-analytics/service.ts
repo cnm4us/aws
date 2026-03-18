@@ -691,3 +691,8 @@ export function buildPromptAnalyticsCsv(report: PromptAnalyticsReport): string {
     )
     .join('\n')
 }
+
+// Phase F1 compatibility aliases for message terminology.
+export const recordMessageEvent = recordPromptEvent
+export const getMessageAnalyticsReportForAdmin = getPromptAnalyticsReportForAdmin
+export const buildMessageAnalyticsCsv = buildPromptAnalyticsCsv

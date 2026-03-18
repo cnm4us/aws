@@ -161,6 +161,8 @@ Acceptance:
 Only proceed in bounded increments with a test gate after each phase.
 
 #### Phase F1 — Shared Vocabulary + Low-Risk Alias Layer
+Status: Complete
+
 - Introduce `message` terminology in code comments, developer-facing labels, and low-risk type/interface names where possible.
 - Add compatibility aliases only where they reduce transition friction.
 - Do not rename DB tables or core runtime modules yet.

@@ -116,3 +116,15 @@ export type PromptAnalyticsReport = {
   byPrompt: PromptAnalyticsPromptRow[]
   byDay: PromptAnalyticsDayRow[]
 }
+
+// Phase F1 compatibility aliases for message terminology.
+export type MessageAnalyticsSurface = PromptAnalyticsSurface
+export type MessageAnalyticsViewerState = PromptAnalyticsViewerState
+export type MessageAnalyticsCtaKind = PromptAnalyticsCtaKind
+export type MessageAnalyticsInputEvent = PromptAnalyticsInputEvent
+export type MessageAnalyticsEventType = PromptAnalyticsEventType
+export type MessageAnalyticsEventRow = PromptAnalyticsEventRow
+export type MessageAnalyticsKpis = PromptAnalyticsKpis
+export type MessageAnalyticsPromptRow = PromptAnalyticsPromptRow
+export type MessageAnalyticsDayRow = PromptAnalyticsDayRow
+export type MessageAnalyticsReport = PromptAnalyticsReport

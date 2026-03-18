@@ -49,3 +49,11 @@ export type PromptDecisionResult = {
   sessionId: string
   debug?: Record<string, unknown>
 }
+
+// Phase F1 compatibility aliases for message terminology.
+export type MessageDecisionSurface = PromptDecisionSurface
+export type MessageDecisionAudienceSegment = PromptAudienceSegment
+export type MessageDecisionReasonCode = PromptDecisionReasonCode
+export type MessageDecisionSessionRow = PromptDecisionSessionRow
+export type MessageDecisionInput = PromptDecisionInput
+export type MessageDecisionResult = PromptDecisionResult
