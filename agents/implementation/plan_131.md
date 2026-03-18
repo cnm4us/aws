@@ -134,6 +134,8 @@ Acceptance:
 - first-party traffic primarily uses message-first API paths
 
 ### Phase D — Verification Window
+Status: Complete
+
 - keep prompt-path aliases in place temporarily
 - use Jaeger and Pino to confirm traffic is landing on message-first paths
 - spot-check that no important first-party flows still depend on prompt paths
