@@ -4505,9 +4505,9 @@ pagesRouter.get('/admin/message-analytics', async (req: any, res: any) => {
       fromDate: req.query?.from,
       toDate: req.query?.to,
       surface: req.query?.surface,
-      promptId: req.query?.prompt_id,
-      promptType: req.query?.prompt_type,
-      promptCampaignKey: req.query?.prompt_campaign_key ?? req.query?.prompt_category,
+      promptId: req.query?.message_id ?? req.query?.prompt_id,
+      promptType: req.query?.message_type ?? req.query?.prompt_type,
+      promptCampaignKey: req.query?.message_campaign_key ?? req.query?.prompt_campaign_key ?? req.query?.prompt_category,
       viewerState: req.query?.viewer_state,
     })
 
@@ -4523,9 +4523,9 @@ pagesRouter.get('/admin/message-analytics', async (req: any, res: any) => {
     q.set('from', report.range.fromDate)
     q.set('to', report.range.toDate)
     if (report.range.surface) q.set('surface', report.range.surface)
-    if (report.range.promptId != null) q.set('prompt_id', String(report.range.promptId))
-    if (report.range.promptType) q.set('prompt_type', report.range.promptType)
-    if (report.range.promptCampaignKey) q.set('prompt_campaign_key', report.range.promptCampaignKey)
+    if (report.range.promptId != null) q.set('message_id', String(report.range.promptId))
+    if (report.range.promptType) q.set('message_type', report.range.promptType)
+    if (report.range.promptCampaignKey) q.set('message_campaign_key', report.range.promptCampaignKey)
     if (report.range.viewerState) q.set('viewer_state', report.range.viewerState)
 
     let body = '<h1>Message Analytics</h1>'
@@ -4543,13 +4543,13 @@ pagesRouter.get('/admin/message-analytics', async (req: any, res: any) => {
       <option value="anonymous"${report.range.viewerState === 'anonymous' ? ' selected' : ''}>Anonymous</option>
       <option value="authenticated"${report.range.viewerState === 'authenticated' ? ' selected' : ''}>Authenticated</option>
     </select></label>`
-    body += `<label>Message ID<input type="number" name="prompt_id" min="1" value="${escapeHtml(report.range.promptId == null ? '' : String(report.range.promptId))}" /></label>`
-    body += `<label>Type<select name="prompt_type"><option value="">All</option>`
+    body += `<label>Message ID<input type="number" name="message_id" min="1" value="${escapeHtml(report.range.promptId == null ? '' : String(report.range.promptId))}" /></label>`
+    body += `<label>Type<select name="message_type"><option value="">All</option>`
     for (const opt of PROMPT_TYPE_OPTIONS) {
       body += `<option value="${escapeHtml(opt.value)}"${report.range.promptType === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
     }
     body += `</select></label>`
-    body += `<label>Campaign Key<input type="text" name="prompt_campaign_key" value="${escapeHtml(report.range.promptCampaignKey || '')}" /></label>`
+    body += `<label>Campaign Key<input type="text" name="message_campaign_key" value="${escapeHtml(report.range.promptCampaignKey || '')}" /></label>`
     body += `</div>`
     body += `<div style="display:flex; gap:10px; margin-top:10px; flex-wrap:wrap">`
     body += `<button class="btn" type="submit">Apply</button>`

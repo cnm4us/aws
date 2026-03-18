@@ -387,7 +387,7 @@ async function fetchMessageById(promptId: number): Promise<FeedMessagePayload> {
   const res = await fetch(messageUrl, { credentials: 'same-origin' })
   if (!res.ok) throw new Error('failed_to_fetch_prompt')
   const payload = await res.json()
-  const p = payload?.prompt
+  const p = payload?.message || payload?.prompt
   if (!p) throw new Error('missing_prompt_payload')
   const creative = (p.creative && typeof p.creative === 'object') ? p.creative : {}
   const background = (creative.background && typeof creative.background === 'object') ? creative.background : {}
@@ -467,10 +467,10 @@ async function sendMessageEvent(input: {
       body: JSON.stringify({
         event: input.event,
         surface: 'global_feed',
-        prompt_id: input.messageId,
-        prompt_campaign_key: input.messageCampaignKey,
-        session_id: input.sessionId,
-        cta_kind: input.ctaKind || null,
+        message_id: input.messageId,
+        message_campaign_key: input.messageCampaignKey,
+        message_session_id: input.sessionId,
+        message_cta_kind: input.ctaKind || null,
       }),
     })
   } catch {}
@@ -998,7 +998,7 @@ export default function Feed() {
       })
       emitSequenceHook('sequence_prompt_inserted', {
         sequence_key: seq.sequenceKey,
-        prompt_id: seq.item.message?.id ?? null,
+        message_id: seq.item.message?.id ?? null,
         source_index: seq.sourceIndex,
       })
     }
@@ -2356,10 +2356,10 @@ export default function Feed() {
     try {
       const url = new URL(targetHref, window.location.origin)
       if (url.origin === window.location.origin) {
-        url.searchParams.set('prompt_id', String(message.id))
-        if (message.campaignKey) url.searchParams.set('prompt_campaign_key', message.campaignKey)
-        if (messageSessionId) url.searchParams.set('prompt_session_id', messageSessionId)
-        url.searchParams.set('prompt_cta_kind', ctaKind)
+        url.searchParams.set('message_id', String(message.id))
+        if (message.campaignKey) url.searchParams.set('message_campaign_key', message.campaignKey)
+        if (messageSessionId) url.searchParams.set('message_session_id', messageSessionId)
+        url.searchParams.set('message_cta_kind', ctaKind)
         window.location.href = `${url.pathname}${url.search}${url.hash || ''}`
         return
       }
@@ -2638,7 +2638,7 @@ export default function Feed() {
           slides_viewed: counters.slidesViewed,
           watch_seconds: counters.watchSeconds,
           messages_shown_this_session: counters.messagesShown,
-          slides_since_last_prompt: counters.slidesSinceLastPrompt,
+          slides_since_last_message: counters.slidesSinceLastPrompt,
           last_message_id: counters.lastMessageId,
         })
         const res = await fetch('/api/feed/message-decision', {
@@ -2650,12 +2650,12 @@ export default function Feed() {
           },
           body: JSON.stringify({
             surface: 'global_feed',
-            session_id: messageSessionId,
+            message_session_id: messageSessionId,
             slides_viewed: counters.slidesViewed,
             watch_seconds: counters.watchSeconds,
-            prompts_shown_this_session: counters.messagesShown,
-            slides_since_last_prompt: counters.slidesSinceLastPrompt,
-            last_prompt_id: counters.lastMessageId,
+            messages_shown_this_session: counters.messagesShown,
+            slides_since_last_message: counters.slidesSinceLastPrompt,
+            last_message_id: counters.lastMessageId,
           }),
         })
         if (!res.ok) {
@@ -2668,7 +2668,7 @@ export default function Feed() {
           active_content_key: activeContentKey,
           should_insert: Boolean(decision?.should_insert),
           reason_code: decision?.reason_code || null,
-          message_id: decision?.prompt_id ?? null,
+          message_id: decision?.message_id ?? decision?.prompt_id ?? null,
           session_id: decision?.session_id ?? null,
           debug: decision?.debug || null,
         })
@@ -2683,9 +2683,9 @@ export default function Feed() {
           })
           return
         }
-        const messageId = Number(decision?.prompt_id)
+        const messageId = Number(decision?.message_id ?? decision?.prompt_id)
         if (!Number.isFinite(messageId) || messageId <= 0) {
-          emitMessageDebug('decision:skip:invalid_message_id', { message_id: decision?.prompt_id })
+          emitMessageDebug('decision:skip:invalid_message_id', { message_id: decision?.message_id ?? decision?.prompt_id })
           return
         }
 
