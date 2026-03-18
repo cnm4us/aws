@@ -300,8 +300,8 @@ export function buildServer(): express.Application {
       await messageAnalyticsSvc.recordMessageEvent({
         event: 'auth_complete',
         surface: 'global_feed',
-        promptId: messageIdRaw,
-        promptCampaignKey: req?.body?.message_campaign_key,
+        messageId: messageIdRaw,
+        messageCampaignKey: req?.body?.message_campaign_key,
         sessionId: req?.body?.message_session_id,
         ctaKind: req?.body?.message_cta_kind,
         viewerState: userId != null && Number(userId) > 0 ? 'authenticated' : 'anonymous',

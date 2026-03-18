@@ -6,14 +6,14 @@ import { buildCanonicalAnalyticsEvent } from '../analytics-events/contract'
 import { dispatchCanonicalAnalyticsEvent } from '../analytics-sink/service'
 import * as messageRepo from '../messages/repo'
 import type {
-  PromptAnalyticsCtaKind,
-  PromptAnalyticsDayRow,
-  PromptAnalyticsInputEvent,
-  PromptAnalyticsKpis,
-  PromptAnalyticsPromptRow,
-  PromptAnalyticsReport,
-  PromptAnalyticsSurface,
-  PromptAnalyticsViewerState,
+  MessageAnalyticsCtaKind,
+  MessageAnalyticsDayRow,
+  MessageAnalyticsInputEvent,
+  MessageAnalyticsKpis,
+  MessageAnalyticsMessageRow,
+  MessageAnalyticsReport,
+  MessageAnalyticsSurface,
+  MessageAnalyticsViewerState,
 } from './types'
 import * as repo from './repo'
 
@@ -45,14 +45,14 @@ function parseYmd(raw: any, key: string): Date {
   return d
 }
 
-function normalizeSurface(raw: any): PromptAnalyticsSurface | null {
+function normalizeSurface(raw: any): MessageAnalyticsSurface | null {
   if (raw == null || raw === '') return null
   const v = String(raw).trim().toLowerCase()
   if (v !== 'global_feed') throw new DomainError('invalid_surface', 'invalid_surface', 400)
   return 'global_feed'
 }
 
-function normalizeViewerState(raw: any): PromptAnalyticsViewerState | null {
+function normalizeViewerState(raw: any): MessageAnalyticsViewerState | null {
   if (raw == null || raw === '') return null
   const v = String(raw).trim().toLowerCase()
   if (v === 'anonymous' || v === 'authenticated') return v
@@ -92,20 +92,20 @@ function normalizeSessionId(raw: any): string | null {
   return v
 }
 
-function normalizeEvent(raw: any): PromptAnalyticsInputEvent {
+function normalizeEvent(raw: any): MessageAnalyticsInputEvent {
   const v = String(raw || '').trim().toLowerCase()
   if (v === 'impression' || v === 'click' || v === 'pass_through' || v === 'dismiss' || v === 'auth_start' || v === 'auth_complete') return v
   throw new DomainError('invalid_message_event', 'invalid_message_event', 400)
 }
 
-function normalizeCtaKind(raw: any): PromptAnalyticsCtaKind {
+function normalizeCtaKind(raw: any): MessageAnalyticsCtaKind {
   if (raw == null || raw === '') return null
   const v = String(raw).trim().toLowerCase()
   if (v === 'primary' || v === 'secondary') return v
   throw new DomainError('invalid_message_cta_kind', 'invalid_message_cta_kind', 400)
 }
 
-function mapToEventType(event: PromptAnalyticsInputEvent, ctaKind: PromptAnalyticsCtaKind) {
+function mapToEventType(event: MessageAnalyticsInputEvent, ctaKind: MessageAnalyticsCtaKind) {
   if (event === 'impression') return 'prompt_impression' as const
   if (event === 'pass_through' || event === 'dismiss') return 'prompt_dismiss' as const
   if (event === 'auth_start') return 'auth_start_from_prompt' as const
@@ -143,15 +143,15 @@ function dedupeIdentity(input: { sessionId: string | null; userId: number | null
 
 function dedupeKey(input: {
   eventType: string
-  surface: PromptAnalyticsSurface
-  promptId: number
-  ctaKind: PromptAnalyticsCtaKind
+  surface: MessageAnalyticsSurface
+  messageId: number
+  ctaKind: MessageAnalyticsCtaKind
   identity: string
   bucketStartMs: number
 }): string {
   return crypto
     .createHash('sha256')
-    .update(`${input.eventType}|${input.surface}|${input.promptId}|${input.ctaKind || '-'}|${input.identity}|${input.bucketStartMs}`)
+    .update(`${input.eventType}|${input.surface}|${input.messageId}|${input.ctaKind || '-'}|${input.identity}|${input.bucketStartMs}`)
     .digest('hex')
 }
 
@@ -163,24 +163,24 @@ async function maybeLookupMessageMeta(messageId: number): Promise<{ messageCampa
 }
 
 type RecordMessageEventInput = {
-  event: PromptAnalyticsInputEvent | string
-  surface?: PromptAnalyticsSurface | string | null
-  viewerState?: PromptAnalyticsViewerState | string | null
+  event: MessageAnalyticsInputEvent | string
+  surface?: MessageAnalyticsSurface | string | null
+  viewerState?: MessageAnalyticsViewerState | string | null
   sessionId?: string | null
   userId?: number | string | null
-  promptId: number | string | null | undefined
-  promptCampaignKey?: string | null
-  ctaKind?: PromptAnalyticsCtaKind | string | null
+  messageId: number | string | null | undefined
+  messageCampaignKey?: string | null
+  ctaKind?: MessageAnalyticsCtaKind | string | null
   occurredAt?: Date
 }
 
 export async function recordMessageEvent(input: RecordMessageEventInput): Promise<{
   inserted: boolean
   countedInRollup: boolean
-  inputEvent: PromptAnalyticsInputEvent
+  inputEvent: MessageAnalyticsInputEvent
   eventType: string
-  surface: PromptAnalyticsSurface
-  promptId: number
+  surface: MessageAnalyticsSurface
+  messageId: number
   attributed: boolean
 }> {
   return tracer.startActiveSpan('message.analytics.ingest', { attributes: { 'app.operation': 'analytics.ingest', 'app.operation_detail': 'message.analytics.ingest' } }, async (span) => {
@@ -188,8 +188,8 @@ export async function recordMessageEvent(input: RecordMessageEventInput): Promis
       const event = normalizeEvent(input.event)
       const surface = input.surface == null || input.surface === '' ? 'global_feed' : normalizeSurface(input.surface)
       if (!surface) throw new DomainError('invalid_surface', 'invalid_surface', 400)
-      const promptId = normalizeMessageId(input.promptId)
-      if (promptId == null) throw new DomainError('invalid_message_id', 'invalid_message_id', 400)
+      const messageId = normalizeMessageId(input.messageId)
+      if (messageId == null) throw new DomainError('invalid_message_id', 'invalid_message_id', 400)
 
       const viewerState = input.viewerState == null || input.viewerState === ''
         ? (input.userId != null && Number(input.userId) > 0 ? 'authenticated' : 'anonymous')
@@ -200,14 +200,14 @@ export async function recordMessageEvent(input: RecordMessageEventInput): Promis
         ? Math.round(Number(input.userId))
         : null
 
-      let promptCampaignKey = normalizeCampaignKey(input.promptCampaignKey)
+      let messageCampaignKey = normalizeCampaignKey(input.messageCampaignKey)
       const ctaKind = normalizeCtaKind(input.ctaKind)
       const eventType = mapToEventType(event, ctaKind)
 
-      if (!promptCampaignKey) {
+      if (!messageCampaignKey) {
         try {
-          const looked = await maybeLookupMessageMeta(promptId)
-          if (!promptCampaignKey) promptCampaignKey = looked.messageCampaignKey
+          const looked = await maybeLookupMessageMeta(messageId)
+          if (!messageCampaignKey) messageCampaignKey = looked.messageCampaignKey
         } catch {}
       }
 
@@ -219,10 +219,10 @@ export async function recordMessageEvent(input: RecordMessageEventInput): Promis
         viewerState,
         sessionId,
         userId,
-        promptId,
+        promptId: messageId,
         meta: {
           input_event: event,
-          ...(promptCampaignKey ? { prompt_campaign_key: promptCampaignKey } : {}),
+          ...(messageCampaignKey ? { prompt_campaign_key: messageCampaignKey } : {}),
           ...(ctaKind ? { cta_kind: ctaKind } : {}),
           source_route: 'feed_message_events',
         },
@@ -236,7 +236,7 @@ export async function recordMessageEvent(input: RecordMessageEventInput): Promis
       const key = dedupeKey({
         eventType,
         surface,
-        promptId: canonical.promptId || promptId,
+        messageId: canonical.promptId || messageId,
         ctaKind,
         identity,
         bucketStartMs: bucket.bucketStartMs,
@@ -248,7 +248,7 @@ export async function recordMessageEvent(input: RecordMessageEventInput): Promis
         const hasStart = await repo.hasRecentAuthStart({
           sessionId: canonical.sessionId,
           userId: canonical.userId,
-          promptId: canonical.promptId || promptId,
+          messageId: canonical.promptId || messageId,
           sinceDateTimeUtc: toUtcDateTimeString(new Date(sinceMs)),
         })
         attributed = hasStart
@@ -260,8 +260,8 @@ export async function recordMessageEvent(input: RecordMessageEventInput): Promis
         viewerState: canonical.viewerState,
         sessionId: canonical.sessionId,
         userId: canonical.userId,
-        promptId: canonical.promptId || promptId,
-        promptCampaignKey,
+        messageId: canonical.promptId || messageId,
+        messageCampaignKey,
         ctaKind,
         attributed,
         occurredAt,
@@ -286,8 +286,8 @@ export async function recordMessageEvent(input: RecordMessageEventInput): Promis
               await repo.upsertDailyCount({
                 dateUtc: dayUtc,
                 surface,
-                promptId: canonical.promptId || promptId,
-                promptCampaignKey,
+                messageId: canonical.promptId || messageId,
+                messageCampaignKey,
                 viewerState: canonical.viewerState,
                 eventType,
                 totalDelta: 1,
@@ -319,8 +319,8 @@ export async function recordMessageEvent(input: RecordMessageEventInput): Promis
 
       span.setAttributes({
         'app.surface': surface,
-        'app.message_id': String(canonical.promptId || promptId),
-        ...(promptCampaignKey ? { 'app.message_campaign_key': promptCampaignKey } : {}),
+        'app.message_id': String(canonical.promptId || messageId),
+        ...(messageCampaignKey ? { 'app.message_campaign_key': messageCampaignKey } : {}),
         'app.outcome': inserted.inserted ? 'success' : 'redirect',
         'app.event_name': canonical.eventName,
         'message.analytics.event_type': eventType,
@@ -334,8 +334,8 @@ export async function recordMessageEvent(input: RecordMessageEventInput): Promis
           app_operation: 'analytics.ingest',
           app_operation_detail: 'message.analytics.ingest',
           app_surface: surface,
-          app_message_id: canonical.promptId || promptId,
-          app_message_campaign_key: promptCampaignKey,
+          app_message_id: canonical.promptId || messageId,
+          app_message_campaign_key: messageCampaignKey,
           app_event_name: canonical.eventName,
           message_event_type: eventType,
           message_event_deduped: !inserted.inserted,
@@ -353,7 +353,7 @@ export async function recordMessageEvent(input: RecordMessageEventInput): Promis
         inputEvent: event,
         eventType,
         surface,
-        promptId: canonical.promptId || promptId,
+        messageId: canonical.promptId || messageId,
         attributed,
       }
     } catch (err: any) {
@@ -371,20 +371,20 @@ function normalizeReportRange(input: {
   fromDate?: any
   toDate?: any
   surface?: any
-  promptId?: any
-  promptType?: any
-  promptCampaignKey?: any
+  messageId?: any
+  messageType?: any
+  messageCampaignKey?: any
   viewerState?: any
 }): {
   fromDate: string
   toDate: string
   fromDateTime: string
   toDateTimeExclusive: string
-  surface: PromptAnalyticsSurface | null
-  promptId: number | null
-  promptType: string | null
-  promptCampaignKey: string | null
-  viewerState: PromptAnalyticsViewerState | null
+  surface: MessageAnalyticsSurface | null
+  messageId: number | null
+  messageType: string | null
+  messageCampaignKey: string | null
+  viewerState: MessageAnalyticsViewerState | null
 } {
   const now = new Date()
   const defaultTo = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
@@ -409,9 +409,9 @@ function normalizeReportRange(input: {
     fromDateTime,
     toDateTimeExclusive,
     surface: normalizeSurface(input.surface),
-    promptId: normalizeMessageId(input.promptId),
-    promptType: normalizeMessageType(input.promptType),
-    promptCampaignKey: normalizeCampaignKey(input.promptCampaignKey),
+    messageId: normalizeMessageId(input.messageId),
+    messageType: normalizeMessageType(input.messageType),
+    messageCampaignKey: normalizeCampaignKey(input.messageCampaignKey),
     viewerState: normalizeViewerState(input.viewerState),
   }
 }
@@ -434,7 +434,7 @@ function buildKpis(input: {
   dismissUnique: number
   authStartUnique: number
   authCompleteUnique: number
-}): PromptAnalyticsKpis {
+}): MessageAnalyticsKpis {
   const clicksTotal = input.clicksPrimary + input.clicksSecondary
   return {
     totals: {
@@ -467,27 +467,27 @@ export async function getMessageAnalyticsReportForAdmin(input: {
   fromDate?: any
   toDate?: any
   surface?: any
-  promptId?: any
-  promptType?: any
-  promptCampaignKey?: any
+  messageId?: any
+  messageType?: any
+  messageCampaignKey?: any
   viewerState?: any
-}): Promise<PromptAnalyticsReport> {
+}): Promise<MessageAnalyticsReport> {
   return tracer.startActiveSpan('message.analytics.query', { attributes: { 'app.operation': 'analytics.query', 'app.operation_detail': 'message.analytics.query' } }, async (span) => {
     try {
       const range = normalizeReportRange(input)
-      const [totalsRaw, byPromptRaw, byDayRaw, uniqueTotalsRaw, uniqueByPromptRaw] = await Promise.all([
+      const [totalsRaw, byMessageRaw, byDayRaw, uniqueTotalsRaw, uniqueByMessageRaw] = await Promise.all([
         repo.getTotalsFromDaily(range),
-        repo.getByPromptFromDaily(range),
+        repo.getByMessageFromDaily(range),
         repo.getByDayFromDaily(range),
         repo.getUniqueTotalsFromRaw(range),
-        repo.getUniqueByPromptFromRaw(range),
+        repo.getUniqueByMessageFromRaw(range),
       ])
 
-      const uniqueByPrompt = new Map<number, any>()
-      for (const row of uniqueByPromptRaw) {
-        const promptId = coerceInt((row as any).prompt_id)
-        if (promptId <= 0) continue
-        uniqueByPrompt.set(promptId, row)
+      const uniqueByMessage = new Map<number, any>()
+      for (const row of uniqueByMessageRaw) {
+        const messageId = coerceInt((row as any).message_id)
+        if (messageId <= 0) continue
+        uniqueByMessage.set(messageId, row)
       }
 
       const kpis = buildKpis({
@@ -504,8 +504,8 @@ export async function getMessageAnalyticsReportForAdmin(input: {
         authCompleteUnique: coerceInt((uniqueTotalsRaw as any).auth_complete_unique),
       })
 
-      const byPrompt: PromptAnalyticsPromptRow[] = byPromptRaw.map((row) => {
-        const promptId = coerceInt((row as any).prompt_id)
+      const byMessage: MessageAnalyticsMessageRow[] = byMessageRaw.map((row) => {
+        const messageId = coerceInt((row as any).message_id)
         const impressions = coerceInt((row as any).impressions)
         const clicksPrimary = coerceInt((row as any).clicks_primary)
         const clicksSecondary = coerceInt((row as any).clicks_secondary)
@@ -513,7 +513,7 @@ export async function getMessageAnalyticsReportForAdmin(input: {
         const authStart = coerceInt((row as any).auth_start)
         const authComplete = coerceInt((row as any).auth_complete)
 
-        const uniq = uniqueByPrompt.get(promptId) || {}
+        const uniq = uniqueByMessage.get(messageId) || {}
         const impressionsUnique = coerceInt(uniq.impressions_unique)
         const clicksTotalUnique = coerceInt(uniq.clicks_total_unique)
         const dismissUnique = coerceInt(uniq.dismiss_unique)
@@ -521,10 +521,10 @@ export async function getMessageAnalyticsReportForAdmin(input: {
         const authCompleteUnique = coerceInt(uniq.auth_complete_unique)
 
         return {
-          promptId,
-          promptName: (row as any).prompt_name ? String((row as any).prompt_name) : null,
-          promptType: (row as any).prompt_type ? String((row as any).prompt_type) : null,
-          promptCampaignKey: (row as any).prompt_campaign_key ? String((row as any).prompt_campaign_key) : null,
+          messageId,
+          messageName: (row as any).message_name ? String((row as any).message_name) : null,
+          messageType: (row as any).message_type ? String((row as any).message_type) : null,
+          messageCampaignKey: (row as any).message_campaign_key ? String((row as any).message_campaign_key) : null,
           totals: {
             impressions,
             clicksPrimary,
@@ -551,7 +551,7 @@ export async function getMessageAnalyticsReportForAdmin(input: {
         }
       })
 
-      const byDay: PromptAnalyticsDayRow[] = byDayRaw.map((row) => {
+      const byDay: MessageAnalyticsDayRow[] = byDayRaw.map((row) => {
         const impressions = coerceInt((row as any).impressions)
         const clicksTotal = coerceInt((row as any).clicks_total)
         const dismiss = coerceInt((row as any).dismiss)
@@ -577,11 +577,11 @@ export async function getMessageAnalyticsReportForAdmin(input: {
 
       span.setAttributes({
         ...(range.surface ? { 'app.surface': range.surface } : {}),
-        ...(range.promptId != null ? { 'app.message_id': String(range.promptId) } : {}),
-        ...(range.promptType ? { 'app.message_type': range.promptType } : {}),
-        ...(range.promptCampaignKey ? { 'app.message_campaign_key': range.promptCampaignKey } : {}),
+        ...(range.messageId != null ? { 'app.message_id': String(range.messageId) } : {}),
+        ...(range.messageType ? { 'app.message_type': range.messageType } : {}),
+        ...(range.messageCampaignKey ? { 'app.message_campaign_key': range.messageCampaignKey } : {}),
         ...(range.viewerState ? { 'message.analytics.viewer_state': range.viewerState } : {}),
-        'message.analytics.result_rows': byPrompt.length,
+        'message.analytics.result_rows': byMessage.length,
         'app.outcome': 'success',
       })
       span.setStatus({ code: SpanStatusCode.OK })
@@ -591,13 +591,13 @@ export async function getMessageAnalyticsReportForAdmin(input: {
           app_operation: 'analytics.query',
           app_operation_detail: 'message.analytics.query',
           app_surface: range.surface,
-          app_message_id: range.promptId,
-          app_message_type: range.promptType,
-          app_message_campaign_key: range.promptCampaignKey,
+          app_message_id: range.messageId,
+          app_message_type: range.messageType,
+          app_message_campaign_key: range.messageCampaignKey,
           viewer_state: range.viewerState,
           range_from_date: range.fromDate,
           range_to_date: range.toDate,
-          result_rows: byPrompt.length,
+          result_rows: byMessage.length,
         },
         'message.analytics.query'
       )
@@ -607,13 +607,13 @@ export async function getMessageAnalyticsReportForAdmin(input: {
           fromDate: range.fromDate,
           toDate: range.toDate,
           surface: range.surface,
-          promptId: range.promptId,
-          promptType: range.promptType,
-          promptCampaignKey: range.promptCampaignKey,
+          messageId: range.messageId,
+          messageType: range.messageType,
+          messageCampaignKey: range.messageCampaignKey,
           viewerState: range.viewerState,
         },
         kpis,
-        byPrompt,
+        byMessage,
         byDay,
       }
     } catch (err: any) {
@@ -627,7 +627,7 @@ export async function getMessageAnalyticsReportForAdmin(input: {
   })
 }
 
-export function buildMessageAnalyticsCsv(report: PromptAnalyticsReport): string {
+export function buildMessageAnalyticsCsv(report: MessageAnalyticsReport): string {
   const header = [
     'message_id',
     'message_name',
@@ -653,12 +653,12 @@ export function buildMessageAnalyticsCsv(report: PromptAnalyticsReport): string 
   ]
 
   const rows: string[][] = [header]
-  for (const row of report.byPrompt) {
+  for (const row of report.byMessage) {
     rows.push([
-      String(row.promptId),
-      row.promptName || '',
-      row.promptType || '',
-      row.promptCampaignKey || '',
+      String(row.messageId),
+      row.messageName || '',
+      row.messageType || '',
+      row.messageCampaignKey || '',
       String(row.totals.impressions),
       String(row.totals.clicksPrimary),
       String(row.totals.clicksSecondary),
@@ -691,8 +691,3 @@ export function buildMessageAnalyticsCsv(report: PromptAnalyticsReport): string 
     )
     .join('\n')
 }
-
-// Phase F1 compatibility aliases for message terminology.
-export const recordPromptEvent = recordMessageEvent
-export const getPromptAnalyticsReportForAdmin = getMessageAnalyticsReportForAdmin
-export const buildPromptAnalyticsCsv = buildMessageAnalyticsCsv

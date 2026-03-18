@@ -1,22 +1,22 @@
-export type PromptStatus = 'draft' | 'active' | 'paused' | 'archived'
-export type PromptWidgetPosition = 'top' | 'middle' | 'bottom'
-export type PromptBackgroundMode = 'none' | 'image' | 'video'
-export type PromptVideoPlaybackMode = 'muted_autoplay' | 'tap_to_play_sound'
-export type PromptSurface = 'global_feed'
-export type PromptAudienceSegment = 'anonymous' | 'authenticated_non_subscriber' | 'authenticated_subscriber'
-export type PromptTieBreakStrategy = 'first' | 'round_robin' | 'weighted_random'
-export type PromptType =
+export type MessageStatus = 'draft' | 'active' | 'paused' | 'archived'
+export type MessageWidgetPosition = 'top' | 'middle' | 'bottom'
+export type MessageBackgroundMode = 'none' | 'image' | 'video'
+export type MessageVideoPlaybackMode = 'muted_autoplay' | 'tap_to_play_sound'
+export type MessageSurface = 'global_feed'
+export type MessageAudienceSegment = 'anonymous' | 'authenticated_non_subscriber' | 'authenticated_subscriber'
+export type MessageTieBreakStrategy = 'first' | 'round_robin' | 'weighted_random'
+export type MessageType =
   | 'register_login'
   | 'fund_drive'
   | 'subscription_upgrade'
   | 'sponsor_message'
   | 'feature_announcement'
 
-export type PromptCreative = {
+export type MessageCreative = {
   version: 1
   background: {
-    mode: PromptBackgroundMode
-    videoPlaybackMode: PromptVideoPlaybackMode
+    mode: MessageBackgroundMode
+    videoPlaybackMode: MessageVideoPlaybackMode
     uploadId: number | null
     overlayColor: string
     overlayOpacity: number
@@ -24,7 +24,7 @@ export type PromptCreative = {
   widgets: {
     message: {
       enabled: boolean
-      position: PromptWidgetPosition
+      position: MessageWidgetPosition
       yOffsetPct: number
       bgColor: string
       bgOpacity: number
@@ -39,7 +39,7 @@ export type PromptCreative = {
     }
     auth: {
       enabled: boolean
-      position: PromptWidgetPosition
+      position: MessageWidgetPosition
       yOffsetPct: number
       bgColor: string
       bgOpacity: number
@@ -48,7 +48,7 @@ export type PromptCreative = {
   }
 }
 
-export type PromptRow = {
+export type MessageRow = {
   id: number
   name: string
   headline: string
@@ -59,13 +59,13 @@ export type PromptRow = {
   cta_secondary_href: string | null
   media_upload_id: number | null
   creative_json: string | null
-  prompt_type: PromptType
-  applies_to_surface: PromptSurface
-  audience_segment: PromptAudienceSegment
-  tie_break_strategy: PromptTieBreakStrategy
+  type: MessageType
+  applies_to_surface: MessageSurface
+  audience_segment: MessageAudienceSegment
+  tie_break_strategy: MessageTieBreakStrategy
   campaign_key: string | null
   priority: number
-  status: PromptStatus
+  status: MessageStatus
   starts_at: string | null
   ends_at: string | null
   created_by: number
@@ -74,7 +74,7 @@ export type PromptRow = {
   updated_at: string
 }
 
-export type PromptDto = {
+export type MessageDto = {
   id: number
   name: string
   headline: string
@@ -84,14 +84,14 @@ export type PromptDto = {
   ctaSecondaryLabel: string | null
   ctaSecondaryHref: string | null
   mediaUploadId: number | null
-  creative: PromptCreative
-  promptType: PromptType
-  appliesToSurface: PromptSurface
-  audienceSegment: PromptAudienceSegment
-  tieBreakStrategy: PromptTieBreakStrategy
+  creative: MessageCreative
+  type: MessageType
+  appliesToSurface: MessageSurface
+  audienceSegment: MessageAudienceSegment
+  tieBreakStrategy: MessageTieBreakStrategy
   campaignKey: string | null
   priority: number
-  status: PromptStatus
+  status: MessageStatus
   startsAt: string | null
   endsAt: string | null
   createdBy: number
@@ -99,17 +99,3 @@ export type PromptDto = {
   createdAt: string
   updatedAt: string
 }
-
-// Phase F1 compatibility aliases: user-facing terminology is "message" while
-// runtime modules and storage remain prompt-named until later rename phases.
-export type MessageStatus = PromptStatus
-export type MessageWidgetPosition = PromptWidgetPosition
-export type MessageBackgroundMode = PromptBackgroundMode
-export type MessageVideoPlaybackMode = PromptVideoPlaybackMode
-export type MessageSurface = PromptSurface
-export type MessageAudienceSegment = PromptAudienceSegment
-export type MessageTieBreakStrategy = PromptTieBreakStrategy
-export type MessageType = PromptType
-export type MessageCreative = PromptCreative
-export type MessageRow = PromptRow
-export type MessageDto = PromptDto

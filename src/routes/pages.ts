@@ -3187,7 +3187,7 @@ function buildPromptCreateOrUpdatePayload(body: any): any {
   const secondaryLabel = secondaryLabelRaw || null
   const secondaryHref = secondaryHrefRaw || null
   const mediaUploadId = String(creativeForm.backgroundUploadId || '').trim()
-  const promptType = String(body?.promptType ?? body?.prompt_type ?? 'register_login').trim().toLowerCase() || 'register_login'
+  const messageType = String(body?.type ?? body?.messageType ?? 'register_login').trim().toLowerCase() || 'register_login'
   const appliesToSurface = String(body?.appliesToSurface ?? body?.applies_to_surface ?? 'global_feed').trim().toLowerCase() || 'global_feed'
   const audienceSegment = String(body?.audienceSegment ?? body?.audience_segment ?? 'anonymous').trim().toLowerCase() || 'anonymous'
   const tieBreakStrategy = String(body?.tieBreakStrategy ?? body?.tie_break_strategy ?? 'round_robin').trim().toLowerCase() || 'round_robin'
@@ -3200,7 +3200,7 @@ function buildPromptCreateOrUpdatePayload(body: any): any {
   const normalizedEndsAt = endsAtDate ? `${endsAtDate}T${endsAtTime || '23:59'}` : ''
   return {
     ...(body || {}),
-    promptType,
+    type: messageType,
     appliesToSurface,
     audienceSegment,
     tieBreakStrategy,
@@ -3413,10 +3413,10 @@ function renderAdminPromptForm(opts: {
   const skipDraftRestore = opts.notice ? '1' : '0'
   body += `<form id="prompt-editor-form" data-draft-key="${escapeHtml(draftKey)}" data-skip-draft-restore="${skipDraftRestore}" method="post" action="${escapeHtml(opts.action)}">`
   if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
-  const promptTypeValue = String(values.promptType || values.prompt_type || 'register_login').trim().toLowerCase() || 'register_login'
-  const promptTypeOptions = PROMPT_TYPE_OPTIONS.slice()
-  if (!promptTypeOptions.some((opt) => opt.value === promptTypeValue)) {
-    promptTypeOptions.unshift({ value: promptTypeValue, label: `Custom (${promptTypeValue})` })
+  const messageTypeValue = String(values.type || values.messageType || 'register_login').trim().toLowerCase() || 'register_login'
+  const messageTypeOptions = PROMPT_TYPE_OPTIONS.slice()
+  if (!messageTypeOptions.some((opt) => opt.value === messageTypeValue)) {
+    messageTypeOptions.unshift({ value: messageTypeValue, label: `Custom (${messageTypeValue})` })
   }
   const audienceValue = String(values.audienceSegment || values.audience_segment || 'anonymous').trim().toLowerCase() || 'anonymous'
   const audienceOptions = PROMPT_AUDIENCE_OPTIONS.slice()
@@ -3439,9 +3439,9 @@ function renderAdminPromptForm(opts: {
   body += `<div class="section">`
   body += `<label>Name<input type="text" name="name" value="${escapeHtml(String(values.name || ''))}" required maxlength="120" /></label>`
   body += `<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px; margin-top:10px">`
-  body += `<div class="mini-field"><div class="mini-field-label">Type</div><select name="promptType">`
-  for (const opt of promptTypeOptions) {
-    body += `<option value="${escapeHtml(opt.value)}"${opt.value === promptTypeValue ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+  body += `<div class="mini-field"><div class="mini-field-label">Type</div><select name="type">`
+  for (const opt of messageTypeOptions) {
+    body += `<option value="${escapeHtml(opt.value)}"${opt.value === messageTypeValue ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
   }
   body += `</select></div>`
   body += `<div class="mini-field"><div class="mini-field-label">Audience</div><select name="audienceSegment">`
@@ -3923,7 +3923,7 @@ pagesRouter.get('/admin/messages', async (req: any, res: any) => {
   try {
     const includeArchived = String(req.query?.include_archived || '0') === '1'
     const status = req.query?.status ? String(req.query.status) : ''
-    const promptType = req.query?.prompt_type ? String(req.query.prompt_type) : ''
+    const messageType = req.query?.message_type ? String(req.query.message_type) : ''
     const audienceSegment = req.query?.audience_segment ? String(req.query.audience_segment) : ''
     const appliesToSurface = req.query?.applies_to_surface ? String(req.query.applies_to_surface) : ''
     const campaignKey = req.query?.campaign_key ? String(req.query.campaign_key) : ''
@@ -3933,7 +3933,7 @@ pagesRouter.get('/admin/messages', async (req: any, res: any) => {
       includeArchived,
       limit: 500,
       status,
-      promptType,
+      messageType,
       audienceSegment,
       appliesToSurface,
       campaignKey,
@@ -3952,9 +3952,9 @@ pagesRouter.get('/admin/messages', async (req: any, res: any) => {
       <option value="paused"${status === 'paused' ? ' selected' : ''}>Paused</option>
       <option value="archived"${status === 'archived' ? ' selected' : ''}>Archived</option>
     </select></label>`
-    body += `<label style="min-width:210px">Type<select name="prompt_type"><option value="">All</option>`
+    body += `<label style="min-width:210px">Type<select name="message_type"><option value="">All</option>`
     for (const opt of PROMPT_TYPE_OPTIONS) {
-      body += `<option value="${escapeHtml(opt.value)}"${promptType === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+      body += `<option value="${escapeHtml(opt.value)}"${messageType === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
     }
     body += `</select></label>`
     body += `<label style="min-width:230px">Audience<select name="audience_segment"><option value="">All</option>`
@@ -3981,7 +3981,7 @@ pagesRouter.get('/admin/messages', async (req: any, res: any) => {
         body += `<tr>
           <td>${item.id}</td>
           <td><a href="/admin/messages/${item.id}">${escapeHtml(item.name)}</a></td>
-          <td>${escapeHtml(item.promptType)}</td>
+          <td>${escapeHtml(item.type)}</td>
           <td>${escapeHtml(item.audienceSegment)}</td>
           <td>${escapeHtml(item.appliesToSurface)}</td>
           <td>${escapeHtml(item.campaignKey || '—')}</td>
@@ -4023,7 +4023,7 @@ pagesRouter.get('/admin/messages/new', async (req: any, res: any) => {
       ctaPrimaryHref: '/register?return=/',
       ctaSecondaryLabel: 'Log In',
       ctaSecondaryHref: '/login?return=/',
-      promptType: 'register_login',
+      type: 'register_login',
       audienceSegment: 'anonymous',
       appliesToSurface: 'global_feed',
       tieBreakStrategy: 'round_robin',
@@ -4195,9 +4195,9 @@ pagesRouter.get('/admin/analytics', async (req: any, res: any) => {
         fromDate: feedReport.range.fromDate,
         toDate: feedReport.range.toDate,
         surface: promptSurfaceEligible ? selectedSurface : null,
-        promptId: null,
-        promptType: null,
-        promptCampaignKey: null,
+        messageId: null,
+        messageType: null,
+        messageCampaignKey: null,
         viewerState: feedReport.range.viewerState,
       },
       kpis: {
@@ -4225,11 +4225,11 @@ pagesRouter.get('/admin/analytics', async (req: any, res: any) => {
           completionPerStart: 0,
         },
       },
-      byPrompt: [],
+      byMessage: [],
       byDay: [],
     }
     const promptReport = promptSurfaceEligible
-      ? await messageAnalyticsSvc.getMessageAnalyticsReportForAdmin({
+        ? await messageAnalyticsSvc.getMessageAnalyticsReportForAdmin({
           fromDate: feedReport.range.fromDate,
           toDate: feedReport.range.toDate,
           surface: selectedSurface,
@@ -4511,9 +4511,9 @@ pagesRouter.get('/admin/message-analytics', async (req: any, res: any) => {
       fromDate: req.query?.from,
       toDate: req.query?.to,
       surface: req.query?.surface,
-      promptId: req.query?.message_id,
-      promptType: req.query?.message_type,
-      promptCampaignKey: req.query?.message_campaign_key,
+      messageId: req.query?.message_id,
+      messageType: req.query?.message_type,
+      messageCampaignKey: req.query?.message_campaign_key,
       viewerState: req.query?.viewer_state,
     })
 
@@ -4529,9 +4529,9 @@ pagesRouter.get('/admin/message-analytics', async (req: any, res: any) => {
     q.set('from', report.range.fromDate)
     q.set('to', report.range.toDate)
     if (report.range.surface) q.set('surface', report.range.surface)
-    if (report.range.promptId != null) q.set('message_id', String(report.range.promptId))
-    if (report.range.promptType) q.set('message_type', report.range.promptType)
-    if (report.range.promptCampaignKey) q.set('message_campaign_key', report.range.promptCampaignKey)
+    if (report.range.messageId != null) q.set('message_id', String(report.range.messageId))
+    if (report.range.messageType) q.set('message_type', report.range.messageType)
+    if (report.range.messageCampaignKey) q.set('message_campaign_key', report.range.messageCampaignKey)
     if (report.range.viewerState) q.set('viewer_state', report.range.viewerState)
 
     let body = '<h1>Message Analytics</h1>'
@@ -4549,13 +4549,13 @@ pagesRouter.get('/admin/message-analytics', async (req: any, res: any) => {
       <option value="anonymous"${report.range.viewerState === 'anonymous' ? ' selected' : ''}>Anonymous</option>
       <option value="authenticated"${report.range.viewerState === 'authenticated' ? ' selected' : ''}>Authenticated</option>
     </select></label>`
-    body += `<label>Message ID<input type="number" name="message_id" min="1" value="${escapeHtml(report.range.promptId == null ? '' : String(report.range.promptId))}" /></label>`
+    body += `<label>Message ID<input type="number" name="message_id" min="1" value="${escapeHtml(report.range.messageId == null ? '' : String(report.range.messageId))}" /></label>`
     body += `<label>Type<select name="message_type"><option value="">All</option>`
     for (const opt of PROMPT_TYPE_OPTIONS) {
-      body += `<option value="${escapeHtml(opt.value)}"${report.range.promptType === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+      body += `<option value="${escapeHtml(opt.value)}"${report.range.messageType === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
     }
     body += `</select></label>`
-    body += `<label>Campaign Key<input type="text" name="message_campaign_key" value="${escapeHtml(report.range.promptCampaignKey || '')}" /></label>`
+    body += `<label>Campaign Key<input type="text" name="message_campaign_key" value="${escapeHtml(report.range.messageCampaignKey || '')}" /></label>`
     body += `</div>`
     body += `<div style="display:flex; gap:10px; margin-top:10px; flex-wrap:wrap">`
     body += `<button class="btn" type="submit">Apply</button>`
@@ -4571,17 +4571,17 @@ pagesRouter.get('/admin/message-analytics', async (req: any, res: any) => {
     body += `<div class="section" style="margin:0"><div class="section-title">Auth Completion Rate</div><div style="font-size:24px; font-weight:800">${pctText(report.kpis.rates.authCompletionRate)}</div><div class="field-hint">${report.kpis.totals.authComplete} completions</div></div>`
     body += `</div>`
 
-    if (!report.byPrompt.length) {
+    if (!report.byMessage.length) {
       body += '<p>No message analytics events found in this range.</p>'
     } else {
       body += '<table><thead><tr><th>Message</th><th>Type</th><th>Campaign Key</th><th>Impressions</th><th>Clicks</th><th>CTR</th><th>Pass-through</th><th>Pass-through Rate</th><th>Auth Start</th><th>Auth Complete</th><th>Auth Completion Rate</th><th>Status</th></tr></thead><tbody>'
-      for (const row of report.byPrompt) {
+      for (const row of report.byMessage) {
         const status = row.rates.dismissRate >= 0.5 && row.rates.authCompletionRate < 0.01 ? 'Overexposed' : 'Healthy'
-        const label = row.promptName ? `${row.promptName} (#${row.promptId})` : `#${row.promptId}`
+        const label = row.messageName ? `${row.messageName} (#${row.messageId})` : `#${row.messageId}`
         body += `<tr>
           <td>${escapeHtml(label)}</td>
-          <td>${escapeHtml(row.promptType || '—')}</td>
-          <td>${escapeHtml(row.promptCampaignKey || '—')}</td>
+          <td>${escapeHtml(row.messageType || '—')}</td>
+          <td>${escapeHtml(row.messageCampaignKey || '—')}</td>
           <td>${row.totals.impressions} <span class="field-hint">(u:${row.uniqueSessions.impressions})</span></td>
           <td>${row.totals.clicksTotal} <span class="field-hint">(u:${row.uniqueSessions.clicksTotal})</span></td>
           <td>${pctText(row.rates.ctr)}</td>

@@ -1,6 +1,6 @@
 # Plan 133: Clean Message Conversion Finish Pass
 
-Status: Draft
+Status: Active — Phases A-B Complete
 
 ## Goal
 Finish the prompt-to-message conversion so active runtime code, canonical analytics, debug tooling, and asset naming all use message-first terminology.
@@ -108,7 +108,29 @@ Current locations include:
 - introducing new analytics semantics beyond renaming
 - changing non-message features that merely reference old historical plans
 
-## Phase A — Contract Lock
+## Phase A Locked Decisions
+- Canonical analytics event names will become:
+  - `message_impression`
+  - `message_click_primary`
+  - `message_click_secondary`
+  - `message_dismiss`
+  - `auth_start_from_message`
+  - `auth_complete_from_message`
+- Canonical analytics field names will become:
+  - `message_id`
+  - `message_campaign_key`
+- Asset background usage name will become:
+  - `message_bg`
+- Asset derivative preset keys will become:
+  - `message_bg_p_1x`
+  - `message_bg_p_2x`
+  - `message_bg_l_1x`
+  - `message_bg_l_2x`
+- Admin message API JSON responses should use `{ message: ... }`, not `{ prompt: ... }`.
+- Runtime TypeScript types should be message-first as the primary names. Prompt-named aliases should be removed unless they are still required within the same phase.
+- This plan uses a hard cut where practical. Do not preserve prompt-era compatibility shims unless a same-phase migration step still needs them temporarily.
+
+## Phase A — Contract Lock (Complete)
 - decide the final canonical analytics event names
 - decide final canonical analytics field names
 - decide final asset usage name replacing `prompt_bg`
@@ -130,9 +152,10 @@ Recommendation:
 - because this is still DEV, use a hard cut where practical instead of carrying extra aliases
 
 Acceptance:
-- explicit naming contract recorded for analytics and asset usages
+- complete
+- naming contract recorded for analytics, asset usages, and runtime/admin response shapes
 
-## Phase B — Runtime Types And Admin JSON Cleanup
+## Phase B — Runtime Types And Admin JSON Cleanup (Complete)
 - rename prompt-first runtime TS types/interfaces to message-first
 - examples:
   - `PromptRow` -> `MessageRow`

@@ -118,7 +118,7 @@ async function handleDecision(req: any, res: any, next: any) {
           counters: input.counters,
           decision: {
             should_insert: decision.shouldInsert,
-            message_id: decision.promptId,
+            message_id: decision.messageId,
             reason_code: decision.reasonCode,
           },
           decision_debug: decision.debug || null,
@@ -134,12 +134,12 @@ async function handleDecision(req: any, res: any, next: any) {
       span.setAttribute('app.audience_segment', audienceSegment)
       span.setAttribute('app.decision_reason', decision.reasonCode)
       span.setAttribute('app.outcome', decision.shouldInsert ? 'shown' : 'blocked')
-      if (decision.promptId != null) span.setAttribute('app.message_id', String(decision.promptId))
+      if (decision.messageId != null) span.setAttribute('app.message_id', String(decision.messageId))
     }
 
     return res.json({
       should_insert: decision.shouldInsert,
-      message_id: decision.promptId,
+      message_id: decision.messageId,
       insert_after_index: decision.insertAfterIndex,
       reason_code: decision.reasonCode,
       session_id: decision.sessionId,
@@ -162,17 +162,17 @@ feedMessagesRouter.get(feedMessageFetchPaths, async (req: any, res: any, next: a
     const dprRaw = Number(req.query?.dpr)
     const dpr = Number.isFinite(dprRaw) && dprRaw > 0 ? dprRaw : null
 
-    const prompt = await messagesSvc.getActiveMessageForFeedById(id)
+    const message = await messagesSvc.getActiveMessageForFeedById(id)
 
     let media: any = null
-    const backgroundMode = String(prompt.creative?.background?.mode || 'none').toLowerCase()
+    const backgroundMode = String(message.creative?.background?.mode || 'none').toLowerCase()
     const creativeMediaUploadId =
-      prompt.creative?.background?.uploadId != null
-        ? Number(prompt.creative.background.uploadId)
+      message.creative?.background?.uploadId != null
+        ? Number(message.creative.background.uploadId)
         : null
     const mediaUploadId = creativeMediaUploadId != null && Number.isFinite(creativeMediaUploadId) && creativeMediaUploadId > 0
       ? creativeMediaUploadId
-      : prompt.mediaUploadId
+      : message.mediaUploadId
     if (mediaUploadId != null) {
       try {
         const upload = await uploadsSvc.get(Number(mediaUploadId), {}, { userId: req.user?.id ? Number(req.user.id) : null })
@@ -252,23 +252,23 @@ feedMessagesRouter.get(feedMessageFetchPaths, async (req: any, res: any, next: a
     if (span) {
       span.setAttribute('app.surface', 'global_feed')
       span.setAttribute('app.operation', 'feed.message.fetch')
-      span.setAttribute('app.message_id', String(prompt.id))
-      span.setAttribute('app.message_type', String((prompt as any).promptType || 'register_login'))
+      span.setAttribute('app.message_id', String(message.id))
+      span.setAttribute('app.message_type', String(message.type || 'register_login'))
       span.setAttribute('app.outcome', 'shown')
     }
 
     return res.json({
       message: {
-        id: prompt.id,
-        type: (prompt as any).promptType || 'register_login',
-        campaign_key: prompt.campaignKey,
-        headline: prompt.headline,
-        body: prompt.body,
-        cta_primary_label: prompt.ctaPrimaryLabel,
-        cta_primary_href: prompt.ctaPrimaryHref,
-        cta_secondary_label: prompt.ctaSecondaryLabel,
-        cta_secondary_href: prompt.ctaSecondaryHref,
-        creative: prompt.creative,
+        id: message.id,
+        type: message.type || 'register_login',
+        campaign_key: message.campaignKey,
+        headline: message.headline,
+        body: message.body,
+        cta_primary_label: message.ctaPrimaryLabel,
+        cta_primary_href: message.ctaPrimaryHref,
+        cta_secondary_label: message.ctaSecondaryLabel,
+        cta_secondary_href: message.ctaSecondaryHref,
+        creative: message.creative,
         media,
       },
     })
@@ -291,7 +291,7 @@ feedMessagesRouter.post(feedMessageEventPaths, async (req: any, res: any, next: 
     ) {
       return res.status(400).json({ error: 'legacy_prompt_wire_keys_not_supported' })
     }
-    const promptCampaignKey = body.message_campaign_key ? String(body.message_campaign_key) : null
+    const messageCampaignKey = body.message_campaign_key ? String(body.message_campaign_key) : null
     const ctaKind = body.message_cta_kind ? String(body.message_cta_kind) : (body.cta_kind ? String(body.cta_kind) : null)
     const sessionId = body.message_session_id
       ? String(body.message_session_id).trim()
@@ -300,8 +300,8 @@ feedMessagesRouter.post(feedMessageEventPaths, async (req: any, res: any, next: 
 
     const tracked = await messageAnalyticsSvc.recordMessageEvent({
       event: body.event,
-      promptId: messageId,
-      promptCampaignKey,
+      messageId,
+      messageCampaignKey,
       ctaKind,
       surface: body.surface || 'global_feed',
       sessionId,
@@ -311,7 +311,7 @@ feedMessagesRouter.post(feedMessageEventPaths, async (req: any, res: any, next: 
     await recordMessageSessionEvent({
       sessionId,
       surface: String(body.surface || 'global_feed').trim().toLowerCase() as MessageDecisionSurface,
-      promptId: messageId,
+      messageId,
       event: body.event,
     })
 
@@ -337,7 +337,7 @@ feedMessagesRouter.post(feedMessageEventPaths, async (req: any, res: any, next: 
       span.setAttribute('app.surface', tracked.surface)
       span.setAttribute('app.operation', 'analytics.ingest')
       span.setAttribute('app.operation_detail', opByEvent[tracked.inputEvent] || 'feed.message.event')
-      span.setAttribute('app.message_id', String(tracked.promptId))
+      span.setAttribute('app.message_id', String(tracked.messageId))
       span.setAttribute('app.outcome', outcomeByEvent[tracked.inputEvent] || 'shown')
       if (sessionId) span.setAttribute('app.message_session_id', sessionId)
     }
@@ -348,8 +348,8 @@ feedMessagesRouter.post(feedMessageEventPaths, async (req: any, res: any, next: 
         app_operation: 'analytics.ingest',
         app_operation_detail: opByEvent[tracked.inputEvent] || 'feed.message.event',
         app_outcome: outcomeByEvent[tracked.inputEvent] || 'shown',
-        message_id: tracked.promptId,
-        message_campaign_key: promptCampaignKey,
+        message_id: tracked.messageId,
+        message_campaign_key: messageCampaignKey,
         cta_kind: ctaKind,
         message_session_id: sessionId,
         message_event_type: tracked.eventType,

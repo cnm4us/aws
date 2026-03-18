@@ -1,5 +1,5 @@
 import { getPool } from '../../db'
-import type { PromptRow } from './types'
+import type { MessageRow } from './types'
 
 const MESSAGE_SELECT_SQL = `
   SELECT
@@ -13,7 +13,7 @@ const MESSAGE_SELECT_SQL = `
     cta_secondary_href,
     media_upload_id,
     creative_json,
-    type AS prompt_type,
+    type,
     applies_to_surface,
     audience_segment,
     tie_break_strategy,
@@ -29,7 +29,7 @@ const MESSAGE_SELECT_SQL = `
   FROM feed_messages
 `
 
-type PromptCreateInput = {
+type MessageCreateInput = {
   name: string
   headline: string
   body: string | null
@@ -39,7 +39,7 @@ type PromptCreateInput = {
   ctaSecondaryHref: string | null
   mediaUploadId: number | null
   creativeJson: string | null
-  promptType: string
+  messageType: string
   appliesToSurface: string
   audienceSegment: string
   tieBreakStrategy: string
@@ -52,17 +52,17 @@ type PromptCreateInput = {
   updatedBy: number
 }
 
-type PromptUpdateInput = Partial<PromptCreateInput>
+type MessageUpdateInput = Partial<MessageCreateInput>
 
 export async function list(params?: {
   limit?: number
   includeArchived?: boolean
   status?: string | null
-  promptType?: string | null
+  messageType?: string | null
   appliesToSurface?: string | null
   audienceSegment?: string | null
   campaignKey?: string | null
-}): Promise<PromptRow[]> {
+}): Promise<MessageRow[]> {
   const db = getPool()
   const limit = Math.min(Math.max(Number(params?.limit ?? 200), 1), 500)
   const where: string[] = ['1=1']
@@ -75,9 +75,9 @@ export async function list(params?: {
     where.push('status = ?')
     args.push(params.status)
   }
-  if (params?.promptType) {
+  if (params?.messageType) {
     where.push('type = ?')
-    args.push(params.promptType)
+    args.push(params.messageType)
   }
   if (params?.appliesToSurface) {
     where.push('applies_to_surface = ?')
@@ -102,13 +102,13 @@ export async function list(params?: {
   return rows as any[]
 }
 
-export async function getById(id: number): Promise<PromptRow | null> {
+export async function getById(id: number): Promise<MessageRow | null> {
   const db = getPool()
   const [rows] = await db.query(`${MESSAGE_SELECT_SQL} WHERE id = ? LIMIT 1`, [id])
-  return ((rows as any[])[0] as PromptRow) || null
+  return ((rows as any[])[0] as MessageRow) || null
 }
 
-export async function create(input: PromptCreateInput): Promise<PromptRow> {
+export async function create(input: MessageCreateInput): Promise<MessageRow> {
   const db = getPool()
   const [result] = await db.query(
     `INSERT INTO feed_messages
@@ -130,7 +130,7 @@ export async function create(input: PromptCreateInput): Promise<PromptRow> {
       input.ctaSecondaryHref,
       input.mediaUploadId,
       input.creativeJson,
-      input.promptType,
+      input.messageType,
       input.appliesToSurface,
       input.audienceSegment,
       input.tieBreakStrategy,
@@ -150,7 +150,7 @@ export async function create(input: PromptCreateInput): Promise<PromptRow> {
   return row
 }
 
-export async function update(id: number, patch: PromptUpdateInput): Promise<PromptRow> {
+export async function update(id: number, patch: MessageUpdateInput): Promise<MessageRow> {
   const db = getPool()
   const sets: string[] = []
   const args: any[] = []
@@ -164,7 +164,7 @@ export async function update(id: number, patch: PromptUpdateInput): Promise<Prom
   if (patch.ctaSecondaryHref !== undefined) { sets.push('cta_secondary_href = ?'); args.push(patch.ctaSecondaryHref) }
   if (patch.mediaUploadId !== undefined) { sets.push('media_upload_id = ?'); args.push(patch.mediaUploadId) }
   if (patch.creativeJson !== undefined) { sets.push('creative_json = ?'); args.push(patch.creativeJson) }
-  if (patch.promptType !== undefined) { sets.push('type = ?'); args.push(patch.promptType) }
+  if (patch.messageType !== undefined) { sets.push('type = ?'); args.push(patch.messageType) }
   if (patch.appliesToSurface !== undefined) { sets.push('applies_to_surface = ?'); args.push(patch.appliesToSurface) }
   if (patch.audienceSegment !== undefined) { sets.push('audience_segment = ?'); args.push(patch.audienceSegment) }
   if (patch.tieBreakStrategy !== undefined) { sets.push('tie_break_strategy = ?'); args.push(patch.tieBreakStrategy) }
@@ -194,12 +194,12 @@ export async function remove(id: number): Promise<boolean> {
 }
 
 export async function listActiveForFeed(params?: {
-  promptType?: string | null
+  messageType?: string | null
   appliesToSurface?: string | null
   audienceSegment?: string | null
   campaignKey?: string | null
   limit?: number
-}): Promise<PromptRow[]> {
+}): Promise<MessageRow[]> {
   const db = getPool()
   const limit = Math.min(Math.max(Number(params?.limit ?? 100), 1), 300)
   const where: string[] = [
@@ -213,9 +213,9 @@ export async function listActiveForFeed(params?: {
     where.push('campaign_key = ?')
     args.push(params.campaignKey)
   }
-  if (params?.promptType) {
+  if (params?.messageType) {
     where.push('type = ?')
-    args.push(params.promptType)
+    args.push(params.messageType)
   }
   if (params?.appliesToSurface) {
     where.push('applies_to_surface = ?')

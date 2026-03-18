@@ -3,29 +3,29 @@ import { context, trace } from '@opentelemetry/api'
 import { getLogger } from '../../lib/logger'
 import * as repo from './repo'
 import type {
-  PromptAudienceSegment,
-  PromptBackgroundMode,
-  PromptCreative,
-  PromptDto,
-  PromptSurface,
-  PromptTieBreakStrategy,
-  PromptVideoPlaybackMode,
-  PromptRow,
-  PromptStatus,
-  PromptType,
-  PromptWidgetPosition,
+  MessageAudienceSegment,
+  MessageBackgroundMode,
+  MessageCreative,
+  MessageDto,
+  MessageSurface,
+  MessageTieBreakStrategy,
+  MessageVideoPlaybackMode,
+  MessageRow,
+  MessageStatus,
+  MessageType,
+  MessageWidgetPosition,
 } from './types'
 
 const messagesLogger = getLogger({ component: 'features.messages' })
 
-const STATUSES: readonly PromptStatus[] = ['draft', 'active', 'paused', 'archived']
-const BACKGROUND_MODES: readonly PromptBackgroundMode[] = ['none', 'image', 'video']
-const VIDEO_PLAYBACK_MODES: readonly PromptVideoPlaybackMode[] = ['muted_autoplay', 'tap_to_play_sound']
-const WIDGET_POSITIONS: readonly PromptWidgetPosition[] = ['top', 'middle', 'bottom']
-const SURFACES: readonly PromptSurface[] = ['global_feed']
-const AUDIENCE_SEGMENTS: readonly PromptAudienceSegment[] = ['anonymous', 'authenticated_non_subscriber', 'authenticated_subscriber']
-const TIE_BREAK_STRATEGIES: readonly PromptTieBreakStrategy[] = ['first', 'round_robin', 'weighted_random']
-const PROMPT_TYPES: readonly PromptType[] = [
+const STATUSES: readonly MessageStatus[] = ['draft', 'active', 'paused', 'archived']
+const BACKGROUND_MODES: readonly MessageBackgroundMode[] = ['none', 'image', 'video']
+const VIDEO_PLAYBACK_MODES: readonly MessageVideoPlaybackMode[] = ['muted_autoplay', 'tap_to_play_sound']
+const WIDGET_POSITIONS: readonly MessageWidgetPosition[] = ['top', 'middle', 'bottom']
+const SURFACES: readonly MessageSurface[] = ['global_feed']
+const AUDIENCE_SEGMENTS: readonly MessageAudienceSegment[] = ['anonymous', 'authenticated_non_subscriber', 'authenticated_subscriber']
+const TIE_BREAK_STRATEGIES: readonly MessageTieBreakStrategy[] = ['first', 'round_robin', 'weighted_random']
+const MESSAGE_TYPES: readonly MessageType[] = [
   'register_login',
   'fund_drive',
   'subscription_upgrade',
@@ -33,9 +33,9 @@ const PROMPT_TYPES: readonly PromptType[] = [
   'feature_announcement',
 ]
 
-function annotateAdminMessageWrite(row: PromptRow, detail: 'admin.messages.create' | 'admin.messages.update' | 'admin.messages.clone' | 'admin.messages.status' | 'admin.messages.delete', actorUserId: number, extra?: Record<string, unknown>) {
+function annotateAdminMessageWrite(row: MessageRow, detail: 'admin.messages.create' | 'admin.messages.update' | 'admin.messages.clone' | 'admin.messages.status' | 'admin.messages.delete', actorUserId: number, extra?: Record<string, unknown>) {
   const messageId = Number(row.id || 0)
-  const messageType = normalizeMessageType((row as any).prompt_type, 'register_login')
+  const messageType = normalizeMessageType((row as any).type, 'register_login')
   const appliesToSurface = normalizeSurface((row as any).applies_to_surface, 'global_feed')
   const audienceSegment = normalizeAudienceSegment((row as any).audience_segment, 'anonymous')
   const status = normalizeStatus((row as any).status, 'draft')
@@ -139,28 +139,28 @@ function normalizeCampaignKey(raw: any): string | null {
   return value
 }
 
-function normalizeMessageType(raw: any, fallback: PromptType = 'register_login'): PromptType {
+function normalizeMessageType(raw: any, fallback: MessageType = 'register_login'): MessageType {
   const value = String(raw ?? '').trim().toLowerCase()
   if (!value) return fallback
-  if (!isEnumValue(value, PROMPT_TYPES)) throw new DomainError('invalid_message_type', 'invalid_message_type', 400)
+  if (!isEnumValue(value, MESSAGE_TYPES)) throw new DomainError('invalid_message_type', 'invalid_message_type', 400)
   return value
 }
 
-function normalizeSurface(raw: any, fallback: PromptSurface = 'global_feed'): PromptSurface {
+function normalizeSurface(raw: any, fallback: MessageSurface = 'global_feed'): MessageSurface {
   const value = String(raw ?? '').trim().toLowerCase()
   if (!value) return fallback
   if (!isEnumValue(value, SURFACES)) throw new DomainError('invalid_applies_to_surface', 'invalid_applies_to_surface', 400)
   return value
 }
 
-function normalizeAudienceSegment(raw: any, fallback: PromptAudienceSegment = 'anonymous'): PromptAudienceSegment {
+function normalizeAudienceSegment(raw: any, fallback: MessageAudienceSegment = 'anonymous'): MessageAudienceSegment {
   const value = String(raw ?? '').trim().toLowerCase()
   if (!value) return fallback
   if (!isEnumValue(value, AUDIENCE_SEGMENTS)) throw new DomainError('invalid_audience_segment', 'invalid_audience_segment', 400)
   return value
 }
 
-function normalizeTieBreakStrategy(raw: any, fallback: PromptTieBreakStrategy = 'round_robin'): PromptTieBreakStrategy {
+function normalizeTieBreakStrategy(raw: any, fallback: MessageTieBreakStrategy = 'round_robin'): MessageTieBreakStrategy {
   const value = String(raw ?? '').trim().toLowerCase()
   if (!value) return fallback
   if (!isEnumValue(value, TIE_BREAK_STRATEGIES)) throw new DomainError('invalid_tie_break_strategy', 'invalid_tie_break_strategy', 400)
@@ -173,7 +173,7 @@ function normalizePriority(raw: any, fallback = 100): number {
   return Math.round(Math.min(Math.max(value, -100000), 100000))
 }
 
-function normalizeStatus(raw: any, fallback: PromptStatus = 'draft'): PromptStatus {
+function normalizeStatus(raw: any, fallback: MessageStatus = 'draft'): MessageStatus {
   const value = String(raw ?? '').trim().toLowerCase()
   if (!value) return fallback
   if (!isEnumValue(value, STATUSES)) throw new DomainError('invalid_status', 'invalid_status', 400)
@@ -237,21 +237,21 @@ function normalizeOpacity(raw: any, key: string, fallback: number): number {
   return Math.round(clipped * 100) / 100
 }
 
-function normalizeWidgetPosition(raw: any, key: string, fallback: PromptWidgetPosition): PromptWidgetPosition {
+function normalizeWidgetPosition(raw: any, key: string, fallback: MessageWidgetPosition): MessageWidgetPosition {
   const value = String(raw ?? '').trim().toLowerCase()
   if (!value) return fallback
   if (!isEnumValue(value, WIDGET_POSITIONS)) throw new DomainError(`invalid_${key}`, `invalid_${key}`, 400)
   return value
 }
 
-function normalizeBackgroundMode(raw: any, key: string, fallback: PromptBackgroundMode): PromptBackgroundMode {
+function normalizeBackgroundMode(raw: any, key: string, fallback: MessageBackgroundMode): MessageBackgroundMode {
   const value = String(raw ?? '').trim().toLowerCase()
   if (!value) return fallback
   if (!isEnumValue(value, BACKGROUND_MODES)) throw new DomainError(`invalid_${key}`, `invalid_${key}`, 400)
   return value
 }
 
-function normalizeVideoPlaybackMode(raw: any, key: string, fallback: PromptVideoPlaybackMode): PromptVideoPlaybackMode {
+function normalizeVideoPlaybackMode(raw: any, key: string, fallback: MessageVideoPlaybackMode): MessageVideoPlaybackMode {
   const value = String(raw ?? '').trim().toLowerCase()
   if (!value) return fallback
   if (!isEnumValue(value, VIDEO_PLAYBACK_MODES)) throw new DomainError(`invalid_${key}`, `invalid_${key}`, 400)
@@ -289,7 +289,7 @@ function parseCreativeRaw(raw: any): any | null {
   throw new DomainError('invalid_creative_json', 'invalid_creative_json', 400)
 }
 
-function buildLegacyCreative(legacy: PromptLegacyFields): PromptCreative {
+function buildLegacyCreative(legacy: PromptLegacyFields): MessageCreative {
   return {
     version: 1,
     background: {
@@ -327,7 +327,7 @@ function buildLegacyCreative(legacy: PromptLegacyFields): PromptCreative {
   }
 }
 
-function normalizeCreative(raw: any, legacy: PromptLegacyFields): PromptCreative {
+function normalizeCreative(raw: any, legacy: PromptLegacyFields): MessageCreative {
   const parsed = parseCreativeRaw(raw)
   const base = buildLegacyCreative(legacy)
   if (!parsed) return base
@@ -397,7 +397,7 @@ function normalizeCreative(raw: any, legacy: PromptLegacyFields): PromptCreative
   }
 }
 
-function resolveCreativeFromRow(row: PromptRow): PromptCreative {
+function resolveCreativeFromRow(row: MessageRow): MessageCreative {
   const legacy: PromptLegacyFields = {
     headline: String(row.headline || ''),
     body: row.body == null ? null : String(row.body),
@@ -415,7 +415,7 @@ function resolveCreativeFromRow(row: PromptRow): PromptCreative {
   }
 }
 
-function mapRow(row: PromptRow): PromptDto {
+function mapRow(row: MessageRow): MessageDto {
   return {
     id: Number(row.id),
     name: String(row.name || ''),
@@ -427,7 +427,7 @@ function mapRow(row: PromptRow): PromptDto {
     ctaSecondaryHref: row.cta_secondary_href == null ? null : String(row.cta_secondary_href),
     mediaUploadId: row.media_upload_id == null ? null : Number(row.media_upload_id),
     creative: resolveCreativeFromRow(row),
-    promptType: normalizeMessageType((row as any).prompt_type, 'register_login'),
+    type: normalizeMessageType((row as any).type, 'register_login'),
     appliesToSurface: normalizeSurface((row as any).applies_to_surface, 'global_feed'),
     audienceSegment: normalizeAudienceSegment((row as any).audience_segment, 'anonymous'),
     tieBreakStrategy: normalizeTieBreakStrategy((row as any).tie_break_strategy, 'round_robin'),
@@ -447,13 +447,13 @@ export async function listForAdmin(params: {
   includeArchived?: boolean
   limit?: number
   status?: any
-  promptType?: any
+  messageType?: any
   appliesToSurface?: any
   audienceSegment?: any
   campaignKey?: any
-}): Promise<PromptDto[]> {
+}): Promise<MessageDto[]> {
   const status = params.status == null || params.status === '' ? null : normalizeStatus(params.status)
-  const promptType = params.promptType == null || params.promptType === '' ? null : normalizeMessageType(params.promptType)
+  const messageType = params.messageType == null || params.messageType === '' ? null : normalizeMessageType(params.messageType)
   const appliesToSurface = params.appliesToSurface == null || params.appliesToSurface === '' ? null : normalizeSurface(params.appliesToSurface)
   const audienceSegment = params.audienceSegment == null || params.audienceSegment === '' ? null : normalizeAudienceSegment(params.audienceSegment)
   const campaignKey = params.campaignKey == null || params.campaignKey === '' ? null : normalizeCampaignKey(params.campaignKey)
@@ -462,7 +462,7 @@ export async function listForAdmin(params: {
     includeArchived: Boolean(params.includeArchived),
     limit: params.limit,
     status,
-    promptType,
+    messageType,
     appliesToSurface,
     audienceSegment,
     campaignKey,
@@ -470,13 +470,13 @@ export async function listForAdmin(params: {
   return rows.map(mapRow)
 }
 
-export async function getForAdmin(id: number): Promise<PromptDto> {
+export async function getForAdmin(id: number): Promise<MessageDto> {
   const row = await repo.getById(id)
   if (!row) throw new NotFoundError('prompt_not_found')
   return mapRow(row)
 }
 
-export async function createForAdmin(input: any, actorUserId: number): Promise<PromptDto> {
+export async function createForAdmin(input: any, actorUserId: number): Promise<MessageDto> {
   if (!actorUserId) throw new ForbiddenError()
 
   const name = normalizeName(input?.name)
@@ -492,7 +492,7 @@ export async function createForAdmin(input: any, actorUserId: number): Promise<P
   }
 
   const mediaUploadId = normalizeMediaUploadId(input?.mediaUploadId ?? input?.media_upload_id)
-  const promptType = normalizeMessageType(input?.promptType ?? input?.prompt_type, 'register_login')
+  const messageType = normalizeMessageType(input?.type ?? input?.messageType, 'register_login')
   const appliesToSurface = normalizeSurface(input?.appliesToSurface ?? input?.applies_to_surface, 'global_feed')
   const audienceSegment = normalizeAudienceSegment(input?.audienceSegment ?? input?.audience_segment, 'anonymous')
   const tieBreakStrategy = normalizeTieBreakStrategy(input?.tieBreakStrategy ?? input?.tie_break_strategy, 'round_robin')
@@ -520,7 +520,7 @@ export async function createForAdmin(input: any, actorUserId: number): Promise<P
     ctaSecondaryHref,
     mediaUploadId,
     creativeJson: JSON.stringify(creative),
-    promptType,
+    messageType,
     appliesToSurface,
     audienceSegment,
     tieBreakStrategy,
@@ -537,7 +537,7 @@ export async function createForAdmin(input: any, actorUserId: number): Promise<P
   return mapRow(row)
 }
 
-export async function updateForAdmin(id: number, patch: any, actorUserId: number): Promise<PromptDto> {
+export async function updateForAdmin(id: number, patch: any, actorUserId: number): Promise<MessageDto> {
   if (!actorUserId) throw new ForbiddenError()
   const existing = await repo.getById(id)
   if (!existing) throw new NotFoundError('prompt_not_found')
@@ -589,10 +589,13 @@ export async function updateForAdmin(id: number, patch: any, actorUserId: number
         mediaUploadId: nextMediaUploadId,
       }))
       : ((existing as any).creative_json == null ? null : String((existing as any).creative_json))
-  const nextPromptType =
-    patch?.promptType !== undefined || patch?.prompt_type !== undefined
-      ? normalizeMessageType(patch?.promptType ?? patch?.prompt_type, normalizeMessageType((existing as any).prompt_type, 'register_login'))
-      : normalizeMessageType((existing as any).prompt_type, 'register_login')
+  const nextMessageType =
+    patch?.type !== undefined || patch?.messageType !== undefined
+      ? normalizeMessageType(
+          patch?.type ?? patch?.messageType,
+          normalizeMessageType((existing as any).type, 'register_login')
+        )
+      : normalizeMessageType((existing as any).type, 'register_login')
   const nextAppliesToSurface =
     patch?.appliesToSurface !== undefined || patch?.applies_to_surface !== undefined
       ? normalizeSurface(patch?.appliesToSurface ?? patch?.applies_to_surface, normalizeSurface((existing as any).applies_to_surface, 'global_feed'))
@@ -643,7 +646,7 @@ export async function updateForAdmin(id: number, patch: any, actorUserId: number
     ctaSecondaryHref: nextCtaSecondaryHref,
     mediaUploadId: nextMediaUploadId,
     creativeJson: nextCreativeJson,
-    promptType: nextPromptType,
+    messageType: nextMessageType,
     appliesToSurface: nextAppliesToSurface,
     audienceSegment: nextAudienceSegment,
     tieBreakStrategy: nextTieBreakStrategy,
@@ -659,7 +662,7 @@ export async function updateForAdmin(id: number, patch: any, actorUserId: number
   return mapRow(row)
 }
 
-export async function cloneForAdmin(id: number, actorUserId: number): Promise<PromptDto> {
+export async function cloneForAdmin(id: number, actorUserId: number): Promise<MessageDto> {
   if (!actorUserId) throw new ForbiddenError()
   const existing = await repo.getById(id)
   if (!existing) throw new NotFoundError('prompt_not_found')
@@ -674,7 +677,7 @@ export async function cloneForAdmin(id: number, actorUserId: number): Promise<Pr
     ctaSecondaryHref: existing.cta_secondary_href == null ? null : String(existing.cta_secondary_href),
     mediaUploadId: existing.media_upload_id == null ? null : Number(existing.media_upload_id),
     creativeJson: (existing as any).creative_json == null ? null : String((existing as any).creative_json),
-    promptType: normalizeMessageType((existing as any).prompt_type, 'register_login'),
+    messageType: normalizeMessageType((existing as any).type, 'register_login'),
     appliesToSurface: normalizeSurface((existing as any).applies_to_surface, 'global_feed'),
     audienceSegment: normalizeAudienceSegment((existing as any).audience_segment, 'anonymous'),
     tieBreakStrategy: normalizeTieBreakStrategy((existing as any).tie_break_strategy, 'round_robin'),
@@ -691,7 +694,7 @@ export async function cloneForAdmin(id: number, actorUserId: number): Promise<Pr
   return mapRow(row)
 }
 
-export async function updateStatusForAdmin(id: number, statusRaw: any, actorUserId: number): Promise<PromptDto> {
+export async function updateStatusForAdmin(id: number, statusRaw: any, actorUserId: number): Promise<MessageDto> {
   if (!actorUserId) throw new ForbiddenError()
   const status = normalizeStatus(statusRaw)
   const existing = await repo.getById(id)
@@ -716,24 +719,24 @@ export async function deleteForAdmin(id: number, actorUserId: number): Promise<v
 }
 
 export async function listActiveForFeed(params?: {
-  promptType?: any
+  messageType?: any
   appliesToSurface?: any
   audienceSegment?: any
   campaignKey?: any
   limit?: number
-}): Promise<PromptDto[]> {
-  const promptType = params?.promptType == null || params?.promptType === '' ? null : normalizeMessageType(params.promptType)
+}): Promise<MessageDto[]> {
+  const messageType = params?.messageType == null || params?.messageType === '' ? null : normalizeMessageType(params.messageType)
   const appliesToSurface = params?.appliesToSurface == null || params?.appliesToSurface === '' ? null : normalizeSurface(params.appliesToSurface)
   const audienceSegment = params?.audienceSegment == null || params?.audienceSegment === '' ? null : normalizeAudienceSegment(params.audienceSegment)
   const campaignKey = params?.campaignKey == null || params?.campaignKey === '' ? null : normalizeCampaignKey(params.campaignKey)
-  const rows = await repo.listActiveForFeed({ promptType, appliesToSurface, audienceSegment, campaignKey, limit: params?.limit })
+  const rows = await repo.listActiveForFeed({ messageType, appliesToSurface, audienceSegment, campaignKey, limit: params?.limit })
   return rows.map(mapRow)
 }
 
-export async function getActiveForFeedById(id: number): Promise<PromptDto> {
-  const promptId = Number(id)
-  if (!Number.isFinite(promptId) || promptId <= 0) throw new DomainError('bad_id', 'bad_id', 400)
-  const row = await repo.getById(promptId)
+export async function getActiveForFeedById(id: number): Promise<MessageDto> {
+  const messageId = Number(id)
+  if (!Number.isFinite(messageId) || messageId <= 0) throw new DomainError('bad_id', 'bad_id', 400)
+  const row = await repo.getById(messageId)
   if (!row) throw new NotFoundError('prompt_not_found')
   if (row.status !== 'active') throw new NotFoundError('prompt_not_found')
   const now = Date.now()

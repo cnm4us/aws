@@ -1,32 +1,32 @@
 import { getPool } from '../../db'
 import type {
-  PromptAnalyticsCtaKind,
-  PromptAnalyticsEventType,
-  PromptAnalyticsSurface,
-  PromptAnalyticsViewerState,
+  MessageAnalyticsCtaKind,
+  MessageAnalyticsEventType,
+  MessageAnalyticsSurface,
+  MessageAnalyticsViewerState,
 } from './types'
 
-export type PromptAnalyticsQueryFilter = {
+export type MessageAnalyticsQueryFilter = {
   fromDate: string
   toDate: string
   fromDateTime: string
   toDateTimeExclusive: string
-  surface: PromptAnalyticsSurface | null
-  promptId: number | null
-  promptType: string | null
-  promptCampaignKey: string | null
-  viewerState: PromptAnalyticsViewerState | null
+  surface: MessageAnalyticsSurface | null
+  messageId: number | null
+  messageType: string | null
+  messageCampaignKey: string | null
+  viewerState: MessageAnalyticsViewerState | null
 }
 
 export async function insertEvent(input: {
-  eventType: PromptAnalyticsEventType
-  surface: PromptAnalyticsSurface
-  viewerState: PromptAnalyticsViewerState
+  eventType: MessageAnalyticsEventType
+  surface: MessageAnalyticsSurface
+  viewerState: MessageAnalyticsViewerState
   sessionId: string | null
   userId: number | null
-  promptId: number
-  promptCampaignKey: string | null
-  ctaKind: PromptAnalyticsCtaKind
+  messageId: number
+  messageCampaignKey: string | null
+  ctaKind: MessageAnalyticsCtaKind
   attributed: boolean
   occurredAt: string
   dedupeBucketStart: string
@@ -49,8 +49,8 @@ export async function insertEvent(input: {
       input.viewerState,
       input.sessionId,
       input.userId,
-      input.promptId,
-      input.promptCampaignKey,
+      input.messageId,
+      input.messageCampaignKey,
       input.ctaKind,
       input.attributed ? 1 : 0,
       input.occurredAt,
@@ -64,11 +64,11 @@ export async function insertEvent(input: {
 
 export async function upsertDailyCount(input: {
   dateUtc: string
-  surface: PromptAnalyticsSurface
-  promptId: number
-  promptCampaignKey: string | null
-  viewerState: PromptAnalyticsViewerState
-  eventType: PromptAnalyticsEventType
+  surface: MessageAnalyticsSurface
+  messageId: number
+  messageCampaignKey: string | null
+  viewerState: MessageAnalyticsViewerState
+  eventType: MessageAnalyticsEventType
   totalDelta: number
 }): Promise<void> {
   const db = getPool()
@@ -85,8 +85,8 @@ export async function upsertDailyCount(input: {
     [
       input.dateUtc,
       input.surface,
-      input.promptId,
-      input.promptCampaignKey || '',
+      input.messageId,
+      input.messageCampaignKey || '',
       input.viewerState,
       input.eventType,
       Math.max(1, Math.round(input.totalDelta || 1)),
@@ -97,7 +97,7 @@ export async function upsertDailyCount(input: {
 export async function hasRecentAuthStart(input: {
   sessionId: string | null
   userId: number | null
-  promptId: number
+  messageId: number
   sinceDateTimeUtc: string
 }): Promise<boolean> {
   const db = getPool()
@@ -112,7 +112,7 @@ export async function hasRecentAuthStart(input: {
           AND occurred_at >= ?
         ORDER BY id DESC
         LIMIT 1`,
-      [input.promptId, input.sessionId, input.sinceDateTimeUtc]
+      [input.messageId, input.sessionId, input.sinceDateTimeUtc]
     )
     if ((rows as any[]).length > 0) return true
   }
@@ -127,7 +127,7 @@ export async function hasRecentAuthStart(input: {
           AND occurred_at >= ?
         ORDER BY id DESC
         LIMIT 1`,
-      [input.promptId, Number(input.userId), input.sinceDateTimeUtc]
+      [input.messageId, Number(input.userId), input.sinceDateTimeUtc]
     )
     if ((rows as any[]).length > 0) return true
   }
@@ -135,24 +135,24 @@ export async function hasRecentAuthStart(input: {
   return false
 }
 
-function buildDailyWhere(filter: PromptAnalyticsQueryFilter): { whereSql: string; args: any[] } {
+function buildDailyWhere(filter: MessageAnalyticsQueryFilter): { whereSql: string; args: any[] } {
   const where: string[] = ['date_utc >= ?', 'date_utc <= ?']
   const args: any[] = [filter.fromDate, filter.toDate]
   if (filter.surface) {
     where.push('surface = ?')
     args.push(filter.surface)
   }
-  if (filter.promptId != null) {
+  if (filter.messageId != null) {
     where.push('message_id = ?')
-    args.push(filter.promptId)
+    args.push(filter.messageId)
   }
-  if (filter.promptType) {
+  if (filter.messageType) {
     where.push(`EXISTS (SELECT 1 FROM feed_messages p_filter WHERE p_filter.id = message_id AND p_filter.type = ?)`)
-    args.push(filter.promptType)
+    args.push(filter.messageType)
   }
-  if (filter.promptCampaignKey) {
+  if (filter.messageCampaignKey) {
     where.push('message_campaign_key = ?')
-    args.push(filter.promptCampaignKey)
+    args.push(filter.messageCampaignKey)
   }
   if (filter.viewerState) {
     where.push('viewer_state = ?')
@@ -161,24 +161,24 @@ function buildDailyWhere(filter: PromptAnalyticsQueryFilter): { whereSql: string
   return { whereSql: where.join(' AND '), args }
 }
 
-function buildRawWhere(filter: PromptAnalyticsQueryFilter): { whereSql: string; args: any[] } {
+function buildRawWhere(filter: MessageAnalyticsQueryFilter): { whereSql: string; args: any[] } {
   const where: string[] = ['occurred_at >= ?', 'occurred_at < ?']
   const args: any[] = [filter.fromDateTime, filter.toDateTimeExclusive]
   if (filter.surface) {
     where.push('surface = ?')
     args.push(filter.surface)
   }
-  if (filter.promptId != null) {
+  if (filter.messageId != null) {
     where.push('message_id = ?')
-    args.push(filter.promptId)
+    args.push(filter.messageId)
   }
-  if (filter.promptType) {
+  if (filter.messageType) {
     where.push(`EXISTS (SELECT 1 FROM feed_messages p_filter WHERE p_filter.id = message_id AND p_filter.type = ?)`)
-    args.push(filter.promptType)
+    args.push(filter.messageType)
   }
-  if (filter.promptCampaignKey) {
+  if (filter.messageCampaignKey) {
     where.push('message_campaign_key = ?')
-    args.push(filter.promptCampaignKey)
+    args.push(filter.messageCampaignKey)
   }
   if (filter.viewerState) {
     where.push('viewer_state = ?')
@@ -187,7 +187,7 @@ function buildRawWhere(filter: PromptAnalyticsQueryFilter): { whereSql: string; 
   return { whereSql: where.join(' AND '), args }
 }
 
-export async function getTotalsFromDaily(filter: PromptAnalyticsQueryFilter): Promise<any> {
+export async function getTotalsFromDaily(filter: MessageAnalyticsQueryFilter): Promise<any> {
   const db = getPool()
   const { whereSql, args } = buildDailyWhere(filter)
   const [rows] = await db.query(
@@ -205,15 +205,15 @@ export async function getTotalsFromDaily(filter: PromptAnalyticsQueryFilter): Pr
   return (rows as any[])[0] || {}
 }
 
-export async function getByPromptFromDaily(filter: PromptAnalyticsQueryFilter): Promise<any[]> {
+export async function getByMessageFromDaily(filter: MessageAnalyticsQueryFilter): Promise<any[]> {
   const db = getPool()
   const { whereSql, args } = buildDailyWhere(filter)
   const [rows] = await db.query(
     `SELECT
-        s.message_id AS prompt_id,
-        MAX(p.type) AS prompt_type,
-        MAX(NULLIF(s.message_campaign_key, '')) AS prompt_campaign_key,
-        MAX(p.name) AS prompt_name,
+        s.message_id AS message_id,
+        MAX(p.type) AS message_type,
+        MAX(NULLIF(s.message_campaign_key, '')) AS message_campaign_key,
+        MAX(p.name) AS message_name,
         COALESCE(SUM(CASE WHEN s.event_type = 'prompt_impression' THEN s.total_events ELSE 0 END), 0) AS impressions,
         COALESCE(SUM(CASE WHEN s.event_type = 'prompt_click_primary' THEN s.total_events ELSE 0 END), 0) AS clicks_primary,
         COALESCE(SUM(CASE WHEN s.event_type = 'prompt_click_secondary' THEN s.total_events ELSE 0 END), 0) AS clicks_secondary,
@@ -231,7 +231,7 @@ export async function getByPromptFromDaily(filter: PromptAnalyticsQueryFilter): 
   return rows as any[]
 }
 
-export async function getByDayFromDaily(filter: PromptAnalyticsQueryFilter): Promise<any[]> {
+export async function getByDayFromDaily(filter: MessageAnalyticsQueryFilter): Promise<any[]> {
   const db = getPool()
   const { whereSql, args } = buildDailyWhere(filter)
   const [rows] = await db.query(
@@ -253,7 +253,7 @@ export async function getByDayFromDaily(filter: PromptAnalyticsQueryFilter): Pro
 
 const SESSION_KEY_EXPR = `COALESCE(NULLIF(session_id, ''), IF(user_id IS NULL, NULL, CONCAT('u:', CAST(user_id AS CHAR))))`
 
-export async function getUniqueTotalsFromRaw(filter: PromptAnalyticsQueryFilter): Promise<any> {
+export async function getUniqueTotalsFromRaw(filter: MessageAnalyticsQueryFilter): Promise<any> {
   const db = getPool()
   const { whereSql, args } = buildRawWhere(filter)
   const [rows] = await db.query(
@@ -270,12 +270,12 @@ export async function getUniqueTotalsFromRaw(filter: PromptAnalyticsQueryFilter)
   return (rows as any[])[0] || {}
 }
 
-export async function getUniqueByPromptFromRaw(filter: PromptAnalyticsQueryFilter): Promise<any[]> {
+export async function getUniqueByMessageFromRaw(filter: MessageAnalyticsQueryFilter): Promise<any[]> {
   const db = getPool()
   const { whereSql, args } = buildRawWhere(filter)
   const [rows] = await db.query(
     `SELECT
-        message_id AS prompt_id,
+        message_id AS message_id,
         COUNT(DISTINCT CASE WHEN event_type = 'prompt_impression' THEN ${SESSION_KEY_EXPR} END) AS impressions_unique,
         COUNT(DISTINCT CASE WHEN event_type IN ('prompt_click_primary','prompt_click_secondary') THEN ${SESSION_KEY_EXPR} END) AS clicks_total_unique,
         COUNT(DISTINCT CASE WHEN event_type = 'prompt_dismiss' THEN ${SESSION_KEY_EXPR} END) AS dismiss_unique,

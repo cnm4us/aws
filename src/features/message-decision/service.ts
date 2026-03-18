@@ -10,27 +10,27 @@ import {
 import * as messagesSvc from '../messages/service'
 import * as repo from './repo'
 import type {
-  PromptAudienceSegment,
-  PromptDecisionInput,
-  PromptDecisionReasonCode,
-  PromptDecisionResult,
-  PromptDecisionSessionRow,
-  PromptDecisionSurface,
+  MessageAudienceSegment,
+  MessageDecisionInput,
+  MessageDecisionReasonCode,
+  MessageDecisionResult,
+  MessageDecisionSessionRow,
+  MessageDecisionSurface,
 } from './types'
 
-const ALLOWED_SURFACES: readonly PromptDecisionSurface[] = ['global_feed']
+const ALLOWED_SURFACES: readonly MessageDecisionSurface[] = ['global_feed']
 const SESSION_ID_RE = /^[a-zA-Z0-9:_-]{8,120}$/
 
 export const ANON_SESSION_COOKIE = 'anon_session_id'
 export const ANON_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000
 
 type SessionSuppressionState = {
-  convertedPromptIds: Set<number>
+  convertedMessageIds: Set<number>
 }
 
-function normalizeSurface(raw: any): PromptDecisionSurface {
+function normalizeSurface(raw: any): MessageDecisionSurface {
   const value = String(raw ?? '').trim().toLowerCase()
-  if ((ALLOWED_SURFACES as readonly string[]).includes(value)) return value as PromptDecisionSurface
+  if ((ALLOWED_SURFACES as readonly string[]).includes(value)) return value as MessageDecisionSurface
   throw new DomainError('invalid_surface', 'invalid_surface', 400)
 }
 
@@ -78,7 +78,7 @@ function deterministicScore(seed: string): string {
   return crypto.createHash('sha256').update(seed).digest('hex')
 }
 
-function parseCounters(raw: any): PromptDecisionInput['counters'] {
+function parseCounters(raw: any): MessageDecisionInput['counters'] {
   const src = raw && typeof raw === 'object' ? raw : {}
   const countersRaw = src.counters && typeof src.counters === 'object' ? src.counters : src
   const slidesViewed = normalizeCounter(countersRaw.slides_viewed ?? countersRaw.slidesViewed, 'slides_viewed', 0, 1000000, 0)
@@ -112,14 +112,14 @@ function parseCounters(raw: any): PromptDecisionInput['counters'] {
   return {
     slidesViewed,
     watchSeconds,
-    promptsShownThisSession: messagesShownThisSession,
-    slidesSinceLastPrompt: slidesSinceLastMessage,
-    lastPromptShownAt: lastMessageShownAt,
-    lastPromptId: lastMessageId,
+    messagesShownThisSession: messagesShownThisSession,
+    slidesSinceLastMessage: slidesSinceLastMessage,
+    lastMessageShownAt: lastMessageShownAt,
+    lastMessageId: lastMessageId,
   }
 }
 
-function parseConvertedPromptIds(raw: any): Set<number> {
+function parseConvertedMessageIds(raw: any): Set<number> {
   if (!raw) return new Set<number>()
   try {
     const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
@@ -136,33 +136,33 @@ function parseConvertedPromptIds(raw: any): Set<number> {
   }
 }
 
-function suppressionStateFromRow(row: PromptDecisionSessionRow | null): SessionSuppressionState {
+function suppressionStateFromRow(row: MessageDecisionSessionRow | null): SessionSuppressionState {
   return {
-    convertedPromptIds: parseConvertedPromptIds(row?.converted_prompt_ids_json),
+    convertedMessageIds: parseConvertedMessageIds(row?.converted_message_ids_json),
   }
 }
 
 function serializeSuppressionState(state: SessionSuppressionState): {
-  convertedPromptIdsJson: string
+  convertedMessageIdsJson: string
 } {
-  const converted = Array.from(state.convertedPromptIds).sort((a, b) => a - b)
+  const converted = Array.from(state.convertedMessageIds).sort((a, b) => a - b)
   return {
-    convertedPromptIdsJson: JSON.stringify(converted),
+    convertedMessageIdsJson: JSON.stringify(converted),
   }
 }
 
-function isPromptSuppressed(promptId: number, state: SessionSuppressionState): boolean {
-  return state.convertedPromptIds.has(promptId)
+function isMessageSuppressed(messageId: number, state: SessionSuppressionState): boolean {
+  return state.convertedMessageIds.has(messageId)
 }
 
-function mergeSessionState(existing: PromptDecisionSessionRow | null, input: PromptDecisionInput): {
-  audienceSegment: PromptAudienceSegment
+function mergeSessionState(existing: MessageDecisionSessionRow | null, input: MessageDecisionInput): {
+  audienceSegment: MessageAudienceSegment
   slidesViewed: number
   watchSeconds: number
-  promptsShownThisSession: number
-  slidesSinceLastPrompt: number
-  lastPromptShownAt: string | null
-  lastPromptId: number | null
+  messagesShownThisSession: number
+  slidesSinceLastMessage: number
+  lastMessageShownAt: string | null
+  lastMessageId: number | null
   suppression: SessionSuppressionState
 } {
   if (!existing) {
@@ -170,11 +170,11 @@ function mergeSessionState(existing: PromptDecisionSessionRow | null, input: Pro
       audienceSegment: input.audienceSegment,
       slidesViewed: input.counters.slidesViewed,
       watchSeconds: input.counters.watchSeconds,
-      promptsShownThisSession: input.counters.promptsShownThisSession,
-      slidesSinceLastPrompt: input.counters.slidesSinceLastPrompt,
-      lastPromptShownAt: input.counters.lastPromptShownAt,
-      lastPromptId: input.counters.lastPromptId,
-      suppression: { convertedPromptIds: new Set<number>() },
+      messagesShownThisSession: input.counters.messagesShownThisSession,
+      slidesSinceLastMessage: input.counters.slidesSinceLastMessage,
+      lastMessageShownAt: input.counters.lastMessageShownAt,
+      lastMessageId: input.counters.lastMessageId,
+      suppression: { convertedMessageIds: new Set<number>() },
     }
   }
 
@@ -184,13 +184,13 @@ function mergeSessionState(existing: PromptDecisionSessionRow | null, input: Pro
     watchSeconds: Math.max(Number(existing.watch_seconds || 0), input.counters.watchSeconds),
     // Server-authoritative counter; incremented when a prompt is actually selected.
     // This avoids client refreshes resetting rotation behavior.
-    promptsShownThisSession: Number(existing.prompts_shown_this_session || 0),
-    slidesSinceLastPrompt:
-      input.counters.slidesSinceLastPrompt !== undefined && input.counters.slidesSinceLastPrompt !== null
-        ? input.counters.slidesSinceLastPrompt
-        : Number(existing.slides_since_last_prompt || 0),
-    lastPromptShownAt: input.counters.lastPromptShownAt || existing.last_prompt_shown_at || null,
-    lastPromptId: input.counters.lastPromptId ?? (existing.last_shown_prompt_id == null ? null : Number(existing.last_shown_prompt_id)),
+    messagesShownThisSession: Number(existing.messages_shown_this_session || 0),
+    slidesSinceLastMessage:
+      input.counters.slidesSinceLastMessage !== undefined && input.counters.slidesSinceLastMessage !== null
+        ? input.counters.slidesSinceLastMessage
+        : Number(existing.slides_since_last_message || 0),
+    lastMessageShownAt: input.counters.lastMessageShownAt || existing.last_message_shown_at || null,
+    lastMessageId: input.counters.lastMessageId ?? (existing.last_shown_message_id == null ? null : Number(existing.last_shown_message_id)),
     suppression: suppressionStateFromRow(existing),
   }
 }
@@ -200,15 +200,15 @@ function nowMs(): number {
 }
 
 type EligiblePromptCandidate = {
-  promptId: number
-  promptType: string
+  messageId: number
+  messageType: string
   priority: number
   tieBreakStrategy: 'first' | 'round_robin' | 'weighted_random'
 }
 
 function selectPromptCandidate(
   candidates: EligiblePromptCandidate[],
-  input: PromptDecisionInput,
+  input: MessageDecisionInput,
   merged: ReturnType<typeof mergeSessionState>
 ): EligiblePromptCandidate | null {
   if (!candidates.length) return null
@@ -218,19 +218,19 @@ function selectPromptCandidate(
     .slice()
     .sort((a, b) => {
       if (a.priority !== b.priority) return a.priority - b.priority
-      if (a.promptId !== b.promptId) return a.promptId - b.promptId
+      if (a.messageId !== b.messageId) return a.messageId - b.messageId
       return 0
     })
 
   const tieBreak = sorted[0]?.tieBreakStrategy || 'round_robin'
 
   if (tieBreak === 'round_robin') {
-    const base = Math.max(0, Math.round(Number(merged.promptsShownThisSession || 0)))
+    const base = Math.max(0, Math.round(Number(merged.messagesShownThisSession || 0)))
     return sorted[base % sorted.length]
   }
 
   if (tieBreak === 'weighted_random') {
-    const seed = `${input.sessionId}:${merged.promptsShownThisSession}:${merged.slidesViewed}:${merged.watchSeconds}:weighted_random`
+    const seed = `${input.sessionId}:${merged.messagesShownThisSession}:${merged.slidesViewed}:${merged.watchSeconds}:weighted_random`
     const hash = deterministicScore(seed)
     const numeric = Number.parseInt(hash.slice(0, 12), 16)
     const idx = Number.isFinite(numeric) ? numeric % sorted.length : 0
@@ -250,8 +250,8 @@ function dateToMs(raw: string | null): number | null {
 export function buildDecisionInput(params: {
   body: any
   cookieSessionId: string | null
-  audienceSegment: PromptAudienceSegment
-}): { input: PromptDecisionInput; createdSessionId: string | null } {
+  audienceSegment: MessageAudienceSegment
+}): { input: MessageDecisionInput; createdSessionId: string | null } {
   const surface = normalizeSurface(params.body?.surface)
 
   const bodySessionRaw = String(params.body?.message_session_id ?? params.body?.messageSessionId ?? params.body?.session_id ?? params.body?.sessionId ?? '').trim()
@@ -280,7 +280,7 @@ export function buildDecisionInput(params: {
   }
 }
 
-export async function decideMessage(input: PromptDecisionInput, opts?: { includeDebug?: boolean }): Promise<PromptDecisionResult> {
+export async function decideMessage(input: MessageDecisionInput, opts?: { includeDebug?: boolean }): Promise<MessageDecisionResult> {
   const existing = await repo.getSessionByKey(input.sessionId, input.surface)
   const merged = mergeSessionState(existing, input)
   const suppressionJson = serializeSuppressionState(merged.suppression)
@@ -292,11 +292,11 @@ export async function decideMessage(input: PromptDecisionInput, opts?: { include
       audienceSegment: merged.audienceSegment,
       slidesViewed: merged.slidesViewed,
       watchSeconds: merged.watchSeconds,
-      promptsShownThisSession: merged.promptsShownThisSession,
-      slidesSinceLastPrompt: merged.slidesSinceLastPrompt,
-      convertedPromptIdsJson: suppressionJson.convertedPromptIdsJson,
-      lastPromptShownAt: merged.lastPromptShownAt,
-      lastPromptId: merged.lastPromptId,
+      messagesShownThisSession: merged.messagesShownThisSession,
+      slidesSinceLastMessage: merged.slidesSinceLastMessage,
+      convertedMessageIdsJson: suppressionJson.convertedMessageIdsJson,
+      lastMessageShownAt: merged.lastMessageShownAt,
+      lastMessageId: merged.lastMessageId,
       lastDecisionReason: null,
     })
   } else {
@@ -304,24 +304,24 @@ export async function decideMessage(input: PromptDecisionInput, opts?: { include
       audienceSegment: merged.audienceSegment,
       slidesViewed: merged.slidesViewed,
       watchSeconds: merged.watchSeconds,
-      promptsShownThisSession: merged.promptsShownThisSession,
-      slidesSinceLastPrompt: merged.slidesSinceLastPrompt,
-      convertedPromptIdsJson: suppressionJson.convertedPromptIdsJson,
-      lastPromptShownAt: merged.lastPromptShownAt,
-      lastPromptId: merged.lastPromptId,
+      messagesShownThisSession: merged.messagesShownThisSession,
+      slidesSinceLastMessage: merged.slidesSinceLastMessage,
+      convertedMessageIdsJson: suppressionJson.convertedMessageIdsJson,
+      lastMessageShownAt: merged.lastMessageShownAt,
+      lastMessageId: merged.lastMessageId,
     })
   }
 
-  let reasonCode: PromptDecisionReasonCode = 'no_active_prompt'
-  let promptId: number | null = null
-  let selectionEngine: 'prompt_pool' = 'prompt_pool'
+  let reasonCode: MessageDecisionReasonCode = 'no_active_message'
+  let messageId: number | null = null
+  let selectionEngine: 'message_pool' = 'message_pool'
   let candidateCount = 0
   let selectedPriority: number | null = null
 
-  if (merged.promptsShownThisSession >= PROMPT_MAX_PROMPTS_PER_SESSION) {
+  if (merged.messagesShownThisSession >= PROMPT_MAX_PROMPTS_PER_SESSION) {
     reasonCode = 'cap_reached'
   } else {
-    const lastShownMs = dateToMs(merged.lastPromptShownAt)
+    const lastShownMs = dateToMs(merged.lastMessageShownAt)
     if (
       lastShownMs != null &&
       PROMPT_COOLDOWN_SECONDS_AFTER_PROMPT > 0 &&
@@ -329,10 +329,10 @@ export async function decideMessage(input: PromptDecisionInput, opts?: { include
     ) {
       reasonCode = 'cooldown_active'
     } else if (
-      (merged.promptsShownThisSession <= 0 &&
+      (merged.messagesShownThisSession <= 0 &&
         (merged.slidesViewed < PROMPT_MIN_SLIDES_BEFORE_FIRST_PROMPT ||
           merged.watchSeconds < PROMPT_MIN_WATCH_SECONDS_BEFORE_FIRST_PROMPT)) ||
-      (merged.promptsShownThisSession > 0 && merged.slidesSinceLastPrompt < PROMPT_MIN_SLIDES_BETWEEN_PROMPTS)
+      (merged.messagesShownThisSession > 0 && merged.slidesSinceLastMessage < PROMPT_MIN_SLIDES_BETWEEN_PROMPTS)
     ) {
       reasonCode = 'below_threshold'
     } else {
@@ -343,22 +343,22 @@ export async function decideMessage(input: PromptDecisionInput, opts?: { include
       })
 
       if (!messages.length) {
-        reasonCode = 'no_active_prompt'
+        reasonCode = 'no_active_message'
       } else {
         const candidates: EligiblePromptCandidate[] = []
-        for (const prompt of messages) {
-          const candidateId = Number(prompt.id || 0)
+        for (const message of messages) {
+          const candidateId = Number(message.id || 0)
           if (!Number.isFinite(candidateId) || candidateId <= 0) continue
-          if (isPromptSuppressed(candidateId, merged.suppression)) continue
-          const tieBreakRaw = String((prompt as any).tieBreakStrategy || '').trim().toLowerCase()
+          if (isMessageSuppressed(candidateId, merged.suppression)) continue
+          const tieBreakRaw = String((message as any).tieBreakStrategy || '').trim().toLowerCase()
           const tieBreakStrategy: 'first' | 'round_robin' | 'weighted_random' =
             tieBreakRaw === 'first' || tieBreakRaw === 'weighted_random' || tieBreakRaw === 'round_robin'
               ? tieBreakRaw
               : 'round_robin'
           candidates.push({
-            promptId: candidateId,
-            promptType: String(prompt.promptType || 'register_login'),
-            priority: Number(prompt.priority || 0),
+            messageId: candidateId,
+            messageType: String(message.type || 'register_login'),
+            priority: Number(message.priority || 0),
             tieBreakStrategy,
           })
         }
@@ -372,7 +372,7 @@ export async function decideMessage(input: PromptDecisionInput, opts?: { include
             reasonCode = 'no_candidate'
           } else {
             reasonCode = 'eligible'
-            promptId = selected.promptId
+            messageId = selected.messageId
             selectedPriority = selected.priority
           }
         }
@@ -380,9 +380,9 @@ export async function decideMessage(input: PromptDecisionInput, opts?: { include
     }
   }
 
-  const result: PromptDecisionResult = {
-    shouldInsert: reasonCode === 'eligible' && promptId != null,
-    promptId,
+  const result: MessageDecisionResult = {
+    shouldInsert: reasonCode === 'eligible' && messageId != null,
+    messageId,
     insertAfterIndex: null,
     reasonCode,
     sessionId: input.sessionId,
@@ -390,16 +390,16 @@ export async function decideMessage(input: PromptDecisionInput, opts?: { include
 
   const persisted = await repo.getSessionByKey(input.sessionId, input.surface)
   if (persisted) {
-    const lastPromptShownAt = result.shouldInsert ? normalizeDateTime(new Date().toISOString(), 'last_prompt_shown_at') : undefined
+    const lastMessageShownAt = result.shouldInsert ? normalizeDateTime(new Date().toISOString(), 'last_message_shown_at') : undefined
     const nextShownCount = result.shouldInsert
-      ? Number(persisted.prompts_shown_this_session || 0) + 1
-      : Number(persisted.prompts_shown_this_session || 0)
+      ? Number(persisted.messages_shown_this_session || 0) + 1
+      : Number(persisted.messages_shown_this_session || 0)
     await repo.updateSession(persisted.id, {
       lastDecisionReason: reasonCode,
-      promptsShownThisSession: nextShownCount,
-      slidesSinceLastPrompt: result.shouldInsert ? 0 : undefined,
-      lastPromptShownAt,
-      lastPromptId: result.shouldInsert ? result.promptId : undefined,
+      messagesShownThisSession: nextShownCount,
+      slidesSinceLastMessage: result.shouldInsert ? 0 : undefined,
+      lastMessageShownAt,
+      lastMessageId: result.shouldInsert ? result.messageId : undefined,
     })
   }
 
@@ -414,11 +414,11 @@ export async function decideMessage(input: PromptDecisionInput, opts?: { include
         audienceSegment: merged.audienceSegment,
         slidesViewed: merged.slidesViewed,
         watchSeconds: merged.watchSeconds,
-        promptsShownThisSession: merged.promptsShownThisSession,
-        slidesSinceLastPrompt: merged.slidesSinceLastPrompt,
-        lastPromptShownAt: merged.lastPromptShownAt,
-        lastPromptId: merged.lastPromptId,
-        convertedPromptIds: Array.from(merged.suppression.convertedPromptIds),
+        messagesShownThisSession: merged.messagesShownThisSession,
+        slidesSinceLastMessage: merged.slidesSinceLastMessage,
+        lastMessageShownAt: merged.lastMessageShownAt,
+        lastMessageId: merged.lastMessageId,
+        convertedMessageIds: Array.from(merged.suppression.convertedMessageIds),
       },
       selection: {
         engine: selectionEngine,
@@ -434,14 +434,14 @@ export async function decideMessage(input: PromptDecisionInput, opts?: { include
 
 export async function recordMessageSessionEvent(input: {
   sessionId: string | null | undefined
-  surface: PromptDecisionSurface
-  promptId: number | null | undefined
+  surface: MessageDecisionSurface
+  messageId: number | null | undefined
   event: string
 }): Promise<void> {
   const sessionId = String(input.sessionId || '').trim()
   if (!sessionId || !isValidSessionId(sessionId)) return
-  const promptId = Number(input.promptId || 0)
-  if (!Number.isFinite(promptId) || promptId <= 0) return
+  const messageId = Number(input.messageId || 0)
+  if (!Number.isFinite(messageId) || messageId <= 0) return
 
   const normalizedEvent = String(input.event || '').trim().toLowerCase()
   if (!['auth_complete', 'flow_complete'].includes(normalizedEvent)) return
@@ -449,14 +449,10 @@ export async function recordMessageSessionEvent(input: {
   const existing = await repo.getSessionByKey(sessionId, input.surface)
   if (!existing) return
   const suppression = suppressionStateFromRow(existing)
-  suppression.convertedPromptIds.add(promptId)
+  suppression.convertedMessageIds.add(messageId)
 
   const serialized = serializeSuppressionState(suppression)
   await repo.updateSession(Number(existing.id), {
-    convertedPromptIdsJson: serialized.convertedPromptIdsJson,
+    convertedMessageIdsJson: serialized.convertedMessageIdsJson,
   })
 }
-
-// Phase F1 compatibility aliases for message terminology.
-export const decidePrompt = decideMessage
-export const recordPromptSessionEvent = recordMessageSessionEvent

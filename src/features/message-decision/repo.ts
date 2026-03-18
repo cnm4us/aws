@@ -1,5 +1,5 @@
 import { getPool } from '../../db'
-import type { PromptAudienceSegment, PromptDecisionSessionRow, PromptDecisionSurface } from './types'
+import type { MessageAudienceSegment, MessageDecisionSessionRow, MessageDecisionSurface } from './types'
 
 const MESSAGE_DECISION_SESSION_SELECT_SQL = `
   SELECT
@@ -9,18 +9,18 @@ const MESSAGE_DECISION_SESSION_SELECT_SQL = `
     viewer_state,
     slides_viewed,
     watch_seconds,
-    messages_shown_this_session AS prompts_shown_this_session,
-    slides_since_last_message AS slides_since_last_prompt,
-    converted_message_ids_json AS converted_prompt_ids_json,
-    last_message_shown_at AS last_prompt_shown_at,
-    last_shown_message_id AS last_shown_prompt_id,
+    messages_shown_this_session,
+    slides_since_last_message,
+    converted_message_ids_json,
+    last_message_shown_at,
+    last_shown_message_id,
     last_decision_reason,
     created_at,
     updated_at
   FROM message_decision_sessions
 `
 
-export async function getSessionByKey(sessionId: string, surface: PromptDecisionSurface): Promise<PromptDecisionSessionRow | null> {
+export async function getSessionByKey(sessionId: string, surface: MessageDecisionSurface): Promise<MessageDecisionSessionRow | null> {
   const db = getPool()
   const [rows] = await db.query(
     `${MESSAGE_DECISION_SESSION_SELECT_SQL}
@@ -28,22 +28,22 @@ export async function getSessionByKey(sessionId: string, surface: PromptDecision
       LIMIT 1`,
     [sessionId, surface]
   )
-  return ((rows as any[])[0] as PromptDecisionSessionRow) || null
+  return ((rows as any[])[0] as MessageDecisionSessionRow) || null
 }
 
 export async function createSession(input: {
   sessionId: string
-  surface: PromptDecisionSurface
-  audienceSegment: PromptAudienceSegment
+  surface: MessageDecisionSurface
+  audienceSegment: MessageAudienceSegment
   slidesViewed: number
   watchSeconds: number
-  promptsShownThisSession: number
-  slidesSinceLastPrompt: number
-  lastPromptShownAt: string | null
-  convertedPromptIdsJson: string | null
-  lastPromptId: number | null
+  messagesShownThisSession: number
+  slidesSinceLastMessage: number
+  lastMessageShownAt: string | null
+  convertedMessageIdsJson: string | null
+  lastMessageId: number | null
   lastDecisionReason: string | null
-}): Promise<PromptDecisionSessionRow> {
+}): Promise<MessageDecisionSessionRow> {
   const db = getPool()
   await db.query(
     `INSERT INTO message_decision_sessions
@@ -61,11 +61,11 @@ export async function createSession(input: {
       input.audienceSegment,
       input.slidesViewed,
       input.watchSeconds,
-      input.promptsShownThisSession,
-      input.slidesSinceLastPrompt,
-      input.convertedPromptIdsJson,
-      input.lastPromptShownAt,
-      input.lastPromptId,
+      input.messagesShownThisSession,
+      input.slidesSinceLastMessage,
+      input.convertedMessageIdsJson,
+      input.lastMessageShownAt,
+      input.lastMessageId,
       input.lastDecisionReason,
     ]
   )
@@ -75,14 +75,14 @@ export async function createSession(input: {
 }
 
 export async function updateSession(id: number, patch: {
-  audienceSegment?: PromptAudienceSegment
+  audienceSegment?: MessageAudienceSegment
   slidesViewed?: number
   watchSeconds?: number
-  promptsShownThisSession?: number
-  slidesSinceLastPrompt?: number
-  lastPromptShownAt?: string | null
-  convertedPromptIdsJson?: string | null
-  lastPromptId?: number | null
+  messagesShownThisSession?: number
+  slidesSinceLastMessage?: number
+  lastMessageShownAt?: string | null
+  convertedMessageIdsJson?: string | null
+  lastMessageId?: number | null
   lastDecisionReason?: string | null
 }): Promise<void> {
   const db = getPool()
@@ -92,11 +92,11 @@ export async function updateSession(id: number, patch: {
   if (patch.audienceSegment !== undefined) { sets.push('viewer_state = ?'); args.push(patch.audienceSegment) }
   if (patch.slidesViewed !== undefined) { sets.push('slides_viewed = ?'); args.push(patch.slidesViewed) }
   if (patch.watchSeconds !== undefined) { sets.push('watch_seconds = ?'); args.push(patch.watchSeconds) }
-  if (patch.promptsShownThisSession !== undefined) { sets.push('messages_shown_this_session = ?'); args.push(patch.promptsShownThisSession) }
-  if (patch.slidesSinceLastPrompt !== undefined) { sets.push('slides_since_last_message = ?'); args.push(patch.slidesSinceLastPrompt) }
-  if (patch.convertedPromptIdsJson !== undefined) { sets.push('converted_message_ids_json = ?'); args.push(patch.convertedPromptIdsJson) }
-  if (patch.lastPromptShownAt !== undefined) { sets.push('last_message_shown_at = ?'); args.push(patch.lastPromptShownAt) }
-  if (patch.lastPromptId !== undefined) { sets.push('last_shown_message_id = ?'); args.push(patch.lastPromptId) }
+  if (patch.messagesShownThisSession !== undefined) { sets.push('messages_shown_this_session = ?'); args.push(patch.messagesShownThisSession) }
+  if (patch.slidesSinceLastMessage !== undefined) { sets.push('slides_since_last_message = ?'); args.push(patch.slidesSinceLastMessage) }
+  if (patch.convertedMessageIdsJson !== undefined) { sets.push('converted_message_ids_json = ?'); args.push(patch.convertedMessageIdsJson) }
+  if (patch.lastMessageShownAt !== undefined) { sets.push('last_message_shown_at = ?'); args.push(patch.lastMessageShownAt) }
+  if (patch.lastMessageId !== undefined) { sets.push('last_shown_message_id = ?'); args.push(patch.lastMessageId) }
   if (patch.lastDecisionReason !== undefined) { sets.push('last_decision_reason = ?'); args.push(patch.lastDecisionReason) }
 
   if (!sets.length) return

@@ -21,7 +21,7 @@ adminMessagesRouter.get(adminMessageCollectionPaths, async (req, res, next) => {
       includeArchived,
       limit: limitRaw,
       status: req.query?.status,
-      promptType: req.query?.prompt_type,
+      messageType: req.query?.message_type,
       appliesToSurface: req.query?.applies_to_surface,
       audienceSegment: req.query?.audience_segment,
       campaignKey: req.query?.campaign_key,
@@ -34,8 +34,8 @@ adminMessagesRouter.get(adminMessageCollectionPaths, async (req, res, next) => {
 
 adminMessagesRouter.post(adminMessageCollectionPaths, async (req, res, next) => {
   try {
-    const prompt = await messagesSvc.createMessageForAdmin(req.body || {}, Number(req.user?.id || 0))
-    return res.status(201).json({ prompt })
+    const message = await messagesSvc.createMessageForAdmin(req.body || {}, Number(req.user?.id || 0))
+    return res.status(201).json({ message })
   } catch (err) {
     return next(err)
   }
@@ -45,8 +45,8 @@ adminMessagesRouter.get(adminMessageDetailPaths, async (req, res, next) => {
   try {
     const id = Number(req.params.id)
     if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'bad_id' })
-    const prompt = await messagesSvc.getMessageForAdmin(id)
-    return res.json({ prompt })
+    const message = await messagesSvc.getMessageForAdmin(id)
+    return res.json({ message })
   } catch (err) {
     return next(err)
   }
@@ -56,8 +56,8 @@ adminMessagesRouter.patch(adminMessageDetailPaths, async (req, res, next) => {
   try {
     const id = Number(req.params.id)
     if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'bad_id' })
-    const prompt = await messagesSvc.updateMessageForAdmin(id, req.body || {}, Number(req.user?.id || 0))
-    return res.json({ prompt })
+    const message = await messagesSvc.updateMessageForAdmin(id, req.body || {}, Number(req.user?.id || 0))
+    return res.json({ message })
   } catch (err) {
     return next(err)
   }
@@ -67,8 +67,8 @@ adminMessagesRouter.post(adminMessageClonePaths, async (req, res, next) => {
   try {
     const id = Number(req.params.id)
     if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'bad_id' })
-    const prompt = await messagesSvc.cloneMessageForAdmin(id, Number(req.user?.id || 0))
-    return res.status(201).json({ prompt })
+    const message = await messagesSvc.cloneMessageForAdmin(id, Number(req.user?.id || 0))
+    return res.status(201).json({ message })
   } catch (err) {
     return next(err)
   }
@@ -78,8 +78,8 @@ adminMessagesRouter.post(adminMessageStatusPaths, async (req, res, next) => {
   try {
     const id = Number(req.params.id)
     if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'bad_id' })
-    const prompt = await messagesSvc.updateMessageStatusForAdmin(id, req.body?.status, Number(req.user?.id || 0))
-    return res.json({ prompt })
+    const message = await messagesSvc.updateMessageStatusForAdmin(id, req.body?.status, Number(req.user?.id || 0))
+    return res.json({ message })
   } catch (err) {
     return next(err)
   }
