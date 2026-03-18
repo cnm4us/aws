@@ -1,6 +1,6 @@
 # Plan 133: Clean Message Conversion Finish Pass
 
-Status: Active — Phases A-B Complete
+Status: Active — Phases A-C Complete
 
 ## Goal
 Finish the prompt-to-message conversion so active runtime code, canonical analytics, debug tooling, and asset naming all use message-first terminology.
@@ -178,7 +178,7 @@ Test gate:
 Acceptance:
 - active runtime code no longer uses prompt-first type names as the primary contract
 
-## Phase C — Debug Contract Cleanup
+## Phase C — Debug Contract Cleanup (Complete)
 - remove prompt-era browser debug compatibility shims:
   - `prompt:debug`
   - `feed:prompt-debug`

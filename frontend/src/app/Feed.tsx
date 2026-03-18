@@ -95,11 +95,6 @@ function isMessageDebugEnabled(): boolean {
     queryParam: 'message_debug',
     storageKey: 'message:debug',
     globalFlag: '__MESSAGE_DEBUG__',
-  }) || isClientDebugEnabled({
-    envFlag: 'VITE_PROMPT_DEBUG',
-    queryParam: 'prompt_debug',
-    storageKey: 'prompt:debug',
-    globalFlag: '__PROMPT_DEBUG__',
   })
 }
 
@@ -108,10 +103,6 @@ function emitMessageDebug(name: string, detail?: Record<string, any>) {
   dispatchClientDebugDomEvent('feed:message-debug', name, detail, {
     enabled,
     consoleLabel: '[message-debug]',
-  })
-  dispatchClientDebugDomEvent('feed:prompt-debug', name, detail, {
-    enabled,
-    consoleLabel: '[prompt-debug]',
   })
 }
 
@@ -166,7 +157,6 @@ type SequenceItem = {
 type SequenceHookName =
   | 'sequence_active_key_changed'
   | 'sequence_window_shift'
-  | 'sequence_prompt_inserted'
   | 'sequence_message_inserted'
 
 const FEED_RENDER_WINDOW_BEHIND = 2
@@ -996,11 +986,6 @@ export default function Feed() {
         message_id: seq.item.message?.id ?? null,
         source_index: seq.sourceIndex,
       })
-      emitSequenceHook('sequence_prompt_inserted', {
-        sequence_key: seq.sequenceKey,
-        message_id: seq.item.message?.id ?? null,
-        source_index: seq.sourceIndex,
-      })
     }
     seenPromptSequenceKeysRef.current = nextSet
   }, [sequenceEngineV1Enabled, sequenceItems, emitSequenceHook])
@@ -1092,7 +1077,6 @@ export default function Feed() {
     return installClientDebugDomBridges(
       [
         { domEventName: 'feed:message-debug', category: 'message' },
-        { domEventName: 'feed:prompt-debug', category: 'message' },
         { domEventName: 'feed:sequence-hook', category: 'sequence' },
         { domEventName: 'feed:index-debug', category: 'index' },
       ],
