@@ -103,6 +103,8 @@ Acceptance:
 - signed route contract for primary vs compatibility paths
 
 ### Phase B — Add Message-First Route Aliases
+Status: Complete
+
 - expose message-first feed API paths alongside existing prompt paths
 - expose message-first admin API paths alongside existing prompt paths
 - ensure auth/CSRF/middleware behavior is identical for both path sets

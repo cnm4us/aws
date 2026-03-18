@@ -4,10 +4,13 @@ import { requireAuth, requireSiteAdmin } from '../middleware/auth'
 import * as messageAnalyticsSvc from '../features/message-analytics/service'
 
 export const adminMessageAnalyticsRouter = Router()
+const adminMessageAnalyticsPaths = ['/api/admin/prompt-analytics', '/api/admin/message-analytics']
+const adminMessageAnalyticsCsvPaths = ['/api/admin/prompt-analytics.csv', '/api/admin/message-analytics.csv']
 
-adminMessageAnalyticsRouter.use('/api/admin/prompt-analytics', requireAuth, requireSiteAdmin)
+adminMessageAnalyticsRouter.use(adminMessageAnalyticsPaths, requireAuth, requireSiteAdmin)
+adminMessageAnalyticsRouter.use(adminMessageAnalyticsCsvPaths, requireAuth, requireSiteAdmin)
 
-adminMessageAnalyticsRouter.get('/api/admin/prompt-analytics', async (req, res, next) => {
+adminMessageAnalyticsRouter.get(adminMessageAnalyticsPaths, async (req, res, next) => {
   try {
     const report = await messageAnalyticsSvc.getMessageAnalyticsReportForAdmin({
       fromDate: req.query?.from,
@@ -31,7 +34,7 @@ adminMessageAnalyticsRouter.get('/api/admin/prompt-analytics', async (req, res, 
   }
 })
 
-adminMessageAnalyticsRouter.get('/api/admin/prompt-analytics.csv', async (req, res, next) => {
+adminMessageAnalyticsRouter.get(adminMessageAnalyticsCsvPaths, async (req, res, next) => {
   try {
     const report = await messageAnalyticsSvc.getMessageAnalyticsReportForAdmin({
       fromDate: req.query?.from,

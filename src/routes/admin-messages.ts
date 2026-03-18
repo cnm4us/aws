@@ -3,10 +3,17 @@ import { requireAuth, requireSiteAdmin } from '../middleware/auth'
 import * as messagesSvc from '../features/messages/service'
 
 export const adminMessagesRouter = Router()
+const adminMessageCollectionPaths = ['/api/admin/prompts', '/api/admin/messages']
+const adminMessageDetailPaths = ['/api/admin/prompts/:id', '/api/admin/messages/:id']
+const adminMessageClonePaths = ['/api/admin/prompts/:id/clone', '/api/admin/messages/:id/clone']
+const adminMessageStatusPaths = ['/api/admin/prompts/:id/status', '/api/admin/messages/:id/status']
 
-adminMessagesRouter.use('/api/admin/prompts', requireAuth, requireSiteAdmin)
+adminMessagesRouter.use(adminMessageCollectionPaths, requireAuth, requireSiteAdmin)
+adminMessagesRouter.use(adminMessageDetailPaths, requireAuth, requireSiteAdmin)
+adminMessagesRouter.use(adminMessageClonePaths, requireAuth, requireSiteAdmin)
+adminMessagesRouter.use(adminMessageStatusPaths, requireAuth, requireSiteAdmin)
 
-adminMessagesRouter.get('/api/admin/prompts', async (req, res, next) => {
+adminMessagesRouter.get(adminMessageCollectionPaths, async (req, res, next) => {
   try {
     const includeArchived = String(req.query?.include_archived || '0') === '1'
     const limitRaw = req.query?.limit ? Number(req.query.limit) : undefined
@@ -25,7 +32,7 @@ adminMessagesRouter.get('/api/admin/prompts', async (req, res, next) => {
   }
 })
 
-adminMessagesRouter.post('/api/admin/prompts', async (req, res, next) => {
+adminMessagesRouter.post(adminMessageCollectionPaths, async (req, res, next) => {
   try {
     const prompt = await messagesSvc.createMessageForAdmin(req.body || {}, Number(req.user?.id || 0))
     return res.status(201).json({ prompt })
@@ -34,7 +41,7 @@ adminMessagesRouter.post('/api/admin/prompts', async (req, res, next) => {
   }
 })
 
-adminMessagesRouter.get('/api/admin/prompts/:id', async (req, res, next) => {
+adminMessagesRouter.get(adminMessageDetailPaths, async (req, res, next) => {
   try {
     const id = Number(req.params.id)
     if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'bad_id' })
@@ -45,7 +52,7 @@ adminMessagesRouter.get('/api/admin/prompts/:id', async (req, res, next) => {
   }
 })
 
-adminMessagesRouter.patch('/api/admin/prompts/:id', async (req, res, next) => {
+adminMessagesRouter.patch(adminMessageDetailPaths, async (req, res, next) => {
   try {
     const id = Number(req.params.id)
     if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'bad_id' })
@@ -56,7 +63,7 @@ adminMessagesRouter.patch('/api/admin/prompts/:id', async (req, res, next) => {
   }
 })
 
-adminMessagesRouter.post('/api/admin/prompts/:id/clone', async (req, res, next) => {
+adminMessagesRouter.post(adminMessageClonePaths, async (req, res, next) => {
   try {
     const id = Number(req.params.id)
     if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'bad_id' })
@@ -67,7 +74,7 @@ adminMessagesRouter.post('/api/admin/prompts/:id/clone', async (req, res, next) 
   }
 })
 
-adminMessagesRouter.post('/api/admin/prompts/:id/status', async (req, res, next) => {
+adminMessagesRouter.post(adminMessageStatusPaths, async (req, res, next) => {
   try {
     const id = Number(req.params.id)
     if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'bad_id' })
@@ -78,7 +85,7 @@ adminMessagesRouter.post('/api/admin/prompts/:id/status', async (req, res, next)
   }
 })
 
-adminMessagesRouter.delete('/api/admin/prompts/:id', async (req, res, next) => {
+adminMessagesRouter.delete(adminMessageDetailPaths, async (req, res, next) => {
   try {
     const id = Number(req.params.id)
     if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'bad_id' })

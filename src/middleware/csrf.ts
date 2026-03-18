@@ -10,8 +10,10 @@ export function csrfProtect(req: Request, res: Response, next: NextFunction) {
   // In-feed message decision endpoint is a low-risk orchestration read path; allow both
   // anonymous and authenticated callers without CSRF token requirements.
   if (req.path === '/api/feed/prompt-decision') return next();
+  if (req.path === '/api/feed/message-decision') return next();
   // In-feed message telemetry endpoint accepts both anonymous and authenticated events.
   if (req.path === '/api/feed/prompt-events') return next();
+  if (req.path === '/api/feed/message-events') return next();
   // Feed activity telemetry endpoint accepts both anonymous and authenticated events.
   if (req.path === '/api/feed/activity-events') return next();
   if (!req.session || !req.user) return next();
