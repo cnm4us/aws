@@ -226,6 +226,8 @@ Acceptance:
 - admin UX is fully message-first while compatibility remains intact
 
 #### Phase F5 — Schema/Table Rename
+Status: Complete
+
 - Rename core tables only after all upper layers are stable:
   - `feed_prompts` -> `feed_messages`
   - `prompt_decision_sessions` -> `message_decision_sessions`
