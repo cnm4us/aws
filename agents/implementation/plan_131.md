@@ -118,6 +118,8 @@ Acceptance:
 - message-first API paths exist without breaking existing callers
 
 ### Phase C — Migrate First-Party Callers
+Status: Complete
+
 - switch frontend feed code to message-first paths
 - switch admin pages/forms/XHR/CSV links to message-first paths
 - update docs and debugging guidance to show message-first API paths first

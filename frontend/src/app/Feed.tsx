@@ -383,7 +383,7 @@ async function fetchMessageById(promptId: number): Promise<FeedMessagePayload> {
   const orientation: 'portrait' | 'landscape' =
     typeof window !== 'undefined' && window.innerWidth > window.innerHeight ? 'landscape' : 'portrait'
   const dpr = typeof window !== 'undefined' && Number.isFinite(window.devicePixelRatio) ? window.devicePixelRatio : 1
-  const messageUrl = `/api/feed/prompts/${encodeURIComponent(String(id))}?orientation=${encodeURIComponent(orientation)}&dpr=${encodeURIComponent(String(dpr))}`
+  const messageUrl = `/api/feed/messages/${encodeURIComponent(String(id))}?orientation=${encodeURIComponent(orientation)}&dpr=${encodeURIComponent(String(dpr))}`
   const res = await fetch(messageUrl, { credentials: 'same-origin' })
   if (!res.ok) throw new Error('failed_to_fetch_prompt')
   const payload = await res.json()
@@ -456,7 +456,7 @@ async function sendMessageEvent(input: {
   ctaKind?: 'primary' | 'secondary'
 }, opts?: { sequenceEngineTag?: FeedSequenceEngineTag }) {
   try {
-    await fetch('/api/feed/prompt-events', {
+    await fetch('/api/feed/message-events', {
       method: 'POST',
       credentials: 'same-origin',
       keepalive: true,
@@ -2641,7 +2641,7 @@ export default function Feed() {
           slides_since_last_prompt: counters.slidesSinceLastPrompt,
           last_message_id: counters.lastMessageId,
         })
-        const res = await fetch('/api/feed/prompt-decision', {
+        const res = await fetch('/api/feed/message-decision', {
           method: 'POST',
           credentials: 'same-origin',
           headers: {
