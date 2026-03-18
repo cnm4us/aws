@@ -629,10 +629,10 @@ export async function getPromptAnalyticsReportForAdmin(input: {
 
 export function buildPromptAnalyticsCsv(report: PromptAnalyticsReport): string {
   const header = [
-    'prompt_id',
-    'prompt_name',
-    'prompt_type',
-    'prompt_campaign_key',
+    'message_id',
+    'message_name',
+    'message_type',
+    'message_campaign_key',
     'impressions',
     'clicks_primary',
     'clicks_secondary',

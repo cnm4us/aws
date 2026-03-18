@@ -2988,7 +2988,7 @@ pagesRouter.get('/admin', async (_req: any, res: any) => {
     { title: 'Audio Configs', href: '/admin/audio-configs', desc: 'Presets for Mix/Replace + ducking (creators pick when producing)' },
     { title: 'Media Jobs', href: '/admin/media-jobs', desc: 'Debug ffmpeg mastering jobs (logs, retries, purge)' },
     { title: 'Messages', href: '/admin/messages', desc: 'Manage in-feed message units, targeting, and lifecycle controls' },
-    { title: 'Analytics', href: '/admin/analytics', desc: 'Cross-metric baseline feed + prompt conversion view with daily trend' },
+    { title: 'Analytics', href: '/admin/analytics', desc: 'Cross-metric baseline feed + message conversion view with daily trend' },
     { title: 'Message Analytics', href: '/admin/message-analytics', desc: 'Funnel metrics, conversion rates, and overexposure detection for in-feed messages' },
     { title: 'Analytics Sink', href: '/admin/analytics-sink', desc: 'Optional external sink health and counters (secondary analytics path)' },
     { title: 'Settings', href: '/admin/settings', desc: 'Coming soon' },
@@ -4322,13 +4322,13 @@ pagesRouter.get('/admin/analytics', async (req: any, res: any) => {
         'feed_completion_rate',
         'feed_total_watch_seconds',
         'feed_avg_watch_seconds_per_session',
-        'prompt_impressions',
-        'prompt_clicks',
-        'prompt_ctr',
-        'prompt_auth_start',
-        'prompt_auth_complete',
-        'prompt_auth_completion_rate',
-        'prompt_coverage_per_slide_impression',
+        'message_impressions',
+        'message_clicks',
+        'message_ctr',
+        'message_auth_start',
+        'message_auth_complete',
+        'message_auth_completion_rate',
+        'message_coverage_per_slide_impression',
       ]
       const lines = [header.map(csvCell).join(',')]
       for (const row of dailyRows) {
@@ -4424,9 +4424,9 @@ pagesRouter.get('/admin/analytics', async (req: any, res: any) => {
     body += `<div class="section" style="margin:0"><div class="section-title">Sessions Started</div><div style="font-size:24px; font-weight:800">${feedReport.kpis.totals.sessionsStarted}</div><div class="field-hint">Ended: ${feedReport.kpis.totals.sessionsEnded}</div></div>`
     body += `<div class="section" style="margin:0"><div class="section-title">Slide Impressions</div><div style="font-size:24px; font-weight:800">${feedReport.kpis.totals.slideImpressions}</div><div class="field-hint">Completes: ${feedReport.kpis.totals.slideCompletes}</div></div>`
     body += `<div class="section" style="margin:0"><div class="section-title">Feed Completion Rate</div><div style="font-size:24px; font-weight:800">${pctText(feedReport.kpis.rates.completionRate)}</div><div class="field-hint">Watch sec: ${feedReport.kpis.totals.totalWatchSeconds}</div></div>`
-    body += `<div class="section" style="margin:0"><div class="section-title">Prompt Impressions</div><div style="font-size:24px; font-weight:800">${promptReport.kpis.totals.impressions}</div><div class="field-hint">Prompt Clicks: ${promptReport.kpis.totals.clicksTotal}</div></div>`
-    body += `<div class="section" style="margin:0"><div class="section-title">Prompt Auth Completions</div><div style="font-size:24px; font-weight:800">${promptReport.kpis.totals.authComplete}</div><div class="field-hint">Auth Starts: ${promptReport.kpis.totals.authStart}</div></div>`
-    body += `<div class="section" style="margin:0"><div class="section-title">Prompt Coverage</div><div style="font-size:24px; font-weight:800">${pctText(feedCoverage)}</div><div class="field-hint">Prompt impressions / slide impressions</div></div>`
+    body += `<div class="section" style="margin:0"><div class="section-title">Message Impressions</div><div style="font-size:24px; font-weight:800">${promptReport.kpis.totals.impressions}</div><div class="field-hint">Message Clicks: ${promptReport.kpis.totals.clicksTotal}</div></div>`
+    body += `<div class="section" style="margin:0"><div class="section-title">Message Auth Completions</div><div style="font-size:24px; font-weight:800">${promptReport.kpis.totals.authComplete}</div><div class="field-hint">Auth Starts: ${promptReport.kpis.totals.authStart}</div></div>`
+    body += `<div class="section" style="margin:0"><div class="section-title">Message Coverage</div><div style="font-size:24px; font-weight:800">${pctText(feedCoverage)}</div><div class="field-hint">Message impressions / slide impressions</div></div>`
     body += `</div>`
 
     const splitRows = [
@@ -4436,7 +4436,7 @@ pagesRouter.get('/admin/analytics', async (req: any, res: any) => {
     body += '<div class="section">'
     body += '<div class="section-title">Viewer State Split</div>'
     body += '<div class="field-hint" style="margin-bottom:8px">Always computed for both states within current date/surface scope.</div>'
-    body += '<table><thead><tr><th>Viewer State</th><th>Sessions</th><th>Slide Impressions</th><th>Slide Completes</th><th>Feed Completion</th><th>Prompt Impressions</th><th>Prompt CTR</th><th>Prompt Auth Complete</th><th>Prompt Coverage</th></tr></thead><tbody>'
+    body += '<table><thead><tr><th>Viewer State</th><th>Sessions</th><th>Slide Impressions</th><th>Slide Completes</th><th>Feed Completion</th><th>Message Impressions</th><th>Message CTR</th><th>Message Auth Complete</th><th>Message Coverage</th></tr></thead><tbody>'
     for (const row of splitRows) {
       const rowCoverage = row.feed.kpis.totals.slideImpressions > 0
         ? row.prompt.kpis.totals.impressions / row.feed.kpis.totals.slideImpressions
@@ -4458,7 +4458,7 @@ pagesRouter.get('/admin/analytics', async (req: any, res: any) => {
     if (!dailyRows.length) {
       body += '<p>No analytics rows found in this range.</p>'
     } else {
-      body += '<table><thead><tr><th>Date</th><th>Sessions</th><th>Slide Impressions</th><th>Slide Completes</th><th>Feed Completion</th><th>Watch Sec</th><th>Prompt Impressions</th><th>Prompt CTR</th><th>Prompt Auth Complete</th><th>Prompt Coverage</th></tr></thead><tbody>'
+      body += '<table><thead><tr><th>Date</th><th>Sessions</th><th>Slide Impressions</th><th>Slide Completes</th><th>Feed Completion</th><th>Watch Sec</th><th>Message Impressions</th><th>Message CTR</th><th>Message Auth Complete</th><th>Message Coverage</th></tr></thead><tbody>'
       for (const row of dailyRows) {
         const feedCompletionRate = row.feedSlideImpressions > 0 ? row.feedSlideCompletes / row.feedSlideImpressions : 0
         const promptCtr = row.promptImpressions > 0 ? row.promptClicks / row.promptImpressions : 0
