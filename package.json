@@ -13,6 +13,7 @@
     "mc:describe": "ts-node src/tools/mediaconvert/describe-endpoints.ts",
     "mc:create": "ts-node src/tools/mediaconvert/create-job.ts",
     "test:naming": "ts-node scripts/test-naming.ts",
+    "check:agents:docs": "python3 scripts/check-agent-docs.py",
     "check:console:backend": "node scripts/check-backend-console.js",
     "jaeger:start": "bash scripts/jaeger.sh start",
     "jaeger:stop": "bash scripts/jaeger.sh stop",

@@ -1,6 +1,7 @@
 # Routing Guide
 
 Use this file to decide what to read for a given request. Keep this list flat and high-signal.
+Last reviewed: 2026-03-19
 
 ## Rules
 - Read only what the request needs.

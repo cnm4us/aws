@@ -1,6 +1,7 @@
 # Agent Docs Entry Point
 
 This is the stable entrypoint for agent-facing docs in this repo.
+Last reviewed: 2026-03-19
 
 ## Primary Rule
 - `agents/implementation/plan_NN.md` is the canonical continuity artifact.
@@ -14,6 +15,12 @@ This is the stable entrypoint for agent-facing docs in this repo.
 2. Use `agents/ROUTING.md` to decide which supporting docs to load.
 3. If there is active implementation work, use the relevant `agents/implementation/plan_NN.md` as source of truth.
 4. Keep plan status, validation notes, and next steps current in that plan.
+
+## Quick Start
+1. Discussion-only request: load `agents/ROUTING.md`, then the minimum referenced docs; do not implement.
+2. Implementation request: continue active `agents/implementation/plan_NN.md` or create a new plan from `PLAN_TEMPLATE.md`.
+3. Debugging request: load `agents/tools/debugging.md`, `debug/README.md`, and `tests/README.md`.
+4. Before commit: run `npm run check:agents:docs` and resolve broken references/status gaps.
 
 ## Document Map
 - Routing: `agents/ROUTING.md`

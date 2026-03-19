@@ -1,6 +1,7 @@
 # Analytics Docs
 
 This folder holds product analytics strategy and schema design docs that drive implementation plans.
+Current priority: front burner next, after current cleanup/modification work completes.
 
 ## Files
 - `EVENT_MATRIX.md` - events, required fields, and report mappings.

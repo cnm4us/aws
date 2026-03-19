@@ -1,6 +1,7 @@
 # Implementation Planning Guide
 
 This guide defines how to create and maintain `agents/implementation/plan_NN.md` files.
+Last reviewed: 2026-03-19
 
 ## Core Principle
 - `plan_NN.md` is the canonical continuity artifact.
@@ -71,3 +72,4 @@ Use `agents/implementation/PLAN_TEMPLATE.md` as the default scaffold.
 After each commit:
 - update the active `plan_NN.md`
 - then evaluate `/README.md` updates using `agents/readme_maintenance.md`
+- run `npm run check:agents:docs` when agent docs/plan paths were changed

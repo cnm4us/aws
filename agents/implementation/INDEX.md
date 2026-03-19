@@ -7,6 +7,8 @@ This file is a lightweight index for ongoing implementation work.
 - Use `agents/implementation/PLAN_TEMPLATE.md` when creating new plans.
 - Archived plans live in `agents/implementation/archives/`.
 - Archive navigation: `agents/implementation/archives/INDEX.md`.
+- Lifecycle rule: keep only active/recent plans in `agents/implementation/`.
+- Move a plan to `archives/` when it has `Status: Complete` and no immediate follow-up execution remains.
 
 ## Roadmaps
 - `agents/roadmaps/roadmap_create_video.md` — timeline-based Create Video composer
