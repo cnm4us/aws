@@ -38,7 +38,7 @@ Out of scope:
    - On validation errors, preserve the submitted description in the draft view.
    Testing:
    - Canonical (expected): `./scripts/auth_curl.sh --profile super --include get /admin/channels/<ID>` → `HTTP 200` and HTML contains `name="description"`.  
-   - Record actual output: `agents/implementation/tests/plan_20/step_02_admin_form.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_20/step_02_admin_form.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 3. Persist description on save (admin service)  
@@ -49,7 +49,7 @@ Out of scope:
    - Apply validation from Step 1 and return friendly errors.
    Testing:
    - Canonical (expected): `./scripts/auth_curl.sh --profile super post /admin/channels/<ID> ...` → redirects to `/admin/channels/<ID>?notice=Saved.` and subsequent GET shows the description populated.
-   - Record actual output: `agents/implementation/tests/plan_20/step_03_admin_save.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_20/step_03_admin_save.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 4. Include `spaceDescription` in `GET /api/publications/:id/jump-spaces`  
@@ -59,7 +59,7 @@ Out of scope:
    - Keep current filters (group/channel only; published only; exclude global feed; etc.).
    Testing:
    - Canonical (expected): `./scripts/auth_curl.sh --profile super get /api/publications/<ID>/jump-spaces` → `HTTP 200` and items include `spaceDescription`.  
-   - Record actual output: `agents/implementation/tests/plan_20/step_04_jump_spaces_api.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_20/step_04_jump_spaces_api.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 5. Update Jump modal to show description for channels  
@@ -71,7 +71,7 @@ Out of scope:
    - Ensure long descriptions don’t break layout (truncate with CSS or limit length server-side).
    Testing:
    - Manual: open Global Feed → Jump → confirm channel cards show description line.  
-   - Record notes: `agents/implementation/tests/plan_20/step_05_modal_ui.md`  
+   - Record notes: `tests/runs/legacy/implementation/plan_20/step_05_modal_ui.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 6. Build verification  
@@ -80,7 +80,7 @@ Out of scope:
    - Run full build for deployable assets.
    Testing:
    - Canonical (expected): `npm run web:build` → success.  
-   - Record actual output: `agents/implementation/tests/plan_20/step_06_build.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_20/step_06_build.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 ---

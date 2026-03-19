@@ -61,7 +61,8 @@ Use `agents/implementation/PLAN_TEMPLATE.md` as the default scaffold.
 
 ## Evidence Location
 - Keep canonical test gates in the plan.
-- Store heavier outputs in `agents/tests/plan_NN/` when needed.
+- Store heavier outputs in `tests/runs/<run_id>/` when needed.
+- Keep legacy evidence under `tests/runs/legacy/implementation/` unchanged unless explicitly migrating old plans.
 
 ## Commit Coordination
 After each commit:

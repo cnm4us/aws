@@ -29,7 +29,7 @@ Key requirements:
      - Streams the thumbnail object if it exists; returns `404` if missing.
    Testing:
    - Canonical (expected): `./scripts/auth_curl.sh --profile user get /api/uploads/<id>/thumb -I` → `404` initially for existing uploads.
-   - Record actual output: `agents/implementation/tests/plan_39/step_01_api_thumb.md`
+   - Record actual output: `tests/runs/legacy/implementation/plan_39/step_01_api_thumb.md`
    Checkpoint: Wait for developer approval before proceeding.
 
 2. Implement ffmpeg thumbnail generator (single frame at t=0)
@@ -42,7 +42,7 @@ Key requirements:
    Testing:
    - Canonical (expected): run a local “one-off” function/test script to generate a thumb for a known upload; then:
      - `./scripts/auth_curl.sh --profile user get /api/uploads/<id>/thumb -I` → `200` + `Content-Type: image/jpeg`
-   - Record actual output: `agents/implementation/tests/plan_39/step_02_generate_thumb.md`
+   - Record actual output: `tests/runs/legacy/implementation/plan_39/step_02_generate_thumb.md`
    Checkpoint: Wait for developer approval before proceeding.
 
 3. Generate thumbnails asynchronously via `media_jobs` (upload_thumb_v1)
@@ -58,7 +58,7 @@ Key requirements:
    - Canonical (expected): upload a new video, complete upload, then:
      - `GET /api/uploads/:id/thumb` → eventually `200` after job runs.
      - Admin: `/admin/media-jobs` shows an `upload_thumb_v1` entry completing successfully.
-   - Record actual output: `agents/implementation/tests/plan_39/step_03_worker.md`
+   - Record actual output: `tests/runs/legacy/implementation/plan_39/step_03_worker.md`
    Checkpoint: Wait for developer approval before proceeding.
 
 4. Update SPA to use the upload thumbnail (with fallback)
@@ -68,7 +68,7 @@ Key requirements:
      - If thumbnail fails to load (404), fall back to the existing production poster behavior (current behavior).
    Testing:
    - Manual (expected): open `/uploads`, confirm each video card uses the source thumbnail when present; fallback still renders for old uploads without thumbs.
-   - Record notes: `agents/implementation/tests/plan_39/step_04_ui_thumbs.md`
+   - Record notes: `tests/runs/legacy/implementation/plan_39/step_04_ui_thumbs.md`
    Checkpoint: Wait for developer approval before proceeding.
 
 5. Add “preview original upload” modal on `/productions?upload=:id`
@@ -79,7 +79,7 @@ Key requirements:
      - Provide a clear close (X) control; ensure iOS `playsInline` behavior remains acceptable.
    Testing:
    - Manual (expected): on `/productions?upload=<id>`, click thumbnail → modal opens → video plays → close returns to page.
-   - Record notes: `agents/implementation/tests/plan_39/step_05_modal.md`
+   - Record notes: `tests/runs/legacy/implementation/plan_39/step_05_modal.md`
    Checkpoint: Wait for developer approval before proceeding.
 
 6. Backfill thumbnails for existing uploads (scripted)
@@ -88,5 +88,5 @@ Key requirements:
    - Include a batch limit + cursor to avoid enqueuing everything at once.
    Testing:
    - Canonical (expected): run backfill for a small batch (e.g. 10) and confirm thumbs appear in `/uploads`.
-   - Record actual output: `agents/implementation/tests/plan_39/step_06_backfill.md`
+   - Record actual output: `tests/runs/legacy/implementation/plan_39/step_06_backfill.md`
    Checkpoint: Wait for developer approval before proceeding.

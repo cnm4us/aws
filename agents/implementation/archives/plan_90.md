@@ -23,7 +23,7 @@ Out of scope:
    - Serve `app/index.html` for `/library/create-clip/:id` (and optional trailing slash).
    Testing:
    - Canonical (expected): `curl -sS -I http://localhost:3300/library/create-clip/874` → `HTTP 200` and `Content-Type: text/html`.
-   - Record actual output: `agents/implementation/tests/plan_90/step_01_route.md` (pass).
+   - Record actual output: `tests/runs/legacy/implementation/plan_90/step_01_route.md` (pass).
    Checkpoint: Wait for developer approval before proceeding.
 
 2. Refactor Library frontend routing to support list vs create-clip view
@@ -34,7 +34,7 @@ Out of scope:
    - Ensure create page pulls video data by id (e.g., `/api/library/videos/:id`).
    Testing:
    - Canonical (expected): `curl -sS http://localhost:3300/library/create-clip/874 | rg -n "Library"` → HTML served (SPA shell).
-   - Record actual output: `agents/implementation/tests/plan_90/step_02_spa.md` (pass).
+   - Record actual output: `tests/runs/legacy/implementation/plan_90/step_02_spa.md` (pass).
    Checkpoint: Wait for developer approval before proceeding.
 
 3. Update Library list page (browse-only) with View modal + Create Clip action
@@ -46,7 +46,7 @@ Out of scope:
    - Sync `q` and `source_org` into the URL query string so it can be restored.
    Testing:
    - Canonical (expected): manual UI: search + filter applied; View modal plays; Create clip navigates.
-   - Record actual notes: `agents/implementation/tests/plan_90/step_03_list_ui.md` (pending).
+   - Record actual notes: `tests/runs/legacy/implementation/plan_90/step_03_list_ui.md` (pending).
    Checkpoint: Wait for developer approval before proceeding.
 
 4. Build the create-clip page with header + back link preserving search state
@@ -57,7 +57,7 @@ Out of scope:
    - Add a `Back to library` link using the stored query string (q + source_org).
    Testing:
    - Canonical (expected): manual UI: create page loads for `/library/create-clip/:id`, header shows metadata, back link restores list filters.
-   - Record actual notes: `agents/implementation/tests/plan_90/step_04_create_ui.md` (pending).
+   - Record actual notes: `tests/runs/legacy/implementation/plan_90/step_04_create_ui.md` (pending).
    Checkpoint: Wait for developer approval before proceeding.
 
 5. Polish and regression checks
@@ -70,12 +70,12 @@ Out of scope:
    - Waveform scrubber: fixed playhead, drag-to-scrub with pause/resume, and +/-10s long-press nudges.
    Testing:
    - Canonical (expected): manual UI: no console errors; captions/waveform/clip tools still function.
-   - Record actual notes: `agents/implementation/tests/plan_90/step_05_polish.md`
+   - Record actual notes: `tests/runs/legacy/implementation/plan_90/step_05_polish.md`
    Checkpoint: Wait for developer approval before proceeding.
 
 ## 3. Progress Tracking Notes
-- Step 1 — Status: Completed — SPA route serves index.html (see `agents/implementation/tests/plan_90/step_01_route.md`).
-- Step 2 — Status: Completed — SPA list vs create-clip route split rendered (see `agents/implementation/tests/plan_90/step_02_spa.md`).
+- Step 1 — Status: Completed — SPA route serves index.html (see `tests/runs/legacy/implementation/plan_90/step_01_route.md`).
+- Step 2 — Status: Completed — SPA list vs create-clip route split rendered (see `tests/runs/legacy/implementation/plan_90/step_02_spa.md`).
 - Step 3 — Status: Completed — List page has View modal + Create clip action with URL state sync (manual UI check pending).
 - Step 4 — Status: Completed — Create clip page has back link + metadata header (manual UI check pending).
 - Step 2 — Status: Pending

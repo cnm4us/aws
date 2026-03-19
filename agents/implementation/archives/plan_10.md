@@ -8,7 +8,7 @@ In scope:
 - Add a per-rule “draft” record that is editable and can be published into a new `rule_versions` row.
 - Admin UI for editing drafts with two actions: **Save** (updates draft + rule metadata) and **Publish Version** (creates new version + updates `current_version_id`).
 - Keep published versions immutable and keep `/rules/:slug/v:n` as a stable historical permalink.
-- Real-environment tests after each step using `scripts/auth_curl.sh`, with results logged under `agents/implementation/tests/plan_10/`.
+- Real-environment tests after each step using `scripts/auth_curl.sh`, with results logged under `tests/runs/legacy/implementation/plan_10/`.
 
 Out of scope (for this plan):
 - Moderation workflows and reporting UI (flagging, sanctions, per-space rule sets).
@@ -24,7 +24,7 @@ References:
 
 Test harness conventions:
 - Use `BASE_URL="https://aws.bawebtech.com"` for the real environment when available.
-- Store real command outputs in `agents/implementation/tests/plan_10/step_XX_*.md`.
+- Store real command outputs in `tests/runs/legacy/implementation/plan_10/step_XX_*.md`.
 - Never log credentials or cookies; rely on `scripts/auth_curl.sh` profiles.
 
 ---
@@ -45,7 +45,7 @@ Test harness conventions:
    - Add idempotent `ALTER TABLE ... ADD COLUMN IF NOT EXISTS ...` upgrades for the above columns (to match the repo’s schema pattern).
    Testing (canonical, expected):
    - `BASE_URL="https://aws.bawebtech.com" ./scripts/auth_curl.sh --profile super get /admin/rules` → `HTTP 200` (still loads).
-   - Record actual output: `agents/implementation/tests/plan_10/step_01_schema.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_10/step_01_schema.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 2. Add draft creation/load helper (copy from current published)  
@@ -57,7 +57,7 @@ Test harness conventions:
    - Ensure the draft always has `markdown/html` and the auxiliary fields; missing columns default to empty/null.
    Testing (canonical, expected):
    - `BASE_URL="https://aws.bawebtech.com" ./scripts/auth_curl.sh --profile super get /admin/rules/:id/edit` → `HTTP 200` and contains “Save” + “Publish Version”.
-   - Record actual output: `agents/implementation/tests/plan_10/step_02_draft_load.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_10/step_02_draft_load.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 3. Build admin “Edit Draft” UI with Save + Publish buttons  
@@ -73,7 +73,7 @@ Test harness conventions:
      - On `/admin/rules/:id` detail page.
    Testing (canonical, expected):
    - `BASE_URL="https://aws.bawebtech.com" ./scripts/auth_curl.sh --profile super get /admin/rules/:id/edit` → `HTTP 200` and contains the fields + two buttons.
-   - Record actual output: `agents/implementation/tests/plan_10/step_03_edit_links.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_10/step_03_edit_links.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 4. Implement “Save” (draft updates only; no new version)  
@@ -88,7 +88,7 @@ Test harness conventions:
    - Create a fresh rule for testing (unique slug).
    - Save a draft change, then confirm published view is unchanged:
      - `./scripts/auth_curl.sh get /api/rules/<slug>` → still returns the old published `html` (no change after Save).
-   - Record actual output: `agents/implementation/tests/plan_10/step_04_save.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_10/step_04_save.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 5. Implement “Publish Version” (draft → new immutable version)  
@@ -106,7 +106,7 @@ Test harness conventions:
        - `./scripts/auth_curl.sh get /api/rules/<slug>` → new `html` now visible.
        - `curl -sS "$BASE_URL/rules/<slug>/v:1"` → old content still visible.
        - `curl -sS "$BASE_URL/rules/<slug>/v:2"` → new content visible.
-   - Record actual output: `agents/implementation/tests/plan_10/step_05_publish.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_10/step_05_publish.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 6. UX polish: indicate “unpublished draft changes” in admin list/detail  
@@ -120,7 +120,7 @@ Test harness conventions:
    Testing (canonical, expected):
    - Save draft without publishing; `/admin/rules` shows indicator.
    - Publish; indicator clears (if draft refreshed).
-   - Record actual output: `agents/implementation/tests/plan_10/step_06_draft_indicator.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_10/step_06_draft_indicator.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 7. Optional backfill: create drafts for all existing rules (script)  
@@ -130,7 +130,7 @@ Test harness conventions:
    - Keep the system functional without it (drafts can be created lazily on first edit).
    Testing (canonical, expected):
    - Run script; verify `GET /admin/rules/:id/edit` works without creating draft on-demand.
-   - Record actual output: `agents/implementation/tests/plan_10/step_07_backfill.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_10/step_07_backfill.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 ---

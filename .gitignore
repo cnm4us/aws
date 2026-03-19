@@ -19,8 +19,6 @@ debug/
 
 schema_backups/
 
-agents/tests/
-
 
 # Ignore built web assets (output of `npm run web:build`)
 public/app/assets/
@@ -35,10 +33,11 @@ assets/fonts/**/.uuid
 
 # Ignore PlayWright Artificats.
 playwright-report/
-test-results/
+tests/runs/playwright/
 e2e/utils/.auth/
 e2e/.auth/
 /reports/
+tests/runs/**/artifacts/
 
 # Python bytecode
 __pycache__/

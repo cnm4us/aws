@@ -16,4 +16,4 @@
 - Implement one small phase at a time.
 - Keep the system runnable after each phase.
 - Update plan status before moving to the next phase.
-- Record real test evidence in `agents/tests/plan_NN/` when applicable.
+- Record real test evidence in `tests/runs/<run_id>/` when applicable.

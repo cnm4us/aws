@@ -158,7 +158,7 @@ Notes:
 - Export → verify a new upload is created and `/produce?upload=<new>` loads.
 
 Record results in:
-- `agents/implementation/tests/plan_62/*`
+- `tests/runs/legacy/implementation/plan_62/*`
 
 ## 10) Open Questions (for Phase 2+)
 - Multi-track model: how many overlay/audio tracks, and how to represent z-order cleanly?

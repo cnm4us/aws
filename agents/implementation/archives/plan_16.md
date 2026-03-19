@@ -36,7 +36,7 @@ Assumptions:
    - Decide the minimum parity required for server-rendered replacements in Steps 2–5.
    Testing:
    - Canonical (expected): `rg -n "/admin/users|/admin/settings|/admin/dev|/admin/moderation" frontend/src -S` → shows current owners.  
-   - Record actual output: `agents/implementation/tests/plan_16/step_01_inventory.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_16/step_01_inventory.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 2. Implement server-rendered `/admin/users` (list + basic filtering)  
@@ -50,7 +50,7 @@ Assumptions:
    Testing:
    - Canonical (expected): `./scripts/auth_curl.sh --profile super get /admin/users` → `HTTP 200` and HTML contains “Users” + drawer.  
    - Canonical (expected): `./scripts/auth_curl.sh --profile space_admin get /admin/users` → redirect to `/forbidden` (or `403` depending on current pattern).  
-   - Record actual output: `agents/implementation/tests/plan_16/step_02_admin_users_list.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_16/step_02_admin_users_list.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 3. Implement server-rendered `/admin/users/:id` (view/edit moderation/admin controls)  
@@ -64,7 +64,7 @@ Assumptions:
    Testing:
    - Canonical (expected): `./scripts/auth_curl.sh --profile super get /admin/users/<id>` → `HTTP 200`.  
    - Canonical (expected): `curl -sS -o /dev/null -w "%{http_code}" -b .tmp/auth_cookies.super.txt -X POST --data-urlencode "csrf=<token>" --data-urlencode "roles=site_member" http://localhost:3300/admin/users/<id>/site-roles` → `302`.  
-   - Record actual output: `agents/implementation/tests/plan_16/step_03_admin_user_detail.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_16/step_03_admin_user_detail.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 4. Implement server-rendered `/admin/settings` (site settings view/edit)  
@@ -76,7 +76,7 @@ Assumptions:
    - Do not introduce new settings behavior in Plan 16.
    Testing:
    - Canonical (expected): `./scripts/auth_curl.sh --profile super get /admin/settings` → `HTTP 200`.  
-   - Record actual output: `agents/implementation/tests/plan_16/step_04_admin_settings.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_16/step_04_admin_settings.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 5. Implement server-rendered `/admin/dev` (stats + danger action)  
@@ -89,7 +89,7 @@ Assumptions:
        - Clear success/failure messaging.
    Testing:
    - Canonical (expected): `./scripts/auth_curl.sh --profile super get /admin/dev` → `HTTP 200`.  
-   - Record actual output: `agents/implementation/tests/plan_16/step_05_admin_dev.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_16/step_05_admin_dev.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 6. Add site_admin pre-publish approval overview under `/admin/review/*`  
@@ -108,7 +108,7 @@ Assumptions:
    Testing:
    - Canonical (expected): `./scripts/auth_curl.sh --profile super get /admin/review` → `HTTP 200`.  
    - Canonical (expected): `./scripts/auth_curl.sh --profile super get /admin/review/global` → `HTTP 200`.  
-   - Record actual output: `agents/implementation/tests/plan_16/step_06_admin_review_global.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_16/step_06_admin_review_global.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 7. Implement Personal Spaces review lists + per-space queue pages  
@@ -124,7 +124,7 @@ Assumptions:
    Testing:
    - Canonical (expected): `./scripts/auth_curl.sh --profile super get /admin/review/personal` → `HTTP 200`.  
    - Canonical (expected): `./scripts/auth_curl.sh --profile super get /admin/review/personal/<spaceId>` → `HTTP 200`.  
-   - Record actual output: `agents/implementation/tests/plan_16/step_07_admin_review_personal.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_16/step_07_admin_review_personal.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 8. Implement Groups/Channels review lists + per-space queue pages  
@@ -137,7 +137,7 @@ Assumptions:
    Testing:
    - Canonical (expected): `./scripts/auth_curl.sh --profile super get /admin/review/groups` → `HTTP 200`.  
    - Canonical (expected): `./scripts/auth_curl.sh --profile super get /admin/review/channels` → `HTTP 200`.  
-   - Record actual output: `agents/implementation/tests/plan_16/step_08_admin_review_spaces.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_16/step_08_admin_review_spaces.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 9. Remove site_admin SPA ownership for moved routes and rebuild user bundle  
@@ -150,7 +150,7 @@ Assumptions:
    Testing:
    - Canonical (expected): `npm run web:build` → success.  
    - Canonical (expected): `rg -n "AdminUsers|AdminSiteSettings" public/app/assets -S` → no matches.  
-   - Record actual output: `agents/implementation/tests/plan_16/step_09_web_build.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_16/step_09_web_build.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 10. Update admin drawer navigation + finalize docs  
@@ -161,7 +161,7 @@ Assumptions:
    - Update `/README.md` “Useful Pages” section if needed (only what changed).
    Testing:
    - Canonical (expected): `./scripts/auth_curl.sh --profile super get /admin/users` → HTML drawer includes Users/Settings/Dev/Review.  
-   - Record actual output: `agents/implementation/tests/plan_16/step_10_nav.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_16/step_10_nav.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 ---

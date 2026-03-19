@@ -36,7 +36,7 @@ Answered:
    Testing:
    - `npm run build`
    - Verify DB: `DESCRIBE lower_third_configurations` shows new columns.
-   - Record: `agents/implementation/tests/plan_41/step_01_db.md`
+   - Record: `tests/runs/legacy/implementation/plan_41/step_01_db.md`
    Checkpoint: Wait for developer approval before proceeding.
 
 2) Update lower-third config APIs to read/write timing
@@ -47,7 +47,7 @@ Answered:
    - Ensure list/get returns the timing fields.
    Testing:
    - Canonical: `GET /api/lower-third-configs` returns `items[].timingRule` + `timingSeconds`.
-   - Record: `agents/implementation/tests/plan_41/step_02_api.md`
+   - Record: `tests/runs/legacy/implementation/plan_41/step_02_api.md`
    Checkpoint: Wait for developer approval before proceeding.
 
 3) Update `/lower-thirds` UI to edit timing (preset-level)
@@ -58,7 +58,7 @@ Answered:
    - Include timing in Save requests and show a small summary in the preset list.
    Testing:
    - Manual: create/edit preset; refresh; timing persists.
-   - Record: `agents/implementation/tests/plan_41/step_03_ui.md`
+   - Record: `tests/runs/legacy/implementation/plan_41/step_03_ui.md`
    Checkpoint: Wait for developer approval before proceeding.
 
 4) Persist timing into `productions.config` snapshot (stability)
@@ -68,7 +68,7 @@ Answered:
    - `/produce` should display timing summary for selected preset.
    Testing:
    - Manual: create production; production detail JSON shows the snapshot timing fields.
-   - Record: `agents/implementation/tests/plan_41/step_04_produce_snapshot.md`
+   - Record: `tests/runs/legacy/implementation/plan_41/step_04_produce_snapshot.md`
    Checkpoint: Wait for developer approval before proceeding.
 
 5) Add SVG→PNG rasterization service (server-side)
@@ -80,7 +80,7 @@ Answered:
      - `lower-thirds/<YYYY-MM>/<DD>/<productionUlid>/<uuid>/lower_third.png`
    Testing:
    - Unit-ish: a script or internal call produces a PNG in S3; ensure non-zero size and correct ContentType.
-   - Record: `agents/implementation/tests/plan_41/step_05_png.md`
+   - Record: `tests/runs/legacy/implementation/plan_41/step_05_png.md`
    Checkpoint: Wait for developer approval before proceeding.
 
 6) Apply lower third overlay in MediaConvert settings (ImageInserter)
@@ -103,7 +103,7 @@ Answered:
      - Lower third uses `Layer=1`; logo watermark uses `Layer=2`.
    Testing:
    - Manual: produce a video with lower third enabled; verify in the HLS output that overlay appears for first N seconds and then stops (and always-on works).
-   - Record: `agents/implementation/tests/plan_41/step_06_mc.md`
+   - Record: `tests/runs/legacy/implementation/plan_41/step_06_mc.md`
    Checkpoint: Wait for developer approval before proceeding.
 
 7) End-to-end QA checklist + cleanup notes
@@ -117,5 +117,5 @@ Answered:
    - Document known limitations (fonts, long text overflow, etc.).
    Testing:
    - Manual checklist recorded.
-   - Record: `agents/implementation/tests/plan_41/step_07_e2e.md`
+   - Record: `tests/runs/legacy/implementation/plan_41/step_07_e2e.md`
    Checkpoint: Wait for developer approval before proceeding.

@@ -48,7 +48,7 @@ Notes:
    - Identify which of those can remain React (but moved to a space-console bundle) vs which should be server-rendered first.
    Testing:
    - Canonical (expected): `rg -n "/space/review|/spaces/:id/admin|/spaces/:id/review" frontend/src -S` → shows current owners.  
-   - Record actual output: `agents/implementation/tests/plan_17/step_01_inventory.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_17/step_01_inventory.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 2. Create a separate Space Console frontend build (space bundle)  
@@ -60,7 +60,7 @@ Notes:
    - Keep the existing feed app output unchanged under `public/app/*`.
    Testing:
    - Canonical (expected): `npm run web:build` (or a new `npm run space:web:build`) → success and emits `public/space-app/*`.  
-   - Record actual output: `agents/implementation/tests/plan_17/step_02_space_build.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_17/step_02_space_build.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 3. Serve the space bundle for `/space/*` and `/spaces/*` routes  
@@ -71,7 +71,7 @@ Notes:
    Testing:
    - Canonical (expected): `./scripts/auth_curl.sh --profile space_admin get /spaces/16/admin` → `HTTP 200` and serves `space-app` HTML.  
    - Canonical (expected): `./scripts/auth_curl.sh --profile normal_user get /spaces/16/admin` → forbidden/redirect.  
-   - Record actual output: `agents/implementation/tests/plan_17/step_03_space_routing.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_17/step_03_space_routing.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 4. Implement `/space/admin` and `/space/moderation` landings (space bundle)  
@@ -86,7 +86,7 @@ Notes:
    Testing:
    - Canonical (expected): `./scripts/auth_curl.sh --profile space_admin get /space/admin` → `HTTP 200`.  
    - Canonical (expected): `./scripts/auth_curl.sh --profile space_moderator get /space/moderation` → `HTTP 200`.  
-   - Record actual output: `agents/implementation/tests/plan_17/step_04_space_landings.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_17/step_04_space_landings.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 5. Move existing space-admin/review React routes from feed app → space app  
@@ -101,7 +101,7 @@ Notes:
    Testing:
    - Canonical (expected): `npm run web:build` → success.  
    - Canonical (expected): `rg -n \"SpaceMembers|SpaceReview\" public/app/assets -S` → no matches.  
-   - Record actual output: `agents/implementation/tests/plan_17/step_05_bundle_verify.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_17/step_05_bundle_verify.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 6. Add space-role capability flags to `/api/me` for menu gating  
@@ -114,7 +114,7 @@ Notes:
    Testing:
    - Canonical (expected): `./scripts/auth_curl.sh --profile space_admin get /api/me` → `HTTP 200` and JSON contains `hasAnySpaceAdmin: true`.  
    - Canonical (expected): `./scripts/auth_curl.sh --profile space_moderator get /api/me` → `HTTP 200` and JSON contains `hasAnySpaceModerator: true`.  
-   - Record actual output: `agents/implementation/tests/plan_17/step_06_api_me_flags.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_17/step_06_api_me_flags.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 7. Update the normal feed SPA menu to link out to the space console (no prefetch)  
@@ -127,7 +127,7 @@ Notes:
    Testing:
    - Canonical (expected): `npm run web:build` → success.  
    - Manual (expected): menu items appear only for accounts with space roles and navigate via full page load.  
-   - Record notes: `agents/implementation/tests/plan_17/step_07_menu.md`  
+   - Record notes: `tests/runs/legacy/implementation/plan_17/step_07_menu.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 8. Add redirect aliases (optional)  
@@ -138,7 +138,7 @@ Notes:
      - `/space/admin/review/*` → `/space/review/*` (if we ever link it)
    Testing:
    - Canonical (expected): `./scripts/auth_curl.sh --profile space_admin --include get /space/moderator/groups` → `HTTP 302` + `Location: /space/moderation/groups`.  
-   - Record actual output: `agents/implementation/tests/plan_17/step_08_redirects.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_17/step_08_redirects.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 9. Documentation pass  

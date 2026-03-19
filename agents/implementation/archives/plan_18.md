@@ -34,7 +34,7 @@ Assumptions:
    - Decide the exact UI placement for the Jump icon (replace likes/comments cluster).
    Testing:
    - Canonical (expected): `rg -n "Like|Comment|likesCount|commentsCount|onLike|onComment" frontend/src/app/Feed.tsx -S` → identify action rendering section.  
-   - Record actual output: `agents/implementation/tests/plan_18/step_01_inventory.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_18/step_01_inventory.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 2. Add API endpoint: list jump targets by publication (production_id)  
@@ -55,7 +55,7 @@ Assumptions:
    Testing:
    - Canonical (expected): `./scripts/auth_curl.sh --profile super get /api/publications/1/jump-spaces` → `HTTP 200` and JSON has `items[]`.  
    - Canonical (expected): `curl -i http://localhost:3300/api/publications/1/jump-spaces` (no auth) → `HTTP 401/403`.  
-   - Record actual output: `agents/implementation/tests/plan_18/step_02_api.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_18/step_02_api.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 3. Create Jump modal component (lazy-loaded)  
@@ -73,7 +73,7 @@ Assumptions:
         - error
    Testing:
    - Manual: open a Global Feed item, click Jump, see modal with links.  
-   - Record notes: `agents/implementation/tests/plan_18/step_03_modal.md`  
+   - Record notes: `tests/runs/legacy/implementation/plan_18/step_03_modal.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 4. Update Global Feed item actions: remove Like/Comment, add Jump  
@@ -90,7 +90,7 @@ Assumptions:
      - When not global: preserve existing Like/Comment behavior.
    Testing:
    - Manual: on Global Feed, Like/Comment hidden and Jump present; in a space feed, Like/Comment still present.  
-   - Record notes: `agents/implementation/tests/plan_18/step_04_feed_ui.md`  
+   - Record notes: `tests/runs/legacy/implementation/plan_18/step_04_feed_ui.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 5. Build verification (ensure minimal bundle impact)  
@@ -99,7 +99,7 @@ Assumptions:
    - Ensure the modal is lazy-loaded so the core feed chunk stays small.
    Testing:
    - Canonical (expected): `npm run web:build` → success.  
-   - Record notes: `agents/implementation/tests/plan_18/step_05_build.md`  
+   - Record notes: `tests/runs/legacy/implementation/plan_18/step_05_build.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 6. Documentation touch-up (if needed)  

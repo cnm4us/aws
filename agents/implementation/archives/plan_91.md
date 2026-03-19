@@ -26,7 +26,7 @@ Out of scope:
    - Ensure captions overlay does not block controls (pointer-events none).
    Testing:
    - Manual: toggle CC on/off; active cue appears over video; no panel below.
-   - Record actual notes: `agents/implementation/tests/plan_91/step_01_cc_overlay.md` (pending).
+   - Record actual notes: `tests/runs/legacy/implementation/plan_91/step_01_cc_overlay.md` (pending).
    Checkpoint: Wait for developer approval before proceeding.
 
 2. Progress bar position + styling
@@ -36,7 +36,7 @@ Out of scope:
    - Use gold for progress, gray for remaining; keep the same draggable handle.
    Testing:
    - Manual: progress bar scrubs correctly; visual style is thin and attached to the video.
-   - Record actual notes: `agents/implementation/tests/plan_91/step_02_progress.md` (pending).
+   - Record actual notes: `tests/runs/legacy/implementation/plan_91/step_02_progress.md` (pending).
    Checkpoint: Wait for developer approval before proceeding.
 
 3. Waveform row + time/clip-length row
@@ -47,7 +47,7 @@ Out of scope:
    - Ensure tabular numerals for stable alignment.
    Testing:
    - Manual: waveform scrubbing still works; time row aligns left/right; wraps on narrow screens without overflow.
-   - Record actual notes: `agents/implementation/tests/plan_91/step_03_wave_time.md` (pending).
+   - Record actual notes: `tests/runs/legacy/implementation/plan_91/step_03_wave_time.md` (pending).
    Checkpoint: Wait for developer approval before proceeding.
 
 4. Controls row re-layout (Set In / -10 / Play / +10 / Set Out)
@@ -58,7 +58,7 @@ Out of scope:
    - Place row below waveform/time row.
    Testing:
    - Manual: nudges work (press/hold), play/pause works, set in/out still updates clip length.
-   - Record actual notes: `agents/implementation/tests/plan_91/step_04_controls.md` (pending).
+   - Record actual notes: `tests/runs/legacy/implementation/plan_91/step_04_controls.md` (pending).
    Checkpoint: Wait for developer approval before proceeding.
 
 5. Layout compression + save alignment
@@ -69,7 +69,7 @@ Out of scope:
    - Verify overall vertical space reduced versus previous layout.
    Testing:
    - Manual: page is shorter; no overflow/cropping; save button alignment correct.
-   - Record actual notes: `agents/implementation/tests/plan_91/step_05_polish.md` (pending).
+   - Record actual notes: `tests/runs/legacy/implementation/plan_91/step_05_polish.md` (pending).
    Checkpoint: Wait for developer approval before proceeding.
 
 ## 3. Progress Tracking Notes

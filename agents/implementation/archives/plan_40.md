@@ -45,7 +45,7 @@ Out of scope:
      - `idx_lt_cfg_owner_archived` on `(owner_user_id, archived_at, id)`
    Testing:
    - `npm run build` and server boots; `SHOW TABLES` includes both (or verify via existing admin DB tooling).
-   - Record actual output: `agents/implementation/tests/plan_40/step_01_db.md`
+   - Record actual output: `tests/runs/legacy/implementation/plan_40/step_01_db.md`
    Checkpoint: Wait for developer approval before proceeding.
 
 2. Implement backend: list templates + CRUD presets + resolve endpoint
@@ -72,7 +72,7 @@ Out of scope:
    - Auth curl: `GET /api/lower-third-templates` returns `200` (may be empty until Step 3/4).
    - Auth curl: `GET /api/lower-third-configs` returns `200`.
    - Auth curl: `POST /api/lower-third-templates/resolve` returns `404 template_not_found` until a template exists (Step 3/4).
-   - Record actual output: `agents/implementation/tests/plan_40/step_02_api.md`
+   - Record actual output: `tests/runs/legacy/implementation/plan_40/step_02_api.md`
    Checkpoint: Wait for developer approval before proceeding.
 
 3. Admin UI: manage templates + create new versions
@@ -89,7 +89,7 @@ Out of scope:
    Testing:
    - Auth curl: `GET /admin/lower-thirds` → `HTTP 200` and HTML title `Lower Thirds`.
    - Auth curl: `GET /admin/lower-thirds/new` → `HTTP 200` and contains `New Lower Third Template`.
-   - Record actual output: `agents/implementation/tests/plan_40/step_03_admin_ui.md`
+   - Record actual output: `tests/runs/legacy/implementation/plan_40/step_03_admin_ui.md`
    Checkpoint: Wait for developer approval before proceeding.
 
 4. Seed the first system template (Modern Gradient v1)

@@ -29,7 +29,7 @@ Proposed parameter:
    - Confirm where space feed fetch URL is built (`/api/spaces/:id/feed`) so we can attach `pin` only on the initial request (cursor absent).
    Testing:
    - Canonical (expected): `rg -n "production_ulid|JumpToSpaceModal|/api/spaces/\\$\\{spaceId\\}/feed" frontend/src/app/Feed.tsx frontend/src/app/JumpToSpaceModal.tsx -S` → shows link + fetch locations.  
-   - Record actual output: `agents/implementation/tests/plan_19/step_01_inventory.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_19/step_01_inventory.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 2. Add “pin row” query in feeds repo/service  
@@ -44,7 +44,7 @@ Proposed parameter:
    - Add a feeds service helper that maps the pinned row into the normal feed item DTO shape.
    Testing:
    - Canonical (expected): `npm run build` → succeeds.  
-   - Record actual output: `agents/implementation/tests/plan_19/step_02_repo.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_19/step_02_repo.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 3. Extend `/api/spaces/:id/feed` to support `pin` on the first page  
@@ -63,7 +63,7 @@ Proposed parameter:
    - Canonical (expected):
      - `./scripts/auth_curl.sh --profile super get "/api/feed/global?limit=1"` → capture a `production_ulid` and a destination `spaceId`.  
      - `./scripts/auth_curl.sh --profile super get "/api/spaces/<SPACE_ID>/feed?limit=5&pin=<PRODUCTION_ULID>"` → `HTTP 200` and `items[0].publication.production_ulid == <PRODUCTION_ULID>`.  
-   - Record actual output: `agents/implementation/tests/plan_19/step_03_api.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_19/step_03_api.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 4. Update Jump modal links to include `?pin=<production_ulid>`  
@@ -73,7 +73,7 @@ Proposed parameter:
    - Append `?pin=<production_ulid>` to each destination link only when `production_ulid` is present.
    Testing:
    - Manual: on Global Feed, open Jump modal and confirm links include `?pin=...` (when production ULID exists).  
-   - Record notes: `agents/implementation/tests/plan_19/step_04_links.md`  
+   - Record notes: `tests/runs/legacy/implementation/plan_19/step_04_links.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 5. Wire the feed fetch to forward `pin` only on initial space feed load  
@@ -84,7 +84,7 @@ Proposed parameter:
       - Do not include `pin` on “load more” requests (cursor present).
    Testing:
    - Manual: clicking a Jump link into `/groups/:slug?pin=...` should show the pinned video as the first slide in that space.  
-   - Record notes: `agents/implementation/tests/plan_19/step_05_ui.md`  
+   - Record notes: `tests/runs/legacy/implementation/plan_19/step_05_ui.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 6. Build verification  
@@ -93,5 +93,5 @@ Proposed parameter:
    - Ensure `npm run web:build` succeeds.
    Testing:
    - Canonical (expected): `npm run web:build` → success.  
-   - Record actual output: `agents/implementation/tests/plan_19/step_06_build.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_19/step_06_build.md`  
    Checkpoint: Wait for developer approval before proceeding.

@@ -17,5 +17,5 @@ Suggested convention:
 
 Recommended workflow:
 - Use `AUTH_LOG_FILE` to automatically append results for each request:
-  - `AUTH_LOG_FILE="agents/implementation/tests/plan_09/step_03_api.md" BASE_URL="https://aws.bawebtech.com" ./scripts/auth_curl.sh --profile super get /api/pages/home`
+  - `AUTH_LOG_FILE="tests/runs/legacy/implementation/plan_09/step_03_api.md" BASE_URL="https://aws.bawebtech.com" ./scripts/auth_curl.sh --profile super get /api/pages/home`
 - Keep “expected” outcomes in `agents/implementation/plan_09.md`; keep “actual” outputs in these step files.

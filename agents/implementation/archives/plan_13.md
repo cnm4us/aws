@@ -23,7 +23,7 @@ References:
 - `src/routes/admin.ts` — site-admin JSON APIs (`/api/admin/*`).
 - `src/features/admin/repo.ts` and `src/features/admin/service.ts` — current `/api/admin/spaces/:id` behavior.
 - `frontend/src/app/AdminSpaceDetail.tsx` — SPA admin page for both `/admin/groups/:id` and `/admin/channels/:id`.
-- `scripts/auth_curl.sh` — authenticated API testing; log outputs under `agents/implementation/tests/plan_13/`.
+- `scripts/auth_curl.sh` — authenticated API testing; log outputs under `tests/runs/legacy/implementation/plan_13/`.
 
 ---
 
@@ -48,7 +48,7 @@ References:
      - Best-effort FKs in `try/catch`.
    Testing:
    - Canonical (expected): `BASE_URL="http://localhost:3300" ./scripts/auth_curl.sh --profile super get /admin/cultures` → `HTTP 200`.  
-   - Record actual output: `agents/implementation/tests/plan_13/step_02_schema.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_13/step_02_schema.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 3. Add admin APIs: list cultures + read/update space cultureIds  
@@ -68,7 +68,7 @@ References:
      - `./scripts/auth_curl.sh --profile super get /api/admin/cultures` → `HTTP 200` and JSON contains `cultures[]`.
      - `./scripts/auth_curl.sh --profile super get /api/admin/spaces/<spaceId>` → `HTTP 200` and JSON contains `cultureIds`.
      - `./scripts/auth_curl.sh --profile super put /api/admin/spaces/<spaceId> --data '{"cultureIds":[...]}‘` → `HTTP 200`.
-   - Record actual output: `agents/implementation/tests/plan_13/step_03_api.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_13/step_03_api.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 4. Add cultures checkboxes to `/admin/groups/:id` and `/admin/channels/:id` (SPA)  
@@ -85,7 +85,7 @@ References:
    - Canonical (expected):
      - API-level (repeatable): update `cultureIds` via PUT and confirm via GET.
      - Manual browser check (admin): load `/admin/groups/:id` and `/admin/channels/:id`, toggle cultures, save, refresh persists.
-   - Record actual output/notes: `agents/implementation/tests/plan_13/step_04_spa_ui.md`  
+   - Record actual output/notes: `tests/runs/legacy/implementation/plan_13/step_04_spa_ui.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 ---

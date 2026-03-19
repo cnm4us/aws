@@ -7,7 +7,8 @@ const slowMo = Number(process.env.E2E_SLOWMO || (headed ? 250 : 0)) || 0
 export default defineConfig({
   timeout: 60_000,
   retries: 1,
-  reporter: [['list'], ['html', { open: 'never' }]],
+  outputDir: 'tests/runs/playwright/latest',
+  reporter: [['list'], ['html', { open: 'never', outputFolder: 'tests/runs/playwright/report' }]],
   use: {
     baseURL,
     trace: 'on-first-retry',

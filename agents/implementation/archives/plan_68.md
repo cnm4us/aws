@@ -41,7 +41,7 @@ Testing:
 - `npm run build` (ensures TS compiles after schema code changes).
 - Manual smoke: start server and confirm no DB init errors.
 
-Test log: `agents/implementation/tests/plan_68/step_01_schema.md`
+Test log: `tests/runs/legacy/implementation/plan_68/step_01_schema.md`
 
 Checkpoint: Wait for approval before proceeding.
 
@@ -75,7 +75,7 @@ Testing (canonical; record results):
 - `./scripts/auth_curl.sh --profile local post /api/create-video/projects -d '{}'` → `201 {project:{id}}`.
 - `./scripts/auth_curl.sh --profile local patch /api/create-video/projects/<id> -d '{"name":"Test"}'` → `200`.
 
-Test log: `agents/implementation/tests/plan_68/step_02_backend_api.md`
+Test log: `tests/runs/legacy/implementation/plan_68/step_02_backend_api.md`
 
 Checkpoint: Wait for approval before proceeding.
 
@@ -105,7 +105,7 @@ Testing:
 - Thumbnails for export uploads should be **lazy-generated**:
   - If `/api/uploads/:id/thumb` is requested and the thumb does not exist yet, generate it on-demand (or enqueue generation) and the UI should fall back to poster/blank until the thumb becomes available.
 
-Test log: `agents/implementation/tests/plan_68/step_03_export_renders.md`
+Test log: `tests/runs/legacy/implementation/plan_68/step_03_export_renders.md`
 
 Checkpoint: Wait for approval before proceeding.
 
@@ -126,7 +126,7 @@ Testing:
 - Manual:
   - Create 2 projects; switch between them; refresh and confirm it restores the current one.
 
-Test log: `agents/implementation/tests/plan_68/step_04_frontend_projects.md`
+Test log: `tests/runs/legacy/implementation/plan_68/step_04_frontend_projects.md`
 
 ### 5) Frontend: Export UX (name prompt + redirect to /exports)
 Status: Completed
@@ -161,7 +161,7 @@ Testing:
   - From `/exports`, click “Open Timeline” and confirm it loads that project.
   - Click “Send to HLS” and confirm new production appears in `/productions`.
 
-Test log: `agents/implementation/tests/plan_68/step_06_exports_page.md`
+Test log: `tests/runs/legacy/implementation/plan_68/step_06_exports_page.md`
 
 ### 7) Update `/uploads` to “raw video assets only”
 Status: Completed

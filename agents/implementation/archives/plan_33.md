@@ -92,7 +92,7 @@ Rules:
    - Add read-only API for creators (logged-in): `GET /api/audio-configs` (exclude archived).
    Testing:
    - Canonical (expected): `GET /api/audio-configs` as a normal logged-in user → `200` and `items[]`.
-   - Record actual output: `agents/implementation/tests/plan_33/step_01_audio_configs_api.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_33/step_01_audio_configs_api.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 2. Add site_admin UI for Audio Config presets (`/admin/audio-configs`)  
@@ -112,7 +112,7 @@ Rules:
      - “Mix (Medium) + Ducking” `musicGainDb=-18`, ducking on
    Testing:
    - Canonical (expected): site_admin can create/edit/archive presets; normal user gets 403/forbidden on `/admin/audio-configs`.
-   - Record actual notes: `agents/implementation/tests/plan_33/step_02_admin_ui.md`  
+   - Record actual notes: `tests/runs/legacy/implementation/plan_33/step_02_admin_ui.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 3. Snapshot Audio Config into `productions.config` when producing  
@@ -125,7 +125,7 @@ Rules:
    - Back-compat: existing productions without snapshot continue to behave as replace-mode.
    Testing:
    - Canonical (expected): `POST /api/productions` with `audioConfigId` stores `audioConfigSnapshot` in the production config.
-   - Record actual notes: `agents/implementation/tests/plan_33/step_03_snapshot.md`  
+   - Record actual notes: `tests/runs/legacy/implementation/plan_33/step_03_snapshot.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 4. Refactor ffmpeg logic into a shared audio pipeline module (no behavior change)  
@@ -138,7 +138,7 @@ Rules:
      - upload to `UPLOAD_BUCKET` and point `settings.Inputs[0].FileInput` at the muxed object
    Testing:
    - Canonical (expected): `npm run build` succeeds; no functional changes to replace-mode logic.
-   - Record actual notes: `agents/implementation/tests/plan_33/step_04_refactor.md`  
+   - Record actual notes: `tests/runs/legacy/implementation/plan_33/step_04_refactor.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 5. Implement `mode=mix` (no ducking): original audio + music at configured gains  
@@ -151,7 +151,7 @@ Rules:
    - Output MP4 with `-map 0:v:0` and `-map [mixed]`.
    Testing:
    - Canonical (expected): with `mode=mix`, you hear both original audio and background music.
-   - Record actual notes: `agents/implementation/tests/plan_33/step_05_mix.md`  
+   - Record actual notes: `tests/runs/legacy/implementation/plan_33/step_05_mix.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 6. Implement optional ducking for `mode=mix`  
@@ -165,7 +165,7 @@ Rules:
      - map `amountDb` into `sidechaincompress` parameters (threshold/ratio/makeup) with a simple heuristic.
    Testing:
    - Canonical (expected): with ducking enabled, music audibly reduces during speech/loud segments and returns during quiet segments.
-   - Record actual notes: `agents/implementation/tests/plan_33/step_06_ducking.md`  
+   - Record actual notes: `tests/runs/legacy/implementation/plan_33/step_06_ducking.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 7. Wire `/produce` UI to select an Audio Config preset (route-based picker)  
@@ -178,7 +178,7 @@ Rules:
    - Persist selection in URL params (consistent with existing pickers) and ensure the server receives/stores config in `productions.config`.
    Testing:
    - Canonical (expected): UI changes persist in URL and survive refresh; producing uses the chosen mode.
-   - Record actual notes: `agents/implementation/tests/plan_33/step_07_ui.md`  
+   - Record actual notes: `tests/runs/legacy/implementation/plan_33/step_07_ui.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 8. Prep for “SFX sting” (no functional change yet)  
@@ -188,7 +188,7 @@ Rules:
    - Keep it unused in runtime until the next plan.
    Testing:
    - Canonical (expected): build passes; no behavior changes.
-   - Record actual output: `agents/implementation/tests/plan_33/step_08_sfx_prep.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_33/step_08_sfx_prep.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 9. Build, smoke test, and commit  

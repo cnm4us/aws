@@ -21,7 +21,7 @@ Out of scope (for this plan):
 References:
 - `src/db.ts` — schema creation/upgrade pattern (`CREATE TABLE IF NOT EXISTS`, `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`).
 - `src/routes/pages.ts` — existing admin UIs for pages/rules (server-rendered forms + CSRF + RBAC; not in SPA).
-- `scripts/auth_curl.sh` — authenticated curl tests; log outputs under `agents/implementation/tests/plan_12/`.
+- `scripts/auth_curl.sh` — authenticated curl tests; log outputs under `tests/runs/legacy/implementation/plan_12/`.
 - `agents/db_access.md` — destructive DB ops require explicit approval.
 
 ---
@@ -46,7 +46,7 @@ References:
    - No destructive changes; additive only.
    Testing:
    - Canonical (expected): `BASE_URL="http://localhost:3300" ./scripts/auth_curl.sh --profile super get /admin/rules` → `HTTP 200`.  
-   - Record actual output: `agents/implementation/tests/plan_12/step_01_schema.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_12/step_01_schema.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 2. Add `/admin/cultures` list + create culture form  
@@ -67,7 +67,7 @@ References:
    - Canonical (expected):
      - `./scripts/auth_curl.sh --profile super get /admin/cultures` → `HTTP 200`
      - `./scripts/auth_curl.sh --profile super get /admin/cultures/new` → `HTTP 200`
-   - Record actual output: `agents/implementation/tests/plan_12/step_02_admin_list_create.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_12/step_02_admin_list_create.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 3. Add culture detail page with category assignments  
@@ -92,7 +92,7 @@ References:
      - Create a culture, then:
        - `./scripts/auth_curl.sh --profile super get /admin/cultures/:id` → `HTTP 200`
        - `./scripts/auth_curl.sh --profile super post /admin/cultures/:id -d "name=...&categoryIds=..."` → `HTTP 302`
-   - Record actual output: `agents/implementation/tests/plan_12/step_03_assign_categories.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_12/step_03_assign_categories.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 4. Add delete culture (admin-only; blocked if in use)  
@@ -113,7 +113,7 @@ References:
    - Canonical (expected):
      - With at least 1 assigned category: `./scripts/auth_curl.sh --profile super post /admin/cultures/:id/delete` → `HTTP 302` and culture still exists.
      - With 0 assigned categories: same → `HTTP 302` and culture no longer appears in `/admin/cultures`.
-   - Record actual output: `agents/implementation/tests/plan_12/step_04_delete.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_12/step_04_delete.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 5. Optional polish: admin discoverability + guardrails  
@@ -125,7 +125,7 @@ References:
      - cap name length (e.g., 255) and description length (e.g., 2k) to avoid accidental huge posts
    Testing:
    - Canonical (expected): manual smoke: create/edit/assign still works.  
-   - Record actual output/notes: `agents/implementation/tests/plan_12/step_05_polish.md`  
+   - Record actual output/notes: `tests/runs/legacy/implementation/plan_12/step_05_polish.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 ---

@@ -7,13 +7,13 @@ BASE_URL: http://localhost:3300
 
 ```bash
 # Get a production_ulid from global feed
-AUTH_LOG_FILE=agents/implementation/tests/plan_19/step_03_api.md ./scripts/auth_curl.sh --profile super get "/api/feed/global?limit=1"
+AUTH_LOG_FILE=tests/runs/legacy/implementation/plan_19/step_03_api.md ./scripts/auth_curl.sh --profile super get "/api/feed/global?limit=1"
 
 # Example pin call (replace values if needed)
-AUTH_LOG_FILE=agents/implementation/tests/plan_19/step_03_api.md ./scripts/auth_curl.sh --profile super get "/api/spaces/16/feed?limit=5&pin=01KD6EJPP0BJRB3MB91GW0G497"
+AUTH_LOG_FILE=tests/runs/legacy/implementation/plan_19/step_03_api.md ./scripts/auth_curl.sh --profile super get "/api/spaces/16/feed?limit=5&pin=01KD6EJPP0BJRB3MB91GW0G497"
 
 # Cursor present: pin should be ignored
-AUTH_LOG_FILE=agents/implementation/tests/plan_19/step_03_api.md ./scripts/auth_curl.sh --profile super get "/api/spaces/16/feed?limit=5&cursor=2025-12-23%2020:32:59%7C146&pin=01KD6EJPP0BJRB3MB91GW0G497"
+AUTH_LOG_FILE=tests/runs/legacy/implementation/plan_19/step_03_api.md ./scripts/auth_curl.sh --profile super get "/api/spaces/16/feed?limit=5&cursor=2025-12-23%2020:32:59%7C146&pin=01KD6EJPP0BJRB3MB91GW0G497"
 ```
 
 

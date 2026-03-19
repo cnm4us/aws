@@ -27,7 +27,7 @@ Out of scope:
    - Enforce one active draft per `(user_id, upload_id)` (unique index on `(user_id, upload_id, status)` or `(user_id, upload_id)` + `archived_at IS NULL` pattern).
    Testing:
    - Canonical (expected): run migrations; `SELECT * FROM production_drafts LIMIT 1;` succeeds.
-   - Record actual output: `agents/implementation/tests/plan_61/step_01_db.md`
+   - Record actual output: `tests/runs/legacy/implementation/plan_61/step_01_db.md`
    Checkpoint: Wait for developer approval before proceeding.
 
 2. Add draft CRUD API (server)
@@ -44,7 +44,7 @@ Out of scope:
      - `./scripts/auth_curl.sh --profile user get /api/production-drafts?uploadId=73` → `HTTP 200` and JSON includes `draft.config`.
      - `./scripts/auth_curl.sh --profile user patch /api/production-drafts/<id> -d '{"config":{"foo":"bar"}}'` → `HTTP 200`.
      - `./scripts/auth_curl.sh --profile other_user get /api/production-drafts?uploadId=73` → `HTTP 404` (or `403` if you prefer).
-   - Record actual output: `agents/implementation/tests/plan_61/step_02_api.md`
+   - Record actual output: `tests/runs/legacy/implementation/plan_61/step_02_api.md`
    Checkpoint: Wait for developer approval before proceeding.
 
 3. Define and validate the draft `config` schema (server)
@@ -60,7 +60,7 @@ Out of scope:
    Testing:
    - Canonical (expected):
      - `./scripts/auth_curl.sh --profile user patch /api/production-drafts/<id> -d '{"config":{"intro":{"kind":"title_image"}}}'` → `HTTP 400` with validation error (missing `uploadId`).
-   - Record actual output: `agents/implementation/tests/plan_61/step_03_validation.md`
+   - Record actual output: `tests/runs/legacy/implementation/plan_61/step_03_validation.md`
    Checkpoint: Wait for developer approval before proceeding.
 
 4. Update `/produce` to load + autosave draft config
@@ -76,7 +76,7 @@ Out of scope:
    - Canonical (expected): manual:
      - Open `/produce?upload=73`, choose audio/logo/etc, reload page → selections persist.
      - Confirm URL stays short (no state explosion).
-   - Record actual notes: `agents/implementation/tests/plan_61/step_04_produce_ui.md`
+   - Record actual notes: `tests/runs/legacy/implementation/plan_61/step_04_produce_ui.md`
    Checkpoint: Wait for developer approval before proceeding.
 
 5. Update `/edit-video` to read/write edits + overlay items from the same draft
@@ -89,7 +89,7 @@ Out of scope:
    - Canonical (expected): manual:
      - Make edits in `/edit-video?upload=73&from=...`, leave page, return → edits persist.
      - Add an Overlay A image, leave page, return → overlay clips persist.
-   - Record actual notes: `agents/implementation/tests/plan_61/step_05_edit_video_ui.md`
+   - Record actual notes: `tests/runs/legacy/implementation/plan_61/step_05_edit_video_ui.md`
    Checkpoint: Wait for developer approval before proceeding.
 
 6. Update `/uploads` UX: “New Production” vs “Resume Production”
@@ -102,7 +102,7 @@ Out of scope:
    - Canonical (expected): manual:
      - With no draft: “New Production” shown.
      - After starting a draft: “Resume Production” appears and restores state.
-   - Record actual notes: `agents/implementation/tests/plan_61/step_06_uploads_ui.md`
+   - Record actual notes: `tests/runs/legacy/implementation/plan_61/step_06_uploads_ui.md`
    Checkpoint: Wait for developer approval before proceeding.
 
 7. Wire “Produce” to use the draft (and archive on success)
@@ -115,7 +115,7 @@ Out of scope:
    - Canonical (expected):
      - Create draft → produce → production starts rendering → draft becomes archived.
      - Refresh `/produce?upload=...` after produce: draft should be new/empty (or offer “Resume” only if a new active draft exists).
-   - Record actual notes: `agents/implementation/tests/plan_61/step_07_produce_flow.md`
+   - Record actual notes: `tests/runs/legacy/implementation/plan_61/step_07_produce_flow.md`
    Checkpoint: Wait for developer approval before proceeding.
 
 ## 3. Open Questions (confirm before Step 1 if needed)

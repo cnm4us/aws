@@ -68,7 +68,7 @@ Primary files (expected):
    - Use best-effort FKs in `try/catch` like other newer tables.
 
    Testing:
-   - Record schema check output in `agents/implementation/tests/plan_14/step_02_schema.md`.
+   - Record schema check output in `tests/runs/legacy/implementation/plan_14/step_02_schema.md`.
 
 3. Add “reporting options” API for a publication (categories + rules)  
    Status: Completed (2025-12-27)  
@@ -90,7 +90,7 @@ Primary files (expected):
    - If space has 0 cultures → return `categories: []`.
 
    Testing:
-   - Record curl output in `agents/implementation/tests/plan_14/step_03_options_api.md`.
+   - Record curl output in `tests/runs/legacy/implementation/plan_14/step_03_options_api.md`.
 
 4. Add “submit report” API (checkboxes → DB rows)  
    Status: Completed (2025-12-27)  
@@ -108,7 +108,7 @@ Primary files (expected):
      - Response: `{ ok: true, reportId }` (and optionally `reportedByMe: true`).
 
    Testing:
-   - Record curl output in `agents/implementation/tests/plan_14/step_04_submit_api.md`.
+   - Record curl output in `tests/runs/legacy/implementation/plan_14/step_04_submit_api.md`.
 
 5. Feed enrichment for “already reported” marker (server-provided)  
    Status: Completed (2025-12-27)  
@@ -120,7 +120,7 @@ Primary files (expected):
    This makes the flag icon accurate on initial render and after refresh.
 
    Testing:
-   - Record sample feed JSON with the new field in `agents/implementation/tests/plan_14/step_05_feed_marker.md`.
+   - Record sample feed JSON with the new field in `tests/runs/legacy/implementation/plan_14/step_05_feed_marker.md`.
 
 6. SPA: add flag icon + lazy modal reporting UI  
    Status: Completed (2025-12-27)  
@@ -147,7 +147,7 @@ Primary files (expected):
    - Run `npm run web:build`.
 
    Testing:
-   - Record notes/screenshots description in `agents/implementation/tests/plan_14/step_06_spa_ui.md` (no secrets).
+   - Record notes/screenshots description in `tests/runs/legacy/implementation/plan_14/step_06_spa_ui.md` (no secrets).
 
 7. (Optional) Minimal admin/debug visibility for reports (follow-up plan)  
    Status: Pending  

@@ -48,7 +48,7 @@ Assumptions:
    - Uses a static CSS file under `public/` (reuse `public/admin-nav.css` if appropriate).
    Testing:
    - Canonical (expected): `./scripts/auth_curl.sh --profile super get /admin/pages` → `HTTP 200` and HTML includes nav links (e.g., “Categories”).  
-   - Record actual output: `agents/implementation/tests/plan_15/step_02_admin_shell.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_15/step_02_admin_shell.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 3. Implement `/admin/categories` CRUD (server-rendered) with safe delete  
@@ -65,7 +65,7 @@ Assumptions:
    Testing:
    - Canonical (expected): `./scripts/auth_curl.sh --profile super get /admin/categories` → `HTTP 200`.  
    - Canonical (expected): `./scripts/auth_curl.sh --profile space_admin get /admin/categories` → redirect to `/forbidden`.  
-   - Record actual output: `agents/implementation/tests/plan_15/step_03_categories_admin.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_15/step_03_categories_admin.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 4. Move site_admin Groups/Channels admin UI off the user SPA (server-rendered)  
@@ -82,7 +82,7 @@ Assumptions:
    Testing:
    - Canonical (expected): `./scripts/auth_curl.sh --profile super get /admin/groups` → `HTTP 200`.  
    - Canonical (expected): `./scripts/auth_curl.sh --profile super get /admin/channels` → `HTTP 200`.  
-   - Record actual output: `agents/implementation/tests/plan_15/step_04_admin_spaces.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_15/step_04_admin_spaces.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 5. Remove site_admin React routes/components from the user SPA bundle  
@@ -94,7 +94,7 @@ Assumptions:
    Testing:
    - Canonical (expected): `npm run web:build` succeeds.  
    - Canonical (expected): `node -e "console.log('ok')"` (sanity in CI-like env).  
-   - Record build output: `agents/implementation/tests/plan_15/step_05_web_build.md`  
+   - Record build output: `tests/runs/legacy/implementation/plan_15/step_05_web_build.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 6. Rename pre-publish “moderation” (review) APIs: add new `/review/*` endpoints and update SPA review page  
@@ -112,7 +112,7 @@ Assumptions:
      - From `/spaces/:spaceId/moderation` → `/spaces/:spaceId/review`
    Testing:
    - Canonical (expected): `./scripts/auth_curl.sh --profile space_admin get /api/spaces/<spaceId>/review/queue` → `HTTP 200` and JSON includes `items[]`.  
-   - Record actual output: `agents/implementation/tests/plan_15/step_06_review_queue.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_15/step_06_review_queue.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 7. Replace `/admin/moderation/(groups|channels)` with `/space/review/(groups|channels)` (space_admin)  
@@ -130,7 +130,7 @@ Assumptions:
    Testing:
    - Canonical (expected): `./scripts/auth_curl.sh --profile space_admin get /api/space/review/groups` → `HTTP 200` and JSON includes `items[]`.  
    - Canonical (expected): `curl -sS http://localhost:3300/api/space/review/groups` → `HTTP 401` (requires auth).  
-   - Record actual output: `agents/implementation/tests/plan_15/step_07_review_overviews.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_15/step_07_review_overviews.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 8. Remove old “moderation” route aliases once review routes are live  
@@ -141,7 +141,7 @@ Assumptions:
    - Kept site_admin moderation pages (`/admin/moderation/*`) intact for now (tracked for Plan 16 as `/admin/review/*` vs “moderation” naming cleanup).
    Testing:
    - Canonical (expected): `./scripts/auth_curl.sh --profile space_admin get /api/space/review/groups` → `HTTP 200`.  
-   - Record actual output: `agents/implementation/tests/plan_15/step_08_cleanup.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_15/step_08_cleanup.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 ---

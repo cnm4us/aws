@@ -5,7 +5,7 @@ Date: 2025-12-23
 BASE_URL: `http://localhost:3300` (local dev)
 
 Run commands with:
-- `AUTH_LOG_FILE="agents/implementation/tests/plan_09/step_03_api.md" BASE_URL="http://localhost:3300" ./scripts/auth_curl.sh ...`
+- `AUTH_LOG_FILE="tests/runs/legacy/implementation/plan_09/step_03_api.md" BASE_URL="http://localhost:3300" ./scripts/auth_curl.sh ...`
 
 
 ### 2025-12-23T18:32:14+00:00

@@ -7,13 +7,13 @@ BASE_URL: http://localhost:3300
 
 ```bash
 # (Optional) confirm auth works
-AUTH_LOG_FILE=agents/implementation/tests/plan_18/step_02_api.md ./scripts/auth_curl.sh --profile super me
+AUTH_LOG_FILE=tests/runs/legacy/implementation/plan_18/step_02_api.md ./scripts/auth_curl.sh --profile super me
 
 # Find a publicationId from the global feed
-AUTH_LOG_FILE=agents/implementation/tests/plan_18/step_02_api.md ./scripts/auth_curl.sh --profile super get /api/feed/global?limit=5
+AUTH_LOG_FILE=tests/runs/legacy/implementation/plan_18/step_02_api.md ./scripts/auth_curl.sh --profile super get /api/feed/global?limit=5
 
 # Call the new endpoint for a real publicationId (replace <ID> if needed)
-AUTH_LOG_FILE=agents/implementation/tests/plan_18/step_02_api.md ./scripts/auth_curl.sh --profile super get /api/publications/<ID>/jump-spaces
+AUTH_LOG_FILE=tests/runs/legacy/implementation/plan_18/step_02_api.md ./scripts/auth_curl.sh --profile super get /api/publications/<ID>/jump-spaces
 
 # Unauthed access should fail
 curl -i http://localhost:3300/api/publications/<ID>/jump-spaces

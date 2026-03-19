@@ -113,7 +113,7 @@ No new picker required if intro SFX is only preset-driven.
 
 ## 7. Testing / Validation
 
-- Add a small plan doc entry under `agents/implementation/tests/plan_34/`:
+- Add a small plan doc entry under `tests/runs/legacy/implementation/plan_34/`:
   - Create a production with:
     - music + intro SFX + fade on + ducking on
   - Confirm:

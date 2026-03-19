@@ -26,7 +26,7 @@ Out of scope:
    - Export helper(s) to fetch `values` and `labels`.
    Testing:
    - Canonical (expected): `node -e "const m=require('./dist/config/librarySources'); console.log(m.librarySources.length)"` → count > 0 (after build) OR inspect file locally.
-   - Record actual output: `agents/implementation/tests/plan_92/step_01_config.md`.
+   - Record actual output: `tests/runs/legacy/implementation/plan_92/step_01_config.md`.
    Checkpoint: Wait for developer approval before proceeding.
 
 2. Backend: validate and expose sources
@@ -37,7 +37,7 @@ Out of scope:
    - Update admin video library filter select in `src/routes/pages.ts` to use config list.
    Testing:
    - Canonical (expected): `./scripts/auth_curl.sh --profile super get /api/library/source-orgs` → `HTTP 200` with `items[]` and `glenn kirschner` present.
-   - Record actual output: `agents/implementation/tests/plan_92/step_02_api.md`.
+   - Record actual output: `tests/runs/legacy/implementation/plan_92/step_02_api.md`.
    Checkpoint: Wait for developer approval before proceeding.
 
 3. Frontend: use configurable sources in dropdowns
@@ -47,7 +47,7 @@ Out of scope:
    - Default selection to `cspan` if available.
    Testing:
    - Manual: `/library` filter shows “Glenn Kirschner”; `/uploads/new?kind=video&library=1` shows new option; selecting it filters as expected.
-   - Record actual notes: `agents/implementation/tests/plan_92/step_03_ui.md`.
+   - Record actual notes: `tests/runs/legacy/implementation/plan_92/step_03_ui.md`.
    Checkpoint: Wait for developer approval before proceeding.
 
 ## 3. Progress Tracking Notes

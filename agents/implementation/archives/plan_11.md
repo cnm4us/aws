@@ -26,7 +26,7 @@ References:
 - `agents/db_access.md` — destructive DB ops require explicit approval.
 
 Test harness conventions:
-- Use `scripts/auth_curl.sh` for authenticated checks and store real outputs in `agents/implementation/tests/plan_11/`.
+- Use `scripts/auth_curl.sh` for authenticated checks and store real outputs in `tests/runs/legacy/implementation/plan_11/`.
 
 ---
 
@@ -47,7 +47,7 @@ Test harness conventions:
      - Do this for both `rule_versions` and `rule_drafts`.
    Testing:
    - Canonical (expected): `BASE_URL="http://localhost:3300" ./scripts/auth_curl.sh --profile super get /admin/rules` → `HTTP 200`.  
-   - Record actual output: `agents/implementation/tests/plan_11/step_01_schema.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_11/step_01_schema.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 2. Update admin “Edit Draft” UI to show two guidance fields  
@@ -62,7 +62,7 @@ Test harness conventions:
      - Fallback for moderators field only: if `guidance_moderators_*` is empty/NULL and legacy `guidance_*` exists (older DB), treat legacy as moderators guidance.
    Testing:
    - Canonical (expected): `./scripts/auth_curl.sh --profile super get "/admin/rules/:id/edit" | rg -n "Guidance for Moderators|Guidance for AI Agents"` → matches both labels.  
-   - Record actual output: `agents/implementation/tests/plan_11/step_02_admin_ui.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_11/step_02_admin_ui.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 3. Update Save + Publish to persist both guidance fields (drafts + versions)  
@@ -79,7 +79,7 @@ Test harness conventions:
    - Canonical (expected):
      - Save: `./scripts/auth_curl.sh --profile super post "/admin/rules/:id/edit" -d "action=save&guidanceModerators=...&guidanceAgents=..."` → `HTTP 302` redirect.  
      - Publish: same with `action=publish` → `HTTP 302` and notice “Published vN.”  
-   - Record actual output: `agents/implementation/tests/plan_11/step_03_save_publish.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_11/step_03_save_publish.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 4. Update “New version” form to edit both guidance fields  
@@ -91,7 +91,7 @@ Test harness conventions:
      - Update `POST /admin/rules/:id/versions/new` to persist both guidance fields into `rule_versions`.
    Testing:
    - Canonical (expected): `./scripts/auth_curl.sh --profile super get "/admin/rules/:id/versions/new" | rg -n "Guidance for Moderators|Guidance for AI Agents"` → matches.  
-   - Record actual output: `agents/implementation/tests/plan_11/step_04_new_version_form.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_11/step_04_new_version_form.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 5. Update rule viewing surfaces (API + SPA + historical HTML)  
@@ -110,7 +110,7 @@ Test harness conventions:
    - Canonical (expected):
      - Unauth: `curl -sS "$BASE_URL/api/rules/<slug>" | rg -n "guidance"` → no guidance fields present.
      - Admin: `./scripts/auth_curl.sh --profile super get "/api/rules/<slug>" | rg -n "guidanceModeratorsHtml|guidanceAgentsHtml"` → present when set.  
-   - Record actual output: `agents/implementation/tests/plan_11/step_05_rule_viewing.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_11/step_05_rule_viewing.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 6. Update maintenance/backfill scripts to include new columns  
@@ -121,7 +121,7 @@ Test harness conventions:
      - fallback: legacy `guidance_*` → moderators guidance (for older databases).
    Testing:
    - Canonical (expected): `node ./scripts/backfill-rule-drafts.ts` → prints “Inserted N missing rule_drafts rows.”  
-   - Record actual output: `agents/implementation/tests/plan_11/step_06_backfill_script.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_11/step_06_backfill_script.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 7. Deferred cleanup: drop legacy `guidance_*` columns (explicit approval required)  
@@ -140,7 +140,7 @@ Test harness conventions:
      - `ALTER TABLE rule_drafts DROP COLUMN guidance_markdown, DROP COLUMN guidance_html;`
    Testing:
    - Canonical (expected): `BASE_URL="$BASE_URL" ./scripts/auth_curl.sh --profile super get "/admin/rules/:id/edit"` → `HTTP 200` and both guidance editors render.  
-   - Record actual output: `agents/implementation/tests/plan_11/step_07_drop_legacy.md`  
+   - Record actual output: `tests/runs/legacy/implementation/plan_11/step_07_drop_legacy.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 ---
