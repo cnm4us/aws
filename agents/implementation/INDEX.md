@@ -5,7 +5,6 @@ This file is a lightweight index for ongoing implementation work.
 ## Planning Standard
 - Active execution continuity lives in `agents/implementation/plan_NN.md`.
 - Use `agents/implementation/PLAN_TEMPLATE.md` when creating new plans.
-- Do not create new handoff files for implementation continuity.
 
 ## Roadmaps
 - `agents/roadmaps/roadmap_create_video.md` — timeline-based Create Video composer

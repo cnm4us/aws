@@ -36,7 +36,3 @@ Use this file to decide what to read for a given request. Keep this list flat an
 ### 7. Feature/domain context lookup
 - Read first: relevant `agents/features/feature_NN.md`
 - Also read: `agents/implementation/INDEX.md`
-
-## Deprecated
-- Do not create or update `agents/handoff/Handoff_NN.md` for new work.
-- If old handoff docs are consulted for historical context, summarize findings into the active `plan_NN.md` and continue there.

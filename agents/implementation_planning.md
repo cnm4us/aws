@@ -4,7 +4,6 @@ This guide defines how to create and maintain `agents/implementation/plan_NN.md`
 
 ## Core Principle
 - `plan_NN.md` is the canonical continuity artifact.
-- Do not create new `agents/handoff/Handoff_NN.md` files.
 
 ## When to Create or Revise a Plan
 - User asks for a new implementation plan.

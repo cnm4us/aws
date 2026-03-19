@@ -4,7 +4,6 @@ This is the stable entrypoint for agent-facing docs in this repo.
 
 ## Primary Rule
 - `agents/implementation/plan_NN.md` is the canonical continuity artifact.
-- `agents/handoff/*` is legacy and should not be used for new work.
 
 ## Instruction Precedence
 - Always follow system and developer instructions first.
