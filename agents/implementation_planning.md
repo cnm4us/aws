@@ -61,7 +61,10 @@ Use `agents/implementation/PLAN_TEMPLATE.md` as the default scaffold.
 
 ## Evidence Location
 - Keep canonical test gates in the plan.
-- Store heavier outputs in `tests/runs/<run_id>/` when needed.
+- Store heavier outputs in harness-scoped paths:
+- `tests/runs/api-curl/<run_id>/`
+- `tests/runs/playwright/<run_id>/`
+- Use harness-labeled run IDs in plan validation notes.
 - Keep legacy evidence under `tests/runs/legacy/implementation/` unchanged unless explicitly migrating old plans.
 
 ## Commit Coordination

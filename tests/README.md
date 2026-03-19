@@ -2,16 +2,22 @@
 
 This directory is the canonical home for test execution evidence.
 
+## Harnesses
+- `tests/suites/api-curl/*` - reusable API contract checks and helpers.
+- `tests/suites/playwright/*` - browser/UI specs and helpers.
+
 ## Structure
-- `tests/runs/<run_id>/summary.md` - human summary of scope, commands, outcomes, and gaps.
-- `tests/runs/<run_id>/artifacts/*` - heavy files (raw logs, traces, exports, screenshots).
-- `tests/runs/playwright/latest/*` - Playwright run output directory.
-- `tests/runs/playwright/report/*` - Playwright HTML report output directory.
+- `tests/runs/api-curl/<run_id>/summary.md` - API run summary.
+- `tests/runs/api-curl/<run_id>/artifacts/*` - API run artifacts.
+- `tests/runs/playwright/<run_id>/summary.md` - browser run summary.
+- `tests/runs/playwright/<run_id>/artifacts/*` - browser run artifacts.
+- `tests/runs/playwright/latest/*` - current Playwright output directory (tool-managed).
+- `tests/runs/playwright/report/*` - current Playwright HTML report (tool-managed).
 
 ## Run ID convention
-- Use either a plan-scoped id or a timestamped id:
-- `plan_133`
-- `2026-03-19_message-injection-smoke`
+- Prefix by harness:
+- `api-curl/plan_134_phase_b`
+- `playwright/2026-03-19_message-injection-smoke`
 
 ## Required summary fields
 - Scope
