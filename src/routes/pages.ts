@@ -3902,13 +3902,13 @@ function renderAdminMessageForm(opts: {
 
   if (opts.showClone && id) {
     body += `<div class="section"><div class="section-title">Actions</div>`
-    body += `<div style="display:flex; gap:8px; flex-wrap:wrap">`
-    body += `<form method="post" action="/admin/messages/${id}/clone" style="margin:0">`
-    if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
-    body += `<button class="btn" type="submit">Clone</button></form>`
+    body += `<div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; justify-content:space-between">`
     body += `<form method="post" action="/admin/messages/${id}/delete" style="margin:0" onsubmit="return confirm('Delete this message? This cannot be undone.');">`
     if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
     body += `<button class="btn danger" type="submit">Delete</button></form>`
+    body += `<form method="post" action="/admin/messages/${id}/clone" style="margin:0 0 0 auto">`
+    if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
+    body += `<button class="btn" type="submit">Clone</button></form>`
     body += `</div></div>`
   }
 
