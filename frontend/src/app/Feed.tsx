@@ -3012,6 +3012,7 @@ export default function Feed() {
         const message = it.message
         if (message && isMessageItem(it)) {
           const slideId = `message-${message.id}-${it.id}`
+          const messagePosterReady = !!videoFrameReadyBySequenceKey[sequenceKey]
           const promptPosterByOrientation =
             (isPortrait ? (message.media?.posterPortrait || message.media?.posterLandscape) : (message.media?.posterLandscape || message.media?.posterPortrait)) ||
             message.media?.posterPortrait ||
@@ -3135,6 +3136,19 @@ export default function Feed() {
                   }}
                   style={panelStyle}
                 >
+                  {promptPoster ? (
+                    <img
+                      src={promptPoster}
+                      alt=""
+                      draggable={false}
+                      className={clsx(
+                        styles.poster,
+                        styles.posterOverlay,
+                        styles.fitCover,
+                        messagePosterReady ? styles.posterHidden : styles.posterVisible
+                      )}
+                    />
+                  ) : null}
                   {promptVideoSrc ? (
                     <video
                       src={promptVideoSrc}
@@ -3151,6 +3165,14 @@ export default function Feed() {
                         height: '100%',
                         objectFit: 'cover',
                         pointerEvents: 'none',
+                        zIndex: 1,
+                      }}
+                      onTimeUpdate={(e) => {
+                        const v = e.currentTarget
+                        if (!Number.isFinite(v.currentTime) || v.currentTime < 0.06) return
+                        setVideoFrameReadyBySequenceKey((prev) => (
+                          prev[sequenceKey] ? prev : { ...prev, [sequenceKey]: true }
+                        ))
                       }}
                     />
                   ) : null}
