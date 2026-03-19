@@ -6,6 +6,7 @@ Use this file to decide what to read for a given request. Keep this list flat an
 - Read only what the request needs.
 - Prefer one primary doc plus up to two secondary docs.
 - `agents/implementation/plan_NN.md` is canonical for ongoing implementation continuity.
+- If execution standards are unclear, read `agents/policies/implementation.md` and `agents/policies/testing.md`.
 
 ## Trigger Table
 
