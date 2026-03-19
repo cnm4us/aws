@@ -4,6 +4,30 @@ import { type FeedResponse } from './types'
 import { listSpaceFeedRows } from './repo'
 import { clampLimit, parseTsIdCursor, buildTsIdCursor } from '../../core/pagination'
 import { SpacePublicationStatus, SpacePublicationVisibility } from '../../db'
+import * as uploadsSvc from '../uploads/service'
+
+async function buildFeedUpload(uploadRaw: any): Promise<any> {
+  const upload = enhanceUploadRow(uploadRaw)
+  // Prefer upload-thumb poster (signed CDN URL) over MediaConvert frame-capture poster.
+  // This avoids black poster regressions for sources whose first MC-decoded frame is black.
+  try {
+    const signed = await uploadsSvc.getUploadPublicMessagePosterCdnUrl(Number(uploadRaw.id))
+    if (signed?.url) {
+      // Preserve orientation signal used by feed playback logic.
+      // Do not set landscape poster for portrait assets, otherwise the client
+      // may assume a landscape stream exists and select a non-existent master.
+      if (String(upload.orientation || '').toLowerCase() === 'landscape') {
+        upload.poster_landscape_cdn = signed.url
+      } else {
+        upload.poster_portrait_cdn = signed.url
+      }
+      upload.poster_cdn = signed.url
+    }
+  } catch {
+    // Best effort: keep existing poster fields from enhanceUploadRow fallback chain.
+  }
+  return upload
+}
 
 export async function getGlobalFeed(opts: { userId?: number | null; limit?: number; cursor?: string | null }): Promise<FeedResponse> {
   const limit = clampLimit(opts.limit, 20, 1, 100)
@@ -12,7 +36,7 @@ export async function getGlobalFeed(opts: { userId?: number | null; limit?: numb
   const cursorId = parsed?.id ?? null
 
   const rows = await listGlobalFeedRows({ cursorPublishedAt, cursorId, limit, userId: opts.userId })
-  const items = rows.map((row) => {
+  const items = await Promise.all(rows.map(async (row) => {
     let distribution: any = null
     if (row.distribution_flags) {
       try { distribution = JSON.parse(row.distribution_flags) } catch { distribution = null }
@@ -68,7 +92,7 @@ export async function getGlobalFeed(opts: { userId?: number | null; limit?: numb
       space_id: row.upload_space_id != null ? Number(row.upload_space_id) : null,
       origin_space_id: row.origin_space_id != null ? Number(row.origin_space_id) : null,
     }
-    const upload = enhanceUploadRow(uploadRaw)
+    const upload = await buildFeedUpload(uploadRaw)
     const owner = row.owner_id
       ? {
           id: Number(row.owner_id),
@@ -78,7 +102,7 @@ export async function getGlobalFeed(opts: { userId?: number | null; limit?: numb
         }
       : null
     return { publication, upload, owner }
-  })
+  }))
 
   let nextCursor: string | null = null
   if (rows.length === limit && items.length) {
@@ -96,7 +120,7 @@ export async function getSpaceFeed(spaceId: number, opts: { userId: number; limi
   const cursorId = parsed?.id ?? null
 
   const rows = await listSpaceFeedRows(spaceId, { cursorPublishedAt, cursorId, limit, userId: opts.userId })
-  const items = rows.map((row) => {
+  const items = await Promise.all(rows.map(async (row) => {
     let distribution: any = null
     if (row.distribution_flags) {
       try { distribution = JSON.parse(row.distribution_flags) } catch { distribution = null }
@@ -152,7 +176,7 @@ export async function getSpaceFeed(spaceId: number, opts: { userId: number; limi
       space_id: row.upload_space_id != null ? Number(row.upload_space_id) : null,
       origin_space_id: row.origin_space_id != null ? Number(row.origin_space_id) : null,
     }
-    const upload = enhanceUploadRow(uploadRaw)
+    const upload = await buildFeedUpload(uploadRaw)
     const owner = row.owner_id
       ? {
           id: Number(row.owner_id),
@@ -162,7 +186,7 @@ export async function getSpaceFeed(spaceId: number, opts: { userId: number; limi
         }
       : null
     return { publication, upload, owner }
-  })
+  }))
 
   let nextCursor: string | null = null
   if (rows.length === limit && items.length) {
@@ -234,7 +258,7 @@ export async function getPinnedSpaceFeedItem(spaceId: number, opts: { userId: nu
     space_id: row.upload_space_id != null ? Number(row.upload_space_id) : null,
     origin_space_id: row.origin_space_id != null ? Number(row.origin_space_id) : null,
   }
-  const upload = enhanceUploadRow(uploadRaw)
+  const upload = await buildFeedUpload(uploadRaw)
   const owner = row.owner_id
     ? {
         id: Number(row.owner_id),

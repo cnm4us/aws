@@ -652,6 +652,7 @@ export default function Feed() {
   // hls.js lifecycle is managed inside HLSVideo; no per-index map needed here
   const [playingIndex, setPlayingIndex] = useState<number | null>(null)
   const [startedMap, setStartedMap] = useState<Record<number, boolean>>({})
+  const [videoFrameReadyBySequenceKey, setVideoFrameReadyBySequenceKey] = useState<Record<string, boolean>>({})
   const [pendingPlayIndex, setPendingPlayIndex] = useState<number | null>(null)
   // Fullscreen: track which slide is currently fullscreen (by index)
   const [fsIndex, setFsIndex] = useState<number | null>(null)
@@ -3370,6 +3371,7 @@ export default function Feed() {
           : (it.masterPortrait || it.url || '')
         const isLandscapeAsset = hasLandscape
         const isPortraitAsset = !isLandscapeAsset
+        const posterReady = !!videoFrameReadyBySequenceKey[sequenceKey]
         const isActive = i === activeSequenceIndex
         const isWarm = i === activeSequenceIndex + 1
         const isPrewarm = i === activeSequenceIndex + 2
@@ -3414,7 +3416,17 @@ export default function Feed() {
               {/* Simple frame that fills the slide; poster/video contain within */}
               <div className={styles.frame}>
                 {useUrl ? (
-                  <img src={useUrl} alt="" draggable={false} className={clsx(styles.poster, (isPortrait && isPortraitAsset) ? styles.fitCover : styles.fitContain)} />
+                  <img
+                    src={useUrl}
+                    alt=""
+                    draggable={false}
+                    className={clsx(
+                      styles.poster,
+                      styles.posterOverlay,
+                      (isPortrait && isPortraitAsset) ? styles.fitCover : styles.fitContain,
+                      posterReady ? styles.posterHidden : styles.posterVisible
+                    )}
+                  />
                 ) : null}
                 {(isActive || (allowWarm && (isWarm || isPrewarm || isPrewarmFar || isLinger))) ? (
                   <FeedVideo
@@ -3427,6 +3439,13 @@ export default function Feed() {
                     poster={useUrl}
                     className={clsx(styles.video, (isPortrait && isPortraitAsset) ? styles.fitCover : styles.fitContain)}
                     data-video-id={vid || undefined}
+                    onTimeUpdate={(e) => {
+                      const v = e.currentTarget
+                      if (!Number.isFinite(v.currentTime) || v.currentTime < 0.06) return
+                      setVideoFrameReadyBySequenceKey((prev) => (
+                        prev[sequenceKey] ? prev : { ...prev, [sequenceKey]: true }
+                      ))
+                    }}
                     onTouchStart={(e) => {
                       try {
                         const t = e.touches && e.touches[0]
@@ -3974,7 +3993,7 @@ export default function Feed() {
           </div>
         )
       }),
-    [renderedSequenceItems, activeSequenceIndex, isPortrait, posterAvail, playingIndex, startedMap, likesCountMap, likedMap, likeBusy, commentsCountMap, commentedByMeMap, reportedMap, isAuthed, feedMode, followMap, spaceList, myUserId, storyOpenForPub, storyTextMap, storyBusyMap, captionsEnabled]
+    [renderedSequenceItems, activeSequenceIndex, isPortrait, posterAvail, videoFrameReadyBySequenceKey, playingIndex, startedMap, likesCountMap, likedMap, likeBusy, commentsCountMap, commentedByMeMap, reportedMap, isAuthed, feedMode, followMap, spaceList, myUserId, storyOpenForPub, storyTextMap, storyBusyMap, captionsEnabled]
   )
 
   // Debug: log index changes explicitly (outside slides memo)
@@ -4190,6 +4209,7 @@ export default function Feed() {
       setRestoring(true)
       setIndex(0)
       setStartedMap({})
+      setVideoFrameReadyBySequenceKey({})
       setPlayingIndex(null)
       try { navigateToIndex(0, { immediate: true, reason: 'space-switch' }) } catch {}
     } else {
@@ -4223,6 +4243,7 @@ export default function Feed() {
       setRestoring(true)
       setIndex(0)
       setStartedMap({})
+      setVideoFrameReadyBySequenceKey({})
       setPlayingIndex(null)
       try { navigateToIndex(0, { immediate: true, reason: 'global-switch' }) } catch {}
     } else {

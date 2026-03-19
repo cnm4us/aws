@@ -9,6 +9,7 @@ type Props = {
   poster?: string
   className?: string
   style?: CSSProperties
+  onTimeUpdate?: React.ReactEventHandler<HTMLVideoElement>
   onClick?: React.MouseEventHandler<HTMLVideoElement>
   onTouchStart?: React.TouchEventHandler<HTMLVideoElement>
   onTouchMove?: React.TouchEventHandler<HTMLVideoElement>
@@ -17,7 +18,7 @@ type Props = {
   debugId?: string
 }
 
-export default function FeedVideo({ src, active, warm, muted = true, poster, className, style, onClick, onTouchStart, onTouchMove, onTouchEnd, warmMode = 'none', debugId }: Props) {
+export default function FeedVideo({ src, active, warm, muted = true, poster, className, style, onTimeUpdate, onClick, onTouchStart, onTouchMove, onTouchEnd, warmMode = 'none', debugId }: Props) {
   return (
     <HLSVideo
       src={src}
@@ -31,6 +32,7 @@ export default function FeedVideo({ src, active, warm, muted = true, poster, cla
       poster={poster}
       className={className}
       style={style}
+      onTimeUpdate={onTimeUpdate}
       onClick={onClick}
       onTouchStart={onTouchStart}
       onTouchMove={onTouchMove}

@@ -29,12 +29,22 @@
   height: 100%;
 }
 
+.posterOverlay {
+  z-index: 2;
+  pointer-events: none;
+  transition: opacity 120ms linear;
+}
+
+.posterVisible { opacity: 1; }
+.posterHidden { opacity: 0; }
+
 .video {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   background: transparent;
+  z-index: 1;
 }
 
 .fitContain { object-fit: contain; }
