@@ -42,6 +42,7 @@ Last reviewed: 2026-03-19
 - DB change safety: `agents/db_access.md`
 - Developer README updates: `agents/readme_maintenance.md`
 - Debug tooling: `agents/tools/debugging.md`
+  - Includes Jaeger query CLI: `npm run jaeger:query -- ...`
 
 ## Interaction Modes
 - `Discussion`: options, tradeoffs, no implementation.
