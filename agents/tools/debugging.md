@@ -15,6 +15,48 @@ These tools are intended to make reproducible debugging easier without relying o
 
 `debug/` is intentionally disposable. Frequent manual deletion of files in `debug/terminal/` and `debug/console/` is expected.
 
+## Jaeger Query Tool
+
+### Command
+
+```bash
+npm run jaeger:query -- <subcommand> [flags]
+```
+
+### Supported subcommands
+
+- `services`
+- `operations --service <service>`
+- `traces [--service ...] [--operation ...] [--tag k=v ...]`
+- `trace --trace-id <id>`
+- `preset <name>`
+
+### Useful presets
+
+- `message_decide`
+- `message_fetch`
+- `message_event`
+- `admin_messages`
+- `admin_message_analytics`
+- `feed_message_pipeline` (runs decide/fetch/event in sequence)
+
+### Examples
+
+```bash
+npm run jaeger:query -- services --summary
+npm run jaeger:query -- operations --service aws-mediaconvert-service --summary
+npm run jaeger:query -- preset feed_message_pipeline --service aws-mediaconvert-service --lookback 15m --summary
+npm run jaeger:query -- traces --service aws-mediaconvert-service --operation "POST /api/feed/message-decision" --tag app.operation=feed.message.decide --lookback 15m --summary
+```
+
+### Raw JSON artifacts
+
+Use `--out` to write response payloads for later review:
+
+```bash
+npm run jaeger:query -- preset feed_message_pipeline --service aws-mediaconvert-service --lookback 15m --summary --out tests/runs/api-curl/<run_id>/artifacts/jaeger-message-pipeline.json
+```
+
 ## Terminal Logging
 
 ### Command
