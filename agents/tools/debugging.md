@@ -13,6 +13,8 @@ This project has two coordinated debug output channels:
 
 These tools are intended to make reproducible debugging easier without relying on transient browser DevTools output alone.
 
+`debug/` is intentionally disposable. Frequent manual deletion of files in `debug/terminal/` and `debug/console/` is expected.
+
 ## Terminal Logging
 
 ### Command

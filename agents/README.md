@@ -27,6 +27,7 @@ This is the stable entrypoint for agent-facing docs in this repo.
 - Plan template: `agents/implementation/PLAN_TEMPLATE.md`
 - Reports and metrics artifacts: `agents/reports/metrics/*`
 - Test workflow, suites, and run artifacts: `tests/README.md`, `tests/suites/*`, `tests/runs/*`
+- Local disposable debug workspace: `debug/README.md`, `debug/terminal/*`, `debug/console/*`
 - DB change safety: `agents/db_access.md`
 - Developer README updates: `agents/readme_maintenance.md`
 - Debug tooling: `agents/tools/debugging.md`

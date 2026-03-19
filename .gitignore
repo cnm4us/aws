@@ -15,7 +15,8 @@ keys/
 
 
 logs/
-debug/
+debug/**
+!debug/README.md
 
 schema_backups/
 
