@@ -2,6 +2,9 @@
 
 Status: Active
 
+## Feature Reference
+- Feature doc: `agents/features/feature_NN.md` or `none`
+
 ## Context
 - Problem statement:
 - In scope:

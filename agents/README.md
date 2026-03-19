@@ -17,6 +17,7 @@ This is the stable entrypoint for agent-facing docs in this repo.
 
 ## Document Map
 - Routing: `agents/ROUTING.md`
+- Feature contracts: `agents/features/feature_NN.md`
 - Git and commit policy: `agents/git.md`
 - Plan authoring standards: `agents/implementation_planning.md`
 - Plan index: `agents/implementation/INDEX.md`
@@ -27,6 +28,6 @@ This is the stable entrypoint for agent-facing docs in this repo.
 
 ## Interaction Modes
 - `Discussion`: options, tradeoffs, no implementation.
-- `Architecture`: design decisions and contracts, no implementation.
+- `Architecture`: design decisions and contracts, no implementation (consult feature docs first when available).
 - `Implementation Plan`: create or revise `plan_NN.md`.
 - `Execution`: implement the approved plan incrementally with tests.
