@@ -1,7 +1,7 @@
 # Plan 128 Audit Notes: Current Feed Rendering and Prompt Injection
 
 ## Scope
-Deep audit of current feed mechanics to inform `agents/implementation/plan_128.md` migration.
+Deep audit of current feed mechanics to inform `agents/implementation/archives/plan_128.md` migration.
 
 Primary files reviewed:
 - `frontend/src/app/Feed.tsx`

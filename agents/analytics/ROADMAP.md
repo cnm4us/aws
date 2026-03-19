@@ -11,9 +11,9 @@ This roadmap links strategy docs in this folder to implementation plans.
 - Credibility model: `agents/analytics/CREDIBILITY_MODEL.md`
 
 ## Execution Plans
-- Foundation and sink controls: `agents/implementation/plan_115.md`
-- Product analytics expansion: `agents/implementation/plan_118.md`
-- Message sequencing dependency: `agents/implementation/plan_117.md`
+- Foundation and sink controls: `agents/implementation/archives/plan_115.md`
+- Product analytics expansion: `agents/implementation/archives/plan_118.md`
+- Message sequencing dependency: `agents/implementation/archives/plan_117.md`
 
 ## Suggested Sequence
 1. Lock canonical event schema and dimensions.

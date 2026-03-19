@@ -39,9 +39,17 @@ Use this file to decide what to read for a given request. Keep this list flat an
 - Also read: active `agents/implementation/plan_NN.md`, `agents/implementation/INDEX.md`
 
 ### 8. Cross-feature constraints or naming/compliance rules
-- Read first: relevant `agents/requirements/*.md`
+- Read first: `agents/requirements/INDEX.md`
 - Also read: active `agents/implementation/plan_NN.md`
 
 ### 9. UI layout or visual consistency changes
 - Read first: `agents/requirements/ui/INDEX.md`
 - Also read: relevant `agents/requirements/ui/*.md`, active `agents/implementation/plan_NN.md`
+
+### 10. Analytics events, reports, or instrumentation contracts
+- Read first: `agents/analytics/README.md`
+- Also read: relevant `agents/analytics/*.md`, active `agents/implementation/plan_NN.md`
+
+### 11. Long-range sequencing or milestone planning
+- Read first: `agents/roadmaps/INDEX.md`
+- Also read: active `agents/implementation/INDEX.md`, active `agents/implementation/plan_NN.md`

@@ -1,5 +1,7 @@
 # Plan 129: Multi-Type Prompt Programs (Audience Targeting + Prompt-Pool Delivery)
 
+Status: Complete
+
 ## Goal
 Extend prompt orchestration from a single anonymous register/login use case into a reusable program that supports multiple prompt types and audience states, while preserving feed stability and sequence integrity.
 
@@ -305,7 +307,7 @@ Conversion semantics note:
 - Finalize prompt type taxonomy and audience-state enum list.
 - Define mapping for existing prompts/rules to new defaults.
 - Define suppression thresholds/defaults.
-- Phase A output: `agents/implementation/notes_plan_129_phase_a.md`
+- Phase A output: `agents/implementation/archives/notes/notes_plan_129_phase_a.md`
 
 Acceptance:
 - Signed-off enum/spec doc with big-bang migration map.

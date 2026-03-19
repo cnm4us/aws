@@ -5,6 +5,7 @@ This file is a lightweight index for ongoing implementation work.
 ## Planning Standard
 - Active execution continuity lives in `agents/implementation/plan_NN.md`.
 - Use `agents/implementation/PLAN_TEMPLATE.md` when creating new plans.
+- Archived plans live in `agents/implementation/archives/`.
 
 ## Roadmaps
 - `agents/roadmaps/roadmap_create_video.md` — timeline-based Create Video composer
@@ -19,3 +20,4 @@ This file is a lightweight index for ongoing implementation work.
 ## Active / Next
 - Check latest `plan_NN.md` with `Status: Active`.
 - Continue from that plan's `Resume Here` section.
+- If no plan is `Active`, create a new `plan_NN.md` from `PLAN_TEMPLATE.md`.

@@ -55,7 +55,7 @@ Use a feature flag: `FEED_SEQUENCE_ENGINE_V1=1`.
 - Both paths can coexist temporarily for A/B QA and rollback.
 
 ## Audit Incorporation (v2)
-Based on `agents/implementation/notes_plan_128_feed_audit.md`, these constraints are now explicit:
+Based on `agents/implementation/archives/notes/notes_plan_128_feed_audit.md`, these constraints are now explicit:
 - Replace index identity (`items[index]` + `rail.children[index]`) with key identity.
 - Remove `withoutPrompts` insertion behavior (do not drop prior prompt instances during insertion).
 - Avoid list-shape mutation (`filter/remove`) during touch gesture completion paths.
@@ -82,7 +82,7 @@ Acceptance:
   - gesture/reanchor coupling points,
   - prewarm/attach behavior,
   - known iOS edge paths.
-- Produce detailed audit notes in `agents/implementation/notes_plan_128_feed_audit.md`.
+- Produce detailed audit notes in `agents/implementation/archives/notes/notes_plan_128_feed_audit.md`.
 
 Acceptance:
 - audit note maps current flows and risk hotspots with file/section references.
@@ -151,7 +151,7 @@ Acceptance:
 - instrumentation points are available for plan 118/119 attachment.
 
 ### Phase I — QA Matrix + Rollout
-- Checklist document: `agents/implementation/plan_128_phase_i_checklist.md`
+- Checklist document: `agents/implementation/archives/plan_128_phase_i_checklist.md`
 - Run deterministic matrix on both old/new engines:
   - fast swipe,
   - prompt pass-through,

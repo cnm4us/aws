@@ -1,131 +1,41 @@
-o ambiguity.
-
-Markdown Feature Contract (Pages & Rules System)
-Supported Markdown Features
-Headings
-
-Syntax: #, ##, ###
-
-Allowed levels: H1–H3 only
-
-H1: document title
-
-H2–H3: sections and subsections
-
-Automatic, stable anchor IDs generated from heading text
-
-Paragraphs
-
-Plain text paragraphs
-
-Standard Markdown line break behavior
-
-No inline HTML
-
-Lists
-
-Unordered lists using - or *
-
-Ordered lists using 1., 2., etc.
-
-Nested lists allowed (reasonable depth)
-
-Emphasis
-
-Italic: *text*
-
-Bold: **text**
-
-No underline or strikethrough
-
-Links
-
-Syntax: [label](url)
-
-URLs must be absolute (https://…) or site-relative
-
-Rendered links must include:
-
-rel="noopener noreferrer nofollow"
-
-Raw HTML links are not allowed
-
-Blockquotes
-
-Syntax: > quoted text
-
-Intended for clarifications, notes, or non-binding commentary
-
-Code Blocks
-
-Fenced code blocks only using triple backticks
-
-Optional language tag allowed
-
-Inline code allowed using single backticks
-
-No HTML execution or scripting
-
-Horizontal Rules
-
-Syntax: ---
-
-Used to visually separate major sections
-
-Tables (Optional / Controlled)
-
-GitHub-flavored Markdown tables
-
-Simple row/column structure only
-
-No nested content inside cells
-
-Enabled only if explicitly configured
-
-Rendering Behavior
-
-Markdown is parsed server-side
-
-HTML output is sanitized
-
-Raw HTML in Markdown input is stripped or rejected
-
-Both raw Markdown and rendered HTML are stored
-
-Rendering output must be deterministic
-
-Disallowed Features
-
-Raw HTML (<div>, <img>, <script>, etc.)
-
-Inline styles or CSS
-
-Images
-
-Iframes or embeds
-
-JavaScript execution
-
-Emoji shortcodes
-
-Footnotes
-
-Custom Markdown extensions beyond those listed
-
-Usage Scope
-
-This Markdown feature set applies to:
-
-CMS-managed pages
-
-Rules and policy documents
-
-All versioned rule content
-
-Any content outside this contract must be implemented via:
-
-Layout logic
-
-Application code
-
-Explicit feature extensions (not ad hoc Markdown)
+# Markdown Requirement
+
+This document defines the allowed Markdown feature set for pages and rules content.
+
+## Supported Features
+- Headings: `#`, `##`, `###` (H1-H3 only).
+- Paragraphs: standard Markdown paragraphs.
+- Lists: ordered and unordered; nested lists allowed with reasonable depth.
+- Emphasis: italic (`*text*`) and bold (`**text**`).
+- Links: `[label](url)` with absolute `https://...` or site-relative targets.
+- Blockquotes: `> quote`.
+- Code: fenced code blocks and inline code.
+- Horizontal rule: `---`.
+- Tables: GitHub-flavored tables only when explicitly enabled.
+
+## Rendering Rules
+- Markdown is parsed server-side.
+- Output HTML is sanitized.
+- Raw HTML in Markdown input is stripped or rejected.
+- Both source Markdown and rendered HTML are stored.
+- Rendering must be deterministic.
+
+## Link Safety
+- Rendered links must include `rel="noopener noreferrer nofollow"`.
+
+## Disallowed Features
+- Raw HTML (`<div>`, `<img>`, `<script>`, etc.).
+- Inline CSS/styles.
+- Images via Markdown syntax.
+- Iframes/embeds.
+- JavaScript execution.
+- Emoji shortcodes.
+- Footnotes.
+- Custom Markdown extensions not listed above.
+
+## Scope
+- CMS-managed pages.
+- Rules and policy documents.
+- Versioned rule content.
+
+Anything outside this contract must be implemented in application code, not via ad-hoc Markdown extensions.

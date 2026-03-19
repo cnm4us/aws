@@ -4,7 +4,7 @@
 Deliver a minimal, reliable first pass of first-party analytics, then expand in controlled layers without reworking core plumbing.
 
 This plan is the execution strategy for gradually implementing scope from:
-- `agents/implementation/plan_118.md`
+- `agents/implementation/archives/plan_118.md`
 - `agents/analytics/*.md` (event/dimension/report/moderation/credibility docs)
 
 ## Strategy
