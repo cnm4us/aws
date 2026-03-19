@@ -1,6 +1,6 @@
 # Plan 36: Media Processing API (FFmpeg-backed, queue-first, audio-first)
 
-Ref: `agents/features/feature_08.MD`
+Ref: `agents/features/feature_08_media-processing-api-ffmpeg.md`
 
 ## Goal
 Introduce an internal **media mastering subsystem** that:

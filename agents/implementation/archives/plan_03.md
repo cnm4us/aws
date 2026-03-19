@@ -14,7 +14,7 @@ Out of scope (for this phase):
 - Rich multi-page profile sections (we will start with a single Profile page, with room to expand later).
 
 References:
-- `agents/features/feature_01.md` — conceptual boundaries for Profile vs Identification vs Credibility.
+- `agents/features/feature_01_profile-identity-credibility.md` — conceptual boundaries for Profile vs Identification vs Credibility.
 - `agents/implementation/plan_02.md` — Profiles backend schema and APIs.
 - `frontend/src/main.tsx`, `frontend/src/ui/Layout.tsx` — SPA routing and layout.
 - `frontend/src/menu/ContextPicker.tsx`, `frontend/src/menu/ContextDrawer.tsx`, `frontend/src/menu/contexts/*` — Menu Selector and context menus.

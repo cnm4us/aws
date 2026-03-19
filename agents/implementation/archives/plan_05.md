@@ -15,7 +15,7 @@ Out of scope (for this phase):
 - Following authors from the Global or personal feeds; Phase 1 follow relationships exist only in group and channel spaces.
 
 References:
-- `agents/features/feature_01.md` — Profile vs Identification vs Credibility semantics.
+- `agents/features/feature_01_profile-identity-credibility.md` — Profile vs Identification vs Credibility semantics.
 - `agents/implementation/plan_02.md` — Profiles backend (including `profiles.avatar_url`).
 - `agents/implementation/plan_03.md` — `/profile` route and Profile UI.
 - `agents/implementation/plan_04.md` — Avatar upload, storage layout, and normalization.

@@ -16,7 +16,7 @@ Out of scope (for this phase):
 - New UX for per-space “request Global” flows for channels/groups.
 
 References:
-- `agents/features/feature_02.md` — Canonical semantics for Personal, Global Feed, and spaces.
+- `agents/features/feature_02_personal-space-global-feed-context-integrity.md` — Canonical semantics for Personal, Global Feed, and spaces.
 - `frontend/src/app/Publish.tsx` — Current Publish UI and flows.
 - `src/features/publications/service.ts` — Publication creation/unpublish logic (including `visible_in_global` behavior).
 - `src/features/feeds/service.ts`, `src/features/feeds/repo.ts` — Global feed aggregator.

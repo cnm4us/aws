@@ -249,7 +249,7 @@ Acceptance:
 - update active docs:
   - `agents/tools/debugging.md`
   - `docs/OBSERVABILITY_MATRIX.md`
-  - `agents/features/feature_13.md`
+  - `agents/features/feature_13_feed-campaign-inserts.md`
 - add a short closeout note summarizing what still intentionally remains prompt-named, if anything
 
 Test gate:

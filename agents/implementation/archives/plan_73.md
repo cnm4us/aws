@@ -2,7 +2,7 @@
 
 Status: **planning → ready to implement**
 
-This plan implements `agents/features/feature_12.md` (object-centric audio MVP):
+This plan implements `agents/features/feature_12_create-video-object-centric-audio-mvp.md` (object-centric audio MVP):
 - Voice sources (video / videoOverlay / narration): per-object **Audio On/Off** + optional **Boost**
 - Music: per-music-object config (**Opener cutoff / Replace / Mix / Mix+Duck**) + knobs
 - Export should **block** if any music objects exist but are **not configured**

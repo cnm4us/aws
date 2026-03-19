@@ -16,7 +16,7 @@ Out of scope (for this phase):
 - Production migration strategies; this plan assumes non-production DB environments, per `agents/db_access.md`.
 
 References:
-- `agents/features/feature_01.md` — conceptual boundaries for Profile, Identification, and Credibility.
+- `agents/features/feature_01_profile-identity-credibility.md` — conceptual boundaries for Profile, Identification, and Credibility.
 - `agents/db_access.md` — DB safety, migrations, and mysql usage rules.
 - `docs/RBAC_Implementation_Plan.md`, `docs/FeedsRBAC_DB.md` — RBAC and moderation context.
 

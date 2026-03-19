@@ -97,7 +97,7 @@ Out of scope:
    - Create one initial template (seeded in `ensureSchema()`; site_admin can manage via `/admin/lower-thirds`):
      - `viewBox="0 0 1920 200"`
      - Stable IDs: `primaryText`, `secondaryText`, `baseBg`, `accentColor`.
-     - Descriptor matching `agents/features/feature_10.md` example (text + colors + defaults).
+     - Descriptor matching `agents/features/feature_10_lower-thirds-system-plan.md` example (text + colors + defaults).
    Testing:
    - Resolve endpoint returns a finalized SVG for the seeded template.
    Checkpoint: Wait for developer approval before proceeding.

@@ -3,7 +3,7 @@
 Status: Active
 
 ## Feature Reference
-- Feature doc: `agents/features/feature_NN.md` or `none`
+- Feature doc: `agents/features/feature_NN_slug.md` or `none`
 
 ## Context
 - Problem statement:

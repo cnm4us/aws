@@ -14,7 +14,7 @@ Out of scope (for this phase):
 - Per-space avatar variants or multiple avatars per user.
 
 References:
-- `agents/features/feature_01.md` — Profile vs Identification vs Credibility semantics.
+- `agents/features/feature_01_profile-identity-credibility.md` — Profile vs Identification vs Credibility semantics.
 - `agents/implementation/plan_02.md` — Profiles schema and backend services.
 - `agents/implementation/plan_03.md` — `/profile` route, Profile form, and Profile menu context.
 - `src/services/productionRunner.ts`, `docs/Jobs.md` — current S3 layout and profiles under `bacs-mc-public-stream`.
