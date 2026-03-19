@@ -25,6 +25,7 @@ This is the stable entrypoint for agent-facing docs in this repo.
 - Plan authoring standards: `agents/implementation_planning.md`
 - Plan index: `agents/implementation/INDEX.md`
 - Plan template: `agents/implementation/PLAN_TEMPLATE.md`
+- Reports and metrics artifacts: `agents/reports/metrics/*`
 - DB change safety: `agents/db_access.md`
 - Developer README updates: `agents/readme_maintenance.md`
 - Debug tooling: `agents/tools/debugging.md`

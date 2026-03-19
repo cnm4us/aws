@@ -50,7 +50,7 @@ function parseArgs(argv) {
     const a = argv[i];
     if (a === '--append') {
       const next = argv[i + 1];
-      out.append = next && !next.startsWith('--') ? next : 'agents/implementation/metrics/web-bundle-snapshots.jsonl';
+      out.append = next && !next.startsWith('--') ? next : 'agents/reports/metrics/web-bundle-snapshots.jsonl';
       if (next && !next.startsWith('--')) i += 1;
       continue;
     }

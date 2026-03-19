@@ -5,3 +5,4 @@
 - `agents/features/*` stores durable feature intent and contract rules.
 - `agents/requirements/*` stores global constraints and invariants that span features.
 - `agents/implementation/plan_NN.md` is execution and continuity artifact.
+- `agents/reports/metrics/*` stores measurement snapshots and observability inventories.

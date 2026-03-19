@@ -32,7 +32,7 @@ Use this file to decide what to read for a given request. Keep this list flat an
 
 ### 6. Debugging and instrumentation workflow
 - Read first: `agents/tools/debugging.md`
-- Also read: active `agents/implementation/plan_NN.md`
+- Also read: active `agents/implementation/plan_NN.md`, `agents/reports/metrics/*`
 
 ### 7. Feature/domain context lookup
 - Read first: relevant `agents/features/feature_NN_slug.md`

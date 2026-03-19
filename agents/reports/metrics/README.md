@@ -11,7 +11,7 @@ npm run web:bundle-snapshot
 This command:
 1. Reads built assets from `public/app/assets`.
 2. Computes raw and gzip sizes.
-3. Appends a JSON line snapshot to `agents/implementation/metrics/web-bundle-snapshots.jsonl`.
+3. Appends a JSON line snapshot to `agents/reports/metrics/web-bundle-snapshots.jsonl`.
 
 ## Notes
 1. Run `npm run web:build` before snapshotting if assets are stale.

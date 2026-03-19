@@ -159,7 +159,7 @@ Optional future enhancement:
   - disallow `console.*` in server code except explicit allowlist.
 
 Deliverables:
-- inventory report (`agents/implementation/metrics/observability_console_inventory.md`)
+- inventory report (`agents/reports/metrics/observability_console_inventory.md`)
 - lint/update policy documented.
 
 ## Phase B — Pino Foundation
