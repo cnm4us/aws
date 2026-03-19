@@ -19,6 +19,7 @@ This is the stable entrypoint for agent-facing docs in this repo.
 - Routing: `agents/ROUTING.md`
 - Policy set: `agents/policies/*.md`
 - Feature contracts: `agents/features/feature_NN.md`
+- Global requirements/invariants: `agents/requirements/*.md`
 - Git and commit policy: `agents/git.md`
 - Plan authoring standards: `agents/implementation_planning.md`
 - Plan index: `agents/implementation/INDEX.md`

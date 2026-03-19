@@ -37,3 +37,7 @@ Use this file to decide what to read for a given request. Keep this list flat an
 ### 7. Feature/domain context lookup
 - Read first: relevant `agents/features/feature_NN.md`
 - Also read: active `agents/implementation/plan_NN.md`, `agents/implementation/INDEX.md`
+
+### 8. Cross-feature constraints or naming/compliance rules
+- Read first: relevant `agents/requirements/*.md`
+- Also read: active `agents/implementation/plan_NN.md`
