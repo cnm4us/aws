@@ -12,3 +12,4 @@
 - `agents/reports/metrics/*` stores measurement snapshots and observability inventories.
 - `tests/suites/*` stores reusable test harness code by tool.
 - `tests/runs/*` stores per-run summaries and heavy runtime artifacts.
+- When execution requires trial-and-error to find reliable debug/query commands, record newly validated commands in `agents/tools/debugging.md` (cookbook section) in the same change set or immediately after.

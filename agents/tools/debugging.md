@@ -57,6 +57,79 @@ Use `--out` to write response payloads for later review:
 npm run jaeger:query -- preset feed_message_pipeline --service aws-mediaconvert-service --lookback 15m --summary --out tests/runs/api-curl/<run_id>/artifacts/jaeger-message-pipeline.json
 ```
 
+### Jaeger Command Cookbook
+
+Use this section as the known-good baseline before trying ad-hoc variants.
+If a new command pattern is discovered during debugging, add it here once validated.
+
+#### 1) Verify Jaeger has your service
+
+```bash
+npm run jaeger:query -- services --summary
+```
+
+Expected:
+- service list includes `aws-mediaconvert-service`
+
+#### 2) List operations for the service
+
+```bash
+npm run jaeger:query -- operations --service aws-mediaconvert-service --summary
+```
+
+Expected:
+- operation names like `HTTP POST /api/feed/message-events`
+
+#### 3) Check message pipeline quickly
+
+```bash
+npm run jaeger:query -- preset feed_message_pipeline --service aws-mediaconvert-service --lookback 15m --summary
+```
+
+Expected:
+- non-zero trace counts after reproducing feed message behavior
+
+#### 4) Query by semantic tag (more stable than operation label)
+
+```bash
+npm run jaeger:query -- traces --service aws-mediaconvert-service --tag app.operation=feed.message.event --lookback 1d --limit 50 --summary
+```
+
+Use when:
+- operation naming may vary, or operation search in UI is noisy
+
+#### 5) Dump raw traces to artifact file
+
+```bash
+npm run jaeger:query -- traces --service aws-mediaconvert-service --tag app.operation=feed.message.event --lookback 1d --limit 50 --out tests/runs/api-curl/<run_id>/artifacts/jaeger-message-event.json
+```
+
+Expected:
+- JSON file written under `tests/runs/.../artifacts/`
+
+#### 6) List unique tags for one endpoint from saved JSON
+
+```bash
+jq -r '.data[].spans[] | select(.operationName=="HTTP POST /api/feed/message-events") | .tags[]?.key' tests/runs/api-curl/<run_id>/artifacts/jaeger-message-event.json | sort -u
+```
+
+Use when:
+- you need a field inventory before changing instrumentation
+
+#### 7) Inspect one tag's observed values
+
+```bash
+jq -r '.data[].spans[] | select(.operationName=="HTTP POST /api/feed/message-events") | .tags[]? | select(.key=="app.operation_detail") | .value' tests/runs/api-curl/<run_id>/artifacts/jaeger-message-event.json | sort -u
+```
+
+Use when:
+- you need to verify outcome/detail cardinality
+
+#### Pitfalls
+
+- `preset message_event` matches exact operation name and tag; it can return `0` while tag-based query still returns traces if operation naming shifted.
+- Avoid huge terminal output: prefer `--summary` for interactive checks, and `--out` + `jq` for deeper inspection.
+
 ## Terminal Logging
 
 ### Command
