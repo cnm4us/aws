@@ -2,6 +2,10 @@
 
 This index maps durable feature contracts to their files.
 
+## Notes
+- Entries `03`, `07`, and `09` are intentionally retained as legacy variants from different planning windows.
+- Treat `03` as the baseline contract; use `07`/`09` only when a plan explicitly references those variants.
+
 - `01` — `profile-identity-credibility` — `agents/features/feature_01_profile-identity-credibility.md`
 - `02` — `personal-space-global-feed-context-integrity` — `agents/features/feature_02_personal-space-global-feed-context-integrity.md`
 - `03` — `editable-pages-versioned-rules-system` — `agents/features/feature_03_editable-pages-versioned-rules-system.md`

@@ -28,6 +28,7 @@ This is the stable entrypoint for agent-facing docs in this repo.
 - Plan authoring standards: `agents/implementation_planning.md`
 - Plan index: `agents/implementation/INDEX.md`
 - Plan template: `agents/implementation/PLAN_TEMPLATE.md`
+- Plan archives: `agents/implementation/archives/INDEX.md`
 - Reports and metrics artifacts: `agents/reports/metrics/*`
 - Test workflow, suites, and run artifacts: `tests/README.md`, `tests/suites/*`, `tests/runs/*`
 - Local disposable debug workspace: `debug/README.md`, `debug/terminal/*`, `debug/console/*`
