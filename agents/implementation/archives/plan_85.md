@@ -62,7 +62,7 @@ Enable per–screen-title object customization (override) while keeping global s
 - Keep **“Manage Styles”** linking to `/assets/screen-titles` (same as now).
 
 ### B) Customize Style Modal
-- Reuse modal styling (`agents/styles/modal-properties.md`).
+- Reuse modal styling (`agents/requirements/ui/modal-properties.md`).
 - Sections:
   1) **Base style selector** (drop‑down) + Manage Styles link.
   2) **Text** editor (moved from Properties).

@@ -21,6 +21,7 @@ This is the stable entrypoint for agent-facing docs in this repo.
 - Feature contracts: `agents/features/feature_NN_slug.md`
 - Feature index: `agents/features/INDEX.md`
 - Global requirements/invariants: `agents/requirements/*.md`
+- UI style requirements: `agents/requirements/ui/*`
 - Git and commit policy: `agents/git.md`
 - Plan authoring standards: `agents/implementation_planning.md`
 - Plan index: `agents/implementation/INDEX.md`

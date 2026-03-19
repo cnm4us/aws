@@ -19,7 +19,7 @@ Add a per‑video‑object option to render a blurred, dimmed background fill **
      - Default: `bgFillStyle='none'`, `bgFillDim='medium'`.
 
 2. **UI: Video Properties modal**
-   - Add a “Background Fill” section (per `agents/styles/modal-properties.md`):
+   - Add a “Background Fill” section (per `agents/requirements/ui/modal-properties.md`):
      - Toggle/Select: `None | Blur`
      - If `Blur`, show `Dim` select: `Light | Medium | Strong`.
    - Persist to `videoEditor` and saved `clips[]`.

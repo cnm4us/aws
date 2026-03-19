@@ -41,3 +41,7 @@ Use this file to decide what to read for a given request. Keep this list flat an
 ### 8. Cross-feature constraints or naming/compliance rules
 - Read first: relevant `agents/requirements/*.md`
 - Also read: active `agents/implementation/plan_NN.md`
+
+### 9. UI layout or visual consistency changes
+- Read first: `agents/requirements/ui/INDEX.md`
+- Also read: relevant `agents/requirements/ui/*.md`, active `agents/implementation/plan_NN.md`

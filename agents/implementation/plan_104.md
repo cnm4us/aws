@@ -47,7 +47,7 @@ Replace the current terminal‑end action menu with a compact **Move** and **Exp
 1. **Add error modal component**
    - Controlled by new state (e.g., `timelineErrorModal`).
    - Dismiss‑required (close button).
-   - Use modal styling from `agents/styles/modal-properties.md`.
+   - Use modal styling from `agents/requirements/ui/modal-properties.md`.
 2. **Split messaging**
    - Keep current inline `timelineMessage` for non‑blocking info.
    - Replace blocking cases with `setTimelineErrorModal`.
@@ -70,4 +70,4 @@ Replace the current terminal‑end action menu with a compact **Move** and **Exp
 - `frontend/src/app/CreateVideo.tsx`
 - `frontend/src/app/createVideo/modals/TimelineContextMenu.tsx`
 - `frontend/src/app/icons/arrow.svg`
-- Modal styling reference: `agents/styles/modal-properties.md`
+- Modal styling reference: `agents/requirements/ui/modal-properties.md`
