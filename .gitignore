@@ -34,11 +34,12 @@ assets/fonts/**/.uuid
 
 # Ignore PlayWright Artificats.
 playwright-report/
-tests/runs/playwright/
+tests/runs/**
+!tests/runs/
+!tests/runs/.gitkeep
 e2e/utils/.auth/
 e2e/.auth/
 /reports/
-tests/runs/**/artifacts/
 
 # Python bytecode
 __pycache__/
