@@ -3116,7 +3116,6 @@ export default function Feed() {
                         r.style.transition = 'none'
                         r.style.transform = `translate3d(0, ${nextOffset}px, 0)`
                       } catch {}
-                      try { if ((e as any).cancelable) e.preventDefault() } catch {}
                     } catch {}
                   }}
                   onTouchEnd={() => {
@@ -3514,7 +3513,6 @@ export default function Feed() {
                                 r.style.transition = 'none'
                                 r.style.transform = `translate3d(0, ${nextOffset}px, 0)`
                               } catch {}
-                              try { if ((e as any).cancelable) e.preventDefault() } catch {}
                             }
                           }
                         }
@@ -3522,7 +3520,6 @@ export default function Feed() {
                     }}
                     onClick={(e) => {
                       e.stopPropagation()
-                      try { if ((e as any).cancelable) e.preventDefault() } catch {}
                       // Avoid duplicate handling when touch just fired
                       try { if (Date.now() - lastTouchTsRef.current < 350) return } catch {}
                       const v = getVideoEl(i)
@@ -3564,7 +3561,6 @@ export default function Feed() {
                     }}
                     onTouchEnd={(e) => {
                       e.stopPropagation()
-                      try { if ((e as any).cancelable) e.preventDefault() } catch {}
                       const now = Date.now()
                       lastTouchTsRef.current = now
                       const kind = classifyGesture()
