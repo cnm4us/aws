@@ -341,6 +341,8 @@ def parse_jaeger_events(art_dir: Path, start_us: Optional[int], end_us: Optional
                         "/api/feed/message-" in name
                         or "/api/admin/message-analytics" in name
                         or "/api/admin/messages" in name
+                        or "/admin/message-analytics" in name
+                        or "/admin/messages" in name
                     )
                 ) or op.startswith("feed.message") or op.startswith("message.analytics")
                 if not keep:
@@ -372,9 +374,10 @@ def write_timeline(art_dir: Path, events: List[Dict[str, Any]]) -> None:
     top_txt = art_dir / "timeline-top.txt"
     lines = []
     for e in clean[:80]:
+        trace_url = e.get("trace_url") or "-"
         lines.append(
             f'{e.get("ts")} | {e.get("source")} | {e.get("signal")} | '
-            f'message_id={e.get("message_id") or "-"} session={e.get("message_session_id") or "-"} trace={e.get("trace_id") or "-"}'
+            f'message_id={e.get("message_id") or "-"} session={e.get("message_session_id") or "-"} trace={e.get("trace_id") or "-"} trace_url={trace_url}'
         )
     top_txt.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
 
@@ -384,6 +387,7 @@ def main() -> None:
     ap.add_argument("--artifacts-dir", required=True)
     ap.add_argument("--window-start-iso")
     ap.add_argument("--window-end-iso")
+    ap.add_argument("--jaeger-base-url")
     args = ap.parse_args()
     art_dir = Path(args.artifacts_dir)
     art_dir.mkdir(parents=True, exist_ok=True)
@@ -401,7 +405,14 @@ def main() -> None:
     console_events = parse_console_events(art_dir / "console-latest.ndjson", args.window_start_iso, args.window_end_iso)
     terminal_events = parse_terminal_events(art_dir / "terminal-latest.log", args.window_start_iso, args.window_end_iso)
     jaeger_events = parse_jaeger_events(art_dir, start_us, end_us)
-    write_timeline(art_dir, console_events + terminal_events + jaeger_events)
+    jaeger_base = (args.jaeger_base_url or "").strip().rstrip("/")
+    merged = console_events + terminal_events + jaeger_events
+    if jaeger_base:
+        for e in merged:
+            tid = e.get("trace_id")
+            if tid:
+                e["trace_url"] = f"{jaeger_base}/trace/{tid}"
+    write_timeline(art_dir, merged)
 
 
 if __name__ == "__main__":

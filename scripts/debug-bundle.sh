@@ -141,11 +141,33 @@ else:
 print((end - delta).isoformat().replace("+00:00", "Z"))
 PY
 )"
+window_start_epoch="$(python3 - "$window_start_iso" <<'PY'
+import sys
+from datetime import datetime, timezone
+dt = datetime.fromisoformat(sys.argv[1].replace("Z","+00:00")).astimezone(timezone.utc)
+print(int(dt.timestamp()))
+PY
+)"
 
 python3 "$ROOT_DIR/scripts/build-debug-timeline.py" \
   --artifacts-dir "$ART_DIR" \
   --window-start-iso "$window_start_iso" \
-  --window-end-iso "$window_end_iso" >/dev/null 2>&1 || true
+  --window-end-iso "$window_end_iso" \
+  --jaeger-base-url "$JAEGER_BASE_URL" >/dev/null 2>&1 || true
+
+source_warnings=()
+if [[ -f "$ART_DIR/terminal-latest.log" ]]; then
+  terminal_mtime="$(stat -c %Y "$ART_DIR/terminal-latest.log" 2>/dev/null || echo 0)"
+  if [[ "$terminal_mtime" -lt "$window_start_epoch" ]]; then
+    source_warnings+=("WARN: terminal-latest.log mtime is older than bundle window start")
+  fi
+fi
+if [[ -f "$ART_DIR/console-latest.ndjson" ]]; then
+  console_mtime="$(stat -c %Y "$ART_DIR/console-latest.ndjson" 2>/dev/null || echo 0)"
+  if [[ "$console_mtime" -lt "$window_start_epoch" ]]; then
+    source_warnings+=("WARN: console-latest.ndjson mtime is older than bundle window start")
+  fi
+fi
 
 now_iso="$window_end_iso"
 {
@@ -211,6 +233,16 @@ now_iso="$window_end_iso"
     echo
     echo '```text'
     cat "$ART_DIR/expectation-checks.txt"
+    echo '```'
+  fi
+  if [[ "${#source_warnings[@]}" -gt 0 ]]; then
+    echo
+    echo "### Source Freshness Warnings"
+    echo
+    echo '```text'
+    for w in "${source_warnings[@]}"; do
+      echo "$w"
+    done
     echo '```'
   fi
   if [[ -f "$ART_DIR/console-categories.txt" ]]; then

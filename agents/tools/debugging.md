@@ -155,6 +155,8 @@ Creates one run folder under `tests/runs/api-curl/` that captures:
 - per-message-id decide/fetch/event counts
 - expectation checks (`PASS/WARN`) for common pipeline relationships
 - correlated timeline outputs (`timeline.ndjson`, `timeline-top.txt`)
+- Jaeger trace links in timeline rows (`trace_url`) for fast drill-down
+- source freshness warnings when terminal/console files are older than bundle window
 - strict bundle time window filtering (start/end) applied to timeline and Jaeger-derived counts
 
 ### Common options
