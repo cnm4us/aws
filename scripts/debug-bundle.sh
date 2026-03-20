@@ -6,22 +6,25 @@ LOOKBACK="${DEBUG_BUNDLE_LOOKBACK:-1h}"
 SERVICE="${DEBUG_BUNDLE_SERVICE:-aws-mediaconvert-service}"
 DEST_ROOT="$ROOT_DIR/tests/runs/api-curl"
 RUN_ID=""
+BASE_NAME="debug-bundle"
 
 usage() {
   cat <<'USAGE'
 Usage:
-  debug-bundle.sh [--run-id <id>] [--lookback <window>] [--service <name>] [--dest-root <dir>]
+  debug-bundle.sh [--run-id <id>] [--base-name <name>] [--lookback <window>] [--service <name>] [--dest-root <dir>]
 
 Examples:
   npm run debug:bundle
   npm run debug:bundle -- --lookback 15m
   npm run debug:bundle -- --run-id 2026-03-20_message-stuck --lookback 2h
+  npm run debug:bundle -- --base-name message-bundle --lookback 30m
 USAGE
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --run-id) RUN_ID="${2:-}"; shift 2 ;;
+    --base-name) BASE_NAME="${2:-}"; shift 2 ;;
     --lookback) LOOKBACK="${2:-}"; shift 2 ;;
     --service) SERVICE="${2:-}"; shift 2 ;;
     --dest-root) DEST_ROOT="${2:-}"; shift 2 ;;
@@ -31,7 +34,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$RUN_ID" ]]; then
-  RUN_ID="debug-bundle-$(date -u +%Y%m%dT%H%M%SZ)"
+  RUN_ID="${BASE_NAME}-$(date -u +%Y%m%dT%H%M%SZ)"
 fi
 
 if [[ "$DEST_ROOT" != /* ]]; then
@@ -111,7 +114,39 @@ if [[ -f "$ART_DIR/terminal-latest.log" ]]; then
   rg -o 'feed\.message\.[a-z_]+' "$ART_DIR/terminal-latest.log" | sort | uniq -c | sort -nr > "$ART_DIR/terminal-feed-message-signals.txt" || true
 fi
 
-now_iso="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+window_end_iso="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+window_start_iso="$(python3 - "$LOOKBACK" "$window_end_iso" <<'PY'
+import re
+import sys
+from datetime import datetime, timedelta, timezone
+
+lookback = sys.argv[1].strip().lower()
+end_iso = sys.argv[2].strip()
+end = datetime.fromisoformat(end_iso.replace("Z", "+00:00")).astimezone(timezone.utc)
+m = re.fullmatch(r"(\d+)([smhd])", lookback)
+if not m:
+    print((end - timedelta(hours=1)).isoformat().replace("+00:00", "Z"))
+    raise SystemExit(0)
+n = int(m.group(1))
+u = m.group(2)
+if u == "s":
+    delta = timedelta(seconds=n)
+elif u == "m":
+    delta = timedelta(minutes=n)
+elif u == "h":
+    delta = timedelta(hours=n)
+else:
+    delta = timedelta(days=n)
+print((end - delta).isoformat().replace("+00:00", "Z"))
+PY
+)"
+
+python3 "$ROOT_DIR/scripts/build-debug-timeline.py" \
+  --artifacts-dir "$ART_DIR" \
+  --window-start-iso "$window_start_iso" \
+  --window-end-iso "$window_end_iso" >/dev/null 2>&1 || true
+
+now_iso="$window_end_iso"
 {
   echo "# Debug Bundle"
   echo
@@ -119,6 +154,7 @@ now_iso="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "- Captured at (UTC): \`$now_iso\`"
   echo "- Service: \`$SERVICE\`"
   echo "- Jaeger lookback: \`$LOOKBACK\`"
+  echo "- Bundle window (UTC): \`$window_start_iso\` -> \`$window_end_iso\`"
   echo "- Jaeger API: \`$JAEGER_BASE_URL\` (\`$([ "$JAEGER_AVAILABLE" = "1" ] && echo reachable || echo unreachable)\`)"
   echo
   echo "## Sources"
@@ -129,6 +165,7 @@ now_iso="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "- \`artifacts/terminal-latest.log\`"
   echo "- \`artifacts/console-latest.ndjson\`"
   echo "- \`artifacts/jaeger-counts.tsv\`"
+  echo "- \`artifacts/jaeger-http-operation-counts.tsv\`"
   echo "- \`artifacts/jaeger-message_decide.json\`"
   echo "- \`artifacts/jaeger-message_fetch.json\`"
   echo "- \`artifacts/jaeger-message_event.json\`"
@@ -138,14 +175,24 @@ now_iso="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "- \`artifacts/console-categories.txt\`"
   echo "- \`artifacts/console-events.txt\`"
   echo "- \`artifacts/terminal-feed-message-signals.txt\`"
+  echo "- \`artifacts/timeline.ndjson\`"
+  echo "- \`artifacts/timeline-top.txt\`"
   echo
   echo "## Quick Assessment"
   echo
-  echo "### Jaeger trace counts"
+  echo "### Jaeger Trace Counts (Tag-Based)"
   echo
   echo '```text'
   cat "$ART_DIR/jaeger-counts.tsv"
   echo '```'
+  if [[ -f "$ART_DIR/jaeger-http-operation-counts.tsv" ]]; then
+    echo
+    echo "### Jaeger Trace Counts (HTTP Operation Only)"
+    echo
+    echo '```text'
+    cat "$ART_DIR/jaeger-http-operation-counts.tsv"
+    echo '```'
+  fi
   if [[ -f "$ART_DIR/console-categories.txt" ]]; then
     echo
     echo "### Console category counts (top)"
@@ -162,6 +209,19 @@ now_iso="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     head -n 12 "$ART_DIR/terminal-feed-message-signals.txt" || true
     echo '```'
   fi
+  if [[ -f "$ART_DIR/timeline-top.txt" ]]; then
+    echo
+    echo "### Correlated Timeline (top)"
+    echo
+    echo '```text'
+    head -n 30 "$ART_DIR/timeline-top.txt" || true
+    echo '```'
+  fi
+  echo
+  echo "### Interpretation Notes"
+  echo
+  echo "- \`admin_message_analytics\` can be greater than 1 for a single manual check because page load and Apply/filter submit are separate requests."
+  echo "- \`admin_messages\` currently counts \`HTTP GET /admin/messages\` (list/page view). Save actions are \`POST /admin/messages/:id\` and are not included in that row."
 } > "$RUN_DIR/summary.md"
 
 echo "debug bundle created:"

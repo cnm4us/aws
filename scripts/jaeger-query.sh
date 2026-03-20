@@ -34,8 +34,8 @@ Presets:
   message_decide           app.operation=feed.message.decide
   message_fetch            app.operation=feed.message.fetch
   message_event            app.operation=feed.message.event
-  admin_messages           app.operation=admin.messages.list
-  admin_message_analytics  app.operation=admin.message_analytics.query
+  admin_messages           HTTP GET /admin/messages
+  admin_message_analytics  HTTP GET /admin/message-analytics
   feed_message_pipeline    Runs message_decide/message_fetch/message_event checks in sequence.
 
 Examples:
@@ -209,6 +209,7 @@ run_trace() {
 
 run_preset_once() {
   local name="$1"
+  local op=""
   local tag=""
   case "$name" in
     message_decide)
@@ -221,10 +222,10 @@ run_preset_once() {
       tag="app.operation=feed.message.event"
       ;;
     admin_messages)
-      tag="app.operation=admin.messages.list"
+      op="HTTP GET /admin/messages"
       ;;
     admin_message_analytics)
-      tag="app.operation=admin.message_analytics.query"
+      op="HTTP GET /admin/message-analytics"
       ;;
     *)
       die "unknown preset: $name"
@@ -233,8 +234,12 @@ run_preset_once() {
 
   local old_operation="$OPERATION"
   local old_tags=("${TAGS[@]}")
-  OPERATION=""
-  TAGS=("$tag")
+  OPERATION="$op"
+  if [[ -n "$tag" ]]; then
+    TAGS=("$tag")
+  else
+    TAGS=()
+  fi
   run_traces
   OPERATION="$old_operation"
   TAGS=("${old_tags[@]}")

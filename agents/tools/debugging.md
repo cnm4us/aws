@@ -40,6 +40,10 @@ npm run jaeger:query -- <subcommand> [flags]
 - `admin_message_analytics`
 - `feed_message_pipeline` (runs decide/fetch/event in sequence)
 
+Note:
+- Message presets are tag-based (`app.operation=...`).
+- Admin presets are operation-based (`HTTP GET /admin/...`) to match current server-rendered admin routes.
+
 ### Examples
 
 ```bash
@@ -146,13 +150,21 @@ Creates one run folder under `tests/runs/api-curl/` that captures:
 - latest `debug/console/*` log copy
 - Jaeger preset outputs (JSON)
 - quick derived counts + `summary.md`
+- operation-only HTTP counts (endpoint-focused)
+- correlated timeline outputs (`timeline.ndjson`, `timeline-top.txt`)
+- strict bundle time window filtering (start/end) applied to timeline and Jaeger-derived counts
 
 ### Common options
 
 ```bash
 npm run debug:bundle -- --lookback 15m
 npm run debug:bundle -- --run-id 2026-03-20_message-stuck
+npm run debug:bundle -- --base-name message-bundle
 ```
+
+Naming behavior:
+- default: `<base-name>-<UTC timestamp>` (base-name defaults to `debug-bundle`)
+- override full folder name with `--run-id <id>`
 
 ### Output
 
