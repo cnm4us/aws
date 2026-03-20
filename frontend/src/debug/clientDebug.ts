@@ -43,6 +43,12 @@ export type ClientDebugDomBridgeSpec = {
 
 const BROWSER_DEBUG_BATCH_SIZE = 20
 const BROWSER_DEBUG_FLUSH_MS = 1_000
+const DEBUG_LEVEL_ORDER: Record<ClientDebugLevel, number> = {
+  debug: 10,
+  info: 20,
+  warn: 30,
+  error: 40,
+}
 
 const browserDebugQueue: ClientDebugEventPayload[] = []
 let browserDebugFlushTimer: number | null = null
@@ -95,6 +101,65 @@ function getBrowserDebugSessionId(): string | null {
   } catch {
     return null
   }
+}
+
+function readLocalStorageValue(key: string): string {
+  try {
+    if (typeof window === 'undefined') return ''
+    return String(window.localStorage.getItem(key) || '').trim()
+  } catch {
+    return ''
+  }
+}
+
+function parseEventFilters(raw: string): string[] {
+  if (!raw) return []
+  return raw.split(',').map((entry) => String(entry || '').trim()).filter(Boolean)
+}
+
+function eventMatchesFilter(eventName: string, filter: string): boolean {
+  if (!filter) return false
+  if (filter.endsWith('*')) return eventName.startsWith(filter.slice(0, -1))
+  return eventName === filter
+}
+
+function normalizeLevel(value: unknown): ClientDebugLevel {
+  const raw = String(value || '').trim().toLowerCase()
+  if (raw === 'info' || raw === 'warn' || raw === 'error') return raw
+  return 'debug'
+}
+
+function shouldDropMessageEventByOptions(eventName: string, level: ClientDebugLevel): boolean {
+  // Options only apply when message:debug is explicitly enabled.
+  const enabled = readLocalStorageValue('message:debug') === '1'
+  if (!enabled) return false
+
+  const minLevel = normalizeLevel(readLocalStorageValue('message:debug:level') || 'debug')
+  if ((DEBUG_LEVEL_ORDER[level] || 0) < (DEBUG_LEVEL_ORDER[minLevel] || DEBUG_LEVEL_ORDER.debug)) {
+    return true
+  }
+
+  const allowFilters = parseEventFilters(readLocalStorageValue('message:debug:events'))
+  if (allowFilters.length > 0) {
+    let allowed = false
+    for (const filter of allowFilters) {
+      if (eventMatchesFilter(eventName, filter)) {
+        allowed = true
+        break
+      }
+    }
+    if (!allowed) return true
+  }
+
+  const sampleRaw = readLocalStorageValue('message:debug:sample')
+  if (sampleRaw.length) {
+    const sample = Number(sampleRaw)
+    if (Number.isFinite(sample) && sample >= 0 && sample < 1) {
+      if (Math.random() >= sample) return true
+    }
+  }
+
+  return false
 }
 
 async function flushBrowserDebugQueue(): Promise<void> {
@@ -150,6 +215,8 @@ export function dispatchClientDebugDomEvent(
   opts?: { enabled?: boolean; consoleLabel?: string }
 ) {
   if (!opts?.enabled) return
+  const level = normalizeLevel(detail?.level)
+  if (domEventName === 'feed:message-debug' && shouldDropMessageEventByOptions(name, level)) return
   const payload: ClientDebugPayload = {
     name,
     at: new Date().toISOString(),
@@ -176,12 +243,14 @@ export function installClientDebugDomBridges(
   const listeners: Array<{ domEventName: string; listener: EventListener }> = []
   const pushStructuredDebug = (category: string, evt: Event) => {
     const detail = (evt as CustomEvent<Record<string, any> | undefined>)?.detail || {}
+    const eventName = String(detail?.name || 'unknown')
+    const eventLevel = normalizeLevel(detail?.level)
     const ctx = getContext()
     enqueueBrowserDebugEvent({
       ts: String(detail?.at || new Date().toISOString()),
       category,
-      event: String(detail?.name || 'unknown'),
-      level: 'debug',
+      event: eventName,
+      level: eventLevel,
       path: ctx.path,
       browser_session_id: browserSessionId,
       message_session_id: ctx.messageSessionId || null,

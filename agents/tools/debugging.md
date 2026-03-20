@@ -252,6 +252,9 @@ This module owns:
 
 ## Enable Flags
 
+Recommended for site admins: use `/admin/debug` to set/clear flags, then click `Apply + Reload`.
+Manual DevTools commands remain available below.
+
 ### General browser debug
 
 ```js
@@ -263,6 +266,15 @@ location.reload()
 
 ```js
 localStorage.setItem('message:debug', '1')
+location.reload()
+```
+
+Optional message debug filters:
+
+```js
+localStorage.setItem('message:debug:events', 'decision:*,message_anchor:*') // allowlist
+localStorage.setItem('message:debug:sample', '0.5') // 50% sample
+localStorage.setItem('message:debug:level', 'debug') // debug|info|warn|error
 location.reload()
 ```
 
@@ -364,7 +376,10 @@ Avoid:
 npm run serve:jaeger:log
 ```
 
-2. Enable browser debug in DevTools:
+2. Enable browser debug:
+
+- Preferred (admin): open `/admin/debug` and enable `browser:debug` + `message:debug`.
+- DevTools fallback:
 
 ```js
 localStorage.setItem('browser:debug', '1')

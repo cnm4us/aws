@@ -11,6 +11,8 @@ How It Works
 - When enabled, logs are namespaced (e.g., `feed`, `slides`, `video`) and can be filtered by IDs.
 
 Quick Start
+- Recommended (admin): open `/admin/debug`, set flags, click `Apply + Reload`.
+- DevTools fallback: set flags manually in console/localStorage.
 - Enable master switch: in DevTools console run `localStorage.DEBUG = '1'` and reload.
 - Turn on a category: `localStorage.DEBUG_SLIDES = '1'` (or `DEBUG_FEED`, `DEBUG_VIDEO`, etc.).
 - Optional: filter to one item: `localStorage.DEBUG_SLIDE_ID = 'v-01K9*'`.
@@ -178,6 +180,12 @@ Reference: Supported Flags
 - Query bootstrap (examples):
   - `?debug=1&debug_slides=1`
   - `?debug=1&debug_video=1&debug_video_id=v-01K9*`
+- Structured browser debug:
+  - `browser:debug`
+  - `message:debug`
+  - `message:debug:events` (comma allowlist with `*` suffix support)
+  - `message:debug:sample` (0..1 sampling rate)
+  - `message:debug:level` (`debug|info|warn|error`)
 
 Notes
 - Source maps must be present in dev for accurate file:line in the console.

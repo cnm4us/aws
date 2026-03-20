@@ -108,7 +108,7 @@ function emitMessageDebug(name: string, detail?: Record<string, any>) {
 
 function emitIndexDebug(name: string, detail?: Record<string, any>) {
   dispatchClientDebugDomEvent('feed:index-debug', name, detail, {
-    enabled: isClientDebugEnabled({ storageKey: 'browser:debug', queryParam: 'browser_debug', globalFlag: '__BROWSER_DEBUG__' }) || isMessageDebugEnabled(),
+    enabled: isClientDebugEnabled({ storageKey: 'browser:debug', queryParam: 'browser_debug', globalFlag: '__BROWSER_DEBUG__' }),
     consoleLabel: '[index-debug]',
   })
 }
@@ -1075,20 +1075,25 @@ export default function Feed() {
   }, [feedActivityContext, myUserId, messageSessionId])
 
   useEffect(() => {
+    const browserDebugEnabled = isClientDebugEnabled({
+      storageKey: 'browser:debug',
+      queryParam: 'browser_debug',
+      globalFlag: '__BROWSER_DEBUG__',
+    })
+    const messageDebugEnabled = isMessageDebugEnabled()
+    const specs: Array<{ domEventName: string; category: string }> = [
+      { domEventName: 'feed:message-debug', category: 'message' },
+    ]
+    // Keep index/sequence streams under the broader browser debug switch.
+    if (browserDebugEnabled) {
+      specs.push({ domEventName: 'feed:sequence-hook', category: 'sequence' })
+      specs.push({ domEventName: 'feed:index-debug', category: 'index' })
+    }
     return installClientDebugDomBridges(
-      [
-        { domEventName: 'feed:message-debug', category: 'message' },
-        { domEventName: 'feed:sequence-hook', category: 'sequence' },
-        { domEventName: 'feed:index-debug', category: 'index' },
-      ],
+      specs,
       () => browserDebugContextRef.current,
       {
-        enabled:
-          isClientDebugEnabled({
-            storageKey: 'browser:debug',
-            queryParam: 'browser_debug',
-            globalFlag: '__BROWSER_DEBUG__',
-          }) || isMessageDebugEnabled(),
+        enabled: browserDebugEnabled || messageDebugEnabled,
       }
     )
   }, [])

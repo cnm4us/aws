@@ -650,6 +650,7 @@ type AdminNavKey =
   | 'analytics'
   | 'message_analytics'
   | 'analytics_sink'
+  | 'debug'
 	| 'settings'
 	| 'dev';
 
@@ -673,6 +674,7 @@ const ADMIN_NAV_ITEMS: Array<{ key: AdminNavKey; label: string; href: string }> 
   { key: 'analytics', label: 'Analytics', href: '/admin/analytics' },
   { key: 'message_analytics', label: 'Message Analytics', href: '/admin/message-analytics' },
   { key: 'analytics_sink', label: 'Analytics Sink', href: '/admin/analytics-sink' },
+  { key: 'debug', label: 'Debug', href: '/admin/debug' },
   { key: 'settings', label: 'Settings', href: '/admin/settings' },
   { key: 'dev', label: 'Dev', href: '/admin/dev' },
 ];
@@ -4578,6 +4580,344 @@ pagesRouter.get('/admin/message-analytics', async (req: any, res: any) => {
   } catch (err) {
     logError(req.log || pagesLogger, err, 'admin message analytics failed', { path: req.path })
     return res.status(500).send('Failed to load message analytics')
+  }
+})
+
+pagesRouter.get('/admin/debug', async (_req: any, res: any) => {
+  try {
+    const boolKeys = [
+      'DEBUG',
+      'DEBUG_ALLOW_PROD',
+      'DEBUG_FEED',
+      'DEBUG_SLIDES',
+      'DEBUG_AUTH',
+      'DEBUG_VIDEO',
+      'DEBUG_NETWORK',
+      'DEBUG_RENDER',
+      'DEBUG_PERF',
+      'DEBUG_PERM',
+      'DEBUG_ERRORS',
+      'browser:debug',
+      'message:debug',
+    ]
+    const stringKeys = [
+      'DEBUG_FEED_ID',
+      'DEBUG_SLIDE_ID',
+      'DEBUG_VIDEO_ID',
+      'DEBUG_SLIDES_ID',
+      'message:debug:events',
+      'message:debug:sample',
+      'message:debug:level',
+    ]
+    const allKeys = Array.from(new Set(boolKeys.concat(stringKeys)))
+    const messageEventOptions = [
+      'decision:*',
+      'decision:request',
+      'decision:response',
+      'decision:response:not_ok',
+      'decision:no_insert',
+      'decision:error',
+      'decision:insert:applied',
+      'decision:insert:already_present',
+      'decision:skip:*',
+      'decision:skip:not_global',
+      'decision:skip:me_not_loaded',
+      'decision:skip:initial_loading',
+      'decision:skip:no_items',
+      'decision:skip:active_not_content',
+      'decision:skip:busy',
+      'decision:skip:invalid_active_content_key',
+      'decision:skip:same_content_slide',
+      'decision:skip:invalid_message_id',
+      'impression:recorded',
+      'pass_through:recorded',
+      'pass_through:skipped',
+    ]
+
+    const renderBool = (key: string, label: string, hint: string) => (
+      `<label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
+        <input type="checkbox" data-kind="bool" data-key="${escapeHtml(key)}" />
+        <span><strong>${escapeHtml(label)}</strong><span class="field-hint"> — ${escapeHtml(hint)}</span></span>
+      </label>`
+    )
+    const renderText = (key: string, label: string, hint: string) => (
+      `<label style="display:block; margin:8px 0;">
+        <div style="font-weight:700; margin-bottom:4px">${escapeHtml(label)}</div>
+        <input type="text" data-kind="string" data-key="${escapeHtml(key)}" placeholder="${escapeHtml(key)}" />
+        <div class="field-hint">${escapeHtml(hint)}</div>
+      </label>`
+    )
+    const renderSelect = (key: string, label: string, hint: string, options: Array<{ value: string; label: string }>) => (
+      `<label style="display:block; margin:8px 0;">
+        <div style="font-weight:700; margin-bottom:4px">${escapeHtml(label)}</div>
+        <select data-kind="string" data-key="${escapeHtml(key)}">
+          ${options
+            .map((opt) => `<option value="${escapeHtml(opt.value)}">${escapeHtml(opt.label)}</option>`)
+            .join('')}
+        </select>
+        <div class="field-hint">${escapeHtml(hint)}</div>
+      </label>`
+    )
+    const renderEventPicker = () => (
+      `<label style="display:block; margin:8px 0;">
+        <div style="font-weight:700; margin-bottom:4px">message:debug:events</div>
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+          <input type="text" data-kind="string" data-key="message:debug:events" placeholder="decision:*,impression:recorded" style="flex:1 1 360px;" />
+          <button type="button" class="btn" id="debugMessageEventsPickerOpen">Select Events</button>
+        </div>
+        <div class="field-hint">Comma allowlist with optional wildcard suffix (*). Blank means all events.</div>
+      </label>
+      <dialog id="debugMessageEventsDialog" style="max-width:860px; width:min(92vw, 860px); border:1px solid #444; border-radius:10px; padding:14px;">
+        <form method="dialog" style="margin:0;">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px;">
+            <strong>Message Debug Event Picker</strong>
+            <button type="submit" class="btn">Close</button>
+          </div>
+        </form>
+        <div class="field-hint" style="margin-bottom:10px;">Click badges to toggle. Use wildcard entries to keep the list concise.</div>
+        <div id="debugMessageEventsBadgeList" style="display:flex; gap:6px; flex-wrap:wrap;"></div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:12px;">
+          <button type="button" class="btn" id="debugMessageEventsSelectAll">Select All</button>
+          <button type="button" class="btn" id="debugMessageEventsSelectNone">Clear</button>
+          <button type="button" class="btn" id="debugMessageEventsApply">Apply To Field</button>
+        </div>
+      </dialog>`
+    )
+
+    let body = '<h1>Debug Controls</h1>'
+    body += '<div class="toolbar"><div><span class="pill">Admin Only</span></div><div></div></div>'
+    body += '<p class="field-hint">This page writes browser localStorage flags for this origin only. It does not persist to server config.</p>'
+    body += '<div style="display:flex; gap:8px; flex-wrap:wrap; margin:10px 0 12px 0">'
+    body += '<button id="debugApplyReload" class="btn" type="button">Apply + Reload</button>'
+    body += '<button id="debugCopyFlags" class="btn" type="button">Copy Current Flags</button>'
+    body += '<button id="debugClearFlags" class="btn" type="button" style="background:#5a1d1d;border-color:#8a2d2d">Clear Debug Flags</button>'
+    body += '</div>'
+
+    body += '<div class="section"><div class="section-title">Master</div>'
+    body += renderBool('DEBUG', 'DEBUG', 'Master dlog switch.')
+    body += renderBool('DEBUG_ALLOW_PROD', 'DEBUG_ALLOW_PROD', 'Allow debug in production builds.')
+    body += '</div>'
+
+    body += '<div class="section"><div class="section-title">Namespaces</div>'
+    body += renderBool('DEBUG_FEED', 'DEBUG_FEED', 'Feed interactions.')
+    body += renderBool('DEBUG_SLIDES', 'DEBUG_SLIDES', 'Slide/index tracing.')
+    body += renderBool('DEBUG_AUTH', 'DEBUG_AUTH', 'Auth flow logs.')
+    body += renderBool('DEBUG_VIDEO', 'DEBUG_VIDEO', 'Video/HLS tracing.')
+    body += renderBool('DEBUG_NETWORK', 'DEBUG_NETWORK', 'Fetch tracing.')
+    body += renderBool('DEBUG_RENDER', 'DEBUG_RENDER', 'React render tracing.')
+    body += renderBool('DEBUG_PERF', 'DEBUG_PERF', 'Timing/perf traces.')
+    body += renderBool('DEBUG_PERM', 'DEBUG_PERM', 'Permissions logs.')
+    body += renderBool('DEBUG_ERRORS', 'DEBUG_ERRORS', 'Error namespace.')
+    body += '</div>'
+
+    body += '<div class="section"><div class="section-title">Structured Browser Debug</div>'
+    body += renderBool('browser:debug', 'browser:debug', 'Emit structured browser debug events to /api/debug/browser-log.')
+    body += renderBool('message:debug', 'message:debug', 'Emit message-specific structured debug events.')
+    body += renderEventPicker()
+    body += renderSelect(
+      'message:debug:sample',
+      'message:debug:sample',
+      'Sampling rate from 0 to 1. Blank means no sampling.',
+      [
+        { value: '', label: 'Default (no sampling)' },
+        { value: '0.1', label: '0.1 (10%)' },
+        { value: '0.25', label: '0.25 (25%)' },
+        { value: '0.5', label: '0.5 (50%)' },
+        { value: '0.75', label: '0.75 (75%)' },
+        { value: '1', label: '1 (100%)' },
+      ]
+    )
+    body += renderSelect(
+      'message:debug:level',
+      'message:debug:level',
+      'Minimum level. Blank defaults to debug.',
+      [
+        { value: '', label: 'Default (debug)' },
+        { value: 'debug', label: 'debug' },
+        { value: 'info', label: 'info' },
+        { value: 'warn', label: 'warn' },
+        { value: 'error', label: 'error' },
+      ]
+    )
+    body += '</div>'
+
+    body += '<div class="section"><div class="section-title">ID Filters</div>'
+    body += renderText('DEBUG_FEED_ID', 'DEBUG_FEED_ID', 'Comma-separated IDs or wildcard suffix (*).')
+    body += renderText('DEBUG_SLIDE_ID', 'DEBUG_SLIDE_ID', 'Comma-separated IDs or wildcard suffix (*).')
+    body += renderText('DEBUG_VIDEO_ID', 'DEBUG_VIDEO_ID', 'Comma-separated IDs or wildcard suffix (*).')
+    body += renderText('DEBUG_SLIDES_ID', 'DEBUG_SLIDES_ID (legacy alias)', 'Legacy alias for DEBUG_SLIDE_ID.')
+    body += '</div>'
+
+    body += '<div class="section"><div class="section-title">Current Snapshot</div>'
+    body += '<pre id="debugSnapshot" style="white-space:pre-wrap; word-break:break-word; max-height:260px; overflow:auto; margin:0;"></pre>'
+    body += '</div>'
+
+    body += '<div class="section"><div class="section-title">URL Bootstrap Example</div>'
+    body += '<div class="field-hint">Set flags from query params on first load:</div>'
+    body += '<code>/?debug=1&amp;debug_feed=1&amp;debug_video=1&amp;browser_debug=1&amp;message_debug=1</code>'
+    body += '</div>'
+
+    body += `<script>
+(() => {
+  const BOOL_KEYS = ${JSON.stringify(boolKeys)};
+  const STRING_KEYS = ${JSON.stringify(stringKeys)};
+  const ALL_KEYS = ${JSON.stringify(allKeys)};
+  const MESSAGE_EVENT_OPTIONS = ${JSON.stringify(messageEventOptions)};
+  const q = (s) => document.querySelector(s);
+  const qa = (s) => Array.from(document.querySelectorAll(s));
+  const messageEventSelections = new Set();
+  function eventInputEl() { return q('[data-kind="string"][data-key="message:debug:events"]'); }
+  function parseEventField() {
+    const el = eventInputEl();
+    if (!el) return [];
+    return String(el.value || '').split(',').map((v) => v.trim()).filter(Boolean);
+  }
+  function updateEventBadges() {
+    const list = q('#debugMessageEventsBadgeList');
+    if (!list) return;
+    list.innerHTML = '';
+    for (const entry of MESSAGE_EVENT_OPTIONS) {
+      const active = messageEventSelections.has(entry);
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = entry;
+      b.style.border = '1px solid ' + (active ? '#4a9cff' : '#555');
+      b.style.background = active ? '#193557' : '#242424';
+      b.style.color = '#fff';
+      b.style.padding = '4px 8px';
+      b.style.borderRadius = '999px';
+      b.style.cursor = 'pointer';
+      b.addEventListener('click', () => {
+        if (messageEventSelections.has(entry)) messageEventSelections.delete(entry);
+        else messageEventSelections.add(entry);
+        updateEventBadges();
+      });
+      list.appendChild(b);
+    }
+  }
+  function seedEventSelectionsFromInput() {
+    messageEventSelections.clear();
+    for (const entry of parseEventField()) messageEventSelections.add(entry);
+    updateEventBadges();
+  }
+  function applyEventSelectionsToInput() {
+    const el = eventInputEl();
+    if (!el) return;
+    const parts = Array.from(messageEventSelections.values());
+    el.value = parts.join(',');
+  }
+  function readStorage() {
+    const out = {};
+    for (const key of ALL_KEYS) out[key] = (localStorage.getItem(key) || '').trim();
+    return out;
+  }
+  function writeSnapshot() {
+    const el = q('#debugSnapshot');
+    if (!el) return;
+    const values = readStorage();
+    const active = Object.fromEntries(Object.entries(values).filter(([, v]) => String(v || '').length > 0));
+    let derived = null;
+    try {
+      if (window.dlog && typeof window.dlog.currentFlags === 'function') derived = window.dlog.currentFlags();
+    } catch {}
+    el.textContent = JSON.stringify({ active, derived }, null, 2);
+  }
+  function loadControls() {
+    qa('[data-kind="bool"]').forEach((el) => {
+      const key = el.getAttribute('data-key');
+      if (!key) return;
+      el.checked = (localStorage.getItem(key) || '').trim() === '1';
+    });
+    qa('[data-kind="string"]').forEach((el) => {
+      const key = el.getAttribute('data-key');
+      if (!key) return;
+      el.value = (localStorage.getItem(key) || '').trim();
+    });
+    seedEventSelectionsFromInput();
+    writeSnapshot();
+  }
+  function applyValues() {
+    qa('[data-kind="bool"]').forEach((el) => {
+      const key = el.getAttribute('data-key');
+      if (!key) return;
+      if (el.checked) localStorage.setItem(key, '1');
+      else localStorage.removeItem(key);
+    });
+    qa('[data-kind="string"]').forEach((el) => {
+      const key = el.getAttribute('data-key');
+      if (!key) return;
+      const value = String(el.value || '').trim();
+      if (value) localStorage.setItem(key, value);
+      else localStorage.removeItem(key);
+    });
+  }
+  function copyCurrentFlags() {
+    const values = readStorage();
+    const lines = [];
+    for (const [key, value] of Object.entries(values)) {
+      if (!String(value || '').length) continue;
+      lines.push('localStorage.setItem(' + JSON.stringify(key) + ', ' + JSON.stringify(value) + ');');
+    }
+    const text = lines.length ? (lines.join('\\n') + '\\nlocation.reload();') : '// no active debug flags';
+    const done = () => {
+      const btn = q('#debugCopyFlags');
+      if (!btn) return;
+      const prev = btn.textContent || 'Copy Current Flags';
+      btn.textContent = 'Copied';
+      setTimeout(() => { btn.textContent = prev; }, 900);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(() => {});
+      return;
+    }
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+      done();
+    } catch {}
+  }
+  function clearAll() {
+    for (const key of ALL_KEYS) localStorage.removeItem(key);
+    loadControls();
+  }
+  q('#debugApplyReload')?.addEventListener('click', () => { applyValues(); location.reload(); });
+  q('#debugCopyFlags')?.addEventListener('click', () => { applyValues(); copyCurrentFlags(); writeSnapshot(); });
+  q('#debugClearFlags')?.addEventListener('click', () => { clearAll(); });
+  q('#debugMessageEventsPickerOpen')?.addEventListener('click', () => {
+    seedEventSelectionsFromInput();
+    const dlg = q('#debugMessageEventsDialog');
+    if (dlg && dlg.showModal) dlg.showModal();
+  });
+  q('#debugMessageEventsSelectAll')?.addEventListener('click', () => {
+    messageEventSelections.clear();
+    for (const entry of MESSAGE_EVENT_OPTIONS) messageEventSelections.add(entry);
+    updateEventBadges();
+  });
+  q('#debugMessageEventsSelectNone')?.addEventListener('click', () => {
+    messageEventSelections.clear();
+    updateEventBadges();
+  });
+  q('#debugMessageEventsApply')?.addEventListener('click', () => {
+    applyEventSelectionsToInput();
+    const dlg = q('#debugMessageEventsDialog');
+    if (dlg && dlg.close) dlg.close();
+    writeSnapshot();
+  });
+  qa('[data-kind="bool"],[data-kind="string"]').forEach((el) => el.addEventListener('change', writeSnapshot));
+  eventInputEl()?.addEventListener('input', () => { seedEventSelectionsFromInput(); writeSnapshot(); });
+  loadControls();
+})();
+</script>`
+
+    const doc = renderAdminPage({ title: 'Debug', bodyHtml: body, active: 'debug' })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    return res.send(doc)
+  } catch (err) {
+    return res.status(500).send('Failed to load debug controls')
   }
 })
 
