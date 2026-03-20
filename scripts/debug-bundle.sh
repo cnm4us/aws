@@ -45,7 +45,7 @@ mkdir -p "$ART_DIR"
 latest_file() {
   local dir="$1"
   local f
-  f="$(ls -1t "$dir" 2>/dev/null | head -n 1 || true)"
+  f="$(ls -1t "$dir"/* 2>/dev/null | head -n 1 || true)"
   if [[ -z "$f" ]]; then
     return 1
   fi
@@ -55,11 +55,11 @@ latest_file() {
 TERMINAL_SRC=""
 CONSOLE_SRC=""
 
-if TERMINAL_SRC="$(latest_file "$ROOT_DIR/debug/terminal/*")"; then
+if TERMINAL_SRC="$(latest_file "$ROOT_DIR/debug/terminal")"; then
   cp "$TERMINAL_SRC" "$ART_DIR/terminal-latest.log"
 fi
 
-if CONSOLE_SRC="$(latest_file "$ROOT_DIR/debug/console/*")"; then
+if CONSOLE_SRC="$(latest_file "$ROOT_DIR/debug/console")"; then
   cp "$CONSOLE_SRC" "$ART_DIR/console-latest.ndjson"
 fi
 
@@ -72,17 +72,29 @@ PRESETS=(
   "admin_message_analytics"
 )
 
+JAEGER_BASE_URL="${JAEGER_BASE_URL:-http://127.0.0.1:16686}"
+JAEGER_AVAILABLE="0"
+if curl -fsS "$JAEGER_BASE_URL/api/services" >/dev/null 2>&1; then
+  JAEGER_AVAILABLE="1"
+fi
+
 {
   printf "preset\ttrace_count\n"
-  for p in "${PRESETS[@]}"; do
-    out="$ART_DIR/jaeger-${p}.json"
-    if "$JAEGER_TOOL" preset "$p" --service "$SERVICE" --lookback "$LOOKBACK" --out "$out" >/dev/null 2>&1; then
-      c="$(jq '.data | length' "$out" 2>/dev/null || echo "0")"
-      printf "%s\t%s\n" "$p" "$c"
-    else
-      printf "%s\t%s\n" "$p" "error"
-    fi
-  done
+  if [[ "$JAEGER_AVAILABLE" != "1" ]]; then
+    for p in "${PRESETS[@]}"; do
+      printf "%s\t%s\n" "$p" "unavailable"
+    done
+  else
+    for p in "${PRESETS[@]}"; do
+      out="$ART_DIR/jaeger-${p}.json"
+      if "$JAEGER_TOOL" preset "$p" --service "$SERVICE" --lookback "$LOOKBACK" --out "$out" >/dev/null 2>&1; then
+        c="$(jq '.data | length' "$out" 2>/dev/null || echo "0")"
+        printf "%s\t%s\n" "$p" "$c"
+      else
+        printf "%s\t%s\n" "$p" "error"
+      fi
+    done
+  fi
 } > "$ART_DIR/jaeger-counts.tsv"
 
 if [[ -f "$ART_DIR/jaeger-message_event.json" ]]; then
@@ -107,6 +119,7 @@ now_iso="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "- Captured at (UTC): \`$now_iso\`"
   echo "- Service: \`$SERVICE\`"
   echo "- Jaeger lookback: \`$LOOKBACK\`"
+  echo "- Jaeger API: \`$JAEGER_BASE_URL\` (\`$([ "$JAEGER_AVAILABLE" = "1" ] && echo reachable || echo unreachable)\`)"
   echo
   echo "## Sources"
   echo "- Latest terminal log: \`${TERMINAL_SRC:-not_found}\`"

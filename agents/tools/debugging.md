@@ -127,7 +127,7 @@ Use when:
 
 #### Pitfalls
 
-- `preset message_event` matches exact operation name and tag; it can return `0` while tag-based query still returns traces if operation naming shifted.
+- Presets are tag-based (`app.operation=...`) and may include related child/internal spans; use explicit `--operation` filters when you need only one HTTP operation.
 - Avoid huge terminal output: prefer `--summary` for interactive checks, and `--out` + `jq` for deeper inspection.
 
 ## Debug Bundle Tool

@@ -31,11 +31,11 @@ Usage:
   jaeger-query.sh preset <name> [--lookback ...] [--limit ...] [--summary] [--out <file>]
 
 Presets:
-  message_decide           POST /api/feed/message-decision + app.operation=feed.message.decide
-  message_fetch            GET /api/feed/messages/:id + app.operation=feed.message.fetch
-  message_event            POST /api/feed/message-events + app.operation=feed.message.event
-  admin_messages           GET /api/admin/messages + app.operation=admin.messages.list
-  admin_message_analytics  GET /api/admin/message-analytics + app.operation=admin.message_analytics.query
+  message_decide           app.operation=feed.message.decide
+  message_fetch            app.operation=feed.message.fetch
+  message_event            app.operation=feed.message.event
+  admin_messages           app.operation=admin.messages.list
+  admin_message_analytics  app.operation=admin.message_analytics.query
   feed_message_pipeline    Runs message_decide/message_fetch/message_event checks in sequence.
 
 Examples:
@@ -209,27 +209,21 @@ run_trace() {
 
 run_preset_once() {
   local name="$1"
-  local op=""
   local tag=""
   case "$name" in
     message_decide)
-      op="POST /api/feed/message-decision"
       tag="app.operation=feed.message.decide"
       ;;
     message_fetch)
-      op="GET /api/feed/messages/:id"
       tag="app.operation=feed.message.fetch"
       ;;
     message_event)
-      op="POST /api/feed/message-events"
       tag="app.operation=feed.message.event"
       ;;
     admin_messages)
-      op="GET /api/admin/messages"
       tag="app.operation=admin.messages.list"
       ;;
     admin_message_analytics)
-      op="GET /api/admin/message-analytics"
       tag="app.operation=admin.message_analytics.query"
       ;;
     *)
@@ -239,7 +233,7 @@ run_preset_once() {
 
   local old_operation="$OPERATION"
   local old_tags=("${TAGS[@]}")
-  OPERATION="$op"
+  OPERATION=""
   TAGS=("$tag")
   run_traces
   OPERATION="$old_operation"
