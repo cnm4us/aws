@@ -3147,6 +3147,7 @@ export default function Feed() {
                         styles.fitCover,
                         messagePosterReady ? styles.posterHidden : styles.posterVisible
                       )}
+                      style={{ zIndex: 1 }}
                     />
                   ) : null}
                   {promptVideoSrc ? (
@@ -3188,6 +3189,7 @@ export default function Feed() {
                       position: 'absolute',
                       inset: 0,
                       background: toRgba(message.overlayColor, message.overlayOpacity),
+                      zIndex: 3,
                     }}
                   />
                   <div
@@ -3196,6 +3198,7 @@ export default function Feed() {
                       inset: 0,
                       padding: '18px 14px',
                       boxSizing: 'border-box',
+                      zIndex: 4,
                     }}
                   >
                     {message.widgets.message.enabled ? (
