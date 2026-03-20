@@ -130,6 +130,40 @@ Use when:
 - `preset message_event` matches exact operation name and tag; it can return `0` while tag-based query still returns traces if operation naming shifted.
 - Avoid huge terminal output: prefer `--summary` for interactive checks, and `--out` + `jq` for deeper inspection.
 
+## Debug Bundle Tool
+
+### Command
+
+```bash
+npm run debug:bundle
+```
+
+### Purpose
+
+Creates one run folder under `tests/runs/api-curl/` that captures:
+
+- latest `debug/terminal/*` log copy
+- latest `debug/console/*` log copy
+- Jaeger preset outputs (JSON)
+- quick derived counts + `summary.md`
+
+### Common options
+
+```bash
+npm run debug:bundle -- --lookback 15m
+npm run debug:bundle -- --run-id 2026-03-20_message-stuck
+```
+
+### Output
+
+Example:
+
+```text
+tests/runs/api-curl/debug-bundle-20260320T012000Z/
+  summary.md
+  artifacts/
+```
+
 ## Terminal Logging
 
 ### Command

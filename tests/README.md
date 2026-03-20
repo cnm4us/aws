@@ -15,6 +15,7 @@ This directory is the canonical home for test execution evidence.
 - `tests/runs/playwright/report/*` - current Playwright HTML report (tool-managed).
 
 Jaeger query artifacts from `npm run jaeger:query -- ... --out <file>` should also be stored under the appropriate `tests/runs/*/<run_id>/artifacts/` directory.
+The debug bundle helper `npm run debug:bundle` writes a complete capture to `tests/runs/api-curl/<run_id>/`.
 
 ## Run ID convention
 - Prefix by harness:

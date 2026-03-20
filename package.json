@@ -20,6 +20,7 @@
     "jaeger:status": "bash scripts/jaeger.sh status",
     "jaeger:logs": "tail -n 120 logs/jaeger.log",
     "jaeger:query": "bash scripts/jaeger-query.sh",
+    "debug:bundle": "bash scripts/debug-bundle.sh",
     "prometheus:start": "bash scripts/prometheus.sh start",
     "prometheus:stop": "bash scripts/prometheus.sh stop",
     "prometheus:status": "bash scripts/prometheus.sh status",
