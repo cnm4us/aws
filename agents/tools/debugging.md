@@ -37,6 +37,7 @@ npm run jaeger:query -- <subcommand> [flags]
 - `message_fetch`
 - `message_event`
 - `admin_messages`
+- `admin_message_save`
 - `admin_message_analytics`
 - `feed_message_pipeline` (runs decide/fetch/event in sequence)
 
@@ -151,6 +152,8 @@ Creates one run folder under `tests/runs/api-curl/` that captures:
 - Jaeger preset outputs (JSON)
 - quick derived counts + `summary.md`
 - operation-only HTTP counts (endpoint-focused)
+- per-message-id decide/fetch/event counts
+- expectation checks (`PASS/WARN`) for common pipeline relationships
 - correlated timeline outputs (`timeline.ndjson`, `timeline-top.txt`)
 - strict bundle time window filtering (start/end) applied to timeline and Jaeger-derived counts
 

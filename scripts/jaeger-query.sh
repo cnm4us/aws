@@ -35,6 +35,7 @@ Presets:
   message_fetch            app.operation=feed.message.fetch
   message_event            app.operation=feed.message.event
   admin_messages           HTTP GET /admin/messages
+  admin_message_save       HTTP POST /admin/messages/:id
   admin_message_analytics  HTTP GET /admin/message-analytics
   feed_message_pipeline    Runs message_decide/message_fetch/message_event checks in sequence.
 
@@ -223,6 +224,9 @@ run_preset_once() {
       ;;
     admin_messages)
       op="HTTP GET /admin/messages"
+      ;;
+    admin_message_save)
+      op="HTTP POST /admin/messages/:id"
       ;;
     admin_message_analytics)
       op="HTTP GET /admin/message-analytics"

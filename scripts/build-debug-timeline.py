@@ -12,6 +12,7 @@ HTTP_OPERATION_BY_PRESET = {
     "message_fetch": "HTTP GET /api/feed/messages/:id",
     "message_event": "HTTP POST /api/feed/message-events",
     "admin_messages": "HTTP GET /admin/messages",
+    "admin_message_save": "HTTP POST /admin/messages/:id",
     "admin_message_analytics": "HTTP GET /admin/message-analytics",
 }
 
@@ -20,6 +21,7 @@ PRESET_FILES = [
     "message_fetch",
     "message_event",
     "admin_messages",
+    "admin_message_save",
     "admin_message_analytics",
 ]
 
@@ -124,6 +126,69 @@ def build_http_operation_counts(art_dir: Path, start_us: Optional[int], end_us: 
                 count += 1
         rows.append([preset, operation_name, str(count)])
     return rows
+
+
+def build_message_id_counts(art_dir: Path, start_us: Optional[int], end_us: Optional[int]) -> List[List[str]]:
+    rows: List[List[str]] = [["message_id", "decide", "fetch", "event"]]
+    signal_to_preset = {
+        "decide": "message_decide",
+        "fetch": "message_fetch",
+        "event": "message_event",
+    }
+    agg: Dict[str, Dict[str, int]] = {}
+    for signal, preset in signal_to_preset.items():
+        p = art_dir / f"jaeger-{preset}.json"
+        payload = load_json(p)
+        if not payload:
+            continue
+        expected_op = HTTP_OPERATION_BY_PRESET[preset]
+        for tr in payload.get("data", []) or []:
+            for span in tr.get("spans", []) or []:
+                if not jaeger_span_in_window(span, start_us, end_us):
+                    continue
+                if str(span.get("operationName", "")) != expected_op:
+                    continue
+                tags = span_tags_map(span)
+                mid = tags.get("app.message_id")
+                if mid is None:
+                    continue
+                key = str(mid)
+                if key not in agg:
+                    agg[key] = {"decide": 0, "fetch": 0, "event": 0}
+                agg[key][signal] += 1
+    for key in sorted(agg.keys(), key=lambda x: (int(x) if x.isdigit() else 10**9, x)):
+        v = agg[key]
+        rows.append([key, str(v["decide"]), str(v["fetch"]), str(v["event"])])
+    return rows
+
+
+def build_expectation_checks(preset_rows: List[List[str]]) -> List[str]:
+    counts: Dict[str, int] = {}
+    for r in preset_rows[1:]:
+        if len(r) < 2:
+            continue
+        try:
+            counts[r[0]] = int(r[1])
+        except Exception:
+            counts[r[0]] = 0
+    lines: List[str] = []
+    warnings = 0
+    decide = counts.get("message_decide", 0)
+    fetch = counts.get("message_fetch", 0)
+    event = counts.get("message_event", 0)
+    if decide > 0 and fetch == 0:
+        lines.append("WARN: message_decide > 0 but message_fetch == 0")
+        warnings += 1
+    else:
+        lines.append("PASS: message_decide/message_fetch relationship looks healthy")
+    if fetch > 0 and event == 0:
+        lines.append("WARN: message_fetch > 0 but message_event == 0")
+        warnings += 1
+    else:
+        lines.append("PASS: message_fetch/message_event relationship looks healthy")
+    if warnings == 0:
+        lines.append("PASS: no expectation warnings")
+    return lines
 
 
 def write_tsv(path: Path, rows: List[List[str]]) -> None:
@@ -326,8 +391,12 @@ def main() -> None:
     start_us, end_us = parse_window_bounds(args.window_start_iso, args.window_end_iso)
     preset_rows = build_preset_counts(art_dir, start_us, end_us)
     op_rows = build_http_operation_counts(art_dir, start_us, end_us)
+    message_rows = build_message_id_counts(art_dir, start_us, end_us)
+    checks = build_expectation_checks(preset_rows)
     write_tsv(art_dir / "jaeger-counts.tsv", preset_rows)
     write_tsv(art_dir / "jaeger-http-operation-counts.tsv", op_rows)
+    write_tsv(art_dir / "jaeger-message-id-counts.tsv", message_rows)
+    (art_dir / "expectation-checks.txt").write_text("\n".join(checks) + "\n", encoding="utf-8")
 
     console_events = parse_console_events(art_dir / "console-latest.ndjson", args.window_start_iso, args.window_end_iso)
     terminal_events = parse_terminal_events(art_dir / "terminal-latest.log", args.window_start_iso, args.window_end_iso)

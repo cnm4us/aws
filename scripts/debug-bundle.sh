@@ -72,6 +72,7 @@ PRESETS=(
   "message_fetch"
   "message_event"
   "admin_messages"
+  "admin_message_save"
   "admin_message_analytics"
 )
 
@@ -166,10 +167,13 @@ now_iso="$window_end_iso"
   echo "- \`artifacts/console-latest.ndjson\`"
   echo "- \`artifacts/jaeger-counts.tsv\`"
   echo "- \`artifacts/jaeger-http-operation-counts.tsv\`"
+  echo "- \`artifacts/jaeger-message-id-counts.tsv\`"
+  echo "- \`artifacts/expectation-checks.txt\`"
   echo "- \`artifacts/jaeger-message_decide.json\`"
   echo "- \`artifacts/jaeger-message_fetch.json\`"
   echo "- \`artifacts/jaeger-message_event.json\`"
   echo "- \`artifacts/jaeger-admin_messages.json\`"
+  echo "- \`artifacts/jaeger-admin_message_save.json\`"
   echo "- \`artifacts/jaeger-admin_message_analytics.json\`"
   echo "- \`artifacts/jaeger-message-event-tags.txt\`"
   echo "- \`artifacts/console-categories.txt\`"
@@ -191,6 +195,22 @@ now_iso="$window_end_iso"
     echo
     echo '```text'
     cat "$ART_DIR/jaeger-http-operation-counts.tsv"
+    echo '```'
+  fi
+  if [[ -f "$ART_DIR/jaeger-message-id-counts.tsv" ]]; then
+    echo
+    echo "### Per-Message ID Counts"
+    echo
+    echo '```text'
+    cat "$ART_DIR/jaeger-message-id-counts.tsv"
+    echo '```'
+  fi
+  if [[ -f "$ART_DIR/expectation-checks.txt" ]]; then
+    echo
+    echo "### Expectation Checks"
+    echo
+    echo '```text'
+    cat "$ART_DIR/expectation-checks.txt"
     echo '```'
   fi
   if [[ -f "$ART_DIR/console-categories.txt" ]]; then
@@ -221,7 +241,7 @@ now_iso="$window_end_iso"
   echo "### Interpretation Notes"
   echo
   echo "- \`admin_message_analytics\` can be greater than 1 for a single manual check because page load and Apply/filter submit are separate requests."
-  echo "- \`admin_messages\` currently counts \`HTTP GET /admin/messages\` (list/page view). Save actions are \`POST /admin/messages/:id\` and are not included in that row."
+  echo "- \`admin_messages\` currently counts \`HTTP GET /admin/messages\` (list/page view). Save actions are reported separately as \`admin_message_save\`."
 } > "$RUN_DIR/summary.md"
 
 echo "debug bundle created:"
