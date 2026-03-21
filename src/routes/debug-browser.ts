@@ -7,6 +7,8 @@ type BrowserDebugEventInput = {
   category?: unknown
   event?: unknown
   level?: unknown
+  debug_event_id?: unknown
+  debug_seq?: unknown
   path?: unknown
   browser_session_id?: unknown
   message_session_id?: unknown
@@ -19,6 +21,8 @@ type BrowserDebugEventRecord = {
   category: string
   event: string
   level: 'debug' | 'info' | 'warn' | 'error'
+  debug_event_id: string | null
+  debug_seq: number | null
   path: string | null
   browser_session_id: string | null
   message_session_id: string | null
@@ -94,12 +98,16 @@ function normalizeRecord(input: BrowserDebugEventInput): BrowserDebugEventRecord
   const pathValue = String(input?.path || '').trim()
   const browserSessionId = String(input?.browser_session_id || '').trim()
   const messageSessionId = String(input?.message_session_id || '').trim()
+  const debugEventId = String(input?.debug_event_id || '').trim()
+  const debugSeqRaw = Number(input?.debug_seq)
   const userIdRaw = Number(input?.user_id)
   return {
     ts,
     category,
     event,
     level: normalizeLevel(input?.level),
+    debug_event_id: debugEventId ? debugEventId.slice(0, 128) : null,
+    debug_seq: Number.isFinite(debugSeqRaw) && debugSeqRaw > 0 ? Math.trunc(debugSeqRaw) : null,
     path: pathValue ? pathValue.slice(0, 512) : null,
     browser_session_id: browserSessionId ? browserSessionId.slice(0, 128) : null,
     message_session_id: messageSessionId ? messageSessionId.slice(0, 128) : null,

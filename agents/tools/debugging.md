@@ -255,6 +255,19 @@ This module owns:
 Recommended for site admins: use `/admin/debug` to set/clear flags, then click `Apply + Reload`.
 Manual DevTools commands remain available below.
 
+Unified keys are now the primary contract:
+- `CLIENT_DEBUG`
+- `CLIENT_DEBUG_EMIT`
+- `CLIENT_DEBUG_NS`
+- `CLIENT_DEBUG_EVENTS`
+- `CLIENT_DEBUG_EXCLUDE`
+- `CLIENT_DEBUG_LEVEL`
+- `CLIENT_DEBUG_SAMPLE`
+- `CLIENT_DEBUG_ID`
+- `CLIENT_DEBUG_SESSION`
+
+Legacy keys remain compatibility-only during migration.
+
 ### General browser debug
 
 ```js

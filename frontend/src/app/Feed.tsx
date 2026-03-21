@@ -6,7 +6,7 @@ import { prefetchForHref } from '../ui/routes'
 import styles from '../styles/feed.module.css'
 import debug from '../debug'
 import useRenderDebug from '../debug/useRenderDebug'
-import { dispatchClientDebugDomEvent, installClientDebugDomBridges, isClientDebugEnabled } from '../debug/clientDebug'
+import { dispatchClientDebugDomEvent, emitStructuredClientDebugEvent, installClientDebugDomBridges, readEffectiveClientDebugConfig } from '../debug/clientDebug'
 
 const LazyReportModal = React.lazy(() => import('./ReportModal'))
 const LazyJumpToSpaceModal = React.lazy(() => import('./JumpToSpaceModal'))
@@ -89,26 +89,16 @@ function feedSequenceHeader(tag?: FeedSequenceEngineTag): Record<string, string>
   return { [FEED_SEQUENCE_ENGINE_HEADER]: tag }
 }
 
-function isMessageDebugEnabled(): boolean {
-  return isClientDebugEnabled({
-    envFlag: 'VITE_MESSAGE_DEBUG',
-    queryParam: 'message_debug',
-    storageKey: 'message:debug',
-    globalFlag: '__MESSAGE_DEBUG__',
-  })
-}
-
 function emitMessageDebug(name: string, detail?: Record<string, any>) {
-  const enabled = isMessageDebugEnabled()
   dispatchClientDebugDomEvent('feed:message-debug', name, detail, {
-    enabled,
+    enabled: true,
     consoleLabel: '[message-debug]',
   })
 }
 
 function emitIndexDebug(name: string, detail?: Record<string, any>) {
   dispatchClientDebugDomEvent('feed:index-debug', name, detail, {
-    enabled: isClientDebugEnabled({ storageKey: 'browser:debug', queryParam: 'browser_debug', globalFlag: '__BROWSER_DEBUG__' }),
+    enabled: true,
     consoleLabel: '[index-debug]',
   })
 }
@@ -879,16 +869,15 @@ export default function Feed() {
   const emitSequenceHook = useCallback((name: SequenceHookName, payload?: Record<string, unknown>) => {
     if (!sequenceEngineV1Enabled) return
     const detail = {
-      name,
-      at: new Date().toISOString(),
       active_sequence_key: activeSequenceKey,
       active_sequence_index: activeSequenceIndex,
       ...(payload || {}),
     }
     try { debug.log('feed', `hook:${name}`, detail) } catch {}
-    try {
-      window.dispatchEvent(new CustomEvent('feed:sequence-hook', { detail }))
-    } catch {}
+    dispatchClientDebugDomEvent('feed:sequence-hook', name, detail as any, {
+      enabled: true,
+      consoleLabel: '[sequence-debug]',
+    })
   }, [sequenceEngineV1Enabled, activeSequenceKey, activeSequenceIndex])
 
   const isGlobalBillboard = useMemo(() => {
@@ -1075,25 +1064,43 @@ export default function Feed() {
   }, [feedActivityContext, myUserId, messageSessionId])
 
   useEffect(() => {
-    const browserDebugEnabled = isClientDebugEnabled({
-      storageKey: 'browser:debug',
-      queryParam: 'browser_debug',
-      globalFlag: '__BROWSER_DEBUG__',
-    })
-    const messageDebugEnabled = isMessageDebugEnabled()
+    const cfg = readEffectiveClientDebugConfig()
+    // Emit one structured config snapshot so debug bundles can explain active filters.
+    try {
+      const onceKey = 'client_debug_config_emitted_v1'
+      const already = typeof window !== 'undefined' ? window.sessionStorage.getItem(onceKey) : '1'
+      if (!already) {
+        if (typeof window !== 'undefined') window.sessionStorage.setItem(onceKey, '1')
+        emitStructuredClientDebugEvent({
+          category: 'feed',
+          event: 'debug:config',
+          level: 'info',
+          payload: {
+            enabled: cfg.enabled,
+            emit: cfg.emit,
+            namespaces: cfg.namespaces,
+            include_events: cfg.includeEvents,
+            exclude_events: cfg.excludeEvents,
+            level: cfg.level,
+            sample: cfg.sample,
+            id_filters: cfg.idFilters,
+            session_filters: cfg.sessionFilters,
+            legacy_used: cfg.legacy.used,
+            legacy_keys: cfg.legacy.keys,
+          },
+        })
+      }
+    } catch {}
     const specs: Array<{ domEventName: string; category: string }> = [
       { domEventName: 'feed:message-debug', category: 'message' },
+      { domEventName: 'feed:sequence-hook', category: 'sequence' },
+      { domEventName: 'feed:index-debug', category: 'index' },
     ]
-    // Keep index/sequence streams under the broader browser debug switch.
-    if (browserDebugEnabled) {
-      specs.push({ domEventName: 'feed:sequence-hook', category: 'sequence' })
-      specs.push({ domEventName: 'feed:index-debug', category: 'index' })
-    }
     return installClientDebugDomBridges(
       specs,
       () => browserDebugContextRef.current,
       {
-        enabled: browserDebugEnabled || messageDebugEnabled,
+        enabled: cfg.emit,
       }
     )
   }, [])

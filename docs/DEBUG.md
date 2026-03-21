@@ -13,6 +13,9 @@ How It Works
 Quick Start
 - Recommended (admin): open `/admin/debug`, set flags, click `Apply + Reload`.
 - DevTools fallback: set flags manually in console/localStorage.
+- Unified keys are now primary:
+  - `CLIENT_DEBUG`, `CLIENT_DEBUG_EMIT`, `CLIENT_DEBUG_NS`, `CLIENT_DEBUG_EVENTS`, `CLIENT_DEBUG_EXCLUDE`, `CLIENT_DEBUG_LEVEL`, `CLIENT_DEBUG_SAMPLE`, `CLIENT_DEBUG_ID`, `CLIENT_DEBUG_SESSION`
+- Legacy keys (`DEBUG*`, `browser:debug`, `message:debug:*`) are still read for compatibility.
 - Enable master switch: in DevTools console run `localStorage.DEBUG = '1'` and reload.
 - Turn on a category: `localStorage.DEBUG_SLIDES = '1'` (or `DEBUG_FEED`, `DEBUG_VIDEO`, etc.).
 - Optional: filter to one item: `localStorage.DEBUG_SLIDE_ID = 'v-01K9*'`.
@@ -162,6 +165,16 @@ Troubleshooting
 - No `dlog` in console? Ensure you’re in dev, and enable the master switch first, then reload.
 
 Reference: Supported Flags
+- Unified (primary):
+  - `CLIENT_DEBUG`
+  - `CLIENT_DEBUG_EMIT`
+  - `CLIENT_DEBUG_NS`
+  - `CLIENT_DEBUG_EVENTS`
+  - `CLIENT_DEBUG_EXCLUDE`
+  - `CLIENT_DEBUG_LEVEL`
+  - `CLIENT_DEBUG_SAMPLE`
+  - `CLIENT_DEBUG_ID`
+  - `CLIENT_DEBUG_SESSION`
 - Master switch:
   - `DEBUG = '1'`
 - Categories (set to `'1'` to enable):

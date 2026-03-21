@@ -1,5 +1,8 @@
 import { bootstrapFromQuery, colorFor, currentFlags, enabled as cfgEnabled, idMatches, installStorageSync, reloadFlags, type Namespace } from './config'
 import { getCallsite } from './callsite'
+import { emitStructuredClientDebugEvent } from './clientDebug'
+import { readClientDebugConfig } from './unifiedConfig'
+export { readClientDebugConfig, type ClientDebugConfig, type ClientDebugLevel } from './unifiedConfig'
 
 type MetaArg = Record<string, any> | (() => Record<string, any>) | undefined
 
@@ -22,7 +25,19 @@ function pickMeta(meta?: MetaArg): any | undefined {
   try { return typeof meta === 'function' ? (meta as any)() : meta } catch { return undefined }
 }
 
-function baseEnabled(ns?: Namespace): boolean { return cfgEnabled(ns) }
+function unifiedEnabled(ns?: Namespace): boolean {
+  try {
+    const cfg = readClientDebugConfig()
+    if (!cfg.enabled) return false
+    if (!ns) return true
+    if (!cfg.namespaces.length) return true
+    return cfg.namespaces.some((entry) => String(entry || '').trim().toLowerCase() === String(ns).toLowerCase())
+  } catch {
+    return false
+  }
+}
+
+function baseEnabled(ns?: Namespace): boolean { return cfgEnabled(ns) || unifiedEnabled(ns) }
 
 function nsEnabled(ns: Namespace, id?: string | null): boolean {
   if (!baseEnabled(ns)) return false
@@ -52,12 +67,41 @@ function output(level: LogLevel, ns: Namespace, event: string, meta?: MetaArg, i
   const [label, css] = makePrefix(ns, ctx)
   const where = callsiteTag()
   const delta = fmtDelta()
-  const body = pickMeta(meta)
-  const args: any[] = [label + ` ${event} ${delta}` + (where ? ` [${where}]` : ''), css]
+  const baseMeta = pickMeta(meta)
+  const body = (baseMeta && typeof baseMeta === 'object' && !Array.isArray(baseMeta))
+    ? { ...baseMeta }
+    : (baseMeta === undefined ? undefined : { value: baseMeta })
+  const debugSeq = (output as any).__seq ? Number((output as any).__seq) + 1 : 1
+  ;(output as any).__seq = debugSeq
+  const debugEventId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `dlog-${Date.now()}-${Math.random().toString(16).slice(2)}-${debugSeq}`
+  const shortId = debugEventId.slice(0, 8)
+  if (body !== undefined) {
+    ;(body as any).debug_event_id = debugEventId
+    ;(body as any).debug_seq = debugSeq
+  }
+  const args: any[] = [label + ` ${event} ${delta}` + (where ? ` [${where}]` : '') + ` [#${debugSeq} ${shortId}]`, css]
   if (body !== undefined) args.push(body)
   try {
     // eslint-disable-next-line no-console
     ;(console as any)[level](...args)
+  } catch {}
+  try {
+    emitStructuredClientDebugEvent({
+      category: ns,
+      event,
+      level: (level === 'log' ? 'debug' : level),
+      payload: {
+        ctx: ctx || null,
+        id: id || null,
+        where: where || null,
+        delta,
+        debug_event_id: debugEventId,
+        debug_seq: debugSeq,
+        detail: body === undefined ? null : body,
+      },
+    })
   } catch {}
 }
 
@@ -106,6 +150,10 @@ function installFetchDebug() {
       } catch {}
 
       const log = (event: string, extra: Record<string, any>) => {
+        // Avoid self-observing the browser debug emitter transport.
+        // Otherwise `CLIENT_DEBUG_NS` including `network` creates noisy
+        // logs for `/api/debug/browser-log` every flush interval.
+        if (url.includes('/api/debug/browser-log')) return
         try {
           debug.log(
             'network',

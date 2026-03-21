@@ -4585,7 +4585,18 @@ pagesRouter.get('/admin/message-analytics', async (req: any, res: any) => {
 
 pagesRouter.get('/admin/debug', async (_req: any, res: any) => {
   try {
-    const boolKeys = [
+    const unifiedKeys = [
+      'CLIENT_DEBUG',
+      'CLIENT_DEBUG_EMIT',
+      'CLIENT_DEBUG_NS',
+      'CLIENT_DEBUG_EVENTS',
+      'CLIENT_DEBUG_EXCLUDE',
+      'CLIENT_DEBUG_LEVEL',
+      'CLIENT_DEBUG_SAMPLE',
+      'CLIENT_DEBUG_ID',
+      'CLIENT_DEBUG_SESSION',
+    ]
+    const legacyKeys = [
       'DEBUG',
       'DEBUG_ALLOW_PROD',
       'DEBUG_FEED',
@@ -4597,318 +4608,271 @@ pagesRouter.get('/admin/debug', async (_req: any, res: any) => {
       'DEBUG_PERF',
       'DEBUG_PERM',
       'DEBUG_ERRORS',
-      'browser:debug',
-      'message:debug',
-    ]
-    const stringKeys = [
       'DEBUG_FEED_ID',
       'DEBUG_SLIDE_ID',
-      'DEBUG_VIDEO_ID',
       'DEBUG_SLIDES_ID',
+      'DEBUG_VIDEO_ID',
+      'browser:debug',
+      'message:debug',
       'message:debug:events',
       'message:debug:sample',
       'message:debug:level',
     ]
-    const allKeys = Array.from(new Set(boolKeys.concat(stringKeys)))
-    const messageEventOptions = [
+    const allKeys = Array.from(new Set(unifiedKeys.concat(legacyKeys)))
+    const namespaces = ['feed', 'slides', 'message', 'index', 'sequence', 'video', 'network', 'render', 'auth', 'perf', 'perm', 'errors']
+    const eventOptions = [
       'decision:*',
       'decision:request',
       'decision:response',
-      'decision:response:not_ok',
       'decision:no_insert',
       'decision:error',
-      'decision:insert:applied',
-      'decision:insert:already_present',
+      'decision:insert:*',
       'decision:skip:*',
-      'decision:skip:not_global',
-      'decision:skip:me_not_loaded',
-      'decision:skip:initial_loading',
-      'decision:skip:no_items',
-      'decision:skip:active_not_content',
-      'decision:skip:busy',
-      'decision:skip:invalid_active_content_key',
-      'decision:skip:same_content_slide',
-      'decision:skip:invalid_message_id',
       'impression:recorded',
-      'pass_through:recorded',
-      'pass_through:skipped',
+      'pass_through:*',
+      'index:active_changed',
+      'reanchor:start',
+      'reanchor:end',
+      'message_anchor:*',
+      'sequence_*',
+      'render slide',
+      'index -> *',
+      'hook:*',
     ]
-
-    const renderBool = (key: string, label: string, hint: string) => (
-      `<label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
-        <input type="checkbox" data-kind="bool" data-key="${escapeHtml(key)}" />
-        <span><strong>${escapeHtml(label)}</strong><span class="field-hint"> — ${escapeHtml(hint)}</span></span>
-      </label>`
-    )
-    const renderText = (key: string, label: string, hint: string) => (
-      `<label style="display:block; margin:8px 0;">
-        <div style="font-weight:700; margin-bottom:4px">${escapeHtml(label)}</div>
-        <input type="text" data-kind="string" data-key="${escapeHtml(key)}" placeholder="${escapeHtml(key)}" />
-        <div class="field-hint">${escapeHtml(hint)}</div>
-      </label>`
-    )
-    const renderSelect = (key: string, label: string, hint: string, options: Array<{ value: string; label: string }>) => (
-      `<label style="display:block; margin:8px 0;">
-        <div style="font-weight:700; margin-bottom:4px">${escapeHtml(label)}</div>
-        <select data-kind="string" data-key="${escapeHtml(key)}">
-          ${options
-            .map((opt) => `<option value="${escapeHtml(opt.value)}">${escapeHtml(opt.label)}</option>`)
-            .join('')}
-        </select>
-        <div class="field-hint">${escapeHtml(hint)}</div>
-      </label>`
-    )
-    const renderEventPicker = () => (
-      `<label style="display:block; margin:8px 0;">
-        <div style="font-weight:700; margin-bottom:4px">message:debug:events</div>
-        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-          <input type="text" data-kind="string" data-key="message:debug:events" placeholder="decision:*,impression:recorded" style="flex:1 1 360px;" />
-          <button type="button" class="btn" id="debugMessageEventsPickerOpen">Select Events</button>
-        </div>
-        <div class="field-hint">Comma allowlist with optional wildcard suffix (*). Blank means all events.</div>
-      </label>
-      <dialog id="debugMessageEventsDialog" style="max-width:860px; width:min(92vw, 860px); border:1px solid #444; border-radius:10px; padding:14px;">
-        <form method="dialog" style="margin:0;">
-          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px;">
-            <strong>Message Debug Event Picker</strong>
-            <button type="submit" class="btn">Close</button>
-          </div>
-        </form>
-        <div class="field-hint" style="margin-bottom:10px;">Click badges to toggle. Use wildcard entries to keep the list concise.</div>
-        <div id="debugMessageEventsBadgeList" style="display:flex; gap:6px; flex-wrap:wrap;"></div>
-        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:12px;">
-          <button type="button" class="btn" id="debugMessageEventsSelectAll">Select All</button>
-          <button type="button" class="btn" id="debugMessageEventsSelectNone">Clear</button>
-          <button type="button" class="btn" id="debugMessageEventsApply">Apply To Field</button>
-        </div>
-      </dialog>`
-    )
 
     let body = '<h1>Debug Controls</h1>'
     body += '<div class="toolbar"><div><span class="pill">Admin Only</span></div><div></div></div>'
-    body += '<p class="field-hint">This page writes browser localStorage flags for this origin only. It does not persist to server config.</p>'
+    body += '<p class="field-hint">Unified keys are primary. Legacy keys remain compatibility-only during migration.</p>'
     body += '<div style="display:flex; gap:8px; flex-wrap:wrap; margin:10px 0 12px 0">'
     body += '<button id="debugApplyReload" class="btn" type="button">Apply + Reload</button>'
     body += '<button id="debugCopyFlags" class="btn" type="button">Copy Current Flags</button>'
-    body += '<button id="debugClearFlags" class="btn" type="button" style="background:#5a1d1d;border-color:#8a2d2d">Clear Debug Flags</button>'
+    body += '<button id="debugClearUnified" class="btn" type="button">Clear Unified</button>'
+    body += '<button id="debugMigrateLegacy" class="btn" type="button">Migrate Legacy -> Unified</button>'
+    body += '<button id="debugClearAll" class="btn" type="button" style="background:#5a1d1d;border-color:#8a2d2d">Clear All Debug Keys</button>'
     body += '</div>'
 
-    body += '<div class="section"><div class="section-title">Master</div>'
-    body += renderBool('DEBUG', 'DEBUG', 'Master dlog switch.')
-    body += renderBool('DEBUG_ALLOW_PROD', 'DEBUG_ALLOW_PROD', 'Allow debug in production builds.')
+    body += '<div class="section"><div class="section-title">Outputs</div>'
+    body += `<label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
+      <input type="checkbox" id="clientDebugEnabled" />
+      <span><strong>Console Output</strong><span class="field-hint"> — maps to CLIENT_DEBUG</span></span>
+    </label>`
+    body += `<label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
+      <input type="checkbox" id="clientDebugEmit" />
+      <span><strong>Emitter Output</strong><span class="field-hint"> — maps to CLIENT_DEBUG_EMIT</span></span>
+    </label>`
     body += '</div>'
 
-    body += '<div class="section"><div class="section-title">Namespaces</div>'
-    body += renderBool('DEBUG_FEED', 'DEBUG_FEED', 'Feed interactions.')
-    body += renderBool('DEBUG_SLIDES', 'DEBUG_SLIDES', 'Slide/index tracing.')
-    body += renderBool('DEBUG_AUTH', 'DEBUG_AUTH', 'Auth flow logs.')
-    body += renderBool('DEBUG_VIDEO', 'DEBUG_VIDEO', 'Video/HLS tracing.')
-    body += renderBool('DEBUG_NETWORK', 'DEBUG_NETWORK', 'Fetch tracing.')
-    body += renderBool('DEBUG_RENDER', 'DEBUG_RENDER', 'React render tracing.')
-    body += renderBool('DEBUG_PERF', 'DEBUG_PERF', 'Timing/perf traces.')
-    body += renderBool('DEBUG_PERM', 'DEBUG_PERM', 'Permissions logs.')
-    body += renderBool('DEBUG_ERRORS', 'DEBUG_ERRORS', 'Error namespace.')
+    body += '<div class="section"><div class="section-title">Namespaces (CLIENT_DEBUG_NS)</div>'
+    body += '<div id="clientDebugNamespaceList" style="display:flex; flex-wrap:wrap; gap:10px;"></div>'
     body += '</div>'
 
-    body += '<div class="section"><div class="section-title">Structured Browser Debug</div>'
-    body += renderBool('browser:debug', 'browser:debug', 'Emit structured browser debug events to /api/debug/browser-log.')
-    body += renderBool('message:debug', 'message:debug', 'Emit message-specific structured debug events.')
-    body += renderEventPicker()
-    body += renderSelect(
-      'message:debug:sample',
-      'message:debug:sample',
-      'Sampling rate from 0 to 1. Blank means no sampling.',
-      [
-        { value: '', label: 'Default (no sampling)' },
-        { value: '0.1', label: '0.1 (10%)' },
-        { value: '0.25', label: '0.25 (25%)' },
-        { value: '0.5', label: '0.5 (50%)' },
-        { value: '0.75', label: '0.75 (75%)' },
-        { value: '1', label: '1 (100%)' },
-      ]
-    )
-    body += renderSelect(
-      'message:debug:level',
-      'message:debug:level',
-      'Minimum level. Blank defaults to debug.',
-      [
-        { value: '', label: 'Default (debug)' },
-        { value: 'debug', label: 'debug' },
-        { value: 'info', label: 'info' },
-        { value: 'warn', label: 'warn' },
-        { value: 'error', label: 'error' },
-      ]
-    )
+    body += '<div class="section"><div class="section-title">Event Filters</div>'
+    body += `<label style="display:block; margin:8px 0;">
+      <div style="font-weight:700; margin-bottom:4px">CLIENT_DEBUG_EVENTS (allowlist)</div>
+      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+        <input type="text" id="clientDebugEvents" placeholder="decision:*,reanchor:*" style="flex:1 1 360px;" />
+        <button type="button" class="btn" id="debugEventsPickerOpen">Select Events</button>
+      </div>
+      <div class="field-hint">Comma list. Supports * suffix. Blank means allow all.</div>
+    </label>`
+    body += `<label style="display:block; margin:8px 0;">
+      <div style="font-weight:700; margin-bottom:4px">CLIENT_DEBUG_EXCLUDE (denylist)</div>
+      <input type="text" id="clientDebugExclude" placeholder="render slide" />
+      <div class="field-hint">Comma list. Applied after allowlist.</div>
+    </label>`
     body += '</div>'
 
-    body += '<div class="section"><div class="section-title">ID Filters</div>'
-    body += renderText('DEBUG_FEED_ID', 'DEBUG_FEED_ID', 'Comma-separated IDs or wildcard suffix (*).')
-    body += renderText('DEBUG_SLIDE_ID', 'DEBUG_SLIDE_ID', 'Comma-separated IDs or wildcard suffix (*).')
-    body += renderText('DEBUG_VIDEO_ID', 'DEBUG_VIDEO_ID', 'Comma-separated IDs or wildcard suffix (*).')
-    body += renderText('DEBUG_SLIDES_ID', 'DEBUG_SLIDES_ID (legacy alias)', 'Legacy alias for DEBUG_SLIDE_ID.')
+    body += '<div class="section"><div class="section-title">Level + Sampling</div>'
+    body += `<label style="display:block; margin:8px 0;">
+      <div style="font-weight:700; margin-bottom:4px">CLIENT_DEBUG_LEVEL</div>
+      <select id="clientDebugLevel">
+        <option value="debug">debug</option>
+        <option value="info">info</option>
+        <option value="warn">warn</option>
+        <option value="error">error</option>
+      </select>
+    </label>`
+    body += `<label style="display:block; margin:8px 0;">
+      <div style="font-weight:700; margin-bottom:4px">CLIENT_DEBUG_SAMPLE</div>
+      <select id="clientDebugSample">
+        <option value="">Default (no sampling)</option>
+        <option value="0.1">0.1 (10%)</option>
+        <option value="0.25">0.25 (25%)</option>
+        <option value="0.5">0.5 (50%)</option>
+        <option value="0.75">0.75 (75%)</option>
+        <option value="1">1 (100%)</option>
+      </select>
+    </label>`
+    body += '</div>'
+
+    body += '<div class="section"><div class="section-title">ID + Session Filters</div>'
+    body += `<label style="display:block; margin:8px 0;">
+      <div style="font-weight:700; margin-bottom:4px">CLIENT_DEBUG_ID</div>
+      <input type="text" id="clientDebugId" placeholder="v-01KH*" />
+    </label>`
+    body += `<label style="display:block; margin:8px 0;">
+      <div style="font-weight:700; margin-bottom:4px">CLIENT_DEBUG_SESSION</div>
+      <input type="text" id="clientDebugSession" placeholder="fas_*" />
+    </label>`
+    body += '</div>'
+
+    body += '<div class="section"><div class="section-title">Legacy Compatibility</div>'
+    body += '<div class="field-hint">Legacy keys are still read by runtime. Saving from this page writes unified keys only.</div>'
+    body += '<pre id="legacySnapshot" style="white-space:pre-wrap; word-break:break-word; max-height:180px; overflow:auto; margin:8px 0 0 0;"></pre>'
     body += '</div>'
 
     body += '<div class="section"><div class="section-title">Current Snapshot</div>'
     body += '<pre id="debugSnapshot" style="white-space:pre-wrap; word-break:break-word; max-height:260px; overflow:auto; margin:0;"></pre>'
     body += '</div>'
 
-    body += '<div class="section"><div class="section-title">URL Bootstrap Example</div>'
-    body += '<div class="field-hint">Set flags from query params on first load:</div>'
-    body += '<code>/?debug=1&amp;debug_feed=1&amp;debug_video=1&amp;browser_debug=1&amp;message_debug=1</code>'
-    body += '</div>'
+    body += '<dialog id="debugEventsDialog" style="max-width:860px; width:min(92vw, 860px); border:1px solid #444; border-radius:10px; padding:14px;">'
+    body += '<form method="dialog" style="margin:0;"><div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px;"><strong>Client Debug Event Picker</strong><button type="submit" class="btn">Close</button></div></form>'
+    body += '<div class="field-hint" style="margin-bottom:10px;">Click badges to toggle allowlist entries.</div>'
+    body += '<div id="debugEventsBadgeList" style="display:flex; gap:6px; flex-wrap:wrap;"></div>'
+    body += '<div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:12px;"><button type="button" class="btn" id="debugEventsSelectAll">Select All</button><button type="button" class="btn" id="debugEventsSelectNone">Clear</button><button type="button" class="btn" id="debugEventsApply">Apply To Field</button></div>'
+    body += '</dialog>'
 
     body += `<script>
 (() => {
-  const BOOL_KEYS = ${JSON.stringify(boolKeys)};
-  const STRING_KEYS = ${JSON.stringify(stringKeys)};
+  const UNIFIED_KEYS = ${JSON.stringify(unifiedKeys)};
+  const LEGACY_KEYS = ${JSON.stringify(legacyKeys)};
   const ALL_KEYS = ${JSON.stringify(allKeys)};
-  const MESSAGE_EVENT_OPTIONS = ${JSON.stringify(messageEventOptions)};
+  const NAMESPACES = ${JSON.stringify(namespaces)};
+  const EVENT_OPTIONS = ${JSON.stringify(eventOptions)};
   const q = (s) => document.querySelector(s);
-  const qa = (s) => Array.from(document.querySelectorAll(s));
-  const messageEventSelections = new Set();
-  function eventInputEl() { return q('[data-kind="string"][data-key="message:debug:events"]'); }
-  function parseEventField() {
-    const el = eventInputEl();
-    if (!el) return [];
-    return String(el.value || '').split(',').map((v) => v.trim()).filter(Boolean);
+  const selectedEvents = new Set();
+  const selectedNs = new Set();
+  function getv(k){ return String(localStorage.getItem(k) || '').trim(); }
+  function setv(k,v){ if(String(v||'').trim()) localStorage.setItem(k, String(v).trim()); else localStorage.removeItem(k); }
+  function csvToSet(v){ return new Set(String(v||'').split(',').map(x=>x.trim()).filter(Boolean)); }
+  function setToCsv(s){ return Array.from(s.values()).join(','); }
+  function drawNamespaces() {
+    const wrap = q('#clientDebugNamespaceList'); if (!wrap) return;
+    wrap.innerHTML = '';
+    for (const ns of NAMESPACES) {
+      const lbl = document.createElement('label');
+      lbl.style.display = 'inline-flex'; lbl.style.alignItems = 'center'; lbl.style.gap = '6px';
+      lbl.innerHTML = '<input type="checkbox" data-ns="'+ns+'"/> <span>'+ns+'</span>';
+      const cb = lbl.querySelector('input');
+      cb.checked = selectedNs.has(ns);
+      cb.addEventListener('change', () => { if (cb.checked) selectedNs.add(ns); else selectedNs.delete(ns); syncUnifiedFields(); });
+      wrap.appendChild(lbl);
+    }
   }
-  function updateEventBadges() {
-    const list = q('#debugMessageEventsBadgeList');
-    if (!list) return;
+  function drawEventBadges() {
+    const list = q('#debugEventsBadgeList'); if (!list) return;
     list.innerHTML = '';
-    for (const entry of MESSAGE_EVENT_OPTIONS) {
-      const active = messageEventSelections.has(entry);
+    for (const entry of EVENT_OPTIONS) {
       const b = document.createElement('button');
-      b.type = 'button';
-      b.textContent = entry;
-      b.style.border = '1px solid ' + (active ? '#4a9cff' : '#555');
-      b.style.background = active ? '#193557' : '#242424';
-      b.style.color = '#fff';
-      b.style.padding = '4px 8px';
-      b.style.borderRadius = '999px';
-      b.style.cursor = 'pointer';
-      b.addEventListener('click', () => {
-        if (messageEventSelections.has(entry)) messageEventSelections.delete(entry);
-        else messageEventSelections.add(entry);
-        updateEventBadges();
-      });
+      b.type = 'button'; b.textContent = entry;
+      const on = selectedEvents.has(entry);
+      b.style.border = '1px solid ' + (on ? '#4a9cff' : '#555');
+      b.style.background = on ? '#193557' : '#242424';
+      b.style.color = '#fff'; b.style.padding = '4px 8px'; b.style.borderRadius = '999px'; b.style.cursor = 'pointer';
+      b.addEventListener('click', () => { if (selectedEvents.has(entry)) selectedEvents.delete(entry); else selectedEvents.add(entry); drawEventBadges(); });
       list.appendChild(b);
     }
   }
-  function seedEventSelectionsFromInput() {
-    messageEventSelections.clear();
-    for (const entry of parseEventField()) messageEventSelections.add(entry);
-    updateEventBadges();
+  function syncUnifiedFields() {
+    q('#clientDebugEvents').value = setToCsv(selectedEvents);
+    q('#clientDebugNs').value = setToCsv(selectedNs);
+    writeSnapshot();
   }
-  function applyEventSelectionsToInput() {
-    const el = eventInputEl();
-    if (!el) return;
-    const parts = Array.from(messageEventSelections.values());
-    el.value = parts.join(',');
-  }
-  function readStorage() {
+  function readLegacyActive() {
     const out = {};
-    for (const key of ALL_KEYS) out[key] = (localStorage.getItem(key) || '').trim();
+    for (const k of LEGACY_KEYS) { const v = getv(k); if (v) out[k] = v; }
+    return out;
+  }
+  function readUnifiedActive() {
+    const out = {};
+    for (const k of UNIFIED_KEYS) { const v = getv(k); if (v) out[k] = v; }
     return out;
   }
   function writeSnapshot() {
-    const el = q('#debugSnapshot');
-    if (!el) return;
-    const values = readStorage();
-    const active = Object.fromEntries(Object.entries(values).filter(([, v]) => String(v || '').length > 0));
-    let derived = null;
-    try {
-      if (window.dlog && typeof window.dlog.currentFlags === 'function') derived = window.dlog.currentFlags();
-    } catch {}
-    el.textContent = JSON.stringify({ active, derived }, null, 2);
+    const activeUnified = readUnifiedActive();
+    const activeLegacy = readLegacyActive();
+    q('#debugSnapshot').textContent = JSON.stringify({ unified: activeUnified, legacy_keys_present: Object.keys(activeLegacy) }, null, 2);
+    q('#legacySnapshot').textContent = JSON.stringify(activeLegacy, null, 2);
   }
   function loadControls() {
-    qa('[data-kind="bool"]').forEach((el) => {
-      const key = el.getAttribute('data-key');
-      if (!key) return;
-      el.checked = (localStorage.getItem(key) || '').trim() === '1';
-    });
-    qa('[data-kind="string"]').forEach((el) => {
-      const key = el.getAttribute('data-key');
-      if (!key) return;
-      el.value = (localStorage.getItem(key) || '').trim();
-    });
-    seedEventSelectionsFromInput();
-    writeSnapshot();
+    q('#clientDebugEnabled').checked = getv('CLIENT_DEBUG') === '1';
+    q('#clientDebugEmit').checked = getv('CLIENT_DEBUG_EMIT') === '1';
+    q('#clientDebugNs').value = getv('CLIENT_DEBUG_NS');
+    q('#clientDebugEvents').value = getv('CLIENT_DEBUG_EVENTS');
+    q('#clientDebugExclude').value = getv('CLIENT_DEBUG_EXCLUDE');
+    q('#clientDebugLevel').value = getv('CLIENT_DEBUG_LEVEL') || 'debug';
+    q('#clientDebugSample').value = getv('CLIENT_DEBUG_SAMPLE');
+    q('#clientDebugId').value = getv('CLIENT_DEBUG_ID');
+    q('#clientDebugSession').value = getv('CLIENT_DEBUG_SESSION');
+    selectedNs.clear(); for (const v of csvToSet(q('#clientDebugNs').value)) selectedNs.add(v);
+    selectedEvents.clear(); for (const v of csvToSet(q('#clientDebugEvents').value)) selectedEvents.add(v);
+    drawNamespaces(); drawEventBadges(); writeSnapshot();
   }
-  function applyValues() {
-    qa('[data-kind="bool"]').forEach((el) => {
-      const key = el.getAttribute('data-key');
-      if (!key) return;
-      if (el.checked) localStorage.setItem(key, '1');
-      else localStorage.removeItem(key);
-    });
-    qa('[data-kind="string"]').forEach((el) => {
-      const key = el.getAttribute('data-key');
-      if (!key) return;
-      const value = String(el.value || '').trim();
-      if (value) localStorage.setItem(key, value);
-      else localStorage.removeItem(key);
-    });
+  function applyUnified() {
+    setv('CLIENT_DEBUG', q('#clientDebugEnabled').checked ? '1' : '');
+    setv('CLIENT_DEBUG_EMIT', q('#clientDebugEmit').checked ? '1' : '');
+    setv('CLIENT_DEBUG_NS', q('#clientDebugNs').value);
+    setv('CLIENT_DEBUG_EVENTS', q('#clientDebugEvents').value);
+    setv('CLIENT_DEBUG_EXCLUDE', q('#clientDebugExclude').value);
+    setv('CLIENT_DEBUG_LEVEL', q('#clientDebugLevel').value || 'debug');
+    setv('CLIENT_DEBUG_SAMPLE', q('#clientDebugSample').value);
+    setv('CLIENT_DEBUG_ID', q('#clientDebugId').value);
+    setv('CLIENT_DEBUG_SESSION', q('#clientDebugSession').value);
   }
-  function copyCurrentFlags() {
-    const values = readStorage();
+  function clearUnified(){ for (const k of UNIFIED_KEYS) localStorage.removeItem(k); loadControls(); }
+  function clearAll(){ for (const k of ALL_KEYS) localStorage.removeItem(k); loadControls(); }
+  function migrateLegacyToUnified() {
+    const legacy = readLegacyActive();
+    const ns = new Set();
+    if (legacy.DEBUG_FEED === '1') ns.add('feed');
+    if (legacy.DEBUG_SLIDES === '1') ns.add('slides');
+    if (legacy.DEBUG_AUTH === '1') ns.add('auth');
+    if (legacy.DEBUG_VIDEO === '1') ns.add('video');
+    if (legacy.DEBUG_NETWORK === '1') ns.add('network');
+    if (legacy.DEBUG_RENDER === '1') ns.add('render');
+    if (legacy.DEBUG_PERF === '1') ns.add('perf');
+    if (legacy.DEBUG_PERM === '1') ns.add('perm');
+    if (legacy.DEBUG_ERRORS === '1') ns.add('errors');
+    if (legacy['message:debug'] === '1') ns.add('message');
+    if (legacy['browser:debug'] === '1') { ns.add('index'); ns.add('sequence'); }
+    q('#clientDebugEnabled').checked = (legacy.DEBUG === '1') || (legacy['browser:debug'] === '1') || (legacy['message:debug'] === '1');
+    q('#clientDebugEmit').checked = (legacy['browser:debug'] === '1') || (legacy['message:debug'] === '1');
+    selectedNs.clear(); for (const x of ns) selectedNs.add(x); drawNamespaces();
+    const events = legacy['message:debug:events'] || '';
+    q('#clientDebugEvents').value = events;
+    selectedEvents.clear(); for (const x of csvToSet(events)) selectedEvents.add(x); drawEventBadges();
+    q('#clientDebugLevel').value = legacy['message:debug:level'] || 'debug';
+    q('#clientDebugSample').value = legacy['message:debug:sample'] || '';
+    q('#clientDebugId').value = legacy.DEBUG_FEED_ID || legacy.DEBUG_SLIDE_ID || legacy.DEBUG_VIDEO_ID || '';
+    q('#clientDebugSession').value = '';
+    q('#clientDebugNs').value = setToCsv(selectedNs);
+    applyUnified(); writeSnapshot();
+  }
+  function copyFlags() {
     const lines = [];
-    for (const [key, value] of Object.entries(values)) {
-      if (!String(value || '').length) continue;
-      lines.push('localStorage.setItem(' + JSON.stringify(key) + ', ' + JSON.stringify(value) + ');');
-    }
-    const text = lines.length ? (lines.join('\\n') + '\\nlocation.reload();') : '// no active debug flags';
-    const done = () => {
-      const btn = q('#debugCopyFlags');
-      if (!btn) return;
-      const prev = btn.textContent || 'Copy Current Flags';
-      btn.textContent = 'Copied';
-      setTimeout(() => { btn.textContent = prev; }, 900);
-    };
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(done).catch(() => {});
-      return;
-    }
-    try {
-      const ta = document.createElement('textarea');
-      ta.value = text;
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand('copy');
-      ta.remove();
-      done();
-    } catch {}
+    for (const k of UNIFIED_KEYS.concat(LEGACY_KEYS)) { const v = getv(k); if (!v) continue; lines.push('localStorage.setItem('+JSON.stringify(k)+', '+JSON.stringify(v)+');'); }
+    const txt = lines.length ? lines.join('\\n') + '\\nlocation.reload();' : '// no active debug flags';
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).catch(()=>{});
   }
-  function clearAll() {
-    for (const key of ALL_KEYS) localStorage.removeItem(key);
-    loadControls();
-  }
-  q('#debugApplyReload')?.addEventListener('click', () => { applyValues(); location.reload(); });
-  q('#debugCopyFlags')?.addEventListener('click', () => { applyValues(); copyCurrentFlags(); writeSnapshot(); });
-  q('#debugClearFlags')?.addEventListener('click', () => { clearAll(); });
-  q('#debugMessageEventsPickerOpen')?.addEventListener('click', () => {
-    seedEventSelectionsFromInput();
-    const dlg = q('#debugMessageEventsDialog');
-    if (dlg && dlg.showModal) dlg.showModal();
-  });
-  q('#debugMessageEventsSelectAll')?.addEventListener('click', () => {
-    messageEventSelections.clear();
-    for (const entry of MESSAGE_EVENT_OPTIONS) messageEventSelections.add(entry);
-    updateEventBadges();
-  });
-  q('#debugMessageEventsSelectNone')?.addEventListener('click', () => {
-    messageEventSelections.clear();
-    updateEventBadges();
-  });
-  q('#debugMessageEventsApply')?.addEventListener('click', () => {
-    applyEventSelectionsToInput();
-    const dlg = q('#debugMessageEventsDialog');
-    if (dlg && dlg.close) dlg.close();
-    writeSnapshot();
-  });
-  qa('[data-kind="bool"],[data-kind="string"]').forEach((el) => el.addEventListener('change', writeSnapshot));
-  eventInputEl()?.addEventListener('input', () => { seedEventSelectionsFromInput(); writeSnapshot(); });
+  q('#debugApplyReload').addEventListener('click', () => { applyUnified(); location.reload(); });
+  q('#debugCopyFlags').addEventListener('click', () => { applyUnified(); copyFlags(); writeSnapshot(); });
+  q('#debugClearUnified').addEventListener('click', () => clearUnified());
+  q('#debugClearAll').addEventListener('click', () => clearAll());
+  q('#debugMigrateLegacy').addEventListener('click', () => migrateLegacyToUnified());
+  q('#debugEventsPickerOpen').addEventListener('click', () => { selectedEvents.clear(); for (const x of csvToSet(q('#clientDebugEvents').value)) selectedEvents.add(x); drawEventBadges(); const d=q('#debugEventsDialog'); if (d && d.showModal) d.showModal(); });
+  q('#debugEventsSelectAll').addEventListener('click', () => { selectedEvents.clear(); for (const x of EVENT_OPTIONS) selectedEvents.add(x); drawEventBadges(); });
+  q('#debugEventsSelectNone').addEventListener('click', () => { selectedEvents.clear(); drawEventBadges(); });
+  q('#debugEventsApply').addEventListener('click', () => { q('#clientDebugEvents').value = setToCsv(selectedEvents); const d=q('#debugEventsDialog'); if (d && d.close) d.close(); writeSnapshot(); });
+  q('#clientDebugEvents').addEventListener('input', writeSnapshot);
+  q('#clientDebugExclude').addEventListener('input', writeSnapshot);
+  q('#clientDebugId').addEventListener('input', writeSnapshot);
+  q('#clientDebugSession').addEventListener('input', writeSnapshot);
+  q('#clientDebugLevel').addEventListener('change', writeSnapshot);
+  q('#clientDebugSample').addEventListener('change', writeSnapshot);
+  q('#clientDebugEnabled').addEventListener('change', writeSnapshot);
+  q('#clientDebugEmit').addEventListener('change', writeSnapshot);
+  // hidden field holder for namespace csv
+  const hidden = document.createElement('input'); hidden.type = 'hidden'; hidden.id = 'clientDebugNs'; document.body.appendChild(hidden);
   loadControls();
 })();
 </script>`
