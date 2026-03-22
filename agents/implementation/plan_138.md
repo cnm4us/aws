@@ -62,7 +62,7 @@ Status: Planned
   - if no slots present, map current primary/secondary config into slots at read time.
 
 ## Phase Status
-- A: Pending
+- A: Completed
 - B: Pending
 - C: Pending
 - D: Pending
@@ -170,6 +170,6 @@ Status: Planned
 
 ## Resume Here
 - Next action:
-  - Finish Plan 137 first; then begin Plan 138 Phase A.
+  - Begin Plan 138 Phase B (Admin UI: CTA Library).
 - Blocking question (if any):
   - none

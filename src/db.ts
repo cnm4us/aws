@@ -923,6 +923,57 @@ export async function ensureSchema(db: DB) {
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_messages_active_type ON feed_messages (status, type, starts_at, ends_at, priority, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_messages_surface_audience_type_active ON feed_messages (applies_to_surface, audience_segment, status, type, starts_at, ends_at, priority, id)`); } catch {}
 
+          // --- Reusable CTA definitions for feed messages (plan_138A) ---
+          await db.query(`
+            CREATE TABLE IF NOT EXISTS feed_message_cta_definitions (
+              id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+              name VARCHAR(120) NOT NULL,
+              status ENUM('draft','active','archived') NOT NULL DEFAULT 'draft',
+              scope_type ENUM('global','space') NOT NULL DEFAULT 'global',
+              scope_space_id BIGINT UNSIGNED NULL,
+              intent_key ENUM('login','register','donate','subscribe','upgrade','verify_email','verify_phone','visit_sponsor','visit_link') NOT NULL DEFAULT 'visit_link',
+              executor_type ENUM('internal_link','provider_checkout','verification_flow','api_action') NOT NULL DEFAULT 'internal_link',
+              label_default VARCHAR(100) NOT NULL,
+              config_json JSON NOT NULL,
+              created_by BIGINT UNSIGNED NOT NULL DEFAULT 0,
+              updated_by BIGINT UNSIGNED NOT NULL DEFAULT 0,
+              created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              KEY idx_feed_message_cta_scope_status (scope_type, scope_space_id, status, id),
+              KEY idx_feed_message_cta_intent_status (intent_key, status, id),
+              KEY idx_feed_message_cta_executor_status (executor_type, status, id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+          `)
+          await db.query(`ALTER TABLE feed_message_cta_definitions ADD COLUMN IF NOT EXISTS name VARCHAR(120) NOT NULL`)
+          await db.query(`ALTER TABLE feed_message_cta_definitions ADD COLUMN IF NOT EXISTS status ENUM('draft','active','archived') NOT NULL DEFAULT 'draft'`)
+          await db.query(`ALTER TABLE feed_message_cta_definitions ADD COLUMN IF NOT EXISTS scope_type ENUM('global','space') NOT NULL DEFAULT 'global'`)
+          await db.query(`ALTER TABLE feed_message_cta_definitions ADD COLUMN IF NOT EXISTS scope_space_id BIGINT UNSIGNED NULL`)
+          await db.query(`ALTER TABLE feed_message_cta_definitions ADD COLUMN IF NOT EXISTS intent_key ENUM('login','register','donate','subscribe','upgrade','verify_email','verify_phone','visit_sponsor','visit_link') NOT NULL DEFAULT 'visit_link'`)
+          await db.query(`ALTER TABLE feed_message_cta_definitions ADD COLUMN IF NOT EXISTS executor_type ENUM('internal_link','provider_checkout','verification_flow','api_action') NOT NULL DEFAULT 'internal_link'`)
+          await db.query(`ALTER TABLE feed_message_cta_definitions ADD COLUMN IF NOT EXISTS label_default VARCHAR(100) NOT NULL`)
+          await db.query(`ALTER TABLE feed_message_cta_definitions ADD COLUMN IF NOT EXISTS config_json JSON NULL`)
+          await db.query(`ALTER TABLE feed_message_cta_definitions ADD COLUMN IF NOT EXISTS created_by BIGINT UNSIGNED NOT NULL DEFAULT 0`)
+          await db.query(`ALTER TABLE feed_message_cta_definitions ADD COLUMN IF NOT EXISTS updated_by BIGINT UNSIGNED NOT NULL DEFAULT 0`)
+          try { await db.query(`UPDATE feed_message_cta_definitions SET config_json = JSON_OBJECT() WHERE config_json IS NULL`) } catch {}
+          try { await db.query(`ALTER TABLE feed_message_cta_definitions MODIFY COLUMN config_json JSON NOT NULL`) } catch {}
+          try {
+            await db.query(
+              `ALTER TABLE feed_message_cta_definitions
+                 MODIFY COLUMN intent_key ENUM('login','register','donate','subscribe','upgrade','verify_email','verify_phone','visit_sponsor','visit_link')
+                 NOT NULL DEFAULT 'visit_link'`
+            )
+          } catch {}
+          try {
+            await db.query(
+              `ALTER TABLE feed_message_cta_definitions
+                 MODIFY COLUMN executor_type ENUM('internal_link','provider_checkout','verification_flow','api_action')
+                 NOT NULL DEFAULT 'internal_link'`
+            )
+          } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_cta_scope_status ON feed_message_cta_definitions (scope_type, scope_space_id, status, id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_cta_intent_status ON feed_message_cta_definitions (intent_key, status, id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_cta_executor_status ON feed_message_cta_definitions (executor_type, status, id)`); } catch {}
+
           // Legacy prompt rules were removed in favor of message-owned targeting.
           // Drop the legacy table during startup so the schema matches runtime behavior.
           try { await db.query(`DROP TABLE IF EXISTS prompt_rules`) } catch {}
