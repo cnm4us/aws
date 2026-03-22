@@ -3,7 +3,7 @@ export type MessageAttributionViewerState = 'anonymous' | 'authenticated'
 export type MessageAttributionFlow = 'login' | 'register'
 export type MessageAttributionIntentState = 'created' | 'started' | 'completed' | 'expired'
 export type MessageSuppressionScope = 'message' | 'campaign'
-export type MessageSuppressionReason = 'auth_complete'
+export type MessageSuppressionReason = 'auth_complete' | 'flow_complete'
 
 export type MessageAuthIntentRow = {
   intent_id: string
@@ -35,4 +35,3 @@ export type MessageSuppressionRow = {
   created_at: string
   updated_at: string
 }
-

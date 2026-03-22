@@ -30,6 +30,7 @@ export type MessageDecisionSessionRow = {
 export type MessageDecisionInput = {
   surface: MessageDecisionSurface
   sessionId: string
+  userId: number | null
   audienceSegment: MessageAudienceSegment
   counters: {
     slidesViewed: number

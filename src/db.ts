@@ -1183,7 +1183,7 @@ export async function ensureSchema(db: DB) {
               suppression_key VARCHAR(191) NOT NULL,
               message_id BIGINT UNSIGNED NULL,
               campaign_key VARCHAR(64) NULL,
-              reason ENUM('auth_complete') NOT NULL DEFAULT 'auth_complete',
+              reason ENUM('auth_complete','flow_complete') NOT NULL DEFAULT 'auth_complete',
               source_intent_id CHAR(36) NULL,
               created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
               updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -1198,7 +1198,8 @@ export async function ensureSchema(db: DB) {
           await db.query(`ALTER TABLE feed_message_user_suppressions ADD COLUMN IF NOT EXISTS suppression_key VARCHAR(191) NOT NULL`)
           await db.query(`ALTER TABLE feed_message_user_suppressions ADD COLUMN IF NOT EXISTS message_id BIGINT UNSIGNED NULL`)
           await db.query(`ALTER TABLE feed_message_user_suppressions ADD COLUMN IF NOT EXISTS campaign_key VARCHAR(64) NULL`)
-          await db.query(`ALTER TABLE feed_message_user_suppressions ADD COLUMN IF NOT EXISTS reason ENUM('auth_complete') NOT NULL DEFAULT 'auth_complete'`)
+          await db.query(`ALTER TABLE feed_message_user_suppressions ADD COLUMN IF NOT EXISTS reason ENUM('auth_complete','flow_complete') NOT NULL DEFAULT 'auth_complete'`)
+          try { await db.query(`ALTER TABLE feed_message_user_suppressions MODIFY COLUMN reason ENUM('auth_complete','flow_complete') NOT NULL DEFAULT 'auth_complete'`) } catch {}
           await db.query(`ALTER TABLE feed_message_user_suppressions ADD COLUMN IF NOT EXISTS source_intent_id CHAR(36) NULL`)
           try { await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_feed_message_user_suppressions_user_key ON feed_message_user_suppressions (user_id, suppression_key)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_user_suppressions_user_created ON feed_message_user_suppressions (user_id, created_at)`); } catch {}

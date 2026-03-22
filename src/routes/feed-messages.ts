@@ -70,6 +70,7 @@ async function handleDecision(req: any, res: any, next: any) {
       body,
       cookieSessionId,
       audienceSegment,
+      userId: req.user?.id ? Number(req.user.id) : null,
     })
 
     if (audienceSegment === 'anonymous' && (createdSessionId || !cookieSessionId || cookieSessionId !== input.sessionId)) {
@@ -121,6 +122,12 @@ async function handleDecision(req: any, res: any, next: any) {
       span.setAttribute('app.audience_segment', audienceSegment)
       span.setAttribute('app.decision_reason', decision.reasonCode)
       span.setAttribute('app.outcome', decision.shouldInsert ? 'shown' : 'blocked')
+      const userSuppressedCount = Number((decision.debug as any)?.selection?.userSuppressedCount || 0)
+      if (userSuppressedCount > 0) {
+        span.setAttribute('app.suppression_scope', 'campaign_or_message')
+        span.setAttribute('app.suppression_reason', 'completion')
+        span.setAttribute('app.suppressed_candidates', String(userSuppressedCount))
+      }
       if (decision.messageId != null) span.setAttribute('app.message_id', String(decision.messageId))
     }
 
@@ -297,6 +304,22 @@ feedMessagesRouter.post(feedMessageEventPaths, async (req: any, res: any, next: 
         await messageAttributionSvc.markAuthIntentStarted({ intentId })
       } catch {}
     }
+    const normalizedEvent = String(body.event || '').trim().toLowerCase()
+    if (
+      req.user?.id &&
+      (normalizedEvent === 'auth_complete' || normalizedEvent === 'donation_complete' || normalizedEvent === 'subscription_complete' || normalizedEvent === 'upgrade_complete')
+    ) {
+      try {
+        await messageAttributionSvc.upsertUserSuppressionFromCompletion({
+          userId: Number(req.user.id),
+          scope: messageCampaignKey ? 'campaign' : 'message',
+          campaignKey: messageCampaignKey,
+          messageId,
+          sourceIntentId: intentId,
+          reason: normalizedEvent === 'auth_complete' ? 'auth_complete' : 'flow_complete',
+        })
+      } catch {}
+    }
     await recordMessageSessionEvent({
       sessionId,
       surface: String(body.surface || 'global_feed').trim().toLowerCase() as MessageDecisionSurface,
@@ -403,6 +426,18 @@ feedMessagesRouter.get(feedMessageMockCompletionPaths, async (req: any, res: any
       viewerState: req.user?.id ? 'authenticated' : 'anonymous',
       userId: req.user?.id ? Number(req.user.id) : null,
     })
+    if (req.user?.id) {
+      try {
+        await messageAttributionSvc.upsertUserSuppressionFromCompletion({
+          userId: Number(req.user.id),
+          scope: messageCampaignKey ? 'campaign' : 'message',
+          campaignKey: messageCampaignKey,
+          messageId,
+          sourceIntentId: intentId,
+          reason: 'flow_complete',
+        })
+      } catch {}
+    }
     await recordMessageSessionEvent({
       sessionId,
       surface: String(q.surface || 'global_feed').trim().toLowerCase() as MessageDecisionSurface,

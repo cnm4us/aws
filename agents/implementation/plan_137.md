@@ -36,7 +36,7 @@ Status: Active
 - B: Completed
 - C: Completed
 - D: Completed
-- E: Pending
+- E: Completed
 - F: Pending
 
 ## Phase A — Contract + Migration Layer
@@ -168,6 +168,15 @@ Status: Active
       - `subscription_complete_from_message`
       - `upgrade_complete_from_message`
     - extends flow enum handling to include `donate|subscribe|upgrade`
+- (uncommitted) — Phase E suppression integration:
+  - `src/features/message-decision/service.ts`
+    - decision path now checks authenticated user suppressions (`campaign` or `message`) before candidate selection
+    - debug selection block includes `userSuppressedCount`
+  - `src/routes/feed-messages.ts`
+    - non-auth completion routes now upsert user suppression for authenticated users
+    - decision trace adds suppression tags (`app.suppression_scope`, `app.suppression_reason`, `app.suppressed_candidates`)
+  - `src/features/message-attribution/service.ts`, `src/features/message-attribution/types.ts`, `src/db.ts`
+    - suppression reason extended with `flow_complete` for non-auth CTA completion-based suppression
 
 ## Validation
 - Environment:

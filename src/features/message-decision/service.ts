@@ -8,6 +8,7 @@ import {
   MESSAGE_MIN_WATCH_SECONDS_BEFORE_FIRST_MESSAGE,
 } from '../../config'
 import * as messagesSvc from '../messages/service'
+import * as messageAttributionSvc from '../message-attribution/service'
 import * as repo from './repo'
 import type {
   MessageAudienceSegment,
@@ -201,6 +202,7 @@ function nowMs(): number {
 
 type EligibleMessageCandidate = {
   messageId: number
+  campaignKey: string | null
   messageType: string
   priority: number
   tieBreakStrategy: 'first' | 'round_robin' | 'weighted_random'
@@ -251,6 +253,7 @@ export function buildDecisionInput(params: {
   body: any
   cookieSessionId: string | null
   audienceSegment: MessageAudienceSegment
+  userId?: number | null
 }): { input: MessageDecisionInput; createdSessionId: string | null } {
   const surface = normalizeSurface(params.body?.surface)
 
@@ -273,6 +276,7 @@ export function buildDecisionInput(params: {
     input: {
       surface,
       sessionId,
+      userId: params.userId != null && Number.isFinite(Number(params.userId)) && Number(params.userId) > 0 ? Number(params.userId) : null,
       audienceSegment: params.audienceSegment,
       counters,
     },
@@ -316,6 +320,7 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
   let messageId: number | null = null
   let selectionEngine: 'message_pool' = 'message_pool'
   let candidateCount = 0
+  let userSuppressedCount = 0
   let selectedPriority: number | null = null
 
   if (merged.messagesShownThisSession >= MESSAGE_MAX_MESSAGES_PER_SESSION) {
@@ -357,17 +362,36 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
               : 'round_robin'
           candidates.push({
             messageId: candidateId,
+            campaignKey: (message as any).campaignKey == null ? null : String((message as any).campaignKey),
             messageType: String(message.type || 'register_login'),
             priority: Number(message.priority || 0),
             tieBreakStrategy,
           })
         }
 
-        candidateCount = candidates.length
+        let eligible = candidates
+        if (input.userId != null && input.userId > 0 && candidates.length > 0) {
+          const filtered: EligibleMessageCandidate[] = []
+          for (const c of candidates) {
+            const suppressed = await messageAttributionSvc.isUserSuppressed({
+              userId: input.userId,
+              messageId: c.messageId,
+              campaignKey: c.campaignKey,
+            })
+            if (suppressed) {
+              userSuppressedCount += 1
+              continue
+            }
+            filtered.push(c)
+          }
+          eligible = filtered
+        }
+
+        candidateCount = eligible.length
         if (!candidateCount) {
           reasonCode = 'no_candidate'
         } else {
-          const selected = selectMessageCandidate(candidates, input, merged)
+          const selected = selectMessageCandidate(eligible, input, merged)
           if (!selected) {
             reasonCode = 'no_candidate'
           } else {
@@ -423,6 +447,7 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
       selection: {
         engine: selectionEngine,
         candidateCount,
+        userSuppressedCount,
         selectedPriority,
       },
       reasonCode,

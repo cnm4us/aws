@@ -8,6 +8,7 @@ import type {
   MessageAttributionSurface,
   MessageAttributionViewerState,
   MessageAuthIntentRow,
+  MessageSuppressionReason,
   MessageSuppressionScope,
 } from './types'
 
@@ -226,6 +227,7 @@ export async function upsertUserSuppressionFromCompletion(input: {
   messageId?: number | string | null
   campaignKey?: string | null
   sourceIntentId?: string | null
+  reason?: MessageSuppressionReason
 }): Promise<void> {
   const userId = normalizeUserId(input.userId)
   if (!userId) throw new DomainError('invalid_user_id', 'invalid_user_id', 400)
@@ -234,6 +236,7 @@ export async function upsertUserSuppressionFromCompletion(input: {
   const messageId = input.messageId == null || input.messageId === '' ? null : normalizeMessageId(input.messageId)
   const campaignKey = normalizeCampaignKey(input.campaignKey)
   const sourceIntentId = input.sourceIntentId ? normalizeIntentId(input.sourceIntentId) : null
+  const reason: MessageSuppressionReason = input.reason === 'flow_complete' ? 'flow_complete' : 'auth_complete'
   const suppressionKey = toSuppressionKey(scope, messageId, campaignKey)
   await repo.upsertUserSuppression({
     userId,
@@ -241,7 +244,7 @@ export async function upsertUserSuppressionFromCompletion(input: {
     suppressionKey,
     messageId,
     campaignKey,
-    reason: 'auth_complete',
+    reason,
     sourceIntentId,
   })
 }
@@ -273,4 +276,3 @@ export function isValidIntentStateTransition(from: MessageAttributionIntentState
   if (from === 'started' && (to === 'completed' || to === 'expired')) return true
   return false
 }
-
