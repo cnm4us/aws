@@ -23,10 +23,24 @@ Status: Planned
   - Preserve existing analytics and suppression behavior while migrating.
   - Enforce role-safe access for future space-scoped CTA management.
 
+## Glossary
+- `CTA Intent`:
+  - The user-facing business action (what the CTA means), e.g. `donate`, `subscribe`, `verify_email`, `visit_sponsor`.
+- `CTA Executor`:
+  - The technical delivery path (how the action runs), e.g. `internal_link`, `provider_checkout`, `verification_flow`, `api_action`.
+- `CTA Definition`:
+  - Reusable admin-managed record that combines intent + executor + default label/config.
+- `CTA Slot`:
+  - A message-level placement reference to a CTA Definition (slot 1/2/3 + optional overrides).
+
 ## Locked Decisions
 - Keep current plan_137 delivery path; this plan is additive and future-facing.
 - Introduce **CTA Definition** (reusable object) and **CTA Slot** (message-level placement).
 - CTA slots become the long-term source of truth, replacing hardcoded primary/secondary fields.
+- CTA architecture uses two layers:
+  - **Intent** (business meaning): `donate`, `subscribe`, `verify_email`, `verify_phone`, `visit_sponsor`, etc.
+  - **Executor** (delivery path): `internal_link`, `provider_checkout`, `verification_flow`, `api_action`.
+- Provider choice (PayPal/Stripe/Square) is executor config under an intent, not a top-level intent itself.
 - Scope model for CTA definitions:
   - `global` (site-admin managed)
   - `space` (group/channel managed; limited to owned/administered space)
@@ -36,9 +50,10 @@ Status: Planned
 ## Target Model (Draft)
 - CTA Definition:
   - `id`, `name`, `status`, `scope_type` (`global|space`), `scope_space_id` (nullable),
-  - `kind` (`internal_link|auth|donate|subscribe|upgrade`),
+  - `intent_key` (business intent, e.g. `donate`, `subscribe`, `verify_email`, `visit_sponsor`),
+  - `executor_type` (`internal_link|provider_checkout|verification_flow|api_action`),
   - `label_default`,
-  - `config_json` (kind-specific config),
+  - `config_json` (executor-specific config),
   - audit fields.
 - Message Creative CTA Slots:
   - `widgets.cta.slots: [{ slot: 1|2|3, ctaDefinitionId, labelOverride?, styleOverride? }]`
@@ -62,7 +77,12 @@ Status: Planned
     - `feed_message_cta_definitions`
     - optional `feed_message_cta_definition_versions` (if versioning needed now)
   - [ ] Add repo/service for CRUD/list/filter by scope.
-  - [ ] Add validation for kind-specific config contract.
+  - [ ] Add validation for intent + executor contract:
+    - valid `intent_key` set
+    - valid `executor_type`
+    - executor config schema validation
+  - [ ] Add resolver contract:
+    - message runtime resolves CTA intent -> executor config at click time
   - [ ] Add role checks for scope ownership.
 - Acceptance:
   - CTA definitions can be created/read/updated/deactivated safely by authorized admins.
@@ -71,8 +91,12 @@ Status: Planned
 - Goal:
   - Provide an admin UI to manage reusable CTA definitions.
 - Steps:
-  - [ ] Add `/admin/message-ctas` index + filters (scope, status, kind).
+  - [ ] Add `/admin/message-ctas` index + filters (scope, status, intent, executor).
   - [ ] Add `/admin/message-ctas/new` and `/:id` editor.
+  - [ ] Editor captures:
+    - intent (business meaning)
+    - executor type
+    - executor config form fields (type-specific)
   - [ ] Add soft-delete/archive and clone actions.
   - [ ] Add clear labels for scope and permissions.
 - Acceptance:
@@ -96,10 +120,11 @@ Status: Planned
 - Goal:
   - Render CTA slots in feed and preserve event attribution.
 - Steps:
-  - [ ] Runtime resolves CTA definitions for each slot.
+  - [ ] Runtime resolves CTA definitions for each slot (intent + executor).
   - [ ] Render 1–3 CTA buttons with deterministic alignment.
   - [ ] Wire click/start/complete events with slot metadata:
     - `message_cta_slot`, `message_cta_definition_id`, `message_cta_kind`
+    - include `message_cta_intent`, `message_cta_executor`
   - [ ] Keep auth intent flow for auth CTA kinds.
 - Acceptance:
   - Slot-based CTAs render and route correctly; attribution includes slot + definition identity.
@@ -131,6 +156,7 @@ Status: Planned
 - Should slot-level style overrides be restricted (for design consistency) or fully flexible?
 - Should CTA definitions support localization now or defer?
 - How strict should permission boundaries be for cross-space template reuse?
+- Do we allow direct provider execution from feed for all intents, or require universal intermediate pages for high-risk intents (donate/subscribe)?
 
 ## Validation Strategy
 - Unit:
