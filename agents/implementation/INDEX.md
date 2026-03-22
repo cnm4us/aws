@@ -23,6 +23,7 @@ This file is a lightweight index for ongoing implementation work.
 - `agents/implementation/plan_135.md` — Unified client debug model + bundle analysis upgrades
 - `agents/implementation/plan_136.md` — Message CTA completion attribution + completion-based suppression
 - `agents/implementation/plan_137.md` — Modular CTA widget (message content split + multi-CTA workflows)
+- `agents/implementation/plan_138.md` — Reusable message CTA definitions + slot-based placement
 
 ## Active / Next
 - Check latest `plan_NN.md` with `Status: Active`.

@@ -34,7 +34,7 @@ Status: Active
 ## Phase Status
 - A: Completed
 - B: Completed
-- C: Pending
+- C: Completed
 - D: Pending
 - E: Pending
 - F: Pending
@@ -146,6 +146,14 @@ Status: Active
     - New CTA Widget section with type/layout/style/position + per-type config blocks
     - Preview split into content widget + CTA widget
     - Save payload writes `creative.widgets.cta` and mirrors legacy top-level CTA/auth fields for compatibility
+- (uncommitted) — Phase C feed runtime rendering:
+  - `frontend/src/app/Feed.tsx`
+    - Feed payload parsing now reads normalized `widgets.cta` (with legacy `widgets.auth` fallback)
+    - Message card rendering split:
+      - content-only message widget
+      - independent CTA widget (position + yOffset)
+    - CTA widget supports `layout` (`inline`/`stacked`) and `type` label
+    - CTA click targets resolve by CTA type with graceful fallback when no target exists
 
 ## Validation
 - Environment:

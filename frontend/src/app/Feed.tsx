@@ -63,13 +63,37 @@ type FeedMessagePayload = {
       textColor: string
       label: string
     }
-    auth: {
+    cta: {
       enabled: boolean
       position: 'top' | 'middle' | 'bottom'
       yOffsetPct: number
       bgColor: string
       bgOpacity: number
       textColor: string
+      layout: 'inline' | 'stacked'
+      type: 'auth' | 'donate' | 'subscribe' | 'upgrade'
+      primaryLabel: string
+      secondaryLabel: string | null
+      config: {
+        auth: {
+          primaryHref: string
+          secondaryHref: string | null
+        }
+        donate: {
+          provider: 'mock' | 'paypal'
+          campaignKey: string | null
+          successReturn: string
+        }
+        subscribe: {
+          provider: 'mock' | 'paypal'
+          planKey: string | null
+          successReturn: string
+        }
+        upgrade: {
+          targetTier: string | null
+          successReturn: string
+        }
+      }
     }
   }
   media: {
@@ -223,7 +247,7 @@ function clampNum(value: number, min: number, max: number): number {
 function messageWidgetPlacement(
   position: 'top' | 'middle' | 'bottom',
   offsetPct: number,
-  mode: 'message' | 'auth'
+  mode: 'message' | 'cta'
 ): { top?: string; bottom?: string } {
   const offset = Number(offsetPct || 0)
   const clampedInset = clampNum(offset, 0, 80)
@@ -373,13 +397,38 @@ async function fetchMessageById(messageId: number): Promise<FeedMessagePayload> 
   const background = (creative.background && typeof creative.background === 'object') ? creative.background : {}
   const widgets = (creative.widgets && typeof creative.widgets === 'object') ? creative.widgets : {}
   const messageWidget = (widgets.message && typeof widgets.message === 'object') ? widgets.message : {}
+  const ctaWidget = (widgets.cta && typeof widgets.cta === 'object') ? widgets.cta : {}
   const authWidget = (widgets.auth && typeof widgets.auth === 'object') ? widgets.auth : {}
   const messagePosRaw = String(messageWidget.position || 'middle').toLowerCase()
-  const authPosRaw = String(authWidget.position || 'bottom').toLowerCase()
+  const ctaPosRaw = String(ctaWidget.position || authWidget.position || 'bottom').toLowerCase()
   const messagePos: 'top' | 'middle' | 'bottom' = messagePosRaw === 'top' ? 'top' : (messagePosRaw === 'bottom' ? 'bottom' : 'middle')
-  const authPos: 'top' | 'middle' | 'bottom' = authPosRaw === 'top' ? 'top' : (authPosRaw === 'bottom' ? 'bottom' : 'middle')
+  const ctaPos: 'top' | 'middle' | 'bottom' = ctaPosRaw === 'top' ? 'top' : (ctaPosRaw === 'bottom' ? 'bottom' : 'middle')
+  const ctaTypeRaw = String(ctaWidget.type || 'auth').toLowerCase()
+  const ctaType: 'auth' | 'donate' | 'subscribe' | 'upgrade' =
+    ctaTypeRaw === 'donate'
+      ? 'donate'
+      : (ctaTypeRaw === 'subscribe' ? 'subscribe' : (ctaTypeRaw === 'upgrade' ? 'upgrade' : 'auth'))
+  const ctaLayout = String(ctaWidget.layout || 'inline').toLowerCase() === 'stacked' ? 'stacked' : 'inline'
   const messageOffset = Math.max(0, Math.min(80, Math.round(Number(messageWidget.yOffsetPct ?? 0) || 0)))
-  const authOffset = Math.max(0, Math.min(80, Math.round(Number(authWidget.yOffsetPct ?? 0) || 0)))
+  const ctaOffset = Math.max(0, Math.min(80, Math.round(Number(ctaWidget.yOffsetPct ?? authWidget.yOffsetPct ?? 0) || 0)))
+  const ctaPrimaryLabel = String(ctaWidget.primaryLabel || p.cta_primary_label || 'Register')
+  const ctaSecondaryLabelRaw = ctaWidget.secondaryLabel ?? p.cta_secondary_label
+  const ctaSecondaryLabel = ctaSecondaryLabelRaw == null || String(ctaSecondaryLabelRaw).trim() === '' ? null : String(ctaSecondaryLabelRaw)
+  const ctaAuthConfig = (ctaWidget.config && typeof ctaWidget.config === 'object' && ctaWidget.config.auth && typeof ctaWidget.config.auth === 'object')
+    ? ctaWidget.config.auth
+    : {}
+  const ctaDonateConfig = (ctaWidget.config && typeof ctaWidget.config === 'object' && ctaWidget.config.donate && typeof ctaWidget.config.donate === 'object')
+    ? ctaWidget.config.donate
+    : {}
+  const ctaSubscribeConfig = (ctaWidget.config && typeof ctaWidget.config === 'object' && ctaWidget.config.subscribe && typeof ctaWidget.config.subscribe === 'object')
+    ? ctaWidget.config.subscribe
+    : {}
+  const ctaUpgradeConfig = (ctaWidget.config && typeof ctaWidget.config === 'object' && ctaWidget.config.upgrade && typeof ctaWidget.config.upgrade === 'object')
+    ? ctaWidget.config.upgrade
+    : {}
+  const ctaPrimaryHref = String(ctaAuthConfig.primaryHref || p.cta_primary_href || '/register?return=/')
+  const ctaSecondaryHrefRaw = ctaAuthConfig.secondaryHref ?? p.cta_secondary_href
+  const ctaSecondaryHref = ctaSecondaryHrefRaw == null || String(ctaSecondaryHrefRaw).trim() === '' ? null : String(ctaSecondaryHrefRaw)
   return {
     id: Number(p.id),
     campaignKey: p.campaign_key == null ? null : String(p.campaign_key),
@@ -394,10 +443,10 @@ async function fetchMessageById(messageId: number): Promise<FeedMessagePayload> 
     overlayOpacity: parseOpacity(background.overlayOpacity, 0.35),
     headline: String(p.headline || ''),
     body: p.body == null ? null : String(p.body),
-    ctaPrimaryLabel: String(p.cta_primary_label || 'Register'),
-    ctaPrimaryHref: String(p.cta_primary_href || '/register?return=/'),
-    ctaSecondaryLabel: p.cta_secondary_label == null ? null : String(p.cta_secondary_label),
-    ctaSecondaryHref: p.cta_secondary_href == null ? null : String(p.cta_secondary_href),
+    ctaPrimaryLabel,
+    ctaPrimaryHref,
+    ctaSecondaryLabel,
+    ctaSecondaryHref,
     widgets: {
       message: {
         enabled: !(String(messageWidget.enabled).toLowerCase() === 'false' || Number(messageWidget.enabled) === 0),
@@ -408,13 +457,41 @@ async function fetchMessageById(messageId: number): Promise<FeedMessagePayload> 
         textColor: parseHexColor(messageWidget.textColor, '#FFFFFF'),
         label: String(messageWidget.label || 'Join the Community'),
       },
-      auth: {
-        enabled: String(authWidget.enabled).toLowerCase() === 'true' || Number(authWidget.enabled) === 1,
-        position: authPos,
-        yOffsetPct: authOffset,
-        bgColor: parseHexColor(authWidget.bgColor, '#0B1320'),
-        bgOpacity: parseOpacity(authWidget.bgOpacity, 0.55),
-        textColor: parseHexColor(authWidget.textColor, '#FFFFFF'),
+      cta: {
+        enabled:
+          String(ctaWidget.enabled).toLowerCase() === 'true'
+          || Number(ctaWidget.enabled) === 1
+          || String(authWidget.enabled).toLowerCase() === 'true'
+          || Number(authWidget.enabled) === 1,
+        position: ctaPos,
+        yOffsetPct: ctaOffset,
+        bgColor: parseHexColor(ctaWidget.bgColor ?? authWidget.bgColor, '#0B1320'),
+        bgOpacity: parseOpacity(ctaWidget.bgOpacity ?? authWidget.bgOpacity, 0.55),
+        textColor: parseHexColor(ctaWidget.textColor ?? authWidget.textColor, '#FFFFFF'),
+        layout: ctaLayout,
+        type: ctaType,
+        primaryLabel: ctaPrimaryLabel,
+        secondaryLabel: ctaSecondaryLabel,
+        config: {
+          auth: {
+            primaryHref: ctaPrimaryHref,
+            secondaryHref: ctaSecondaryHref,
+          },
+          donate: {
+            provider: String(ctaDonateConfig.provider || 'mock').toLowerCase() === 'paypal' ? 'paypal' : 'mock',
+            campaignKey: ctaDonateConfig.campaignKey == null ? null : String(ctaDonateConfig.campaignKey),
+            successReturn: String(ctaDonateConfig.successReturn || '/channels/global-feed'),
+          },
+          subscribe: {
+            provider: String(ctaSubscribeConfig.provider || 'mock').toLowerCase() === 'paypal' ? 'paypal' : 'mock',
+            planKey: ctaSubscribeConfig.planKey == null ? null : String(ctaSubscribeConfig.planKey),
+            successReturn: String(ctaSubscribeConfig.successReturn || '/channels/global-feed'),
+          },
+          upgrade: {
+            targetTier: ctaUpgradeConfig.targetTier == null ? null : String(ctaUpgradeConfig.targetTier),
+            successReturn: String(ctaUpgradeConfig.successReturn || '/channels/global-feed'),
+          },
+        },
       },
     },
     media: p.media
@@ -2367,6 +2444,24 @@ export default function Feed() {
     return 'none'
   }
 
+  function resolveCtaTarget(message: FeedMessagePayload, ctaKind: 'primary' | 'secondary'): { href: string | null; flow: 'login' | 'register' | null } {
+    const cta = message.widgets.cta
+    if (!cta || !cta.enabled) return { href: null, flow: null }
+    if (cta.type === 'auth') {
+      const href = ctaKind === 'secondary' ? cta.config.auth.secondaryHref : cta.config.auth.primaryHref
+      const normalized = String(href || '').trim()
+      if (!normalized) return { href: null, flow: null }
+      const lower = normalized.toLowerCase()
+      const flow: 'login' | 'register' | null = lower.startsWith('/register')
+        ? 'register'
+        : (lower.startsWith('/login') ? 'login' : null)
+      return { href: normalized, flow }
+    }
+    if (cta.type === 'donate') return { href: String(cta.config.donate.successReturn || '/channels/global-feed'), flow: null }
+    if (cta.type === 'subscribe') return { href: String(cta.config.subscribe.successReturn || '/channels/global-feed'), flow: null }
+    return { href: String(cta.config.upgrade.successReturn || '/channels/global-feed'), flow: null }
+  }
+
   const handleMessageCtaClick = useCallback(async (message: FeedMessagePayload, href: string, ctaKind: 'primary' | 'secondary') => {
     const targetHref = String(href || '').trim()
     if (!targetHref) return
@@ -2377,10 +2472,7 @@ export default function Feed() {
     if (activeExposure && activeExposure.messageId === Number(message.id)) {
       activeExposure.clicked = true
     }
-    const lowerHref = targetHref.toLowerCase()
-    const flow: 'login' | 'register' | null = lowerHref.startsWith('/register')
-      ? 'register'
-      : (lowerHref.startsWith('/login') ? 'login' : null)
+    const flow = resolveCtaTarget(message, ctaKind).flow
     let intentId: string | null = null
     if (flow) {
       const issued = await issueMessageAuthIntent({
@@ -3121,7 +3213,10 @@ export default function Feed() {
                 background: 'linear-gradient(180deg, rgba(8,12,18,0.95) 0%, rgba(6,8,12,0.98) 100%)',
               }
           const messagePlacement = messageWidgetPlacement(message.widgets.message.position, message.widgets.message.yOffsetPct, 'message')
-          const authPlacement = messageWidgetPlacement(message.widgets.auth.position, message.widgets.auth.yOffsetPct, 'auth')
+          const ctaPlacement = messageWidgetPlacement(message.widgets.cta.position, message.widgets.cta.yOffsetPct, 'cta')
+          const isCtaStacked = message.widgets.cta.layout === 'stacked'
+          const ctaPrimaryTarget = resolveCtaTarget(message, 'primary')
+          const ctaSecondaryTarget = resolveCtaTarget(message, 'secondary')
           return (
             <div
               key={slideId}
@@ -3305,69 +3400,30 @@ export default function Feed() {
                             {message.body}
                           </div>
                         ) : null}
-                        <div style={{ display: 'flex', gap: 10, justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleMessageCtaClick(message, message.ctaPrimaryHref, 'primary')
-                            }}
-                            style={{
-                              border: '1px solid rgba(255,255,255,0.45)',
-                              background: 'rgba(0,0,0,0.5)',
-                              color: '#fff',
-                              borderRadius: 11,
-                              padding: '9px 13px',
-                              fontSize: 15,
-                              fontWeight: 700,
-                              cursor: 'pointer',
-                            }}
-                          >
-                            {message.ctaPrimaryLabel}
-                          </button>
-                          {message.ctaSecondaryLabel && message.ctaSecondaryHref ? (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleMessageCtaClick(message, message.ctaSecondaryHref || '', 'secondary')
-                              }}
-                            style={{
-                              border: '1px solid rgba(255,255,255,0.45)',
-                              background: 'rgba(0,0,0,0.5)',
-                              color: '#fff',
-                              borderRadius: 11,
-                              padding: '9px 13px',
-                              fontSize: 15,
-                              fontWeight: 700,
-                              cursor: 'pointer',
-                            }}
-                            >
-                              {message.ctaSecondaryLabel}
-                            </button>
-                          ) : null}
-                        </div>
                       </div>
                     ) : null}
-                    {message.widgets.auth.enabled ? (
+                    {message.widgets.cta.enabled ? (
                       <div
                         style={{
                           position: 'absolute',
                           left: 14,
                           right: 14,
-                          ...authPlacement,
+                          ...ctaPlacement,
                           borderRadius: 12,
                           border: '1px solid rgba(255,255,255,0.26)',
-                          background: toRgba(message.widgets.auth.bgColor, message.widgets.auth.bgOpacity),
+                          background: toRgba(message.widgets.cta.bgColor, message.widgets.cta.bgOpacity),
                           backdropFilter: 'blur(6px)',
-                          color: message.widgets.auth.textColor,
+                          color: message.widgets.cta.textColor,
                           padding: '10px 10px',
                         }}
                       >
+                        <div style={{ fontSize: 12, opacity: 0.9, marginBottom: 6, textTransform: 'capitalize' }}>
+                          {message.widgets.cta.type}
+                        </div>
                         <div
                           style={{
-                            display: 'grid',
-                            gridTemplateColumns: '1fr 1fr',
+                            display: isCtaStacked ? 'grid' : 'grid',
+                            gridTemplateColumns: isCtaStacked ? '1fr' : '1fr 1fr',
                             alignItems: 'center',
                             width: '100%',
                             gap: 8,
@@ -3377,10 +3433,11 @@ export default function Feed() {
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation()
-                              handleMessageCtaClick(message, '/register?return=/', 'primary')
+                              if (!ctaPrimaryTarget.href) return
+                              handleMessageCtaClick(message, ctaPrimaryTarget.href, 'primary')
                             }}
                             style={{
-                              justifySelf: 'start',
+                              justifySelf: isCtaStacked ? 'stretch' : 'start',
                               border: '1px solid rgba(255,255,255,0.45)',
                               background: 'rgba(0,0,0,0.5)',
                               color: '#fff',
@@ -3388,31 +3445,38 @@ export default function Feed() {
                               padding: '8px 12px',
                               fontSize: 15,
                               fontWeight: 700,
-                              cursor: 'pointer',
+                              cursor: ctaPrimaryTarget.href ? 'pointer' : 'not-allowed',
+                              opacity: ctaPrimaryTarget.href ? 1 : 0.6,
                             }}
+                            disabled={!ctaPrimaryTarget.href}
                           >
-                            Register
+                            {message.widgets.cta.primaryLabel || message.ctaPrimaryLabel || 'Primary'}
                           </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleMessageCtaClick(message, '/login?return=/', 'secondary')
-                            }}
-                            style={{
-                              justifySelf: 'end',
-                              border: '1px solid rgba(255,255,255,0.45)',
-                              background: 'rgba(0,0,0,0.5)',
-                              color: '#fff',
-                              borderRadius: 11,
-                              padding: '8px 12px',
-                              fontSize: 15,
-                              fontWeight: 700,
-                              cursor: 'pointer',
-                            }}
-                          >
-                            Login
-                          </button>
+                          {message.widgets.cta.secondaryLabel ? (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                if (!ctaSecondaryTarget.href) return
+                                handleMessageCtaClick(message, ctaSecondaryTarget.href, 'secondary')
+                              }}
+                              style={{
+                                justifySelf: isCtaStacked ? 'stretch' : 'end',
+                                border: '1px solid rgba(255,255,255,0.45)',
+                                background: 'rgba(0,0,0,0.5)',
+                                color: '#fff',
+                                borderRadius: 11,
+                                padding: '8px 12px',
+                                fontSize: 15,
+                                fontWeight: 700,
+                                cursor: ctaSecondaryTarget.href ? 'pointer' : 'not-allowed',
+                                opacity: ctaSecondaryTarget.href ? 1 : 0.6,
+                              }}
+                              disabled={!ctaSecondaryTarget.href}
+                            >
+                              {message.widgets.cta.secondaryLabel}
+                            </button>
+                          ) : null}
                         </div>
                       </div>
                     ) : null}
