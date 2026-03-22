@@ -19,6 +19,7 @@ import { screenTitlePresetsRouter } from './routes/screen-title-presets';
 import { screenTitlePreviewRouter } from './routes/screen-title-preview';
 import { visualizerPresetsRouter } from './routes/visualizer-presets';
 import { adminMessagesRouter } from './routes/admin-messages';
+import { adminMessageCtasRouter } from './routes/admin-message-ctas';
 import { adminMessageAnalyticsRouter } from './routes/admin-message-analytics';
 import { feedMessagesRouter } from './routes/feed-messages';
 import { feedActivityRouter } from './routes/feed-activity';
@@ -89,6 +90,7 @@ export function buildServer(): express.Application {
   app.use(screenTitlePreviewRouter);
   app.use(visualizerPresetsRouter);
   app.use(adminMessagesRouter);
+  app.use(adminMessageCtasRouter);
   app.use(adminMessageAnalyticsRouter);
   app.use(adminFeedAnalyticsRouter);
   app.use(adminAnalyticsSinkRouter);

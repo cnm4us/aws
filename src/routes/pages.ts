@@ -18,6 +18,7 @@ import * as licenseSourcesSvc from '../features/license-sources/service'
 import * as licenseSourcesRepo from '../features/license-sources/repo'
 import * as lowerThirdsSvc from '../features/lower-thirds/service'
 import * as messagesSvc from '../features/messages/service'
+import * as messageCtasSvc from '../features/message-cta-definitions/service'
 import * as messageAnalyticsSvc from '../features/message-analytics/service'
 import * as feedActivitySvc from '../features/feed-activity/service'
 import { getAnalyticsSinkHealth } from '../features/analytics-sink/service'
@@ -647,6 +648,7 @@ type AdminNavKey =
 	| 'audio_configs'
   | 'media_jobs'
   | 'messages'
+  | 'message_ctas'
   | 'analytics'
   | 'message_analytics'
   | 'analytics_sink'
@@ -671,6 +673,7 @@ const ADMIN_NAV_ITEMS: Array<{ key: AdminNavKey; label: string; href: string }> 
 	{ key: 'audio_configs', label: 'Audio Configs', href: '/admin/audio-configs' },
 	{ key: 'media_jobs', label: 'Media Jobs', href: '/admin/media-jobs' },
   { key: 'messages', label: 'Messages', href: '/admin/messages' },
+  { key: 'message_ctas', label: 'Message CTAs', href: '/admin/message-ctas' },
   { key: 'analytics', label: 'Analytics', href: '/admin/analytics' },
   { key: 'message_analytics', label: 'Message Analytics', href: '/admin/message-analytics' },
   { key: 'analytics_sink', label: 'Analytics Sink', href: '/admin/analytics-sink' },
@@ -2990,6 +2993,7 @@ pagesRouter.get('/admin', async (_req: any, res: any) => {
     { title: 'Audio Configs', href: '/admin/audio-configs', desc: 'Presets for Mix/Replace + ducking (creators pick when producing)' },
     { title: 'Media Jobs', href: '/admin/media-jobs', desc: 'Debug ffmpeg mastering jobs (logs, retries, purge)' },
     { title: 'Messages', href: '/admin/messages', desc: 'Manage in-feed message units, targeting, and lifecycle controls' },
+    { title: 'Message CTAs', href: '/admin/message-ctas', desc: 'Reusable CTA definitions (intent + executor + config) for in-feed messages' },
     { title: 'Analytics', href: '/admin/analytics', desc: 'Cross-metric baseline feed + message conversion view with daily trend' },
     { title: 'Message Analytics', href: '/admin/message-analytics', desc: 'Funnel metrics, conversion rates, and overexposure detection for in-feed messages' },
     { title: 'Analytics Sink', href: '/admin/analytics-sink', desc: 'Optional external sink health and counters (secondary analytics path)' },
@@ -3059,6 +3063,43 @@ const MESSAGE_TIE_BREAK_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'round_robin', label: 'Round Robin' },
   { value: 'weighted_random', label: 'Weighted Random' },
   { value: 'first', label: 'First' },
+]
+
+const MESSAGE_CTA_STATUS_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'draft', label: 'Draft' },
+  { value: 'active', label: 'Active' },
+  { value: 'archived', label: 'Archived' },
+]
+
+const MESSAGE_CTA_SCOPE_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'global', label: 'Global' },
+  { value: 'space', label: 'Space' },
+]
+
+const MESSAGE_CTA_INTENT_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'visit_link', label: 'Visit Link' },
+  { value: 'visit_sponsor', label: 'Visit Sponsor' },
+  { value: 'login', label: 'Login' },
+  { value: 'register', label: 'Register' },
+  { value: 'donate', label: 'Donate' },
+  { value: 'subscribe', label: 'Subscribe' },
+  { value: 'upgrade', label: 'Upgrade' },
+  { value: 'verify_email', label: 'Verify Email' },
+  { value: 'verify_phone', label: 'Verify Phone' },
+]
+
+const MESSAGE_CTA_EXECUTOR_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'internal_link', label: 'Internal Link' },
+  { value: 'provider_checkout', label: 'Provider Checkout' },
+  { value: 'verification_flow', label: 'Verification Flow' },
+  { value: 'api_action', label: 'API Action' },
+]
+
+const MESSAGE_CTA_PROVIDER_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'mock', label: 'Mock' },
+  { value: 'paypal', label: 'PayPal' },
+  { value: 'stripe', label: 'Stripe' },
+  { value: 'square', label: 'Square' },
 ]
 
 function parseBoolLoose(raw: any, fallback = false): boolean {
@@ -4057,6 +4098,200 @@ function renderAdminMessageForm(opts: {
   return renderAdminPage({ title: opts.title, bodyHtml: body, active: 'messages' })
 }
 
+function buildMessageCtaCreateOrUpdatePayload(body: any): any {
+  const scopeType = String(body?.scopeType || 'global').trim().toLowerCase()
+  const executorType = String(body?.executorType || 'internal_link').trim().toLowerCase()
+  const intentKey = String(body?.intentKey || 'visit_link').trim().toLowerCase()
+  const status = String(body?.status || 'draft').trim().toLowerCase()
+  const scopeSpaceIdRaw = String(body?.scopeSpaceId || '').trim()
+  const scopeSpaceId = scopeType === 'space' && /^\d+$/.test(scopeSpaceIdRaw) ? Number(scopeSpaceIdRaw) : null
+
+  let config: any = {}
+  if (executorType === 'internal_link') {
+    config = {
+      href: String(body?.configInternalHref || '').trim(),
+      successReturn: String(body?.configInternalSuccessReturn || '').trim() || null,
+      openInNewTab: parseBoolLoose(body?.configInternalOpenInNewTab, false),
+    }
+  } else if (executorType === 'provider_checkout') {
+    config = {
+      provider: String(body?.configProvider || 'mock').trim().toLowerCase(),
+      mode: String(body?.configProviderMode || '').trim().toLowerCase(),
+      returnUrl: String(body?.configProviderReturnUrl || '').trim(),
+      cancelUrl: String(body?.configProviderCancelUrl || '').trim() || null,
+      campaignKey: String(body?.configProviderCampaignKey || '').trim() || null,
+      planKey: String(body?.configProviderPlanKey || '').trim() || null,
+    }
+  } else if (executorType === 'verification_flow') {
+    config = {
+      method: String(body?.configVerifyMethod || '').trim().toLowerCase(),
+      startPath: String(body?.configVerifyStartPath || '').trim(),
+      successReturn: String(body?.configVerifySuccessReturn || '').trim() || null,
+    }
+  } else if (executorType === 'api_action') {
+    config = {
+      endpointPath: String(body?.configApiEndpointPath || '').trim(),
+      httpMethod: String(body?.configApiHttpMethod || 'POST').trim().toUpperCase(),
+      successReturn: String(body?.configApiSuccessReturn || '').trim() || null,
+    }
+  }
+
+  return {
+    name: String(body?.name || '').trim(),
+    labelDefault: String(body?.labelDefault || '').trim(),
+    status,
+    scopeType,
+    scopeSpaceId,
+    intentKey,
+    executorType,
+    config,
+  }
+}
+
+function renderAdminMessageCtaForm(opts: {
+  title: string
+  action: string
+  csrfToken?: string | null
+  backHref: string
+  values: any
+  error?: string | null
+  notice?: string | null
+  showActions?: boolean
+}): string {
+  const csrfToken = opts.csrfToken ? String(opts.csrfToken) : ''
+  const values = opts.values || {}
+  const id = Number(values?.id || 0) || null
+  const scopeType = String(values?.scopeType || 'global')
+  const executorType = String(values?.executorType || 'internal_link')
+  const config = values?.config && typeof values.config === 'object' ? values.config : {}
+
+  let body = `<h1>${escapeHtml(opts.title)}</h1>`
+  body += `<div class="toolbar"><div><a href="${escapeHtml(opts.backHref)}">← Back to message CTAs</a></div><div></div></div>`
+  if (opts.error) body += `<div class="error">${escapeHtml(String(opts.error))}</div>`
+  if (opts.notice) body += `<div class="notice">${escapeHtml(String(opts.notice))}</div>`
+
+  body += `<form method="post" action="${escapeHtml(opts.action)}" id="message-cta-editor-form">`
+  if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
+
+  body += `<div class="section"><div class="section-title">Definition</div>`
+  body += `<label>Name<input type="text" name="name" maxlength="120" value="${escapeHtml(String(values?.name || ''))}" required /></label>`
+  body += `<label>Default Button Label<input type="text" name="labelDefault" maxlength="100" value="${escapeHtml(String(values?.labelDefault || ''))}" required /></label>`
+  body += `<div style="display:grid; gap:12px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">`
+  body += `<label>Status<select name="status">`
+  for (const opt of MESSAGE_CTA_STATUS_OPTIONS) {
+    body += `<option value="${escapeHtml(opt.value)}"${String(values?.status || 'draft') === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+  }
+  body += `</select></label>`
+  body += `<label>Scope<select name="scopeType" id="scopeType">`
+  for (const opt of MESSAGE_CTA_SCOPE_OPTIONS) {
+    body += `<option value="${escapeHtml(opt.value)}"${scopeType === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+  }
+  body += `</select></label>`
+  body += `<label id="scopeSpaceRow">Scope Space ID<input type="number" min="1" name="scopeSpaceId" value="${escapeHtml(String(values?.scopeSpaceId || ''))}" /></label>`
+  body += `</div></div>`
+
+  body += `<div class="section"><div class="section-title">Intent + Executor</div>`
+  body += `<div style="display:grid; gap:12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">`
+  body += `<label>Intent<select name="intentKey">`
+  for (const opt of MESSAGE_CTA_INTENT_OPTIONS) {
+    body += `<option value="${escapeHtml(opt.value)}"${String(values?.intentKey || 'visit_link') === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+  }
+  body += `</select></label>`
+  body += `<label>Executor<select name="executorType" id="executorType">`
+  for (const opt of MESSAGE_CTA_EXECUTOR_OPTIONS) {
+    body += `<option value="${escapeHtml(opt.value)}"${executorType === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+  }
+  body += `</select></label>`
+  body += `</div></div>`
+
+  body += `<div class="section executor-config" data-executor="internal_link"><div class="section-title">Internal Link Config</div>`
+  body += `<label>Href<input type="text" name="configInternalHref" value="${escapeHtml(String(config?.href || ''))}" placeholder="/channels/global-feed" /></label>`
+  body += `<label>Success Return (optional)<input type="text" name="configInternalSuccessReturn" value="${escapeHtml(String(config?.successReturn || ''))}" placeholder="/" /></label>`
+  body += `<label style="display:flex; align-items:center; gap:8px;"><input type="checkbox" name="configInternalOpenInNewTab" value="1"${parseBoolLoose(config?.openInNewTab, false) ? ' checked' : ''}/> Open in new tab</label>`
+  body += `</div>`
+
+  body += `<div class="section executor-config" data-executor="provider_checkout"><div class="section-title">Provider Checkout Config</div>`
+  body += `<div style="display:grid; gap:12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">`
+  body += `<label>Provider<select name="configProvider">`
+  for (const opt of MESSAGE_CTA_PROVIDER_OPTIONS) {
+    body += `<option value="${escapeHtml(opt.value)}"${String(config?.provider || 'mock') === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+  }
+  body += `</select></label>`
+  body += `<label>Mode<select name="configProviderMode">`
+  for (const opt of [{ value: 'donate', label: 'Donate' }, { value: 'subscribe', label: 'Subscribe' }, { value: 'upgrade', label: 'Upgrade' }]) {
+    body += `<option value="${escapeHtml(opt.value)}"${String(config?.mode || '') === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+  }
+  body += `</select></label>`
+  body += `</div>`
+  body += `<label>Return URL<input type="text" name="configProviderReturnUrl" value="${escapeHtml(String(config?.returnUrl || ''))}" placeholder="/" /></label>`
+  body += `<label>Cancel URL (optional)<input type="text" name="configProviderCancelUrl" value="${escapeHtml(String(config?.cancelUrl || ''))}" placeholder="/" /></label>`
+  body += `<div style="display:grid; gap:12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">`
+  body += `<label>Campaign Key (optional)<input type="text" name="configProviderCampaignKey" value="${escapeHtml(String(config?.campaignKey || ''))}" /></label>`
+  body += `<label>Plan Key (optional)<input type="text" name="configProviderPlanKey" value="${escapeHtml(String(config?.planKey || ''))}" /></label>`
+  body += `</div></div>`
+
+  body += `<div class="section executor-config" data-executor="verification_flow"><div class="section-title">Verification Flow Config</div>`
+  body += `<label>Method<select name="configVerifyMethod">`
+  for (const opt of [{ value: 'email', label: 'Email' }, { value: 'phone', label: 'Phone' }, { value: 'identity', label: 'Identity' }]) {
+    body += `<option value="${escapeHtml(opt.value)}"${String(config?.method || '') === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+  }
+  body += `</select></label>`
+  body += `<label>Start Path<input type="text" name="configVerifyStartPath" value="${escapeHtml(String(config?.startPath || ''))}" placeholder="/verify/email" /></label>`
+  body += `<label>Success Return (optional)<input type="text" name="configVerifySuccessReturn" value="${escapeHtml(String(config?.successReturn || ''))}" placeholder="/" /></label>`
+  body += `</div>`
+
+  body += `<div class="section executor-config" data-executor="api_action"><div class="section-title">API Action Config</div>`
+  body += `<label>Endpoint Path<input type="text" name="configApiEndpointPath" value="${escapeHtml(String(config?.endpointPath || ''))}" placeholder="/api/cta/mock/complete" /></label>`
+  body += `<div style="display:grid; gap:12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">`
+  body += `<label>HTTP Method<select name="configApiHttpMethod">`
+  for (const opt of ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']) {
+    body += `<option value="${opt}"${String(config?.httpMethod || 'POST').toUpperCase() === opt ? ' selected' : ''}>${opt}</option>`
+  }
+  body += `</select></label>`
+  body += `<label>Success Return (optional)<input type="text" name="configApiSuccessReturn" value="${escapeHtml(String(config?.successReturn || ''))}" placeholder="/" /></label>`
+  body += `</div></div>`
+
+  body += `<div class="toolbar"><div></div><div style="display:flex; gap:8px"><button class="btn btn-primary-accent" type="submit">Save</button></div></div>`
+  body += `</form>`
+
+  if (opts.showActions && id) {
+    body += `<div class="section"><div class="section-title">Actions</div>`
+    body += `<div style="display:flex; gap:8px; align-items:center; justify-content:space-between">`
+    body += `<form method="post" action="/admin/message-ctas/${id}/archive" style="margin:0" onsubmit="return confirm('Archive this CTA definition?');">`
+    if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
+    body += `<button class="btn danger" type="submit">Archive</button></form>`
+    body += `<form method="post" action="/admin/message-ctas/${id}/clone" style="margin:0 0 0 auto">`
+    if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
+    body += `<button class="btn" type="submit">Clone</button></form>`
+    body += `</div></div>`
+  }
+
+  body += `<script>
+    (function () {
+      const executorSel = document.getElementById('executorType');
+      const scopeSel = document.getElementById('scopeType');
+      const scopeSpaceRow = document.getElementById('scopeSpaceRow');
+      function syncExecutor() {
+        const current = String(executorSel && executorSel.value || 'internal_link');
+        document.querySelectorAll('.executor-config').forEach((el) => {
+          const show = el.getAttribute('data-executor') === current;
+          el.style.display = show ? '' : 'none';
+        });
+      }
+      function syncScope() {
+        const scope = String(scopeSel && scopeSel.value || 'global');
+        if (scopeSpaceRow) scopeSpaceRow.style.display = scope === 'space' ? '' : 'none';
+      }
+      if (executorSel) executorSel.addEventListener('change', syncExecutor);
+      if (scopeSel) scopeSel.addEventListener('change', syncScope);
+      syncExecutor();
+      syncScope();
+    })();
+  </script>`
+
+  return renderAdminPage({ title: opts.title, bodyHtml: body, active: 'message_ctas' })
+}
+
 pagesRouter.get('/admin/messages', async (req: any, res: any) => {
   try {
     const includeArchived = String(req.query?.include_archived || '0') === '1'
@@ -4287,6 +4522,205 @@ pagesRouter.post('/admin/messages/:id/delete', async (req: any, res: any) => {
     res.redirect(`/admin/messages?notice=${encodeURIComponent(`Deleted message #${id}.`)}`)
   } catch (err: any) {
     res.redirect(`/admin/messages/${id}?error=${encodeURIComponent(String(err?.message || 'Failed to delete message'))}`)
+  }
+})
+
+pagesRouter.get('/admin/message-ctas', async (req: any, res: any) => {
+  try {
+    const includeArchived = String(req.query?.include_archived || '0') === '1'
+    const status = req.query?.status ? String(req.query.status) : ''
+    const scopeType = req.query?.scope_type ? String(req.query.scope_type) : ''
+    const scopeSpaceId = req.query?.scope_space_id ? Number(req.query.scope_space_id) : null
+    const intentKey = req.query?.intent_key ? String(req.query.intent_key) : ''
+    const executorType = req.query?.executor_type ? String(req.query.executor_type) : ''
+    const notice = req.query?.notice ? String(req.query.notice) : ''
+    const error = req.query?.error ? String(req.query.error) : ''
+
+    const items = await messageCtasSvc.listMessageCtaDefinitionsForAdmin({
+      actorUserId: Number(req.user?.id || 0),
+      includeArchived,
+      limit: 500,
+      status: status || null as any,
+      scopeType: scopeType || null as any,
+      scopeSpaceId: Number.isFinite(scopeSpaceId as number) && (scopeSpaceId as number) > 0 ? scopeSpaceId : null,
+      intentKey: intentKey || null as any,
+      executorType: executorType || null as any,
+    })
+
+    let body = '<h1>Message CTAs</h1>'
+    body += '<div class="toolbar"><div><span class="pill">CTA Library</span></div><div><a href="/admin/message-ctas/new">New CTA</a></div></div>'
+    if (notice) body += `<div class="notice">${escapeHtml(notice)}</div>`
+    if (error) body += `<div class="error">${escapeHtml(error)}</div>`
+    body += `<form method="get" action="/admin/message-ctas" class="section" style="margin:12px 0">`
+    body += `<div style="display:flex; gap:10px; flex-wrap:wrap; align-items:end">`
+    body += `<label style="min-width:150px">Status<select name="status"><option value="">All</option>`
+    for (const opt of MESSAGE_CTA_STATUS_OPTIONS) {
+      body += `<option value="${escapeHtml(opt.value)}"${status === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+    }
+    body += `</select></label>`
+    body += `<label style="min-width:150px">Scope<select name="scope_type"><option value="">All</option>`
+    for (const opt of MESSAGE_CTA_SCOPE_OPTIONS) {
+      body += `<option value="${escapeHtml(opt.value)}"${scopeType === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+    }
+    body += `</select></label>`
+    body += `<label style="min-width:160px">Scope Space ID<input type="number" min="1" name="scope_space_id" value="${escapeHtml(String(req.query?.scope_space_id || ''))}" /></label>`
+    body += `<label style="min-width:190px">Intent<select name="intent_key"><option value="">All</option>`
+    for (const opt of MESSAGE_CTA_INTENT_OPTIONS) {
+      body += `<option value="${escapeHtml(opt.value)}"${intentKey === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+    }
+    body += `</select></label>`
+    body += `<label style="min-width:190px">Executor<select name="executor_type"><option value="">All</option>`
+    for (const opt of MESSAGE_CTA_EXECUTOR_OPTIONS) {
+      body += `<option value="${escapeHtml(opt.value)}"${executorType === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+    }
+    body += `</select></label>`
+    body += `<label><input type="checkbox" name="include_archived" value="1"${includeArchived ? ' checked' : ''} /> Include archived</label>`
+    body += `<button class="btn" type="submit">Apply</button>`
+    body += `</div></form>`
+
+    if (!items.length) {
+      body += '<p>No CTA definitions found for current filters.</p>'
+    } else {
+      body += '<table><thead><tr><th>ID</th><th>Name</th><th>Scope</th><th>Intent</th><th>Executor</th><th>Label</th><th>Status</th><th>Updated</th></tr></thead><tbody>'
+      for (const item of items) {
+        const scopeLabel = item.scopeType === 'space' ? `space:${item.scopeSpaceId || '—'}` : 'global'
+        body += `<tr>
+          <td>${item.id}</td>
+          <td><a href="/admin/message-ctas/${item.id}">${escapeHtml(item.name)}</a></td>
+          <td>${escapeHtml(scopeLabel)}</td>
+          <td>${escapeHtml(item.intentKey)}</td>
+          <td>${escapeHtml(item.executorType)}</td>
+          <td>${escapeHtml(item.labelDefault)}</td>
+          <td>${escapeHtml(item.status)}</td>
+          <td>${escapeHtml(item.updatedAt || '')}</td>
+        </tr>`
+      }
+      body += '</tbody></table>'
+    }
+
+    const doc = renderAdminPage({ title: 'Message CTAs', bodyHtml: body, active: 'message_ctas' })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.send(doc)
+  } catch (err) {
+    logError(req.log || pagesLogger, err, 'admin message ctas list failed', { path: req.path })
+    res.status(500).send('Failed to load message ctas')
+  }
+})
+
+pagesRouter.get('/admin/message-ctas/new', async (req: any, res: any) => {
+  const cookies = parseCookies(req.headers.cookie)
+  const csrfToken = cookies['csrf'] || ''
+  const doc = renderAdminMessageCtaForm({
+    title: 'New Message CTA',
+    action: '/admin/message-ctas',
+    csrfToken,
+    backHref: '/admin/message-ctas',
+    values: {
+      name: '',
+      labelDefault: '',
+      status: 'draft',
+      scopeType: 'global',
+      scopeSpaceId: '',
+      intentKey: 'visit_link',
+      executorType: 'internal_link',
+      config: {
+        href: '/',
+        successReturn: '/',
+        openInNewTab: false,
+      },
+    },
+  })
+  res.set('Content-Type', 'text/html; charset=utf-8')
+  res.send(doc)
+})
+
+pagesRouter.post('/admin/message-ctas', async (req: any, res: any) => {
+  const cookies = parseCookies(req.headers.cookie)
+  const csrfToken = cookies['csrf'] || ''
+  const payload = buildMessageCtaCreateOrUpdatePayload(req.body || {})
+  try {
+    const created = await messageCtasSvc.createMessageCtaDefinitionForAdmin(payload, Number(req.user?.id || 0))
+    res.redirect(`/admin/message-ctas/${created.id}?notice=${encodeURIComponent('Message CTA created.')}`)
+  } catch (err: any) {
+    const doc = renderAdminMessageCtaForm({
+      title: 'New Message CTA',
+      action: '/admin/message-ctas',
+      csrfToken,
+      backHref: '/admin/message-ctas',
+      values: payload,
+      error: String(err?.message || 'Failed to create CTA definition'),
+    })
+    res.status(400).set('Content-Type', 'text/html; charset=utf-8').send(doc)
+  }
+})
+
+pagesRouter.get('/admin/message-ctas/:id', async (req: any, res: any) => {
+  const id = Number(req.params.id)
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).send('Bad message CTA id')
+  try {
+    const item = await messageCtasSvc.getMessageCtaDefinitionForAdmin(id, Number(req.user?.id || 0))
+    const cookies = parseCookies(req.headers.cookie)
+    const csrfToken = cookies['csrf'] || ''
+    const doc = renderAdminMessageCtaForm({
+      title: `Edit Message CTA #${id}`,
+      action: `/admin/message-ctas/${id}`,
+      csrfToken,
+      backHref: '/admin/message-ctas',
+      values: item,
+      notice: req.query?.notice ? String(req.query.notice) : '',
+      error: req.query?.error ? String(req.query.error) : '',
+      showActions: true,
+    })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.send(doc)
+  } catch (err) {
+    logError(req.log || pagesLogger, err, 'admin message cta detail failed', { path: req.path, message_cta_id: id })
+    res.status(404).send('Message CTA not found')
+  }
+})
+
+pagesRouter.post('/admin/message-ctas/:id', async (req: any, res: any) => {
+  const id = Number(req.params.id)
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).send('Bad message CTA id')
+  const cookies = parseCookies(req.headers.cookie)
+  const csrfToken = cookies['csrf'] || ''
+  const payload = buildMessageCtaCreateOrUpdatePayload(req.body || {})
+  try {
+    await messageCtasSvc.updateMessageCtaDefinitionForAdmin(id, payload, Number(req.user?.id || 0))
+    res.redirect(`/admin/message-ctas/${id}?notice=${encodeURIComponent('Saved.')}`)
+  } catch (err: any) {
+    const doc = renderAdminMessageCtaForm({
+      title: `Edit Message CTA #${id}`,
+      action: `/admin/message-ctas/${id}`,
+      csrfToken,
+      backHref: '/admin/message-ctas',
+      values: { ...payload, id },
+      error: String(err?.message || 'Failed to save CTA definition'),
+      showActions: true,
+    })
+    res.status(400).set('Content-Type', 'text/html; charset=utf-8').send(doc)
+  }
+})
+
+pagesRouter.post('/admin/message-ctas/:id/clone', async (req: any, res: any) => {
+  const id = Number(req.params.id)
+  if (!Number.isFinite(id) || id <= 0) return res.redirect('/admin/message-ctas?error=bad_id')
+  try {
+    const cloned = await messageCtasSvc.cloneMessageCtaDefinitionForAdmin(id, Number(req.user?.id || 0))
+    res.redirect(`/admin/message-ctas/${cloned.id}?notice=${encodeURIComponent(`Cloned from #${id}.`)}`)
+  } catch (err: any) {
+    res.redirect(`/admin/message-ctas/${id}?error=${encodeURIComponent(String(err?.message || 'Failed to clone CTA definition'))}`)
+  }
+})
+
+pagesRouter.post('/admin/message-ctas/:id/archive', async (req: any, res: any) => {
+  const id = Number(req.params.id)
+  if (!Number.isFinite(id) || id <= 0) return res.redirect('/admin/message-ctas?error=bad_id')
+  try {
+    await messageCtasSvc.archiveMessageCtaDefinitionForAdmin(id, Number(req.user?.id || 0))
+    res.redirect(`/admin/message-ctas/${id}?notice=${encodeURIComponent('Archived.')}`)
+  } catch (err: any) {
+    res.redirect(`/admin/message-ctas/${id}?error=${encodeURIComponent(String(err?.message || 'Failed to archive CTA definition'))}`)
   }
 })
 

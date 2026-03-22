@@ -501,6 +501,24 @@ export async function archiveMessageCtaDefinitionForAdmin(id: number, actorUserI
   return updateMessageCtaDefinitionForAdmin(id, { status: 'archived' }, actorUserId)
 }
 
+export async function cloneMessageCtaDefinitionForAdmin(id: number, actorUserId: number): Promise<MessageCtaDefinitionDto> {
+  const source = await getMessageCtaDefinitionForAdmin(id, actorUserId)
+  const cloned = await createMessageCtaDefinitionForAdmin(
+    {
+      name: `${source.name} (Copy)`,
+      status: 'draft',
+      scopeType: source.scopeType,
+      scopeSpaceId: source.scopeSpaceId,
+      intentKey: source.intentKey,
+      executorType: source.executorType,
+      labelDefault: source.labelDefault,
+      config: source.config,
+    },
+    actorUserId
+  )
+  return cloned
+}
+
 export async function resolveRuntimeDefinitionsById(params: {
   ids: number[]
   actorUserId?: number | null
