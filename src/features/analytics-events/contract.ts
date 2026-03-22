@@ -11,6 +11,9 @@ export type AnalyticsEventName =
   | 'message_dismiss'
   | 'auth_start_from_message'
   | 'auth_complete_from_message'
+  | 'donation_complete_from_message'
+  | 'subscription_complete_from_message'
+  | 'upgrade_complete_from_message'
 
 export type AnalyticsSurface = 'global_feed' | 'group_feed' | 'channel_feed' | 'my_feed'
 export type AnalyticsViewerState = 'anonymous' | 'authenticated'
@@ -123,7 +126,10 @@ function asEventName(raw: any): AnalyticsEventName {
     v === 'message_click_secondary' ||
     v === 'message_dismiss' ||
     v === 'auth_start_from_message' ||
-    v === 'auth_complete_from_message'
+    v === 'auth_complete_from_message' ||
+    v === 'donation_complete_from_message' ||
+    v === 'subscription_complete_from_message' ||
+    v === 'upgrade_complete_from_message'
   ) {
     return v
   }

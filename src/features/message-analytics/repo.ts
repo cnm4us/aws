@@ -27,7 +27,7 @@ export async function insertEvent(input: {
   messageId: number
   messageCampaignKey: string | null
   ctaKind: MessageAnalyticsCtaKind
-  flow: 'login' | 'register' | null
+  flow: 'login' | 'register' | 'donate' | 'subscribe' | 'upgrade' | null
   intentId: string | null
   messageSequenceKey: string | null
   attributed: boolean

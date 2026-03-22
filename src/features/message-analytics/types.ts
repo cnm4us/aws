@@ -2,7 +2,16 @@ export type MessageAnalyticsSurface = 'global_feed'
 export type MessageAnalyticsViewerState = 'anonymous' | 'authenticated'
 export type MessageAnalyticsCtaKind = 'primary' | 'secondary' | null
 
-export type MessageAnalyticsInputEvent = 'impression' | 'click' | 'pass_through' | 'dismiss' | 'auth_start' | 'auth_complete'
+export type MessageAnalyticsInputEvent =
+  | 'impression'
+  | 'click'
+  | 'pass_through'
+  | 'dismiss'
+  | 'auth_start'
+  | 'auth_complete'
+  | 'donation_complete'
+  | 'subscription_complete'
+  | 'upgrade_complete'
 
 export type MessageAnalyticsEventType =
   | 'message_impression'
@@ -11,6 +20,9 @@ export type MessageAnalyticsEventType =
   | 'message_dismiss'
   | 'auth_start_from_message'
   | 'auth_complete_from_message'
+  | 'donation_complete_from_message'
+  | 'subscription_complete_from_message'
+  | 'upgrade_complete_from_message'
 
 export type MessageAnalyticsEventRow = {
   id: number
@@ -22,7 +34,7 @@ export type MessageAnalyticsEventRow = {
   message_id: number
   message_campaign_key: string | null
   cta_kind: string | null
-  flow: 'login' | 'register' | null
+  flow: 'login' | 'register' | 'donate' | 'subscribe' | 'upgrade' | null
   intent_id: string | null
   message_sequence_key: string | null
   attributed: number

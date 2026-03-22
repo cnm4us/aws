@@ -94,7 +94,17 @@ function normalizeSessionId(raw: any): string | null {
 
 function normalizeEvent(raw: any): MessageAnalyticsInputEvent {
   const v = String(raw || '').trim().toLowerCase()
-  if (v === 'impression' || v === 'click' || v === 'pass_through' || v === 'dismiss' || v === 'auth_start' || v === 'auth_complete') return v
+  if (
+    v === 'impression' ||
+    v === 'click' ||
+    v === 'pass_through' ||
+    v === 'dismiss' ||
+    v === 'auth_start' ||
+    v === 'auth_complete' ||
+    v === 'donation_complete' ||
+    v === 'subscription_complete' ||
+    v === 'upgrade_complete'
+  ) return v
   throw new DomainError('invalid_message_event', 'invalid_message_event', 400)
 }
 
@@ -105,10 +115,10 @@ function normalizeCtaKind(raw: any): MessageAnalyticsCtaKind {
   throw new DomainError('invalid_message_cta_kind', 'invalid_message_cta_kind', 400)
 }
 
-function normalizeFlow(raw: any): 'login' | 'register' | null {
+function normalizeFlow(raw: any): 'login' | 'register' | 'donate' | 'subscribe' | 'upgrade' | null {
   if (raw == null || raw === '') return null
   const v = String(raw).trim().toLowerCase()
-  if (v === 'login' || v === 'register') return v
+  if (v === 'login' || v === 'register' || v === 'donate' || v === 'subscribe' || v === 'upgrade') return v
   throw new DomainError('invalid_message_flow', 'invalid_message_flow', 400)
 }
 
@@ -134,6 +144,9 @@ function mapToEventType(event: MessageAnalyticsInputEvent, ctaKind: MessageAnaly
   if (event === 'pass_through' || event === 'dismiss') return 'message_dismiss' as const
   if (event === 'auth_start') return 'auth_start_from_message' as const
   if (event === 'auth_complete') return 'auth_complete_from_message' as const
+  if (event === 'donation_complete') return 'donation_complete_from_message' as const
+  if (event === 'subscription_complete') return 'subscription_complete_from_message' as const
+  if (event === 'upgrade_complete') return 'upgrade_complete_from_message' as const
   return ctaKind === 'secondary' ? 'message_click_secondary' : 'message_click_primary'
 }
 
@@ -195,7 +208,7 @@ type RecordMessageEventInput = {
   messageId: number | string | null | undefined
   messageCampaignKey?: string | null
   ctaKind?: MessageAnalyticsCtaKind | string | null
-  flow?: 'login' | 'register' | string | null
+  flow?: 'login' | 'register' | 'donate' | 'subscribe' | 'upgrade' | string | null
   intentId?: string | null
   messageSequenceKey?: string | null
   occurredAt?: Date

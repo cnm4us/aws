@@ -25,6 +25,7 @@ const feedMessageDecisionPaths = ['/api/feed/message-decision']
 const feedMessageFetchPaths = ['/api/feed/messages/:id']
 const feedMessageEventPaths = ['/api/feed/message-events']
 const feedMessageAuthIntentPaths = ['/api/feed/message-auth-intent']
+const feedMessageMockCompletionPaths = ['/api/cta/mock/complete']
 
 let globalSubscriptionSpaceCache: { spaceId: number | null; expiresAtMs: number } = { spaceId: null, expiresAtMs: 0 }
 
@@ -310,6 +311,9 @@ feedMessagesRouter.post(feedMessageEventPaths, async (req: any, res: any, next: 
       dismiss: 'feed.message.dismiss',
       auth_start: 'feed.message.auth_start',
       auth_complete: 'feed.message.auth_complete',
+      donation_complete: 'feed.message.donation_complete',
+      subscription_complete: 'feed.message.subscription_complete',
+      upgrade_complete: 'feed.message.upgrade_complete',
     }
     const outcomeByEvent: Record<string, string> = {
       impression: 'shown',
@@ -318,6 +322,9 @@ feedMessagesRouter.post(feedMessageEventPaths, async (req: any, res: any, next: 
       dismiss: 'dismissed',
       auth_start: 'auth_start',
       auth_complete: 'auth_complete',
+      donation_complete: 'donation_complete',
+      subscription_complete: 'subscription_complete',
+      upgrade_complete: 'upgrade_complete',
     }
 
     const span = trace.getSpan(context.active())
@@ -359,6 +366,79 @@ feedMessagesRouter.post(feedMessageEventPaths, async (req: any, res: any, next: 
       counted: tracked.countedInRollup,
       attributed: tracked.attributed,
     })
+  } catch (err) {
+    return next(err)
+  }
+})
+
+feedMessagesRouter.get(feedMessageMockCompletionPaths, async (req: any, res: any, next: any) => {
+  try {
+    const q = req.query || {}
+    const rawFlow = String(q.message_flow || q.flow || '').trim().toLowerCase()
+    const eventByFlow: Record<string, 'donation_complete' | 'subscription_complete' | 'upgrade_complete'> = {
+      donate: 'donation_complete',
+      subscribe: 'subscription_complete',
+      upgrade: 'upgrade_complete',
+    }
+    const event = eventByFlow[rawFlow]
+    if (!event) return res.status(400).send('invalid_flow')
+
+    const messageId = q.message_id
+    const messageCampaignKey = q.message_campaign_key ? String(q.message_campaign_key) : null
+    const ctaKind = q.message_cta_kind ? String(q.message_cta_kind) : (q.cta_kind ? String(q.cta_kind) : null)
+    const sessionId = q.message_session_id ? String(q.message_session_id).trim() : (q.session_id ? String(q.session_id).trim() : null)
+    const intentId = q.message_intent_id ? String(q.message_intent_id).trim().toLowerCase() : (q.intent_id ? String(q.intent_id).trim().toLowerCase() : null)
+    const messageSequenceKey = q.message_sequence_key ? String(q.message_sequence_key).trim() : null
+
+    await messageAnalyticsSvc.recordMessageEvent({
+      event,
+      messageId,
+      messageCampaignKey,
+      ctaKind,
+      flow: rawFlow,
+      intentId,
+      messageSequenceKey,
+      surface: q.surface || 'global_feed',
+      sessionId,
+      viewerState: req.user?.id ? 'authenticated' : 'anonymous',
+      userId: req.user?.id ? Number(req.user.id) : null,
+    })
+    await recordMessageSessionEvent({
+      sessionId,
+      surface: String(q.surface || 'global_feed').trim().toLowerCase() as MessageDecisionSurface,
+      messageId,
+      event,
+    })
+
+    const span = trace.getSpan(context.active())
+    if (span) {
+      span.setAttribute('app.surface', String(q.surface || 'global_feed').trim().toLowerCase())
+      span.setAttribute('app.operation', 'feed.message.mock_complete')
+      span.setAttribute('app.operation_detail', `feed.message.${event}`)
+      span.setAttribute('app.message_id', String(Number(messageId || 0) || 0))
+      span.setAttribute('app.outcome', event)
+      if (intentId) span.setAttribute('app.message_intent_id', intentId)
+      if (rawFlow) span.setAttribute('app.message_flow', rawFlow)
+    }
+
+    ;(req.log || feedMessagesLogger).info({
+      app_operation: 'feed.message.mock_complete',
+      app_operation_detail: `feed.message.${event}`,
+      app_outcome: event,
+      app_surface: String(q.surface || 'global_feed').trim().toLowerCase(),
+      message_id: Number(messageId || 0) || null,
+      message_campaign_key: messageCampaignKey,
+      cta_kind: ctaKind,
+      message_flow: rawFlow || null,
+      message_intent_id: intentId,
+      message_sequence_key: messageSequenceKey,
+      message_session_id: sessionId,
+    }, 'feed.message.mock_complete')
+
+    let returnTo = String(q.return || '/').trim()
+    if (returnTo === '/channels/global-feed' || returnTo === '/channels/global') returnTo = '/'
+    if (!returnTo.startsWith('/')) return res.redirect('/')
+    return res.redirect(returnTo)
   } catch (err) {
     return next(err)
   }

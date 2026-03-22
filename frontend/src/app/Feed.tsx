@@ -203,6 +203,8 @@ function parseCanonicalFromPath(): { kind: 'group' | 'channel'; slug: string } |
     const kind = m[1] === 'groups' ? 'group' : 'channel'
     const slug = decodeURIComponent(m[2] || '').trim()
     if (!slug) return null
+    // Treat global feed channel aliases as the root global feed route.
+    if (kind === 'channel' && isGlobalFeedSlug(slug)) return null
     return { kind, slug }
   } catch {
     return null
@@ -480,16 +482,16 @@ async function fetchMessageById(messageId: number): Promise<FeedMessagePayload> 
           donate: {
             provider: String(ctaDonateConfig.provider || 'mock').toLowerCase() === 'paypal' ? 'paypal' : 'mock',
             campaignKey: ctaDonateConfig.campaignKey == null ? null : String(ctaDonateConfig.campaignKey),
-            successReturn: String(ctaDonateConfig.successReturn || '/channels/global-feed'),
+            successReturn: String(ctaDonateConfig.successReturn || '/'),
           },
           subscribe: {
             provider: String(ctaSubscribeConfig.provider || 'mock').toLowerCase() === 'paypal' ? 'paypal' : 'mock',
             planKey: ctaSubscribeConfig.planKey == null ? null : String(ctaSubscribeConfig.planKey),
-            successReturn: String(ctaSubscribeConfig.successReturn || '/channels/global-feed'),
+            successReturn: String(ctaSubscribeConfig.successReturn || '/'),
           },
           upgrade: {
             targetTier: ctaUpgradeConfig.targetTier == null ? null : String(ctaUpgradeConfig.targetTier),
-            successReturn: String(ctaUpgradeConfig.successReturn || '/channels/global-feed'),
+            successReturn: String(ctaUpgradeConfig.successReturn || '/'),
           },
         },
       },
@@ -511,7 +513,7 @@ async function sendMessageEvent(input: {
   messageCampaignKey: string | null
   sessionId: string | null
   ctaKind?: 'primary' | 'secondary'
-  flow?: 'login' | 'register' | null
+  flow?: 'login' | 'register' | 'donate' | 'subscribe' | 'upgrade' | null
   intentId?: string | null
   messageSequenceKey?: string | null
 }, opts?: { sequenceEngineTag?: FeedSequenceEngineTag }) {
@@ -2444,7 +2446,19 @@ export default function Feed() {
     return 'none'
   }
 
-  function resolveCtaTarget(message: FeedMessagePayload, ctaKind: 'primary' | 'secondary'): { href: string | null; flow: 'login' | 'register' | null } {
+  type MessageFlow = 'login' | 'register' | 'donate' | 'subscribe' | 'upgrade'
+
+  function createClientIntentId(): string {
+    try {
+      const g: any = typeof globalThis !== 'undefined' ? globalThis : null
+      const id = g?.crypto?.randomUUID?.()
+      if (id && typeof id === 'string') return String(id).toLowerCase()
+    } catch {}
+    const hex = () => Math.floor(Math.random() * 0x10000).toString(16).padStart(4, '0')
+    return `${hex()}${hex()}-${hex()}-4${hex().slice(1)}-${((8 + Math.floor(Math.random() * 4)).toString(16))}${hex().slice(1)}-${hex()}${hex()}${hex()}`.toLowerCase()
+  }
+
+  function resolveCtaTarget(message: FeedMessagePayload, ctaKind: 'primary' | 'secondary'): { href: string | null; flow: MessageFlow | null } {
     const cta = message.widgets.cta
     if (!cta || !cta.enabled) return { href: null, flow: null }
     if (cta.type === 'auth') {
@@ -2457,9 +2471,9 @@ export default function Feed() {
         : (lower.startsWith('/login') ? 'login' : null)
       return { href: normalized, flow }
     }
-    if (cta.type === 'donate') return { href: String(cta.config.donate.successReturn || '/channels/global-feed'), flow: null }
-    if (cta.type === 'subscribe') return { href: String(cta.config.subscribe.successReturn || '/channels/global-feed'), flow: null }
-    return { href: String(cta.config.upgrade.successReturn || '/channels/global-feed'), flow: null }
+    if (cta.type === 'donate') return { href: String(cta.config.donate.successReturn || '/'), flow: 'donate' }
+    if (cta.type === 'subscribe') return { href: String(cta.config.subscribe.successReturn || '/'), flow: 'subscribe' }
+    return { href: String(cta.config.upgrade.successReturn || '/'), flow: 'upgrade' }
   }
 
   const handleMessageCtaClick = useCallback(async (message: FeedMessagePayload, href: string, ctaKind: 'primary' | 'secondary') => {
@@ -2472,9 +2486,10 @@ export default function Feed() {
     if (activeExposure && activeExposure.messageId === Number(message.id)) {
       activeExposure.clicked = true
     }
-    const flow = resolveCtaTarget(message, ctaKind).flow
+    const target = resolveCtaTarget(message, ctaKind)
+    const flow = target.flow
     let intentId: string | null = null
-    if (flow) {
+    if (flow === 'login' || flow === 'register') {
       const issued = await issueMessageAuthIntent({
         flow,
         messageId: message.id,
@@ -2483,6 +2498,8 @@ export default function Feed() {
         messageSequenceKey: activeSequence || null,
       }, { sequenceEngineTag: feedSequenceEngineTag })
       intentId = issued.intentId
+    } else if (flow) {
+      intentId = createClientIntentId()
     }
     void sendMessageEvent({
       event: 'click',
@@ -2494,7 +2511,7 @@ export default function Feed() {
       intentId,
       messageSequenceKey: activeSequence || null,
     }, { sequenceEngineTag: feedSequenceEngineTag })
-    if (flow) {
+    if (flow === 'login' || flow === 'register') {
       void sendMessageEvent({
         event: 'auth_start',
         messageId: message.id,
@@ -2515,6 +2532,19 @@ export default function Feed() {
         if (flow) url.searchParams.set('message_flow', flow)
         if (intentId) url.searchParams.set('message_intent_id', intentId)
         if (activeSequence) url.searchParams.set('message_sequence_key', activeSequence)
+        if (flow === 'donate' || flow === 'subscribe' || flow === 'upgrade') {
+          const mock = new URL('/api/cta/mock/complete', window.location.origin)
+          mock.searchParams.set('message_id', String(message.id))
+          if (message.campaignKey) mock.searchParams.set('message_campaign_key', message.campaignKey)
+          if (messageSessionId) mock.searchParams.set('message_session_id', messageSessionId)
+          mock.searchParams.set('message_cta_kind', ctaKind)
+          mock.searchParams.set('message_flow', flow)
+          if (intentId) mock.searchParams.set('message_intent_id', intentId)
+          if (activeSequence) mock.searchParams.set('message_sequence_key', activeSequence)
+          mock.searchParams.set('return', `${url.pathname}${url.search}${url.hash || ''}`)
+          window.location.href = `${mock.pathname}${mock.search}`
+          return
+        }
         window.location.href = `${url.pathname}${url.search}${url.hash || ''}`
         return
       }

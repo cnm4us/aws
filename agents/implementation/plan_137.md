@@ -35,7 +35,7 @@ Status: Active
 - A: Completed
 - B: Completed
 - C: Completed
-- D: Pending
+- D: Completed
 - E: Pending
 - F: Pending
 
@@ -154,6 +154,20 @@ Status: Active
       - independent CTA widget (position + yOffset)
     - CTA widget supports `layout` (`inline`/`stacked`) and `type` label
     - CTA click targets resolve by CTA type with graceful fallback when no target exists
+- (uncommitted) — Phase D plumbing (partial):
+  - `frontend/src/app/Feed.tsx`
+    - issues `intent_id` for non-auth CTA clicks (client-generated UUID)
+    - routes non-auth CTA completion through `/api/cta/mock/complete`
+    - forwards `message_flow` for `donate|subscribe|upgrade`
+  - `src/routes/feed-messages.ts`
+    - adds `GET /api/cta/mock/complete` to record completion events and redirect back
+    - extends event op/outcome tags for non-auth completions
+  - `src/features/message-analytics/*`, `src/features/analytics-events/contract.ts`, `src/db.ts`, `src/features/message-decision/service.ts`
+    - adds completion event types:
+      - `donation_complete_from_message`
+      - `subscription_complete_from_message`
+      - `upgrade_complete_from_message`
+    - extends flow enum handling to include `donate|subscribe|upgrade`
 
 ## Validation
 - Environment:

@@ -996,7 +996,10 @@ export async function ensureSchema(db: DB) {
                 'message_click_secondary',
                 'message_dismiss',
                 'auth_start_from_message',
-                'auth_complete_from_message'
+                'auth_complete_from_message',
+                'donation_complete_from_message',
+                'subscription_complete_from_message',
+                'upgrade_complete_from_message'
               ) NOT NULL,
               surface ENUM('global_feed') NOT NULL DEFAULT 'global_feed',
               viewer_state ENUM('anonymous','authenticated') NOT NULL DEFAULT 'anonymous',
@@ -1020,7 +1023,7 @@ export async function ensureSchema(db: DB) {
               KEY idx_feed_message_events_campaign_key_occurred (message_campaign_key, occurred_at, id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
           `)
-          await db.query(`ALTER TABLE feed_message_events ADD COLUMN IF NOT EXISTS event_type ENUM('message_impression','message_click_primary','message_click_secondary','message_dismiss','auth_start_from_message','auth_complete_from_message') NOT NULL`)
+          await db.query(`ALTER TABLE feed_message_events ADD COLUMN IF NOT EXISTS event_type ENUM('message_impression','message_click_primary','message_click_secondary','message_dismiss','auth_start_from_message','auth_complete_from_message','donation_complete_from_message','subscription_complete_from_message','upgrade_complete_from_message') NOT NULL`)
           await db.query(`ALTER TABLE feed_message_events ADD COLUMN IF NOT EXISTS surface ENUM('global_feed') NOT NULL DEFAULT 'global_feed'`)
           await db.query(`ALTER TABLE feed_message_events ADD COLUMN IF NOT EXISTS viewer_state ENUM('anonymous','authenticated') NOT NULL DEFAULT 'anonymous'`)
           await db.query(`ALTER TABLE feed_message_events ADD COLUMN IF NOT EXISTS session_id VARCHAR(120) NULL`)
@@ -1030,7 +1033,8 @@ export async function ensureSchema(db: DB) {
           await db.query(`ALTER TABLE feed_message_events ADD COLUMN IF NOT EXISTS message_id BIGINT UNSIGNED NOT NULL DEFAULT 0`)
           await db.query(`ALTER TABLE feed_message_events ADD COLUMN IF NOT EXISTS message_campaign_key VARCHAR(64) NULL`)
           await db.query(`ALTER TABLE feed_message_events ADD COLUMN IF NOT EXISTS cta_kind ENUM('primary','secondary') NULL`)
-          await db.query(`ALTER TABLE feed_message_events ADD COLUMN IF NOT EXISTS flow ENUM('login','register') NULL`)
+          await db.query(`ALTER TABLE feed_message_events ADD COLUMN IF NOT EXISTS flow ENUM('login','register','donate','subscribe','upgrade') NULL`)
+          try { await db.query(`ALTER TABLE feed_message_events MODIFY COLUMN flow ENUM('login','register','donate','subscribe','upgrade') NULL`) } catch {}
           await db.query(`ALTER TABLE feed_message_events ADD COLUMN IF NOT EXISTS intent_id CHAR(36) NULL`)
           await db.query(`ALTER TABLE feed_message_events ADD COLUMN IF NOT EXISTS message_sequence_key VARCHAR(191) NULL`)
           await db.query(`ALTER TABLE feed_message_events ADD COLUMN IF NOT EXISTS attributed TINYINT(1) NOT NULL DEFAULT 1`)
@@ -1052,7 +1056,10 @@ export async function ensureSchema(db: DB) {
                    'message_click_secondary',
                    'message_dismiss',
                    'auth_start_from_message',
-                   'auth_complete_from_message'
+                   'auth_complete_from_message',
+                   'donation_complete_from_message',
+                   'subscription_complete_from_message',
+                   'upgrade_complete_from_message'
                  ) NOT NULL`
             )
           } catch {}
@@ -1087,7 +1094,10 @@ export async function ensureSchema(db: DB) {
                    'message_click_secondary',
                    'message_dismiss',
                    'auth_start_from_message',
-                   'auth_complete_from_message'
+                   'auth_complete_from_message',
+                   'donation_complete_from_message',
+                   'subscription_complete_from_message',
+                   'upgrade_complete_from_message'
                  ) NOT NULL`
             )
           } catch {}
@@ -1208,7 +1218,10 @@ export async function ensureSchema(db: DB) {
                 'message_click_secondary',
                 'message_dismiss',
                 'auth_start_from_message',
-                'auth_complete_from_message'
+                'auth_complete_from_message',
+                'donation_complete_from_message',
+                'subscription_complete_from_message',
+                'upgrade_complete_from_message'
               ) NOT NULL,
               total_events BIGINT UNSIGNED NOT NULL DEFAULT 0,
               created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -1228,7 +1241,7 @@ export async function ensureSchema(db: DB) {
           await db.query(`ALTER TABLE feed_message_daily_stats ADD COLUMN IF NOT EXISTS message_id BIGINT UNSIGNED NOT NULL DEFAULT 0`)
           await db.query(`ALTER TABLE feed_message_daily_stats ADD COLUMN IF NOT EXISTS message_campaign_key VARCHAR(64) NOT NULL DEFAULT ''`)
           await db.query(`ALTER TABLE feed_message_daily_stats ADD COLUMN IF NOT EXISTS viewer_state ENUM('anonymous','authenticated') NOT NULL DEFAULT 'anonymous'`)
-          await db.query(`ALTER TABLE feed_message_daily_stats ADD COLUMN IF NOT EXISTS event_type ENUM('message_impression','message_click_primary','message_click_secondary','message_dismiss','auth_start_from_message','auth_complete_from_message') NOT NULL`)
+          await db.query(`ALTER TABLE feed_message_daily_stats ADD COLUMN IF NOT EXISTS event_type ENUM('message_impression','message_click_primary','message_click_secondary','message_dismiss','auth_start_from_message','auth_complete_from_message','donation_complete_from_message','subscription_complete_from_message','upgrade_complete_from_message') NOT NULL`)
           await db.query(`ALTER TABLE feed_message_daily_stats ADD COLUMN IF NOT EXISTS total_events BIGINT UNSIGNED NOT NULL DEFAULT 0`)
           try {
             await db.query(
@@ -1245,7 +1258,10 @@ export async function ensureSchema(db: DB) {
                    'message_click_secondary',
                    'message_dismiss',
                    'auth_start_from_message',
-                   'auth_complete_from_message'
+                   'auth_complete_from_message',
+                   'donation_complete_from_message',
+                   'subscription_complete_from_message',
+                   'upgrade_complete_from_message'
                  ) NOT NULL`
             )
           } catch {}

@@ -444,7 +444,7 @@ export async function recordMessageSessionEvent(input: {
   if (!Number.isFinite(messageId) || messageId <= 0) return
 
   const normalizedEvent = String(input.event || '').trim().toLowerCase()
-  if (!['auth_complete', 'flow_complete'].includes(normalizedEvent)) return
+  if (!['auth_complete', 'flow_complete', 'donation_complete', 'subscription_complete', 'upgrade_complete'].includes(normalizedEvent)) return
 
   const existing = await repo.getSessionByKey(sessionId, input.surface)
   if (!existing) return
