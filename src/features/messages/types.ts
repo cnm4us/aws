@@ -12,6 +12,9 @@ export type MessageType =
   | 'sponsor_message'
   | 'feature_announcement'
 
+export type MessageCtaType = 'auth' | 'donate' | 'subscribe' | 'upgrade'
+export type MessageCtaLayout = 'inline' | 'stacked'
+
 export type MessageCreative = {
   version: 1
   background: {
@@ -32,11 +35,45 @@ export type MessageCreative = {
       label: string
       headline: string
       body: string | null
-      primaryLabel: string
-      primaryHref: string
-      secondaryLabel: string | null
-      secondaryHref: string | null
+      // Legacy fields retained for compatibility during CTA widget migration.
+      primaryLabel?: string
+      primaryHref?: string
+      secondaryLabel?: string | null
+      secondaryHref?: string | null
     }
+    cta: {
+      enabled: boolean
+      position: MessageWidgetPosition
+      yOffsetPct: number
+      bgColor: string
+      bgOpacity: number
+      textColor: string
+      layout: MessageCtaLayout
+      type: MessageCtaType
+      primaryLabel: string
+      secondaryLabel: string | null
+      config: {
+        auth: {
+          primaryHref: string
+          secondaryHref: string | null
+        }
+        donate: {
+          provider: 'mock' | 'paypal'
+          campaignKey: string | null
+          successReturn: string
+        }
+        subscribe: {
+          provider: 'mock' | 'paypal'
+          planKey: string | null
+          successReturn: string
+        }
+        upgrade: {
+          targetTier: string | null
+          successReturn: string
+        }
+      }
+    }
+    // Legacy widget retained for compatibility during CTA widget migration.
     auth: {
       enabled: boolean
       position: MessageWidgetPosition

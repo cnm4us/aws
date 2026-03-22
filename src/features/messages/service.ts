@@ -6,6 +6,8 @@ import type {
   MessageAudienceSegment,
   MessageBackgroundMode,
   MessageCreative,
+  MessageCtaLayout,
+  MessageCtaType,
   MessageDto,
   MessageSurface,
   MessageTieBreakStrategy,
@@ -22,6 +24,8 @@ const STATUSES: readonly MessageStatus[] = ['draft', 'active', 'paused', 'archiv
 const BACKGROUND_MODES: readonly MessageBackgroundMode[] = ['none', 'image', 'video']
 const VIDEO_PLAYBACK_MODES: readonly MessageVideoPlaybackMode[] = ['muted_autoplay', 'tap_to_play_sound']
 const WIDGET_POSITIONS: readonly MessageWidgetPosition[] = ['top', 'middle', 'bottom']
+const CTA_TYPES: readonly MessageCtaType[] = ['auth', 'donate', 'subscribe', 'upgrade']
+const CTA_LAYOUTS: readonly MessageCtaLayout[] = ['inline', 'stacked']
 const SURFACES: readonly MessageSurface[] = ['global_feed']
 const AUDIENCE_SEGMENTS: readonly MessageAudienceSegment[] = ['anonymous', 'authenticated_non_subscriber', 'authenticated_subscriber']
 const TIE_BREAK_STRATEGIES: readonly MessageTieBreakStrategy[] = ['first', 'round_robin', 'weighted_random']
@@ -258,6 +262,20 @@ function normalizeVideoPlaybackMode(raw: any, key: string, fallback: MessageVide
   return value
 }
 
+function normalizeCtaType(raw: any, key: string, fallback: MessageCtaType): MessageCtaType {
+  const value = String(raw ?? '').trim().toLowerCase()
+  if (!value) return fallback
+  if (!isEnumValue(value, CTA_TYPES)) throw new DomainError(`invalid_${key}`, `invalid_${key}`, 400)
+  return value
+}
+
+function normalizeCtaLayout(raw: any, key: string, fallback: MessageCtaLayout): MessageCtaLayout {
+  const value = String(raw ?? '').trim().toLowerCase()
+  if (!value) return fallback
+  if (!isEnumValue(value, CTA_LAYOUTS)) throw new DomainError(`invalid_${key}`, `invalid_${key}`, 400)
+  return value
+}
+
 function normalizeOffsetPct(raw: any, key: string, fallback: number): number {
   const value = raw == null || raw === '' ? fallback : Number(raw)
   if (!Number.isFinite(value)) throw new DomainError(`invalid_${key}`, `invalid_${key}`, 400)
@@ -310,10 +328,38 @@ function buildLegacyCreative(legacy: LegacyMessageFields): MessageCreative {
         label: 'Join the Community',
         headline: legacy.headline,
         body: legacy.body,
+      },
+      cta: {
+        enabled: true,
+        position: 'bottom',
+        yOffsetPct: 0,
+        bgColor: '#0B1320',
+        bgOpacity: 0.55,
+        textColor: '#FFFFFF',
+        layout: 'inline',
+        type: 'auth',
         primaryLabel: legacy.ctaPrimaryLabel,
-        primaryHref: legacy.ctaPrimaryHref,
         secondaryLabel: legacy.ctaSecondaryLabel,
-        secondaryHref: legacy.ctaSecondaryHref,
+        config: {
+          auth: {
+            primaryHref: legacy.ctaPrimaryHref,
+            secondaryHref: legacy.ctaSecondaryHref,
+          },
+          donate: {
+            provider: 'mock',
+            campaignKey: null,
+            successReturn: '/channels/global-feed',
+          },
+          subscribe: {
+            provider: 'mock',
+            planKey: null,
+            successReturn: '/channels/global-feed',
+          },
+          upgrade: {
+            targetTier: null,
+            successReturn: '/channels/global-feed',
+          },
+        },
       },
       auth: {
         enabled: false,
@@ -336,25 +382,54 @@ function normalizeCreative(raw: any, legacy: LegacyMessageFields): MessageCreati
   const backgroundSrc = src.background && typeof src.background === 'object' ? src.background : {}
   const widgetsSrc = src.widgets && typeof src.widgets === 'object' ? src.widgets : {}
   const messageSrc = widgetsSrc.message && typeof widgetsSrc.message === 'object' ? widgetsSrc.message : {}
+  const ctaSrc = widgetsSrc.cta && typeof widgetsSrc.cta === 'object' ? widgetsSrc.cta : {}
   const authSrc = widgetsSrc.auth && typeof widgetsSrc.auth === 'object' ? widgetsSrc.auth : {}
 
   const msgEnabled = normalizeBoolLoose(messageSrc.enabled, base.widgets.message.enabled)
+  const ctaEnabled = normalizeBoolLoose(ctaSrc.enabled, base.widgets.cta.enabled)
   const authEnabled = normalizeBoolLoose(authSrc.enabled, base.widgets.auth.enabled)
-  if (!msgEnabled && !authEnabled) throw new DomainError('invalid_creative_widgets', 'invalid_creative_widgets', 400)
+  if (!msgEnabled && !ctaEnabled && !authEnabled) throw new DomainError('invalid_creative_widgets', 'invalid_creative_widgets', 400)
 
-  const messageSecondaryLabel = normalizeLabel(
-    messageSrc.secondaryLabel ?? messageSrc.secondary_label ?? base.widgets.message.secondaryLabel,
-    'creative_message_secondary_label',
+  const ctaType = normalizeCtaType(ctaSrc.type, 'creative_cta_type', base.widgets.cta.type)
+  const ctaPrimaryLabel = String(normalizeLabel(
+    ctaSrc.primaryLabel ?? ctaSrc.primary_label ?? messageSrc.primaryLabel ?? messageSrc.primary_label ?? base.widgets.cta.primaryLabel,
+    'creative_cta_primary_label',
+    true
+  ) || '')
+  const ctaSecondaryLabel = normalizeLabel(
+    ctaSrc.secondaryLabel ?? ctaSrc.secondary_label ?? messageSrc.secondaryLabel ?? messageSrc.secondary_label ?? base.widgets.cta.secondaryLabel,
+    'creative_cta_secondary_label',
     false
   )
-  const messageSecondaryHref = normalizeInternalHref(
-    messageSrc.secondaryHref ?? messageSrc.secondary_href ?? base.widgets.message.secondaryHref,
-    'creative_message_secondary_href',
+  const ctaLayout = normalizeCtaLayout(ctaSrc.layout, 'creative_cta_layout', base.widgets.cta.layout)
+  const ctaConfigSrc = ctaSrc.config && typeof ctaSrc.config === 'object' ? ctaSrc.config : {}
+  const authConfigSrc = ctaConfigSrc.auth && typeof ctaConfigSrc.auth === 'object' ? ctaConfigSrc.auth : {}
+  const donateConfigSrc = ctaConfigSrc.donate && typeof ctaConfigSrc.donate === 'object' ? ctaConfigSrc.donate : {}
+  const subscribeConfigSrc = ctaConfigSrc.subscribe && typeof ctaConfigSrc.subscribe === 'object' ? ctaConfigSrc.subscribe : {}
+  const upgradeConfigSrc = ctaConfigSrc.upgrade && typeof ctaConfigSrc.upgrade === 'object' ? ctaConfigSrc.upgrade : {}
+  const ctaAuthPrimaryHref = String(normalizeInternalHref(
+    authConfigSrc.primaryHref ?? authConfigSrc.primary_href ?? ctaSrc.primaryHref ?? ctaSrc.primary_href ?? messageSrc.primaryHref ?? messageSrc.primary_href ?? base.widgets.cta.config.auth.primaryHref,
+    'creative_cta_auth_primary_href',
+    true
+  ) || '')
+  const ctaAuthSecondaryHref = normalizeInternalHref(
+    authConfigSrc.secondaryHref ?? authConfigSrc.secondary_href ?? ctaSrc.secondaryHref ?? ctaSrc.secondary_href ?? messageSrc.secondaryHref ?? messageSrc.secondary_href ?? base.widgets.cta.config.auth.secondaryHref,
+    'creative_cta_auth_secondary_href',
     false
   )
-  if ((messageSecondaryLabel && !messageSecondaryHref) || (!messageSecondaryLabel && messageSecondaryHref)) {
-    throw new DomainError('invalid_creative_message_secondary_cta', 'invalid_creative_message_secondary_cta', 400)
+  if ((ctaSecondaryLabel && !ctaAuthSecondaryHref && ctaType === 'auth') || (!ctaSecondaryLabel && ctaAuthSecondaryHref && ctaType === 'auth')) {
+    throw new DomainError('invalid_creative_cta_secondary', 'invalid_creative_cta_secondary', 400)
   }
+  const donateProviderRaw = String(donateConfigSrc.provider ?? base.widgets.cta.config.donate.provider).trim().toLowerCase()
+  const donateProvider = (donateProviderRaw === 'paypal' ? 'paypal' : 'mock') as 'mock' | 'paypal'
+  const subscribeProviderRaw = String(subscribeConfigSrc.provider ?? base.widgets.cta.config.subscribe.provider).trim().toLowerCase()
+  const subscribeProvider = (subscribeProviderRaw === 'paypal' ? 'paypal' : 'mock') as 'mock' | 'paypal'
+  const donateCampaignKey = normalizeCampaignKey(donateConfigSrc.campaignKey ?? donateConfigSrc.campaign_key ?? base.widgets.cta.config.donate.campaignKey)
+  const subscribePlanKey = normalizeCampaignKey(subscribeConfigSrc.planKey ?? subscribeConfigSrc.plan_key ?? base.widgets.cta.config.subscribe.planKey)
+  const upgradeTargetTier = normalizeCampaignKey(upgradeConfigSrc.targetTier ?? upgradeConfigSrc.target_tier ?? base.widgets.cta.config.upgrade.targetTier)
+  const donateSuccessReturn = String(normalizeInternalHref(donateConfigSrc.successReturn ?? donateConfigSrc.success_return ?? base.widgets.cta.config.donate.successReturn, 'creative_cta_donate_success_return', true) || '')
+  const subscribeSuccessReturn = String(normalizeInternalHref(subscribeConfigSrc.successReturn ?? subscribeConfigSrc.success_return ?? base.widgets.cta.config.subscribe.successReturn, 'creative_cta_subscribe_success_return', true) || '')
+  const upgradeSuccessReturn = String(normalizeInternalHref(upgradeConfigSrc.successReturn ?? upgradeConfigSrc.success_return ?? base.widgets.cta.config.upgrade.successReturn, 'creative_cta_upgrade_success_return', true) || '')
 
   return {
     version: 1,
@@ -380,10 +455,38 @@ function normalizeCreative(raw: any, legacy: LegacyMessageFields): MessageCreati
         label: String(normalizeLabel(messageSrc.label ?? base.widgets.message.label, 'creative_message_label', true) || ''),
         headline: normalizeHeadline(messageSrc.headline ?? base.widgets.message.headline),
         body: normalizeBody(messageSrc.body ?? base.widgets.message.body),
-        primaryLabel: String(normalizeLabel(messageSrc.primaryLabel ?? messageSrc.primary_label ?? base.widgets.message.primaryLabel, 'creative_message_primary_label', true) || ''),
-        primaryHref: String(normalizeInternalHref(messageSrc.primaryHref ?? messageSrc.primary_href ?? base.widgets.message.primaryHref, 'creative_message_primary_href', true) || ''),
-        secondaryLabel: messageSecondaryLabel,
-        secondaryHref: messageSecondaryHref,
+      },
+      cta: {
+        enabled: ctaEnabled,
+        position: normalizeWidgetPosition(ctaSrc.position, 'creative_cta_position', base.widgets.cta.position),
+        yOffsetPct: normalizeOffsetPct(ctaSrc.yOffsetPct ?? ctaSrc.y_offset_pct, 'creative_cta_y_offset_pct', base.widgets.cta.yOffsetPct),
+        bgColor: normalizeHexColor(ctaSrc.bgColor ?? ctaSrc.bg_color, 'creative_cta_bg_color', base.widgets.cta.bgColor),
+        bgOpacity: normalizeOpacity(ctaSrc.bgOpacity ?? ctaSrc.bg_opacity, 'creative_cta_bg_opacity', base.widgets.cta.bgOpacity),
+        textColor: normalizeHexColor(ctaSrc.textColor ?? ctaSrc.text_color, 'creative_cta_text_color', base.widgets.cta.textColor),
+        layout: ctaLayout,
+        type: ctaType,
+        primaryLabel: ctaPrimaryLabel,
+        secondaryLabel: ctaSecondaryLabel,
+        config: {
+          auth: {
+            primaryHref: ctaAuthPrimaryHref,
+            secondaryHref: ctaAuthSecondaryHref,
+          },
+          donate: {
+            provider: donateProvider,
+            campaignKey: donateCampaignKey,
+            successReturn: donateSuccessReturn,
+          },
+          subscribe: {
+            provider: subscribeProvider,
+            planKey: subscribePlanKey,
+            successReturn: subscribeSuccessReturn,
+          },
+          upgrade: {
+            targetTier: upgradeTargetTier,
+            successReturn: upgradeSuccessReturn,
+          },
+        },
       },
       auth: {
         enabled: authEnabled,

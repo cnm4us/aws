@@ -3103,12 +3103,26 @@ function extractMessageCreativeForm(values: any): {
   messageBgColor: string
   messageBgOpacity: number
   messageTextColor: string
-  authEnabled: boolean
-  authPosition: 'top' | 'middle' | 'bottom'
-  authOffsetPct: number
-  authBgColor: string
-  authBgOpacity: number
-  authTextColor: string
+  ctaEnabled: boolean
+  ctaType: 'auth' | 'donate' | 'subscribe' | 'upgrade'
+  ctaLayout: 'inline' | 'stacked'
+  ctaPosition: 'top' | 'middle' | 'bottom'
+  ctaOffsetPct: number
+  ctaBgColor: string
+  ctaBgOpacity: number
+  ctaTextColor: string
+  ctaPrimaryLabel: string
+  ctaSecondaryLabel: string
+  ctaAuthPrimaryHref: string
+  ctaAuthSecondaryHref: string
+  ctaDonateProvider: 'mock' | 'paypal'
+  ctaDonateCampaignKey: string
+  ctaDonateSuccessReturn: string
+  ctaSubscribeProvider: 'mock' | 'paypal'
+  ctaSubscribePlanKey: string
+  ctaSubscribeSuccessReturn: string
+  ctaUpgradeTargetTier: string
+  ctaUpgradeSuccessReturn: string
 } {
   const creative = values?.creative && typeof values.creative === 'object'
     ? values.creative
@@ -3137,16 +3151,54 @@ function extractMessageCreativeForm(values: any): {
     messageBgColor: String(creative?.widgets?.message?.bgColor || '#0B1320'),
     messageBgOpacity: parseNumLoose(creative?.widgets?.message?.bgOpacity, 0.55),
     messageTextColor: String(creative?.widgets?.message?.textColor || '#FFFFFF'),
-    authEnabled: parseBoolLoose(creative?.widgets?.auth?.enabled, false),
-    authPosition: String(creative?.widgets?.auth?.position || 'bottom').toLowerCase() as 'top' | 'middle' | 'bottom',
-    authOffsetPct: parseNumLoose(creative?.widgets?.auth?.yOffsetPct, 0),
-    authBgColor: String(creative?.widgets?.auth?.bgColor || '#0B1320'),
-    authBgOpacity: parseNumLoose(creative?.widgets?.auth?.bgOpacity, 0.55),
-    authTextColor: String(creative?.widgets?.auth?.textColor || '#FFFFFF'),
+    ctaEnabled: parseBoolLoose(creative?.widgets?.cta?.enabled, parseBoolLoose(creative?.widgets?.auth?.enabled, true)),
+    ctaType: String(creative?.widgets?.cta?.type || 'auth').toLowerCase() as 'auth' | 'donate' | 'subscribe' | 'upgrade',
+    ctaLayout: String(creative?.widgets?.cta?.layout || 'inline').toLowerCase() as 'inline' | 'stacked',
+    ctaPosition: String(creative?.widgets?.cta?.position || creative?.widgets?.auth?.position || 'bottom').toLowerCase() as 'top' | 'middle' | 'bottom',
+    ctaOffsetPct: parseNumLoose(creative?.widgets?.cta?.yOffsetPct ?? creative?.widgets?.auth?.yOffsetPct, 0),
+    ctaBgColor: String(creative?.widgets?.cta?.bgColor || creative?.widgets?.auth?.bgColor || '#0B1320'),
+    ctaBgOpacity: parseNumLoose(creative?.widgets?.cta?.bgOpacity ?? creative?.widgets?.auth?.bgOpacity, 0.55),
+    ctaTextColor: String(creative?.widgets?.cta?.textColor || creative?.widgets?.auth?.textColor || '#FFFFFF'),
+    ctaPrimaryLabel: String(
+      creative?.widgets?.cta?.primaryLabel
+      || creative?.widgets?.message?.primaryLabel
+      || values?.ctaPrimaryLabel
+      || values?.cta_primary_label
+      || 'Register'
+    ),
+    ctaSecondaryLabel: String(
+      creative?.widgets?.cta?.secondaryLabel
+      || creative?.widgets?.message?.secondaryLabel
+      || values?.ctaSecondaryLabel
+      || values?.cta_secondary_label
+      || ''
+    ),
+    ctaAuthPrimaryHref: String(
+      creative?.widgets?.cta?.config?.auth?.primaryHref
+      || creative?.widgets?.message?.primaryHref
+      || values?.ctaPrimaryHref
+      || values?.cta_primary_href
+      || '/register?return=/'
+    ),
+    ctaAuthSecondaryHref: String(
+      creative?.widgets?.cta?.config?.auth?.secondaryHref
+      || creative?.widgets?.message?.secondaryHref
+      || values?.ctaSecondaryHref
+      || values?.cta_secondary_href
+      || '/login?return=/'
+    ),
+    ctaDonateProvider: String(creative?.widgets?.cta?.config?.donate?.provider || 'mock').toLowerCase() as 'mock' | 'paypal',
+    ctaDonateCampaignKey: String(creative?.widgets?.cta?.config?.donate?.campaignKey || ''),
+    ctaDonateSuccessReturn: String(creative?.widgets?.cta?.config?.donate?.successReturn || '/channels/global-feed'),
+    ctaSubscribeProvider: String(creative?.widgets?.cta?.config?.subscribe?.provider || 'mock').toLowerCase() as 'mock' | 'paypal',
+    ctaSubscribePlanKey: String(creative?.widgets?.cta?.config?.subscribe?.planKey || ''),
+    ctaSubscribeSuccessReturn: String(creative?.widgets?.cta?.config?.subscribe?.successReturn || '/channels/global-feed'),
+    ctaUpgradeTargetTier: String(creative?.widgets?.cta?.config?.upgrade?.targetTier || ''),
+    ctaUpgradeSuccessReturn: String(creative?.widgets?.cta?.config?.upgrade?.successReturn || '/channels/global-feed'),
   }
 
   const hasMessageEnabledInput = Object.prototype.hasOwnProperty.call(values || {}, 'creativeMessageEnabled')
-  const hasAuthEnabledInput = Object.prototype.hasOwnProperty.call(values || {}, 'creativeAuthEnabled')
+  const hasCtaEnabledInput = Object.prototype.hasOwnProperty.call(values || {}, 'creativeCtaEnabled')
 
   return {
     backgroundMode: (String(values?.creativeBgMode || base.backgroundMode).toLowerCase() === 'video'
@@ -3167,25 +3219,41 @@ function extractMessageCreativeForm(values: any): {
     messageBgColor: parseColorLoose(values?.creativeMessageBgColor ?? base.messageBgColor, '#0B1320'),
     messageBgOpacity: Math.min(1, Math.max(0, parseNumLoose(values?.creativeMessageBgOpacity ?? base.messageBgOpacity, 0.55))),
     messageTextColor: parseColorLoose(values?.creativeMessageTextColor ?? base.messageTextColor, '#FFFFFF'),
-    authEnabled: hasAuthEnabledInput ? parseBoolLoose(values?.creativeAuthEnabled, false) : base.authEnabled,
-    authPosition: (String(values?.creativeAuthPosition || base.authPosition).toLowerCase() === 'top'
+    ctaEnabled: hasCtaEnabledInput ? parseBoolLoose(values?.creativeCtaEnabled, false) : base.ctaEnabled,
+    ctaType: (['auth', 'donate', 'subscribe', 'upgrade'].includes(String(values?.creativeCtaType || base.ctaType).toLowerCase())
+      ? String(values?.creativeCtaType || base.ctaType).toLowerCase()
+      : 'auth') as 'auth' | 'donate' | 'subscribe' | 'upgrade',
+    ctaLayout: (String(values?.creativeCtaLayout || base.ctaLayout).toLowerCase() === 'stacked' ? 'stacked' : 'inline'),
+    ctaPosition: (String(values?.creativeCtaPosition || base.ctaPosition).toLowerCase() === 'top'
       ? 'top'
-      : (String(values?.creativeAuthPosition || base.authPosition).toLowerCase() === 'bottom' ? 'bottom' : 'middle')),
-    authOffsetPct: Math.round(Math.min(80, Math.max(0, parseNumLoose(values?.creativeAuthOffsetPct ?? base.authOffsetPct, 0)))),
-    authBgColor: parseColorLoose(values?.creativeAuthBgColor ?? base.authBgColor, '#0B1320'),
-    authBgOpacity: Math.min(1, Math.max(0, parseNumLoose(values?.creativeAuthBgOpacity ?? base.authBgOpacity, 0.55))),
-    authTextColor: parseColorLoose(values?.creativeAuthTextColor ?? base.authTextColor, '#FFFFFF'),
+      : (String(values?.creativeCtaPosition || base.ctaPosition).toLowerCase() === 'bottom' ? 'bottom' : 'middle')),
+    ctaOffsetPct: Math.round(Math.min(80, Math.max(0, parseNumLoose(values?.creativeCtaOffsetPct ?? base.ctaOffsetPct, 0)))),
+    ctaBgColor: parseColorLoose(values?.creativeCtaBgColor ?? base.ctaBgColor, '#0B1320'),
+    ctaBgOpacity: Math.min(1, Math.max(0, parseNumLoose(values?.creativeCtaBgOpacity ?? base.ctaBgOpacity, 0.55))),
+    ctaTextColor: parseColorLoose(values?.creativeCtaTextColor ?? base.ctaTextColor, '#FFFFFF'),
+    ctaPrimaryLabel: String(values?.creativeCtaPrimaryLabel ?? values?.ctaPrimaryLabel ?? base.ctaPrimaryLabel ?? 'Register').trim() || 'Register',
+    ctaSecondaryLabel: String(values?.creativeCtaSecondaryLabel ?? values?.ctaSecondaryLabel ?? base.ctaSecondaryLabel ?? '').trim(),
+    ctaAuthPrimaryHref: String(values?.creativeCtaAuthPrimaryHref ?? values?.ctaPrimaryHref ?? base.ctaAuthPrimaryHref ?? '/register?return=/').trim() || '/register?return=/',
+    ctaAuthSecondaryHref: String(values?.creativeCtaAuthSecondaryHref ?? values?.ctaSecondaryHref ?? base.ctaAuthSecondaryHref ?? '/login?return=/').trim(),
+    ctaDonateProvider: (String(values?.creativeCtaDonateProvider ?? base.ctaDonateProvider).toLowerCase() === 'paypal' ? 'paypal' : 'mock'),
+    ctaDonateCampaignKey: String(values?.creativeCtaDonateCampaignKey ?? base.ctaDonateCampaignKey ?? '').trim(),
+    ctaDonateSuccessReturn: String(values?.creativeCtaDonateSuccessReturn ?? base.ctaDonateSuccessReturn ?? '/channels/global-feed').trim() || '/channels/global-feed',
+    ctaSubscribeProvider: (String(values?.creativeCtaSubscribeProvider ?? base.ctaSubscribeProvider).toLowerCase() === 'paypal' ? 'paypal' : 'mock'),
+    ctaSubscribePlanKey: String(values?.creativeCtaSubscribePlanKey ?? base.ctaSubscribePlanKey ?? '').trim(),
+    ctaSubscribeSuccessReturn: String(values?.creativeCtaSubscribeSuccessReturn ?? base.ctaSubscribeSuccessReturn ?? '/channels/global-feed').trim() || '/channels/global-feed',
+    ctaUpgradeTargetTier: String(values?.creativeCtaUpgradeTargetTier ?? base.ctaUpgradeTargetTier ?? '').trim(),
+    ctaUpgradeSuccessReturn: String(values?.creativeCtaUpgradeSuccessReturn ?? base.ctaUpgradeSuccessReturn ?? '/channels/global-feed').trim() || '/channels/global-feed',
   }
 }
 
 function buildMessageCreateOrUpdatePayload(body: any): any {
   const creativeForm = extractMessageCreativeForm(body || {})
-  const messageEnabled = parseBoolLoose(body?.creativeMessageEnabled, false)
-  const authEnabled = parseBoolLoose(body?.creativeAuthEnabled, false)
-  const primaryLabel = String(body?.ctaPrimaryLabel ?? body?.cta_primary_label ?? 'Register')
-  const primaryHref = String(body?.ctaPrimaryHref ?? body?.cta_primary_href ?? '/register?return=/')
-  const secondaryLabelRaw = String(body?.ctaSecondaryLabel ?? body?.cta_secondary_label ?? '').trim()
-  const secondaryHrefRaw = String(body?.ctaSecondaryHref ?? body?.cta_secondary_href ?? '').trim()
+  const messageEnabled = creativeForm.messageEnabled
+  const ctaEnabled = creativeForm.ctaEnabled
+  const primaryLabel = String(creativeForm.ctaPrimaryLabel || 'Register')
+  const primaryHref = String(creativeForm.ctaAuthPrimaryHref || '/register?return=/')
+  const secondaryLabelRaw = String(creativeForm.ctaSecondaryLabel || '').trim()
+  const secondaryHrefRaw = String(creativeForm.ctaAuthSecondaryHref || '').trim()
   const secondaryLabel = secondaryLabelRaw || null
   const secondaryHref = secondaryHrefRaw || null
   const mediaUploadId = String(creativeForm.backgroundUploadId || '').trim()
@@ -3234,18 +3302,46 @@ function buildMessageCreateOrUpdatePayload(body: any): any {
           label: creativeForm.messageLabel,
           headline: String(body?.headline || ''),
           body: String(body?.body || '').trim() || null,
+        },
+        cta: {
+          enabled: ctaEnabled,
+          position: creativeForm.ctaPosition,
+          yOffsetPct: creativeForm.ctaOffsetPct,
+          bgColor: creativeForm.ctaBgColor,
+          bgOpacity: creativeForm.ctaBgOpacity,
+          textColor: creativeForm.ctaTextColor,
+          layout: creativeForm.ctaLayout,
+          type: creativeForm.ctaType,
           primaryLabel,
-          primaryHref,
           secondaryLabel,
-          secondaryHref,
+          config: {
+            auth: {
+              primaryHref,
+              secondaryHref,
+            },
+            donate: {
+              provider: creativeForm.ctaDonateProvider,
+              campaignKey: creativeForm.ctaDonateCampaignKey || null,
+              successReturn: creativeForm.ctaDonateSuccessReturn,
+            },
+            subscribe: {
+              provider: creativeForm.ctaSubscribeProvider,
+              planKey: creativeForm.ctaSubscribePlanKey || null,
+              successReturn: creativeForm.ctaSubscribeSuccessReturn,
+            },
+            upgrade: {
+              targetTier: creativeForm.ctaUpgradeTargetTier || null,
+              successReturn: creativeForm.ctaUpgradeSuccessReturn,
+            },
+          },
         },
         auth: {
-          enabled: authEnabled,
-          position: creativeForm.authPosition,
-          yOffsetPct: creativeForm.authOffsetPct,
-          bgColor: creativeForm.authBgColor,
-          bgOpacity: creativeForm.authBgOpacity,
-          textColor: creativeForm.authTextColor,
+          enabled: ctaEnabled,
+          position: creativeForm.ctaPosition,
+          yOffsetPct: creativeForm.ctaOffsetPct,
+          bgColor: creativeForm.ctaBgColor,
+          bgOpacity: creativeForm.ctaBgOpacity,
+          textColor: creativeForm.ctaTextColor,
         },
       },
     },
@@ -3268,16 +3364,16 @@ function renderAdminMessageForm(opts: {
   const draftKey = id ? `admin_message_editor_draft_${id}` : 'admin_message_editor_draft_new'
   const creativeForm = extractMessageCreativeForm(values)
   const creativeWarnings: string[] = []
-  if (creativeForm.messageEnabled && creativeForm.authEnabled) {
-    const samePos = creativeForm.messagePosition === creativeForm.authPosition
-    const closeOffset = Math.abs(creativeForm.messageOffsetPct - creativeForm.authOffsetPct) < 10
-    if (samePos && closeOffset) creativeWarnings.push('Message and Auth widgets are very close and may overlap.')
+  if (creativeForm.messageEnabled && creativeForm.ctaEnabled) {
+    const samePos = creativeForm.messagePosition === creativeForm.ctaPosition
+    const closeOffset = Math.abs(creativeForm.messageOffsetPct - creativeForm.ctaOffsetPct) < 10
+    if (samePos && closeOffset) creativeWarnings.push('Message and CTA widgets are very close and may overlap.')
   }
   if (creativeForm.messageEnabled && creativeForm.messageBgOpacity < 0.2) {
     creativeWarnings.push('Message widget background opacity is very low; contrast may be poor on bright media.')
   }
-  if (creativeForm.authEnabled && creativeForm.authBgOpacity < 0.2) {
-    creativeWarnings.push('Auth widget background opacity is very low; contrast may be poor on bright media.')
+  if (creativeForm.ctaEnabled && creativeForm.ctaBgOpacity < 0.2) {
+    creativeWarnings.push('CTA widget background opacity is very low; contrast may be poor on bright media.')
   }
   const previewUploadIdRaw = String(creativeForm.backgroundUploadId || '').trim()
   const previewUploadId = /^\d+$/.test(previewUploadIdRaw) ? previewUploadIdRaw : ''
@@ -3506,13 +3602,6 @@ function renderAdminMessageForm(opts: {
   body += `<label>Headline<input type="text" name="headline" value="${escapeHtml(String(values.headline || ''))}" required maxlength="280" /></label>`
   body += `</div>`
   body += `<label>Body<textarea name="body" rows="4">${escapeHtml(String(values.body || ''))}</textarea></label>`
-  body += `<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px">`
-  body += `<label>Primary Label<input type="text" name="ctaPrimaryLabel" value="${escapeHtml(String(values.ctaPrimaryLabel || values.cta_primary_label || ''))}" required maxlength="100" /></label>`
-  body += `<label>Primary Href<input type="text" name="ctaPrimaryHref" value="${escapeHtml(String(values.ctaPrimaryHref || values.cta_primary_href || '/register?return=/'))}" required maxlength="1200" /></label>`
-  body += `<label>Secondary Label<input type="text" name="ctaSecondaryLabel" value="${escapeHtml(String(values.ctaSecondaryLabel || values.cta_secondary_label || ''))}" maxlength="100" /></label>`
-  body += `<label>Secondary Href<input type="text" name="ctaSecondaryHref" value="${escapeHtml(String(values.ctaSecondaryHref || values.cta_secondary_href || ''))}" maxlength="1200" /></label>`
-  body += `</div>`
-  body += `<div class="field-hint">Internal paths only (e.g. <code>/register?return=/</code>, <code>/login?return=/</code>).</div>`
   body += `<label>Position<select name="creativeMessagePosition">
     <option value="top"${creativeForm.messagePosition === 'top' ? ' selected' : ''}>Top</option>
     <option value="middle"${creativeForm.messagePosition === 'middle' ? ' selected' : ''}>Middle</option>
@@ -3529,23 +3618,56 @@ function renderAdminMessageForm(opts: {
   body += `</div>`
 
   body += `<div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin:10px 0 6px">`
-  body += `<div class="section-title" style="margin:0">Auth Widget</div>`
-  body += `<input type="checkbox" name="creativeAuthEnabled" value="1"${creativeForm.authEnabled ? ' checked' : ''} />`
+  body += `<div class="section-title" style="margin:0">CTA Widget</div>`
+  body += `<input type="checkbox" name="creativeCtaEnabled" value="1"${creativeForm.ctaEnabled ? ' checked' : ''} />`
   body += `</div>`
-  body += `<div id="auth-widget-style-section" class="section"${creativeForm.authEnabled ? '' : ' style="display:none"'}>`
-  body += `<label>Position<select name="creativeAuthPosition">
-    <option value="top"${creativeForm.authPosition === 'top' ? ' selected' : ''}>Top</option>
-    <option value="middle"${creativeForm.authPosition === 'middle' ? ' selected' : ''}>Middle</option>
-    <option value="bottom"${creativeForm.authPosition === 'bottom' ? ' selected' : ''}>Bottom</option>
+  body += `<div id="cta-widget-style-section" class="section"${creativeForm.ctaEnabled ? '' : ' style="display:none"'}>`
+  body += `<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px">`
+  body += `<label>CTA Type<select name="creativeCtaType">
+    <option value="auth"${creativeForm.ctaType === 'auth' ? ' selected' : ''}>Auth</option>
+    <option value="donate"${creativeForm.ctaType === 'donate' ? ' selected' : ''}>Donate</option>
+    <option value="subscribe"${creativeForm.ctaType === 'subscribe' ? ' selected' : ''}>Subscribe</option>
+    <option value="upgrade"${creativeForm.ctaType === 'upgrade' ? ' selected' : ''}>Upgrade</option>
+  </select></label>`
+  body += `<label>Layout<select name="creativeCtaLayout">
+    <option value="inline"${creativeForm.ctaLayout === 'inline' ? ' selected' : ''}>Inline</option>
+    <option value="stacked"${creativeForm.ctaLayout === 'stacked' ? ' selected' : ''}>Stacked</option>
+  </select></label>`
+  body += `<label>Primary Label<input type="text" name="creativeCtaPrimaryLabel" value="${escapeHtml(String(creativeForm.ctaPrimaryLabel || 'Register'))}" required maxlength="100" /></label>`
+  body += `<label>Secondary Label<input type="text" name="creativeCtaSecondaryLabel" value="${escapeHtml(String(creativeForm.ctaSecondaryLabel || ''))}" maxlength="100" /></label>`
+  body += `</div>`
+  body += `<label style="margin-top:10px">Position<select name="creativeCtaPosition">
+    <option value="top"${creativeForm.ctaPosition === 'top' ? ' selected' : ''}>Top</option>
+    <option value="middle"${creativeForm.ctaPosition === 'middle' ? ' selected' : ''}>Middle</option>
+    <option value="bottom"${creativeForm.ctaPosition === 'bottom' ? ' selected' : ''}>Bottom</option>
   </select></label>`
   body += `<div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:10px; align-items:start">`
-  body += `<div class="mini-field"><div class="mini-field-label">Y Inset (%)</div><input type="number" name="creativeAuthOffsetPct" min="0" max="80" value="${escapeHtml(String(creativeForm.authOffsetPct))}" /></div>`
-  body += `<div class="mini-field"><div class="mini-field-label">Text Color</div><input class="color-swatch-input" type="color" name="creativeAuthTextColor" value="${escapeHtml(String(creativeForm.authTextColor || '#FFFFFF'))}" /></div>`
+  body += `<div class="mini-field"><div class="mini-field-label">Y Inset (%)</div><input type="number" name="creativeCtaOffsetPct" min="0" max="80" value="${escapeHtml(String(creativeForm.ctaOffsetPct))}" /></div>`
+  body += `<div class="mini-field"><div class="mini-field-label">Text Color</div><input class="color-swatch-input" type="color" name="creativeCtaTextColor" value="${escapeHtml(String(creativeForm.ctaTextColor || '#FFFFFF'))}" /></div>`
   body += `</div>`
   body += `<div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:10px; align-items:start">`
-  body += `<div class="mini-field"><div class="mini-field-label">Background Color</div><input class="color-swatch-input" type="color" name="creativeAuthBgColor" value="${escapeHtml(String(creativeForm.authBgColor || '#0B1320'))}" /></div>`
-  body += `<div class="mini-field"><div class="mini-field-label">Background Opacity</div><input type="number" name="creativeAuthBgOpacity" min="0" max="1" step="0.05" value="${escapeHtml(String(creativeForm.authBgOpacity))}" /></div>`
+  body += `<div class="mini-field"><div class="mini-field-label">Background Color</div><input class="color-swatch-input" type="color" name="creativeCtaBgColor" value="${escapeHtml(String(creativeForm.ctaBgColor || '#0B1320'))}" /></div>`
+  body += `<div class="mini-field"><div class="mini-field-label">Background Opacity</div><input type="number" name="creativeCtaBgOpacity" min="0" max="1" step="0.05" value="${escapeHtml(String(creativeForm.ctaBgOpacity))}" /></div>`
   body += `</div>`
+  body += `<div id="cta-auth-config-section" style="display:${creativeForm.ctaType === 'auth' ? 'grid' : 'none'}; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px; margin-top:10px">`
+  body += `<label>Primary Href<input type="text" name="creativeCtaAuthPrimaryHref" value="${escapeHtml(String(creativeForm.ctaAuthPrimaryHref || '/register?return=/'))}" maxlength="1200" /></label>`
+  body += `<label>Secondary Href<input type="text" name="creativeCtaAuthSecondaryHref" value="${escapeHtml(String(creativeForm.ctaAuthSecondaryHref || '/login?return=/'))}" maxlength="1200" /></label>`
+  body += `</div>`
+  body += `<div id="cta-donate-config-section" style="display:${creativeForm.ctaType === 'donate' ? 'grid' : 'none'}; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px; margin-top:10px">`
+  body += `<label>Provider<select name="creativeCtaDonateProvider"><option value="mock"${creativeForm.ctaDonateProvider === 'mock' ? ' selected' : ''}>Mock</option><option value="paypal"${creativeForm.ctaDonateProvider === 'paypal' ? ' selected' : ''}>PayPal</option></select></label>`
+  body += `<label>Campaign Key<input type="text" name="creativeCtaDonateCampaignKey" value="${escapeHtml(String(creativeForm.ctaDonateCampaignKey || ''))}" maxlength="64" placeholder="fund_drive_spring_2026" /></label>`
+  body += `<label>Success Return<input type="text" name="creativeCtaDonateSuccessReturn" value="${escapeHtml(String(creativeForm.ctaDonateSuccessReturn || '/channels/global-feed'))}" maxlength="1200" /></label>`
+  body += `</div>`
+  body += `<div id="cta-subscribe-config-section" style="display:${creativeForm.ctaType === 'subscribe' ? 'grid' : 'none'}; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px; margin-top:10px">`
+  body += `<label>Provider<select name="creativeCtaSubscribeProvider"><option value="mock"${creativeForm.ctaSubscribeProvider === 'mock' ? ' selected' : ''}>Mock</option><option value="paypal"${creativeForm.ctaSubscribeProvider === 'paypal' ? ' selected' : ''}>PayPal</option></select></label>`
+  body += `<label>Plan Key<input type="text" name="creativeCtaSubscribePlanKey" value="${escapeHtml(String(creativeForm.ctaSubscribePlanKey || ''))}" maxlength="64" placeholder="premium_monthly" /></label>`
+  body += `<label>Success Return<input type="text" name="creativeCtaSubscribeSuccessReturn" value="${escapeHtml(String(creativeForm.ctaSubscribeSuccessReturn || '/channels/global-feed'))}" maxlength="1200" /></label>`
+  body += `</div>`
+  body += `<div id="cta-upgrade-config-section" style="display:${creativeForm.ctaType === 'upgrade' ? 'grid' : 'none'}; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px; margin-top:10px">`
+  body += `<label>Target Tier<input type="text" name="creativeCtaUpgradeTargetTier" value="${escapeHtml(String(creativeForm.ctaUpgradeTargetTier || ''))}" maxlength="64" placeholder="pro" /></label>`
+  body += `<label>Success Return<input type="text" name="creativeCtaUpgradeSuccessReturn" value="${escapeHtml(String(creativeForm.ctaUpgradeSuccessReturn || '/channels/global-feed'))}" maxlength="1200" /></label>`
+  body += `</div>`
+  body += `<div class="field-hint" style="margin-top:8px">Internal paths only (e.g. <code>/register?return=/</code>, <code>/login?return=/</code>, <code>/channels/global-feed</code>).</div>`
   body += `</div>`
 
   body += `<div class="section-title" style="margin:10px 0 6px">Scheduling</div>`
@@ -3580,16 +3702,16 @@ function renderAdminMessageForm(opts: {
   body += `<div id="message-preview-message-label" style="font-size:12px; opacity:0.9; margin-bottom:4px">${escapeHtml(String(creativeForm.messageLabel || 'Message'))}</div>`
   body += `<div id="message-preview-message-headline" style="font-size:24px; line-height:1.18; font-weight:800; margin-bottom:8px">${escapeHtml(String(values.headline || 'Message headline'))}</div>`
   body += `<div id="message-preview-message-body"${values.body ? '' : ' hidden'} style="opacity:0.9; margin-bottom:8px">${escapeHtml(String(values.body || ''))}</div>`
-  body += `<div style="display:flex; gap:8px; justify-content:space-between; align-items:center"><span id="message-preview-primary-btn" class="btn" style="border:1px solid rgba(255,255,255,0.45); border-radius:11px; background:rgba(0,0,0,0.5); padding:8px 12px">${escapeHtml(String(values.ctaPrimaryLabel || values.cta_primary_label || 'Primary'))}</span>`
-  body += `<span id="message-preview-secondary-btn" class="btn" style="border:1px solid rgba(255,255,255,0.45); border-radius:11px; background:rgba(0,0,0,0.5); padding:8px 12px; display:${(values.ctaSecondaryLabel || values.cta_secondary_label) ? 'inline-flex' : 'none'}">${escapeHtml(String(values.ctaSecondaryLabel || values.cta_secondary_label || 'Secondary'))}</span>`
-  body += `</div></div>`
-  const authInset = Math.max(0, Math.min(80, Number(creativeForm.authOffsetPct || 0)))
-  const authTopPct = Math.max(2, Math.min(94, (creativeForm.authPosition === 'top' ? 2 : 56) + authInset))
-  const authPosStyle = creativeForm.authPosition === 'bottom'
-    ? `bottom:${Math.max(2, Math.min(94, 2 + authInset))}%`
-    : `top:${authTopPct}%`
-  body += `<div id="message-preview-auth" style="display:${creativeForm.authEnabled ? 'block' : 'none'}; position:absolute; left:14px; right:14px; ${authPosStyle}; z-index:2; border:1px solid rgba(255,255,255,0.24); border-radius:10px; background:${hexToRgba(creativeForm.authBgColor, creativeForm.authBgOpacity)}; color:${escapeHtml(creativeForm.authTextColor)}; padding:8px">`
-  body += `<div style="display:grid; grid-template-columns:1fr 1fr; align-items:center; gap:8px"><span class="btn" style="justify-self:start; border:1px solid rgba(255,255,255,0.45); border-radius:11px; background:rgba(0,0,0,0.5); padding:8px 12px">Register</span><span class="btn" style="justify-self:end; border:1px solid rgba(255,255,255,0.45); border-radius:11px; background:rgba(0,0,0,0.5); padding:8px 12px">Login</span></div>`
+  body += `</div>`
+  const ctaInset = Math.max(0, Math.min(80, Number(creativeForm.ctaOffsetPct || 0)))
+  const ctaTopPct = Math.max(2, Math.min(94, (creativeForm.ctaPosition === 'top' ? 2 : 56) + ctaInset))
+  const ctaPosStyle = creativeForm.ctaPosition === 'bottom'
+    ? `bottom:${Math.max(2, Math.min(94, 2 + ctaInset))}%`
+    : `top:${ctaTopPct}%`
+  body += `<div id="message-preview-cta" style="display:${creativeForm.ctaEnabled ? 'block' : 'none'}; position:absolute; left:14px; right:14px; ${ctaPosStyle}; z-index:2; border:1px solid rgba(255,255,255,0.24); border-radius:10px; background:${hexToRgba(creativeForm.ctaBgColor, creativeForm.ctaBgOpacity)}; color:${escapeHtml(creativeForm.ctaTextColor)}; padding:8px">`
+  body += `<div id="message-preview-cta-type" style="font-size:11px; opacity:0.9; margin-bottom:6px">CTA: ${escapeHtml(String(creativeForm.ctaType || 'auth'))}</div>`
+  body += `<div id="message-preview-cta-buttons" style="display:${creativeForm.ctaLayout === 'stacked' ? 'grid' : 'flex'}; grid-template-columns:${creativeForm.ctaLayout === 'stacked' ? '1fr' : 'none'}; justify-content:space-between; align-items:center; gap:8px"><span id="message-preview-primary-btn" class="btn" style="justify-self:start; border:1px solid rgba(255,255,255,0.45); border-radius:11px; background:rgba(0,0,0,0.5); padding:8px 12px">${escapeHtml(String(creativeForm.ctaPrimaryLabel || 'Primary'))}</span>`
+  body += `<span id="message-preview-secondary-btn" class="btn" style="justify-self:end; border:1px solid rgba(255,255,255,0.45); border-radius:11px; background:rgba(0,0,0,0.5); padding:8px 12px; display:${creativeForm.ctaSecondaryLabel ? 'inline-flex' : 'none'}">${escapeHtml(String(creativeForm.ctaSecondaryLabel || 'Secondary'))}</span></div>`
   body += `</div>`
   body += `</div>`
   if (creativeWarnings.length) {
@@ -3631,13 +3753,19 @@ function renderAdminMessageForm(opts: {
       };
       const preview = {
         messageSection: document.getElementById('message-widget-content-section'),
-        authSection: document.getElementById('auth-widget-style-section'),
+        ctaSection: document.getElementById('cta-widget-style-section'),
+        ctaAuthConfigSection: document.getElementById('cta-auth-config-section'),
+        ctaDonateConfigSection: document.getElementById('cta-donate-config-section'),
+        ctaSubscribeConfigSection: document.getElementById('cta-subscribe-config-section'),
+        ctaUpgradeConfigSection: document.getElementById('cta-upgrade-config-section'),
         videoPlaybackRow: document.getElementById('message-video-playback-row'),
         device: document.getElementById('message-preview-device'),
         overlay: document.getElementById('message-preview-overlay'),
         modeBadge: document.getElementById('message-preview-mode-badge'),
         message: document.getElementById('message-preview-message'),
-        auth: document.getElementById('message-preview-auth'),
+        cta: document.getElementById('message-preview-cta'),
+        ctaType: document.getElementById('message-preview-cta-type'),
+        ctaButtons: document.getElementById('message-preview-cta-buttons'),
         messageLabel: document.getElementById('message-preview-message-label'),
         messageHeadline: document.getElementById('message-preview-message-headline'),
         messageBody: document.getElementById('message-preview-message-body'),
@@ -3646,7 +3774,7 @@ function renderAdminMessageForm(opts: {
       };
       const pickImageBtn = document.getElementById('message-pick-bg-image');
       const pickVideoBtn = document.getElementById('message-pick-bg-video');
-      if (!preview.device || !preview.message || !preview.auth) return;
+      if (!preview.device || !preview.message || !preview.cta) return;
       let lastBgMode = String(v('creativeBgMode', 'none')).toLowerCase();
 
       function serializeForm() {
@@ -3753,17 +3881,19 @@ function renderAdminMessageForm(opts: {
         const msgBgOpacity = clamp(vn('creativeMessageBgOpacity', 0.55), 0, 1);
         const msgText = hex(v('creativeMessageTextColor', '#FFFFFF'), '#FFFFFF');
 
-        const authEnabled = vb('creativeAuthEnabled', false);
-        const authPos = String(v('creativeAuthPosition', 'bottom')).toLowerCase();
-        const authOffset = clamp(vn('creativeAuthOffsetPct', 0), 0, 80);
-        const authBg = hex(v('creativeAuthBgColor', '#0B1320'), '#0B1320');
-        const authBgOpacity = clamp(vn('creativeAuthBgOpacity', 0.55), 0, 1);
-        const authText = hex(v('creativeAuthTextColor', '#FFFFFF'), '#FFFFFF');
+        const ctaEnabled = vb('creativeCtaEnabled', false);
+        const ctaType = String(v('creativeCtaType', 'auth')).toLowerCase();
+        const ctaLayout = String(v('creativeCtaLayout', 'inline')).toLowerCase();
+        const ctaPos = String(v('creativeCtaPosition', 'bottom')).toLowerCase();
+        const ctaOffset = clamp(vn('creativeCtaOffsetPct', 0), 0, 80);
+        const ctaBg = hex(v('creativeCtaBgColor', '#0B1320'), '#0B1320');
+        const ctaBgOpacity = clamp(vn('creativeCtaBgOpacity', 0.55), 0, 1);
+        const ctaText = hex(v('creativeCtaTextColor', '#FFFFFF'), '#FFFFFF');
 
         const msgTop = (msgPos === 'top' ? 2 : 42) + msgOffset;
-        const authTop = (authPos === 'top' ? 2 : 56) + authOffset;
+        const ctaTop = (ctaPos === 'top' ? 2 : 56) + ctaOffset;
         const msgBottom = 2 + msgOffset;
-        const authBottom = 2 + authOffset;
+        const ctaBottom = 2 + ctaOffset;
         if (msgPos === 'bottom') {
           preview.message.style.top = '';
           preview.message.style.bottom = clamp(msgBottom, 2, 92) + '%';
@@ -3771,29 +3901,33 @@ function renderAdminMessageForm(opts: {
           preview.message.style.bottom = '';
           preview.message.style.top = clamp(msgTop, 2, 92) + '%';
         }
-        if (authPos === 'bottom') {
-          preview.auth.style.top = '';
-          preview.auth.style.bottom = clamp(authBottom, 2, 94) + '%';
+        if (ctaPos === 'bottom') {
+          preview.cta.style.top = '';
+          preview.cta.style.bottom = clamp(ctaBottom, 2, 94) + '%';
         } else {
-          preview.auth.style.bottom = '';
-          preview.auth.style.top = clamp(authTop, 2, 94) + '%';
+          preview.cta.style.bottom = '';
+          preview.cta.style.top = clamp(ctaTop, 2, 94) + '%';
         }
 
         preview.message.style.display = msgEnabled ? 'block' : 'none';
-        preview.auth.style.display = authEnabled ? 'block' : 'none';
+        preview.cta.style.display = ctaEnabled ? 'block' : 'none';
         if (preview.messageSection) preview.messageSection.style.display = msgEnabled ? '' : 'none';
-        if (preview.authSection) preview.authSection.style.display = authEnabled ? '' : 'none';
+        if (preview.ctaSection) preview.ctaSection.style.display = ctaEnabled ? '' : 'none';
+        if (preview.ctaAuthConfigSection) preview.ctaAuthConfigSection.style.display = ctaType === 'auth' ? 'grid' : 'none';
+        if (preview.ctaDonateConfigSection) preview.ctaDonateConfigSection.style.display = ctaType === 'donate' ? 'grid' : 'none';
+        if (preview.ctaSubscribeConfigSection) preview.ctaSubscribeConfigSection.style.display = ctaType === 'subscribe' ? 'grid' : 'none';
+        if (preview.ctaUpgradeConfigSection) preview.ctaUpgradeConfigSection.style.display = ctaType === 'upgrade' ? 'grid' : 'none';
 
         preview.message.style.background = hexToRgba(msgBg, msgBgOpacity);
         preview.message.style.color = msgText;
-        preview.auth.style.background = hexToRgba(authBg, authBgOpacity);
-        preview.auth.style.color = authText;
+        preview.cta.style.background = hexToRgba(ctaBg, ctaBgOpacity);
+        preview.cta.style.color = ctaText;
 
         const label = v('creativeMessageLabel', 'Message');
         const headline = v('headline', 'Message headline');
         const body = String(v('body', '') || '').trim();
-        const primary = v('ctaPrimaryLabel', 'Primary');
-        const secondary = String(v('ctaSecondaryLabel', '') || '').trim();
+        const primary = v('creativeCtaPrimaryLabel', 'Primary');
+        const secondary = String(v('creativeCtaSecondaryLabel', '') || '').trim();
 
         if (preview.messageLabel) preview.messageLabel.textContent = label;
         if (preview.messageHeadline) preview.messageHeadline.textContent = headline;
@@ -3805,6 +3939,12 @@ function renderAdminMessageForm(opts: {
         if (preview.secondaryBtn) {
           preview.secondaryBtn.textContent = secondary || 'Secondary';
           preview.secondaryBtn.style.display = secondary ? 'inline-flex' : 'none';
+        }
+        if (preview.ctaType) preview.ctaType.textContent = 'CTA: ' + (ctaType || 'auth');
+        if (preview.ctaButtons) {
+          const stacked = ctaLayout === 'stacked';
+          preview.ctaButtons.style.display = stacked ? 'grid' : 'flex';
+          preview.ctaButtons.style.gridTemplateColumns = stacked ? '1fr' : '';
         }
 
         if (preview.overlay) preview.overlay.style.background = hexToRgba(bgOverlayColor, bgOverlayOpacity);
@@ -4013,10 +4153,26 @@ pagesRouter.get('/admin/messages/new', async (req: any, res: any) => {
       name: '',
       headline: '',
       body: '',
-      ctaPrimaryLabel: 'Register',
-      ctaPrimaryHref: '/register?return=/',
-      ctaSecondaryLabel: 'Log In',
-      ctaSecondaryHref: '/login?return=/',
+      creativeCtaPrimaryLabel: 'Register',
+      creativeCtaSecondaryLabel: 'Log In',
+      creativeCtaAuthPrimaryHref: '/register?return=/',
+      creativeCtaAuthSecondaryHref: '/login?return=/',
+      creativeCtaType: 'auth',
+      creativeCtaLayout: 'inline',
+      creativeCtaEnabled: '1',
+      creativeCtaPosition: 'bottom',
+      creativeCtaOffsetPct: 0,
+      creativeCtaBgColor: '#0B1320',
+      creativeCtaBgOpacity: 0.55,
+      creativeCtaTextColor: '#FFFFFF',
+      creativeCtaDonateProvider: 'mock',
+      creativeCtaDonateCampaignKey: '',
+      creativeCtaDonateSuccessReturn: '/channels/global-feed',
+      creativeCtaSubscribeProvider: 'mock',
+      creativeCtaSubscribePlanKey: '',
+      creativeCtaSubscribeSuccessReturn: '/channels/global-feed',
+      creativeCtaUpgradeTargetTier: '',
+      creativeCtaUpgradeSuccessReturn: '/channels/global-feed',
       type: 'register_login',
       audienceSegment: 'anonymous',
       appliesToSurface: 'global_feed',
