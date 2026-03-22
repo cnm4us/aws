@@ -3309,6 +3309,28 @@ function buildMessageCreateOrUpdatePayload(body: any): any {
   const endsAtTime = String(body?.endsAtTime || '').trim()
   const normalizedStartsAt = startsAtDate ? `${startsAtDate}T${startsAtTime || '00:00'}` : ''
   const normalizedEndsAt = endsAtDate ? `${endsAtDate}T${endsAtTime || '23:59'}` : ''
+  const ctaSlotCountRaw = Number(body?.creativeCtaSlotCount)
+  const ctaSlotCount = Number.isFinite(ctaSlotCountRaw) ? Math.max(1, Math.min(3, Math.round(ctaSlotCountRaw))) : null
+  const ctaSlots: Array<{ slot: 1 | 2 | 3; ctaDefinitionId: number; labelOverride?: string | null; styleOverride?: { bgColor?: string; textColor?: string } | null }> = []
+  for (const slot of [1, 2, 3] as const) {
+    const idRaw = String((body as any)?.[`creativeCtaSlot${slot}DefinitionId`] || '').trim()
+    if (!/^\d+$/.test(idRaw)) continue
+    const ctaDefinitionId = Number(idRaw)
+    const labelOverrideRaw = String((body as any)?.[`creativeCtaSlot${slot}LabelOverride`] || '').trim()
+    const bgColorRaw = String((body as any)?.[`creativeCtaSlot${slot}BgColor`] || '').trim()
+    const textColorRaw = String((body as any)?.[`creativeCtaSlot${slot}TextColor`] || '').trim()
+    const styleOverride = {
+      ...( /^#[0-9a-fA-F]{6}$/.test(bgColorRaw) ? { bgColor: bgColorRaw.toUpperCase() } : {}),
+      ...( /^#[0-9a-fA-F]{6}$/.test(textColorRaw) ? { textColor: textColorRaw.toUpperCase() } : {}),
+    }
+    ctaSlots.push({
+      slot,
+      ctaDefinitionId,
+      ...(labelOverrideRaw ? { labelOverride: labelOverrideRaw } : {}),
+      ...(Object.keys(styleOverride).length ? { styleOverride } : {}),
+    })
+  }
+
   return {
     ...(body || {}),
     type: messageType,
@@ -3352,6 +3374,8 @@ function buildMessageCreateOrUpdatePayload(body: any): any {
           bgOpacity: creativeForm.ctaBgOpacity,
           textColor: creativeForm.ctaTextColor,
           layout: creativeForm.ctaLayout,
+          ...(ctaSlotCount != null ? { count: ctaSlotCount } : {}),
+          ...(ctaSlots.length ? { slots: ctaSlots } : {}),
           type: creativeForm.ctaType,
           primaryLabel,
           secondaryLabel,
@@ -3395,15 +3419,61 @@ function renderAdminMessageForm(opts: {
   csrfToken?: string | null
   backHref: string
   values: any
+  ctaDefinitionOptions?: Array<{
+    id: number
+    name: string
+    labelDefault: string
+    intentKey: string
+    executorType: string
+    status: string
+  }>
   error?: string | null
   notice?: string | null
   showClone?: boolean
 }): string {
   const csrfToken = opts.csrfToken ? String(opts.csrfToken) : ''
   const values = opts.values || {}
+  const ctaDefinitionOptions = Array.isArray(opts.ctaDefinitionOptions) ? opts.ctaDefinitionOptions : []
   const id = values.id ? Number(values.id) : null
   const draftKey = id ? `admin_message_editor_draft_${id}` : 'admin_message_editor_draft_new'
   const creativeForm = extractMessageCreativeForm(values)
+  const creativeCtaSrc = values?.creative?.widgets?.cta && typeof values.creative.widgets.cta === 'object'
+    ? values.creative.widgets.cta
+    : {}
+  const slotCount = Math.max(
+    1,
+    Math.min(
+      3,
+      Number(
+        creativeCtaSrc.count ??
+        creativeCtaSrc.slotCount ??
+        (Array.isArray(creativeCtaSrc.slots) && creativeCtaSrc.slots.length > 0 ? creativeCtaSrc.slots.length : 2)
+      ) || 2
+    )
+  )
+  const slotsByIndex = new Map<number, any>()
+  if (Array.isArray(creativeCtaSrc.slots)) {
+    for (const slot of creativeCtaSrc.slots) {
+      const slotIndex = Number((slot as any)?.slot || 0)
+      if (slotIndex >= 1 && slotIndex <= 3 && !slotsByIndex.has(slotIndex)) slotsByIndex.set(slotIndex, slot)
+    }
+  }
+  const ctaDefinitionById = new Map<number, { labelDefault: string }>()
+  for (const item of ctaDefinitionOptions) {
+    const defId = Number(item.id)
+    if (!Number.isFinite(defId) || defId <= 0) continue
+    ctaDefinitionById.set(defId, { labelDefault: String(item.labelDefault || '') })
+  }
+  const slotLabel = (slot: 1 | 2 | 3, fallback: string): string => {
+    const slotValue = slotsByIndex.get(slot)
+    if (slotValue && (slotValue.labelOverride || slotValue.label_override)) {
+      return String(slotValue.labelOverride || slotValue.label_override)
+    }
+    const defId = Number(slotValue?.ctaDefinitionId || slotValue?.cta_definition_id || 0)
+    const def = ctaDefinitionById.get(defId)
+    if (def && def.labelDefault) return def.labelDefault
+    return fallback
+  }
   const creativeWarnings: string[] = []
   if (creativeForm.messageEnabled && creativeForm.ctaEnabled) {
     const samePos = creativeForm.messagePosition === creativeForm.ctaPosition
@@ -3677,6 +3747,37 @@ function renderAdminMessageForm(opts: {
   body += `<label>Primary Label<input type="text" name="creativeCtaPrimaryLabel" value="${escapeHtml(String(creativeForm.ctaPrimaryLabel || 'Register'))}" required maxlength="100" /></label>`
   body += `<label>Secondary Label<input type="text" name="creativeCtaSecondaryLabel" value="${escapeHtml(String(creativeForm.ctaSecondaryLabel || ''))}" maxlength="100" /></label>`
   body += `</div>`
+  body += `<div class="section" style="margin-top:10px">`
+  body += `<div class="section-title" style="font-size:14px">CTA Slots (Phase C)</div>`
+  body += `<label style="max-width:220px">CTA Count<select name="creativeCtaSlotCount" id="creativeCtaSlotCount">`
+  for (const count of [1, 2, 3]) {
+    body += `<option value="${count}"${slotCount === count ? ' selected' : ''}>${count}</option>`
+  }
+  body += `</select></label>`
+  for (const slot of [1, 2, 3] as const) {
+    const slotValue = slotsByIndex.get(slot) || {}
+    const selectedDefinitionId = Number(slotValue.ctaDefinitionId || slotValue.cta_definition_id || 0) || 0
+    const styleOverride = slotValue.styleOverride && typeof slotValue.styleOverride === 'object'
+      ? slotValue.styleOverride
+      : (slotValue.style_override && typeof slotValue.style_override === 'object' ? slotValue.style_override : {})
+    const slotBgColor = String(styleOverride.bgColor || styleOverride.bg_color || '')
+    const slotTextColor = String(styleOverride.textColor || styleOverride.text_color || '')
+    body += `<div class="cta-slot-row" data-slot-row="${slot}" style="display:${slot <= slotCount ? 'grid' : 'none'}; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:10px; margin-top:10px">`
+    body += `<label>Slot ${slot}: CTA Definition<select name="creativeCtaSlot${slot}DefinitionId">`
+    body += `<option value="">(none)</option>`
+    for (const def of ctaDefinitionOptions) {
+      const isSelected = selectedDefinitionId === Number(def.id)
+      const label = `${def.name} [${def.intentKey}/${def.executorType}]`
+      body += `<option value="${def.id}"${isSelected ? ' selected' : ''}>${escapeHtml(label)}</option>`
+    }
+    body += `</select></label>`
+    body += `<label>Label Override<input type="text" name="creativeCtaSlot${slot}LabelOverride" value="${escapeHtml(String(slotValue.labelOverride || slotValue.label_override || ''))}" maxlength="100" /></label>`
+    body += `<label>BG Color Override<input type="color" name="creativeCtaSlot${slot}BgColor" value="${escapeHtml(/^#[0-9a-fA-F]{6}$/.test(slotBgColor) ? slotBgColor : '#0B1320')}" /></label>`
+    body += `<label>Text Color Override<input type="color" name="creativeCtaSlot${slot}TextColor" value="${escapeHtml(/^#[0-9a-fA-F]{6}$/.test(slotTextColor) ? slotTextColor : '#FFFFFF')}" /></label>`
+    body += `</div>`
+  }
+  body += `<div class="field-hint" style="margin-top:8px">Slot selections are saved in creative JSON. Legacy primary/secondary fields remain for backward compatibility until Phase D.</div>`
+  body += `</div>`
   body += `<label style="margin-top:10px">Position<select name="creativeCtaPosition">
     <option value="top"${creativeForm.ctaPosition === 'top' ? ' selected' : ''}>Top</option>
     <option value="middle"${creativeForm.ctaPosition === 'middle' ? ' selected' : ''}>Middle</option>
@@ -3749,10 +3850,16 @@ function renderAdminMessageForm(opts: {
   const ctaPosStyle = creativeForm.ctaPosition === 'bottom'
     ? `bottom:${Math.max(2, Math.min(94, 2 + ctaInset))}%`
     : `top:${ctaTopPct}%`
+  const previewSlot1Label = slotLabel(1, String(creativeForm.ctaPrimaryLabel || 'Primary'))
+  const previewSlot2Label = slotLabel(2, String(creativeForm.ctaSecondaryLabel || 'Secondary'))
+  const previewSlot3Label = slotLabel(3, 'Tertiary')
   body += `<div id="message-preview-cta" style="display:${creativeForm.ctaEnabled ? 'block' : 'none'}; position:absolute; left:14px; right:14px; ${ctaPosStyle}; z-index:2; border:1px solid rgba(255,255,255,0.24); border-radius:10px; background:${hexToRgba(creativeForm.ctaBgColor, creativeForm.ctaBgOpacity)}; color:${escapeHtml(creativeForm.ctaTextColor)}; padding:8px">`
   body += `<div id="message-preview-cta-type" style="font-size:11px; opacity:0.9; margin-bottom:6px">CTA: ${escapeHtml(String(creativeForm.ctaType || 'auth'))}</div>`
-  body += `<div id="message-preview-cta-buttons" style="display:${creativeForm.ctaLayout === 'stacked' ? 'grid' : 'flex'}; grid-template-columns:${creativeForm.ctaLayout === 'stacked' ? '1fr' : 'none'}; justify-content:space-between; align-items:center; gap:8px"><span id="message-preview-primary-btn" class="btn" style="justify-self:start; border:1px solid rgba(255,255,255,0.45); border-radius:11px; background:rgba(0,0,0,0.5); padding:8px 12px">${escapeHtml(String(creativeForm.ctaPrimaryLabel || 'Primary'))}</span>`
-  body += `<span id="message-preview-secondary-btn" class="btn" style="justify-self:end; border:1px solid rgba(255,255,255,0.45); border-radius:11px; background:rgba(0,0,0,0.5); padding:8px 12px; display:${creativeForm.ctaSecondaryLabel ? 'inline-flex' : 'none'}">${escapeHtml(String(creativeForm.ctaSecondaryLabel || 'Secondary'))}</span></div>`
+  body += `<div id="message-preview-cta-buttons" style="display:${creativeForm.ctaLayout === 'stacked' ? 'grid' : 'flex'}; grid-template-columns:${creativeForm.ctaLayout === 'stacked' ? '1fr' : 'none'}; justify-content:space-between; align-items:center; gap:8px">`
+  body += `<span id="message-preview-slot-1-btn" class="btn" style="justify-self:start; border:1px solid rgba(255,255,255,0.45); border-radius:11px; background:rgba(0,0,0,0.5); padding:8px 12px; display:${slotCount >= 1 ? 'inline-flex' : 'none'}">${escapeHtml(previewSlot1Label)}</span>`
+  body += `<span id="message-preview-slot-2-btn" class="btn" style="justify-self:center; border:1px solid rgba(255,255,255,0.45); border-radius:11px; background:rgba(0,0,0,0.5); padding:8px 12px; display:${slotCount >= 2 ? 'inline-flex' : 'none'}">${escapeHtml(previewSlot2Label)}</span>`
+  body += `<span id="message-preview-slot-3-btn" class="btn" style="justify-self:end; border:1px solid rgba(255,255,255,0.45); border-radius:11px; background:rgba(0,0,0,0.5); padding:8px 12px; display:${slotCount >= 3 ? 'inline-flex' : 'none'}">${escapeHtml(previewSlot3Label)}</span>`
+  body += `</div>`
   body += `</div>`
   body += `</div>`
   if (creativeWarnings.length) {
@@ -3810,8 +3917,9 @@ function renderAdminMessageForm(opts: {
         messageLabel: document.getElementById('message-preview-message-label'),
         messageHeadline: document.getElementById('message-preview-message-headline'),
         messageBody: document.getElementById('message-preview-message-body'),
-        primaryBtn: document.getElementById('message-preview-primary-btn'),
-        secondaryBtn: document.getElementById('message-preview-secondary-btn'),
+        slot1Btn: document.getElementById('message-preview-slot-1-btn'),
+        slot2Btn: document.getElementById('message-preview-slot-2-btn'),
+        slot3Btn: document.getElementById('message-preview-slot-3-btn'),
       };
       const pickImageBtn = document.getElementById('message-pick-bg-image');
       const pickVideoBtn = document.getElementById('message-pick-bg-video');
@@ -3925,6 +4033,7 @@ function renderAdminMessageForm(opts: {
         const ctaEnabled = vb('creativeCtaEnabled', false);
         const ctaType = String(v('creativeCtaType', 'auth')).toLowerCase();
         const ctaLayout = String(v('creativeCtaLayout', 'inline')).toLowerCase();
+        const ctaSlotCount = clamp(vn('creativeCtaSlotCount', 2), 1, 3);
         const ctaPos = String(v('creativeCtaPosition', 'bottom')).toLowerCase();
         const ctaOffset = clamp(vn('creativeCtaOffsetPct', 0), 0, 80);
         const ctaBg = hex(v('creativeCtaBgColor', '#0B1320'), '#0B1320');
@@ -3969,6 +4078,25 @@ function renderAdminMessageForm(opts: {
         const body = String(v('body', '') || '').trim();
         const primary = v('creativeCtaPrimaryLabel', 'Primary');
         const secondary = String(v('creativeCtaSecondaryLabel', '') || '').trim();
+        const slotLabel = (slotIndex, fallback) => {
+          const override = String(v('creativeCtaSlot' + slotIndex + 'LabelOverride', '') || '').trim();
+          if (override) return override;
+          const select = q('creativeCtaSlot' + slotIndex + 'DefinitionId');
+          if (select && select.selectedIndex >= 0) {
+            const selected = select.options[select.selectedIndex];
+            if (selected && selected.textContent) {
+              const raw = String(selected.textContent || '').trim();
+              if (raw && raw !== '(none)') {
+                const cut = raw.indexOf(' [');
+                return (cut >= 0 ? raw.slice(0, cut) : raw).trim() || fallback;
+              }
+            }
+          }
+          return fallback;
+        };
+        const slot1 = slotLabel(1, primary || 'Primary');
+        const slot2 = slotLabel(2, secondary || 'Secondary');
+        const slot3 = slotLabel(3, 'Tertiary');
 
         if (preview.messageLabel) preview.messageLabel.textContent = label;
         if (preview.messageHeadline) preview.messageHeadline.textContent = headline;
@@ -3976,10 +4104,17 @@ function renderAdminMessageForm(opts: {
           preview.messageBody.textContent = body;
           preview.messageBody.hidden = !body;
         }
-        if (preview.primaryBtn) preview.primaryBtn.textContent = primary;
-        if (preview.secondaryBtn) {
-          preview.secondaryBtn.textContent = secondary || 'Secondary';
-          preview.secondaryBtn.style.display = secondary ? 'inline-flex' : 'none';
+        if (preview.slot1Btn) {
+          preview.slot1Btn.textContent = slot1;
+          preview.slot1Btn.style.display = ctaSlotCount >= 1 ? 'inline-flex' : 'none';
+        }
+        if (preview.slot2Btn) {
+          preview.slot2Btn.textContent = slot2;
+          preview.slot2Btn.style.display = ctaSlotCount >= 2 ? 'inline-flex' : 'none';
+        }
+        if (preview.slot3Btn) {
+          preview.slot3Btn.textContent = slot3;
+          preview.slot3Btn.style.display = ctaSlotCount >= 3 ? 'inline-flex' : 'none';
         }
         if (preview.ctaType) preview.ctaType.textContent = 'CTA: ' + (ctaType || 'auth');
         if (preview.ctaButtons) {
@@ -3987,6 +4122,10 @@ function renderAdminMessageForm(opts: {
           preview.ctaButtons.style.display = stacked ? 'grid' : 'flex';
           preview.ctaButtons.style.gridTemplateColumns = stacked ? '1fr' : '';
         }
+        form.querySelectorAll('[data-slot-row]').forEach((row) => {
+          const slot = Number(row.getAttribute('data-slot-row') || '0');
+          row.style.display = slot >= 1 && slot <= ctaSlotCount ? 'grid' : 'none';
+        });
 
         if (preview.overlay) preview.overlay.style.background = hexToRgba(bgOverlayColor, bgOverlayOpacity);
         if (preview.modeBadge) {
@@ -4292,6 +4431,31 @@ function renderAdminMessageCtaForm(opts: {
   return renderAdminPage({ title: opts.title, bodyHtml: body, active: 'message_ctas' })
 }
 
+async function loadMessageCtaOptionsForEditor(actorUserId: number): Promise<Array<{
+  id: number
+  name: string
+  labelDefault: string
+  intentKey: string
+  executorType: string
+  status: string
+}>> {
+  const defs = await messageCtasSvc.listMessageCtaDefinitionsForAdmin({
+    actorUserId,
+    includeArchived: true,
+    limit: 500,
+  })
+  return defs
+    .map((item) => ({
+      id: Number(item.id),
+      name: String(item.name || ''),
+      labelDefault: String(item.labelDefault || ''),
+      intentKey: String(item.intentKey || ''),
+      executorType: String(item.executorType || ''),
+      status: String(item.status || ''),
+    }))
+    .sort((a, b) => a.id - b.id)
+}
+
 pagesRouter.get('/admin/messages', async (req: any, res: any) => {
   try {
     const includeArchived = String(req.query?.include_archived || '0') === '1'
@@ -4377,58 +4541,67 @@ pagesRouter.get('/admin/messages', async (req: any, res: any) => {
 })
 
 pagesRouter.get('/admin/messages/new', async (req: any, res: any) => {
-  const cookies = parseCookies(req.headers.cookie)
-  const csrfToken = cookies['csrf'] || ''
-  const doc = renderAdminMessageForm({
-    title: 'New Message',
-    action: '/admin/messages',
-    csrfToken,
-    backHref: '/admin/messages',
-    values: {
-      name: '',
-      headline: '',
-      body: '',
-      creativeCtaPrimaryLabel: 'Register',
-      creativeCtaSecondaryLabel: 'Log In',
-      creativeCtaAuthPrimaryHref: '/register?return=/',
-      creativeCtaAuthSecondaryHref: '/login?return=/',
-      creativeCtaType: 'auth',
-      creativeCtaLayout: 'inline',
-      creativeCtaEnabled: '1',
-      creativeCtaPosition: 'bottom',
-      creativeCtaOffsetPct: 0,
-      creativeCtaBgColor: '#0B1320',
-      creativeCtaBgOpacity: 0.55,
-      creativeCtaTextColor: '#FFFFFF',
-      creativeCtaDonateProvider: 'mock',
-      creativeCtaDonateCampaignKey: '',
-      creativeCtaDonateSuccessReturn: '/channels/global-feed',
-      creativeCtaSubscribeProvider: 'mock',
-      creativeCtaSubscribePlanKey: '',
-      creativeCtaSubscribeSuccessReturn: '/channels/global-feed',
-      creativeCtaUpgradeTargetTier: '',
-      creativeCtaUpgradeSuccessReturn: '/channels/global-feed',
-      type: 'register_login',
-      audienceSegment: 'anonymous',
-      appliesToSurface: 'global_feed',
-      tieBreakStrategy: 'round_robin',
-      campaignKey: '',
-      priority: 100,
-      status: 'draft',
-      startsAt: '',
-      endsAt: '',
-      mediaUploadId: '',
-    },
-  })
-  res.set('Content-Type', 'text/html; charset=utf-8')
-  res.send(doc)
+  try {
+    const cookies = parseCookies(req.headers.cookie)
+    const csrfToken = cookies['csrf'] || ''
+    const ctaDefinitionOptions = await loadMessageCtaOptionsForEditor(Number(req.user?.id || 0))
+    const doc = renderAdminMessageForm({
+      title: 'New Message',
+      action: '/admin/messages',
+      csrfToken,
+      backHref: '/admin/messages',
+      ctaDefinitionOptions,
+      values: {
+        name: '',
+        headline: '',
+        body: '',
+        creativeCtaPrimaryLabel: 'Register',
+        creativeCtaSecondaryLabel: 'Log In',
+        creativeCtaAuthPrimaryHref: '/register?return=/',
+        creativeCtaAuthSecondaryHref: '/login?return=/',
+        creativeCtaType: 'auth',
+        creativeCtaLayout: 'inline',
+        creativeCtaEnabled: '1',
+        creativeCtaPosition: 'bottom',
+        creativeCtaOffsetPct: 0,
+        creativeCtaBgColor: '#0B1320',
+        creativeCtaBgOpacity: 0.55,
+        creativeCtaTextColor: '#FFFFFF',
+        creativeCtaDonateProvider: 'mock',
+        creativeCtaDonateCampaignKey: '',
+        creativeCtaDonateSuccessReturn: '/channels/global-feed',
+        creativeCtaSubscribeProvider: 'mock',
+        creativeCtaSubscribePlanKey: '',
+        creativeCtaSubscribeSuccessReturn: '/channels/global-feed',
+        creativeCtaUpgradeTargetTier: '',
+        creativeCtaUpgradeSuccessReturn: '/channels/global-feed',
+        type: 'register_login',
+        audienceSegment: 'anonymous',
+        appliesToSurface: 'global_feed',
+        tieBreakStrategy: 'round_robin',
+        campaignKey: '',
+        priority: 100,
+        status: 'draft',
+        startsAt: '',
+        endsAt: '',
+        mediaUploadId: '',
+      },
+    })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.send(doc)
+  } catch (err) {
+    logError(req.log || pagesLogger, err, 'admin message new page failed', { path: req.path })
+    res.status(500).send('Failed to load message editor')
+  }
 })
 
 pagesRouter.post('/admin/messages', async (req: any, res: any) => {
   const cookies = parseCookies(req.headers.cookie)
   const csrfToken = cookies['csrf'] || ''
   const payload = buildMessageCreateOrUpdatePayload(req.body || {})
+  let ctaDefinitionOptions: Awaited<ReturnType<typeof loadMessageCtaOptionsForEditor>> = []
   try {
+    ctaDefinitionOptions = await loadMessageCtaOptionsForEditor(Number(req.user?.id || 0))
     const created = await messagesSvc.createMessageForAdmin(payload, Number(req.user?.id || 0))
     res.redirect(`/admin/messages/${created.id}?notice=${encodeURIComponent('Message created.')}`)
   } catch (err: any) {
@@ -4437,6 +4610,7 @@ pagesRouter.post('/admin/messages', async (req: any, res: any) => {
       action: '/admin/messages',
       csrfToken,
       backHref: '/admin/messages',
+      ctaDefinitionOptions,
       values: payload,
       error: String(err?.message || 'Failed to create message'),
     })
@@ -4451,11 +4625,13 @@ pagesRouter.get('/admin/messages/:id', async (req: any, res: any) => {
     const message = await messagesSvc.getMessageForAdmin(id)
     const cookies = parseCookies(req.headers.cookie)
     const csrfToken = cookies['csrf'] || ''
+    const ctaDefinitionOptions = await loadMessageCtaOptionsForEditor(Number(req.user?.id || 0))
     const doc = renderAdminMessageForm({
       title: `Edit Message #${id}`,
       action: `/admin/messages/${id}`,
       csrfToken,
       backHref: '/admin/messages',
+      ctaDefinitionOptions,
       values: message,
       notice: req.query?.notice ? String(req.query.notice) : '',
       error: req.query?.error ? String(req.query.error) : '',
@@ -4475,7 +4651,9 @@ pagesRouter.post('/admin/messages/:id', async (req: any, res: any) => {
   const cookies = parseCookies(req.headers.cookie)
   const csrfToken = cookies['csrf'] || ''
   const payload = buildMessageCreateOrUpdatePayload(req.body || {})
+  let ctaDefinitionOptions: Awaited<ReturnType<typeof loadMessageCtaOptionsForEditor>> = []
   try {
+    ctaDefinitionOptions = await loadMessageCtaOptionsForEditor(Number(req.user?.id || 0))
     await messagesSvc.updateMessageForAdmin(id, payload, Number(req.user?.id || 0))
     res.redirect(`/admin/messages/${id}?notice=${encodeURIComponent('Saved.')}`)
   } catch (err: any) {
@@ -4484,6 +4662,7 @@ pagesRouter.post('/admin/messages/:id', async (req: any, res: any) => {
       action: `/admin/messages/${id}`,
       csrfToken,
       backHref: '/admin/messages',
+      ctaDefinitionOptions,
       values: { ...payload, id },
       error: String(err?.message || 'Failed to save message'),
       showClone: true,

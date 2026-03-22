@@ -2,11 +2,14 @@ import { DomainError, ForbiddenError, NotFoundError } from '../../core/errors'
 import { context, trace } from '@opentelemetry/api'
 import { getLogger } from '../../lib/logger'
 import * as repo from './repo'
+import * as messageCtasSvc from '../message-cta-definitions/service'
 import type {
   MessageAudienceSegment,
   MessageBackgroundMode,
   MessageCreative,
   MessageCtaLayout,
+  MessageCtaSlot,
+  MessageCtaSlotIndex,
   MessageCtaType,
   MessageDto,
   MessageSurface,
@@ -285,6 +288,62 @@ function normalizeOffsetPct(raw: any, key: string, fallback: number): number {
   return Math.min(80, Math.max(0, rounded))
 }
 
+function normalizeCtaSlotIndex(raw: any, key: string): MessageCtaSlotIndex {
+  const value = Number(raw)
+  if (!Number.isFinite(value) || value < 1 || value > 3) throw new DomainError(`invalid_${key}`, `invalid_${key}`, 400)
+  return Math.round(value) as MessageCtaSlotIndex
+}
+
+function normalizeCtaDefinitionId(raw: any, key: string): number {
+  const value = Number(raw)
+  if (!Number.isFinite(value) || value <= 0) throw new DomainError(`invalid_${key}`, `invalid_${key}`, 400)
+  return Math.round(value)
+}
+
+function normalizeCtaSlots(raw: any, key: string): MessageCtaSlot[] {
+  if (!Array.isArray(raw)) return []
+  const slots: MessageCtaSlot[] = []
+  const seen = new Set<number>()
+
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') continue
+    const slot = normalizeCtaSlotIndex((entry as any).slot, `${key}_slot`)
+    if (seen.has(slot)) throw new DomainError('invalid_creative_cta_slots', 'invalid_creative_cta_slots', 400)
+    seen.add(slot)
+    const ctaDefinitionId = normalizeCtaDefinitionId(
+      (entry as any).ctaDefinitionId ?? (entry as any).cta_definition_id,
+      `${key}_definition_id`
+    )
+    const labelOverride = normalizeLabel(
+      (entry as any).labelOverride ?? (entry as any).label_override,
+      `${key}_label_override`,
+      false
+    )
+    const styleSrc = (entry as any).styleOverride ?? (entry as any).style_override
+    const styleOverride = styleSrc && typeof styleSrc === 'object'
+      ? {
+          ...(styleSrc.bgColor || styleSrc.bg_color
+            ? { bgColor: normalizeHexColor(styleSrc.bgColor ?? styleSrc.bg_color, `${key}_bg_color`, '#0B1320') }
+            : {}),
+          ...(styleSrc.textColor || styleSrc.text_color
+            ? { textColor: normalizeHexColor(styleSrc.textColor ?? styleSrc.text_color, `${key}_text_color`, '#FFFFFF') }
+            : {}),
+        }
+      : null
+
+    slots.push({
+      slot,
+      ctaDefinitionId,
+      ...(labelOverride != null ? { labelOverride } : {}),
+      ...(styleOverride && (styleOverride.bgColor || styleOverride.textColor) ? { styleOverride } : {}),
+    })
+  }
+
+  if (slots.length > 3) throw new DomainError('invalid_creative_cta_slots', 'invalid_creative_cta_slots', 400)
+  slots.sort((a, b) => a.slot - b.slot)
+  return slots
+}
+
 function normalizeBoolLoose(raw: any, fallback: boolean): boolean {
   if (raw == null || raw === '') return fallback
   if (typeof raw === 'boolean') return raw
@@ -402,6 +461,14 @@ function normalizeCreative(raw: any, legacy: LegacyMessageFields): MessageCreati
     false
   )
   const ctaLayout = normalizeCtaLayout(ctaSrc.layout, 'creative_cta_layout', base.widgets.cta.layout)
+  const ctaSlots = normalizeCtaSlots(ctaSrc.slots, 'creative_cta_slots')
+  const ctaCountRaw = ctaSrc.count ?? ctaSrc.slotCount ?? ctaSrc.slot_count
+  const ctaCount = ctaCountRaw == null || ctaCountRaw === ''
+    ? (ctaSlots.length > 0 ? normalizeCtaSlotIndex(ctaSlots.length, 'creative_cta_count') : undefined)
+    : normalizeCtaSlotIndex(ctaCountRaw, 'creative_cta_count')
+  if (ctaSlots.length > 0 && ctaCount != null && ctaSlots.length > ctaCount) {
+    throw new DomainError('invalid_creative_cta_slots', 'invalid_creative_cta_slots', 400)
+  }
   const ctaConfigSrc = ctaSrc.config && typeof ctaSrc.config === 'object' ? ctaSrc.config : {}
   const authConfigSrc = ctaConfigSrc.auth && typeof ctaConfigSrc.auth === 'object' ? ctaConfigSrc.auth : {}
   const donateConfigSrc = ctaConfigSrc.donate && typeof ctaConfigSrc.donate === 'object' ? ctaConfigSrc.donate : {}
@@ -464,6 +531,8 @@ function normalizeCreative(raw: any, legacy: LegacyMessageFields): MessageCreati
         bgOpacity: normalizeOpacity(ctaSrc.bgOpacity ?? ctaSrc.bg_opacity, 'creative_cta_bg_opacity', base.widgets.cta.bgOpacity),
         textColor: normalizeHexColor(ctaSrc.textColor ?? ctaSrc.text_color, 'creative_cta_text_color', base.widgets.cta.textColor),
         layout: ctaLayout,
+        ...(ctaCount != null ? { count: ctaCount } : {}),
+        ...(ctaSlots.length ? { slots: ctaSlots } : {}),
         type: ctaType,
         primaryLabel: ctaPrimaryLabel,
         secondaryLabel: ctaSecondaryLabel,
@@ -515,6 +584,22 @@ function resolveCreativeFromRow(row: MessageRow): MessageCreative {
   } catch (err: any) {
     messagesLogger.warn({ event: 'messages.creative.fallback', message_id: Number(row.id || 0), reason: String(err?.message || 'invalid_creative') }, 'messages.creative.fallback')
     return buildLegacyCreative(legacy)
+  }
+}
+
+async function assertCreativeCtaSlotsResolvable(creative: MessageCreative, actorUserId: number): Promise<void> {
+  const slots = Array.isArray(creative?.widgets?.cta?.slots) ? creative.widgets.cta.slots : []
+  if (!slots.length) return
+  const ids = Array.from(new Set(slots.map((slot) => Number((slot as any)?.ctaDefinitionId || 0)).filter((id) => Number.isFinite(id) && id > 0)))
+  if (!ids.length) throw new DomainError('invalid_creative_cta_slots', 'invalid_creative_cta_slots', 400)
+
+  const resolved = await messageCtasSvc.resolveRuntimeDefinitionsById({
+    ids,
+    actorUserId,
+    includeArchived: true,
+  })
+  if (resolved.size !== ids.length) {
+    throw new DomainError('invalid_creative_cta_slots', 'invalid_creative_cta_slots', 400)
   }
 }
 
@@ -608,6 +693,7 @@ export async function createForAdmin(input: any, actorUserId: number): Promise<M
     ctaSecondaryHref,
     mediaUploadId,
   })
+  await assertCreativeCtaSlotsResolvable(creative, actorUserId)
   const campaignKey = normalizeCampaignKey(input?.campaignKey ?? input?.campaign_key)
   const priority = normalizePriority(input?.priority, 100)
   const status = normalizeStatus(input?.status, 'draft')
@@ -680,17 +766,22 @@ export async function updateForAdmin(id: number, patch: any, actorUserId: number
     patch?.mediaUploadId !== undefined || patch?.media_upload_id !== undefined
       ? normalizeMediaUploadId(patch?.mediaUploadId ?? patch?.media_upload_id)
       : (existing.media_upload_id == null ? null : Number(existing.media_upload_id))
+  const nextCreative =
+    patch?.creative !== undefined || patch?.creative_json !== undefined
+      ? normalizeCreative(patch?.creative ?? patch?.creative_json, {
+          headline: nextHeadline,
+          body: nextBody,
+          ctaPrimaryLabel: nextCtaPrimaryLabel,
+          ctaPrimaryHref: nextCtaPrimaryHref,
+          ctaSecondaryLabel: nextCtaSecondaryLabel,
+          ctaSecondaryHref: nextCtaSecondaryHref,
+          mediaUploadId: nextMediaUploadId,
+        })
+      : null
+  if (nextCreative) await assertCreativeCtaSlotsResolvable(nextCreative, actorUserId)
   const nextCreativeJson =
     patch?.creative !== undefined || patch?.creative_json !== undefined
-      ? JSON.stringify(normalizeCreative(patch?.creative ?? patch?.creative_json, {
-        headline: nextHeadline,
-        body: nextBody,
-        ctaPrimaryLabel: nextCtaPrimaryLabel,
-        ctaPrimaryHref: nextCtaPrimaryHref,
-        ctaSecondaryLabel: nextCtaSecondaryLabel,
-        ctaSecondaryHref: nextCtaSecondaryHref,
-        mediaUploadId: nextMediaUploadId,
-      }))
+      ? JSON.stringify(nextCreative)
       : ((existing as any).creative_json == null ? null : String((existing as any).creative_json))
   const nextMessageType =
     patch?.type !== undefined || patch?.messageType !== undefined

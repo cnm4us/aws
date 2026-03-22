@@ -14,6 +14,16 @@ export type MessageType =
 
 export type MessageCtaType = 'auth' | 'donate' | 'subscribe' | 'upgrade'
 export type MessageCtaLayout = 'inline' | 'stacked'
+export type MessageCtaSlotIndex = 1 | 2 | 3
+export type MessageCtaSlot = {
+  slot: MessageCtaSlotIndex
+  ctaDefinitionId: number
+  labelOverride?: string | null
+  styleOverride?: {
+    bgColor?: string
+    textColor?: string
+  } | null
+}
 
 export type MessageCreative = {
   version: 1
@@ -49,6 +59,8 @@ export type MessageCreative = {
       bgOpacity: number
       textColor: string
       layout: MessageCtaLayout
+      count?: MessageCtaSlotIndex
+      slots?: MessageCtaSlot[]
       type: MessageCtaType
       primaryLabel: string
       secondaryLabel: string | null
