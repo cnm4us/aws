@@ -1,6 +1,6 @@
 # Plan 137: Modular CTA Widget for Messages
 
-Status: Active
+Status: Complete
 
 ## Feature Reference
 - Feature doc: `none`
@@ -37,7 +37,10 @@ Status: Active
 - C: Completed
 - D: Completed
 - E: Completed
-- F: Pending
+- F: Deferred
+
+## Defer Note
+- Phase F is intentionally deferred to follow-up planning. Plan 137 scope is complete through Phase E.
 
 ## Phase A — Contract + Migration Layer
 - Goal:
