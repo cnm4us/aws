@@ -22,6 +22,9 @@ export type MessageAnalyticsEventRow = {
   message_id: number
   message_campaign_key: string | null
   cta_kind: string | null
+  flow: 'login' | 'register' | null
+  intent_id: string | null
+  message_sequence_key: string | null
   attributed: number
   occurred_at: string
   dedupe_bucket_start: string

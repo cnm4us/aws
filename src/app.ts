@@ -43,6 +43,7 @@ import { PERM } from './security/perm'
 import { domainErrorMiddleware } from './core/http';
 import { getLogger, logError } from './lib/logger';
 import * as messageAnalyticsSvc from './features/message-analytics/service'
+import * as messageAttributionSvc from './features/message-attribution/service'
 
 const appLogger = getLogger({ component: 'app' })
 
@@ -295,17 +296,72 @@ export function buildServer(): express.Application {
 
   async function trackMessageAuthComplete(req: any, userId: number | null) {
     try {
-      const messageIdRaw = req?.body?.message_id
-      if (messageIdRaw == null || messageIdRaw === '') return
+      const messageIdRaw = req?.body?.message_id ?? req?.body?.prompt_id
+      const messageCampaignKeyRaw = req?.body?.message_campaign_key ?? req?.body?.prompt_category ?? null
+      const messageSessionIdRaw = req?.body?.message_session_id ?? req?.body?.prompt_session_id ?? null
+      const messageCtaKindRaw = req?.body?.message_cta_kind ?? req?.body?.prompt_cta_kind ?? null
+      const messageFlowRaw = req?.body?.message_flow ?? null
+      const messageIntentIdRaw = req?.body?.message_intent_id ?? req?.body?.intent_id ?? null
+      const messageSequenceKeyRaw = req?.body?.message_sequence_key ?? null
+      const numericUserId = userId != null && Number.isFinite(Number(userId)) ? Number(userId) : null
+      if (numericUserId == null || numericUserId <= 0) return
+
+      let resolvedMessageId = messageIdRaw
+      let resolvedCampaignKey = messageCampaignKeyRaw
+      let resolvedSessionId = messageSessionIdRaw
+      let resolvedFlow = messageFlowRaw
+      let resolvedSequenceKey = messageSequenceKeyRaw
+      let intentId: string | null = null
+
+      if (messageIntentIdRaw) {
+        try {
+          const consumed = await messageAttributionSvc.consumeAuthIntentForCompletion({
+            intentId: String(messageIntentIdRaw),
+            userId: numericUserId,
+          })
+          intentId = consumed.intent.intent_id
+          resolvedMessageId = resolvedMessageId ?? consumed.intent.message_id
+          resolvedCampaignKey = resolvedCampaignKey ?? consumed.intent.message_campaign_key
+          resolvedSessionId = resolvedSessionId ?? consumed.intent.message_session_id
+          resolvedFlow = resolvedFlow ?? consumed.intent.flow
+          resolvedSequenceKey = resolvedSequenceKey ?? consumed.intent.message_sequence_key
+          await messageAttributionSvc.upsertUserSuppressionFromCompletion({
+            userId: numericUserId,
+            scope: 'campaign',
+            campaignKey: consumed.intent.message_campaign_key,
+            messageId: consumed.intent.message_id,
+            sourceIntentId: consumed.intent.intent_id,
+          })
+        } catch (err) {
+          const log = req.log || appLogger
+          log.warn({ err, path: req.path, message_intent_id: messageIntentIdRaw }, 'message_auth_intent_consume_failed')
+          try {
+            const existingIntent = await messageAttributionSvc.getAuthIntentById({ intentId: String(messageIntentIdRaw) })
+            if (existingIntent) {
+              intentId = existingIntent.intent_id
+              resolvedMessageId = resolvedMessageId ?? existingIntent.message_id
+              resolvedCampaignKey = resolvedCampaignKey ?? existingIntent.message_campaign_key
+              resolvedSessionId = resolvedSessionId ?? existingIntent.message_session_id
+              resolvedFlow = resolvedFlow ?? existingIntent.flow
+              resolvedSequenceKey = resolvedSequenceKey ?? existingIntent.message_sequence_key
+            }
+          } catch {}
+        }
+      }
+
+      if (resolvedMessageId == null || resolvedMessageId === '') return
       await messageAnalyticsSvc.recordMessageEvent({
         event: 'auth_complete',
         surface: 'global_feed',
-        messageId: messageIdRaw,
-        messageCampaignKey: req?.body?.message_campaign_key,
-        sessionId: req?.body?.message_session_id,
-        ctaKind: req?.body?.message_cta_kind,
-        viewerState: userId != null && Number(userId) > 0 ? 'authenticated' : 'anonymous',
-        userId: userId != null && Number.isFinite(Number(userId)) ? Number(userId) : null,
+        messageId: resolvedMessageId,
+        messageCampaignKey: resolvedCampaignKey,
+        sessionId: resolvedSessionId,
+        ctaKind: messageCtaKindRaw,
+        flow: resolvedFlow,
+        intentId,
+        messageSequenceKey: resolvedSequenceKey,
+        viewerState: numericUserId != null && numericUserId > 0 ? 'authenticated' : 'anonymous',
+        userId: numericUserId,
       })
     } catch (err) {
       const log = req.log || appLogger

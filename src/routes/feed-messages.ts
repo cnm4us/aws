@@ -14,6 +14,7 @@ import type { MessageAudienceSegment, MessageDecisionSurface } from '../features
 import * as messagesSvc from '../features/messages/service'
 import * as uploadsSvc from '../features/uploads/service'
 import * as messageAnalyticsSvc from '../features/message-analytics/service'
+import * as messageAttributionSvc from '../features/message-attribution/service'
 import * as spacesRepo from '../features/spaces/repo'
 import { getLogger } from '../lib/logger'
 
@@ -23,6 +24,7 @@ const MESSAGE_DEBUG_ENABLED = String(process.env.MESSAGE_DEBUG || '0') === '1'
 const feedMessageDecisionPaths = ['/api/feed/message-decision']
 const feedMessageFetchPaths = ['/api/feed/messages/:id']
 const feedMessageEventPaths = ['/api/feed/message-events']
+const feedMessageAuthIntentPaths = ['/api/feed/message-auth-intent']
 
 let globalSubscriptionSpaceCache: { spaceId: number | null; expiresAtMs: number } = { spaceId: null, expiresAtMs: 0 }
 
@@ -270,17 +272,30 @@ feedMessagesRouter.post(feedMessageEventPaths, async (req: any, res: any, next: 
       ? String(body.message_session_id).trim()
       : (body.session_id ? String(body.session_id).trim() : null)
     const messageId = body.message_id
+    const flow = body.message_flow ? String(body.message_flow).trim().toLowerCase() : (body.flow ? String(body.flow).trim().toLowerCase() : null)
+    const intentId = body.message_intent_id
+      ? String(body.message_intent_id).trim().toLowerCase()
+      : (body.intent_id ? String(body.intent_id).trim().toLowerCase() : null)
+    const messageSequenceKey = body.message_sequence_key ? String(body.message_sequence_key).trim() : null
 
     const tracked = await messageAnalyticsSvc.recordMessageEvent({
       event: body.event,
       messageId,
       messageCampaignKey,
       ctaKind,
+      flow,
+      intentId,
+      messageSequenceKey,
       surface: body.surface || 'global_feed',
       sessionId,
       viewerState: req.user?.id ? 'authenticated' : 'anonymous',
       userId: req.user?.id ? Number(req.user.id) : null,
     })
+    if (String(body.event || '').trim().toLowerCase() === 'auth_start' && intentId) {
+      try {
+        await messageAttributionSvc.markAuthIntentStarted({ intentId })
+      } catch {}
+    }
     await recordMessageSessionEvent({
       sessionId,
       surface: String(body.surface || 'global_feed').trim().toLowerCase() as MessageDecisionSurface,
@@ -313,6 +328,8 @@ feedMessagesRouter.post(feedMessageEventPaths, async (req: any, res: any, next: 
       span.setAttribute('app.message_id', String(tracked.messageId))
       span.setAttribute('app.outcome', outcomeByEvent[tracked.inputEvent] || 'shown')
       if (sessionId) span.setAttribute('app.message_session_id', sessionId)
+      if (intentId) span.setAttribute('app.message_intent_id', intentId)
+      if (flow) span.setAttribute('app.message_flow', flow)
     }
 
     ;(req.log || feedMessagesLogger).info(
@@ -324,6 +341,9 @@ feedMessagesRouter.post(feedMessageEventPaths, async (req: any, res: any, next: 
         message_id: tracked.messageId,
         message_campaign_key: messageCampaignKey,
         cta_kind: ctaKind,
+        message_flow: flow,
+        message_intent_id: intentId,
+        message_sequence_key: messageSequenceKey,
         message_session_id: sessionId,
         message_event_type: tracked.eventType,
         message_event_deduped: !tracked.inserted,
@@ -339,6 +359,52 @@ feedMessagesRouter.post(feedMessageEventPaths, async (req: any, res: any, next: 
       counted: tracked.countedInRollup,
       attributed: tracked.attributed,
     })
+  } catch (err) {
+    return next(err)
+  }
+})
+
+feedMessagesRouter.post(feedMessageAuthIntentPaths, async (req: any, res: any, next: any) => {
+  try {
+    const body = (req.body || {}) as any
+    const issued = await messageAttributionSvc.issueAuthIntent({
+      flow: body.message_flow ?? body.flow,
+      surface: body.surface ?? 'global_feed',
+      messageId: body.message_id ?? body.messageId,
+      messageCampaignKey: body.message_campaign_key ?? body.messageCampaignKey ?? null,
+      messageSessionId: body.message_session_id ?? body.messageSessionId ?? null,
+      messageSequenceKey: body.message_sequence_key ?? body.messageSequenceKey ?? null,
+      viewerState: req.user?.id ? 'authenticated' : 'anonymous',
+      anonKey: body.anon_key ?? null,
+      userId: req.user?.id ? Number(req.user.id) : null,
+    })
+
+    const span = trace.getSpan(context.active())
+    if (span) {
+      span.setAttribute('app.surface', String(body.surface || 'global_feed').trim().toLowerCase())
+      span.setAttribute('app.operation', 'feed.message.auth_intent')
+      span.setAttribute('app.operation_detail', 'feed.message.auth_intent.issue')
+      span.setAttribute('app.outcome', 'success')
+      span.setAttribute('app.message_intent_id', issued.intentId)
+      span.setAttribute('app.message_flow', String(body.message_flow ?? body.flow ?? '').trim().toLowerCase())
+    }
+
+    ;(req.log || feedMessagesLogger).info(
+      {
+        app_operation: 'feed.message.auth_intent',
+        app_operation_detail: 'feed.message.auth_intent.issue',
+        app_outcome: 'success',
+        app_surface: String(body.surface || 'global_feed').trim().toLowerCase(),
+        message_id: Number(body.message_id || 0) || null,
+        message_campaign_key: body.message_campaign_key ? String(body.message_campaign_key) : null,
+        message_session_id: body.message_session_id ? String(body.message_session_id).trim() : null,
+        message_intent_id: issued.intentId,
+        message_flow: String(body.message_flow ?? body.flow ?? '').trim().toLowerCase() || null,
+      },
+      'feed.message.auth_intent'
+    )
+
+    return res.json({ ok: true, message_intent_id: issued.intentId, expires_at: issued.expiresAt })
   } catch (err) {
     return next(err)
   }

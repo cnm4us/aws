@@ -59,6 +59,14 @@
           const payload = {
             email,
             password,
+            message_id: qs.get('message_id') || qs.get('prompt_id'),
+            message_campaign_key: qs.get('message_campaign_key') || qs.get('prompt_category'),
+            message_session_id: qs.get('message_session_id') || qs.get('prompt_session_id'),
+            message_cta_kind: qs.get('message_cta_kind') || qs.get('prompt_cta_kind'),
+            message_flow: qs.get('message_flow') || 'login',
+            message_intent_id: qs.get('message_intent_id') || null,
+            message_sequence_key: qs.get('message_sequence_key') || null,
+            // Legacy compatibility payload:
             prompt_id: qs.get('prompt_id'),
             prompt_kind: qs.get('prompt_kind'),
             prompt_category: qs.get('prompt_category'),

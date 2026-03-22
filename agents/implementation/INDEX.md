@@ -19,6 +19,9 @@ This file is a lightweight index for ongoing implementation work.
 - `agents/implementation/plan_131.md` — Message-first API path cleanup
 - `agents/implementation/plan_132.md` — Message wire contract cleanup
 - `agents/implementation/plan_133.md` — Final message conversion cleanup
+- `agents/implementation/plan_134.md` — Admin debug panel + structured browser debug emission
+- `agents/implementation/plan_135.md` — Unified client debug model + bundle analysis upgrades
+- `agents/implementation/plan_136.md` — Message CTA completion attribution + completion-based suppression
 
 ## Active / Next
 - Check latest `plan_NN.md` with `Status: Active`.

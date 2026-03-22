@@ -434,6 +434,9 @@ async function sendMessageEvent(input: {
   messageCampaignKey: string | null
   sessionId: string | null
   ctaKind?: 'primary' | 'secondary'
+  flow?: 'login' | 'register' | null
+  intentId?: string | null
+  messageSequenceKey?: string | null
 }, opts?: { sequenceEngineTag?: FeedSequenceEngineTag }) {
   try {
     await fetch('/api/feed/message-events', {
@@ -451,9 +454,46 @@ async function sendMessageEvent(input: {
         message_campaign_key: input.messageCampaignKey,
         message_session_id: input.sessionId,
         message_cta_kind: input.ctaKind || null,
+        message_flow: input.flow || null,
+        message_intent_id: input.intentId || null,
+        message_sequence_key: input.messageSequenceKey || null,
       }),
     })
   } catch {}
+}
+
+async function issueMessageAuthIntent(input: {
+  flow: 'login' | 'register'
+  messageId: number
+  messageCampaignKey: string | null
+  sessionId: string | null
+  messageSequenceKey: string | null
+}, opts?: { sequenceEngineTag?: FeedSequenceEngineTag }): Promise<{ intentId: string | null }> {
+  try {
+    const res = await fetch('/api/feed/message-auth-intent', {
+      method: 'POST',
+      credentials: 'same-origin',
+      keepalive: true,
+      headers: {
+        'Content-Type': 'application/json',
+        ...feedSequenceHeader(opts?.sequenceEngineTag),
+      },
+      body: JSON.stringify({
+        surface: 'global_feed',
+        message_flow: input.flow,
+        message_id: input.messageId,
+        message_campaign_key: input.messageCampaignKey,
+        message_session_id: input.sessionId,
+        message_sequence_key: input.messageSequenceKey,
+      }),
+    })
+    const json = await res.json().catch(() => ({} as any))
+    const intentId = json?.message_intent_id ? String(json.message_intent_id).trim().toLowerCase() : null
+    if (!res.ok || !intentId) return { intentId: null }
+    return { intentId }
+  } catch {
+    return { intentId: null }
+  }
 }
 
 function ensureFeedActivitySessionId(): string {
@@ -2327,12 +2367,30 @@ export default function Feed() {
     return 'none'
   }
 
-  const handleMessageCtaClick = useCallback((message: FeedMessagePayload, href: string, ctaKind: 'primary' | 'secondary') => {
+  const handleMessageCtaClick = useCallback(async (message: FeedMessagePayload, href: string, ctaKind: 'primary' | 'secondary') => {
     const targetHref = String(href || '').trim()
     if (!targetHref) return
     const activeExposure = activeMessageExposureRef.current
+    const activeSequence = activeExposure?.messageId === Number(message.id)
+      ? activeExposure.sequenceKey
+      : (typeof activeSequenceKey === 'string' && activeSequenceKey.startsWith('message:') ? activeSequenceKey : null)
     if (activeExposure && activeExposure.messageId === Number(message.id)) {
       activeExposure.clicked = true
+    }
+    const lowerHref = targetHref.toLowerCase()
+    const flow: 'login' | 'register' | null = lowerHref.startsWith('/register')
+      ? 'register'
+      : (lowerHref.startsWith('/login') ? 'login' : null)
+    let intentId: string | null = null
+    if (flow) {
+      const issued = await issueMessageAuthIntent({
+        flow,
+        messageId: message.id,
+        messageCampaignKey: message.campaignKey || null,
+        sessionId: messageSessionId,
+        messageSequenceKey: activeSequence || null,
+      }, { sequenceEngineTag: feedSequenceEngineTag })
+      intentId = issued.intentId
     }
     void sendMessageEvent({
       event: 'click',
@@ -2340,14 +2398,19 @@ export default function Feed() {
       messageCampaignKey: message.campaignKey || null,
       sessionId: messageSessionId,
       ctaKind,
+      flow,
+      intentId,
+      messageSequenceKey: activeSequence || null,
     }, { sequenceEngineTag: feedSequenceEngineTag })
-    const lowerHref = targetHref.toLowerCase()
-    if (lowerHref.startsWith('/register') || lowerHref.startsWith('/login')) {
+    if (flow) {
       void sendMessageEvent({
         event: 'auth_start',
         messageId: message.id,
         messageCampaignKey: message.campaignKey || null,
         sessionId: messageSessionId,
+        flow,
+        intentId,
+        messageSequenceKey: activeSequence || null,
       }, { sequenceEngineTag: feedSequenceEngineTag })
     }
     try {
@@ -2357,12 +2420,15 @@ export default function Feed() {
         if (message.campaignKey) url.searchParams.set('message_campaign_key', message.campaignKey)
         if (messageSessionId) url.searchParams.set('message_session_id', messageSessionId)
         url.searchParams.set('message_cta_kind', ctaKind)
+        if (flow) url.searchParams.set('message_flow', flow)
+        if (intentId) url.searchParams.set('message_intent_id', intentId)
+        if (activeSequence) url.searchParams.set('message_sequence_key', activeSequence)
         window.location.href = `${url.pathname}${url.search}${url.hash || ''}`
         return
       }
     } catch {}
     window.location.href = targetHref
-  }, [messageSessionId, feedSequenceEngineTag])
+  }, [activeSequenceKey, messageSessionId, feedSequenceEngineTag])
 
   const closeFeedActivitySession = useCallback((reason: 'pagehide' | 'beforeunload' | 'unmount' | 'mode_change' | 'visibility_hidden') => {
     if (!feedActivityStartedRef.current) return
@@ -2511,6 +2577,7 @@ export default function Feed() {
           messageId: previous.messageId,
           messageCampaignKey: previous.messageCampaignKey,
           sessionId: messageSessionId,
+          messageSequenceKey: previous.sequenceKey,
         }, { sequenceEngineTag: feedSequenceEngineTag })
         emitMessageDebug('pass_through:recorded', {
           message_id: previous.messageId,
@@ -2542,6 +2609,7 @@ export default function Feed() {
         messageId: message.id,
         messageCampaignKey: message.campaignKey || null,
         sessionId: messageSessionId,
+        messageSequenceKey: nextSequenceKey,
       }, { sequenceEngineTag: feedSequenceEngineTag })
       emitMessageDebug('impression:recorded', {
         message_id: message.id,

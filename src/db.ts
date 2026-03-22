@@ -1030,6 +1030,9 @@ export async function ensureSchema(db: DB) {
           await db.query(`ALTER TABLE feed_message_events ADD COLUMN IF NOT EXISTS message_id BIGINT UNSIGNED NOT NULL DEFAULT 0`)
           await db.query(`ALTER TABLE feed_message_events ADD COLUMN IF NOT EXISTS message_campaign_key VARCHAR(64) NULL`)
           await db.query(`ALTER TABLE feed_message_events ADD COLUMN IF NOT EXISTS cta_kind ENUM('primary','secondary') NULL`)
+          await db.query(`ALTER TABLE feed_message_events ADD COLUMN IF NOT EXISTS flow ENUM('login','register') NULL`)
+          await db.query(`ALTER TABLE feed_message_events ADD COLUMN IF NOT EXISTS intent_id CHAR(36) NULL`)
+          await db.query(`ALTER TABLE feed_message_events ADD COLUMN IF NOT EXISTS message_sequence_key VARCHAR(191) NULL`)
           await db.query(`ALTER TABLE feed_message_events ADD COLUMN IF NOT EXISTS attributed TINYINT(1) NOT NULL DEFAULT 1`)
           await db.query(`ALTER TABLE feed_message_events ADD COLUMN IF NOT EXISTS occurred_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP`)
           await db.query(`ALTER TABLE feed_message_events ADD COLUMN IF NOT EXISTS dedupe_bucket_start DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP`)
@@ -1104,6 +1107,8 @@ export async function ensureSchema(db: DB) {
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_events_event_occurred ON feed_message_events (event_type, occurred_at, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_events_session_event ON feed_message_events (session_id, event_type, occurred_at, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_events_user_event ON feed_message_events (user_id, event_type, occurred_at, id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_events_intent_event ON feed_message_events (intent_id, event_type, occurred_at, id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_events_sequence_occurred ON feed_message_events (message_sequence_key, occurred_at, id)`); } catch {}
           try {
             await db.query(`
               UPDATE feed_message_events
@@ -1115,6 +1120,80 @@ export async function ensureSchema(db: DB) {
           try { await db.query(`ALTER TABLE feed_message_events DROP COLUMN prompt_category`) } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_events_campaign_key_occurred ON feed_message_events (message_campaign_key, occurred_at, id)`); } catch {}
           try { await db.query(`UPDATE feed_message_events SET dedupe_key = LPAD(HEX(id), 64, '0') WHERE dedupe_key IS NULL OR dedupe_key = ''`); } catch {}
+
+          await db.query(`
+            CREATE TABLE IF NOT EXISTS feed_message_auth_intents (
+              intent_id CHAR(36) NOT NULL PRIMARY KEY,
+              flow ENUM('login','register') NOT NULL,
+              state ENUM('created','started','completed','expired') NOT NULL DEFAULT 'created',
+              surface ENUM('global_feed') NOT NULL DEFAULT 'global_feed',
+              message_id BIGINT UNSIGNED NOT NULL,
+              message_campaign_key VARCHAR(64) NULL,
+              message_session_id VARCHAR(120) NULL,
+              message_sequence_key VARCHAR(191) NULL,
+              viewer_state ENUM('anonymous','authenticated') NOT NULL DEFAULT 'anonymous',
+              anon_key VARCHAR(191) NULL,
+              user_id BIGINT UNSIGNED NULL,
+              expires_at DATETIME NOT NULL,
+              consumed_at DATETIME NULL,
+              created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              KEY idx_feed_message_auth_intents_expires (expires_at),
+              KEY idx_feed_message_auth_intents_state_expires (state, expires_at),
+              KEY idx_feed_message_auth_intents_message_created (message_id, created_at),
+              KEY idx_feed_message_auth_intents_session_created (message_session_id, created_at),
+              KEY idx_feed_message_auth_intents_user_created (user_id, created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+          `)
+          await db.query(`ALTER TABLE feed_message_auth_intents ADD COLUMN IF NOT EXISTS intent_id CHAR(36) NOT NULL`)
+          await db.query(`ALTER TABLE feed_message_auth_intents ADD COLUMN IF NOT EXISTS flow ENUM('login','register') NOT NULL`)
+          await db.query(`ALTER TABLE feed_message_auth_intents ADD COLUMN IF NOT EXISTS state ENUM('created','started','completed','expired') NOT NULL DEFAULT 'created'`)
+          await db.query(`ALTER TABLE feed_message_auth_intents ADD COLUMN IF NOT EXISTS surface ENUM('global_feed') NOT NULL DEFAULT 'global_feed'`)
+          await db.query(`ALTER TABLE feed_message_auth_intents ADD COLUMN IF NOT EXISTS message_id BIGINT UNSIGNED NOT NULL DEFAULT 0`)
+          await db.query(`ALTER TABLE feed_message_auth_intents ADD COLUMN IF NOT EXISTS message_campaign_key VARCHAR(64) NULL`)
+          await db.query(`ALTER TABLE feed_message_auth_intents ADD COLUMN IF NOT EXISTS message_session_id VARCHAR(120) NULL`)
+          await db.query(`ALTER TABLE feed_message_auth_intents ADD COLUMN IF NOT EXISTS message_sequence_key VARCHAR(191) NULL`)
+          await db.query(`ALTER TABLE feed_message_auth_intents ADD COLUMN IF NOT EXISTS viewer_state ENUM('anonymous','authenticated') NOT NULL DEFAULT 'anonymous'`)
+          await db.query(`ALTER TABLE feed_message_auth_intents ADD COLUMN IF NOT EXISTS anon_key VARCHAR(191) NULL`)
+          await db.query(`ALTER TABLE feed_message_auth_intents ADD COLUMN IF NOT EXISTS user_id BIGINT UNSIGNED NULL`)
+          await db.query(`ALTER TABLE feed_message_auth_intents ADD COLUMN IF NOT EXISTS expires_at DATETIME NULL`)
+          await db.query(`ALTER TABLE feed_message_auth_intents ADD COLUMN IF NOT EXISTS consumed_at DATETIME NULL`)
+          try { await db.query(`UPDATE feed_message_auth_intents SET expires_at = DATE_ADD(COALESCE(created_at, CURRENT_TIMESTAMP), INTERVAL 30 MINUTE) WHERE expires_at IS NULL`) } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_auth_intents_expires ON feed_message_auth_intents (expires_at)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_auth_intents_state_expires ON feed_message_auth_intents (state, expires_at)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_auth_intents_message_created ON feed_message_auth_intents (message_id, created_at)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_auth_intents_session_created ON feed_message_auth_intents (message_session_id, created_at)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_auth_intents_user_created ON feed_message_auth_intents (user_id, created_at)`); } catch {}
+
+          await db.query(`
+            CREATE TABLE IF NOT EXISTS feed_message_user_suppressions (
+              id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+              user_id BIGINT UNSIGNED NOT NULL,
+              scope ENUM('message','campaign') NOT NULL,
+              suppression_key VARCHAR(191) NOT NULL,
+              message_id BIGINT UNSIGNED NULL,
+              campaign_key VARCHAR(64) NULL,
+              reason ENUM('auth_complete') NOT NULL DEFAULT 'auth_complete',
+              source_intent_id CHAR(36) NULL,
+              created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              UNIQUE KEY uniq_feed_message_user_suppressions_user_key (user_id, suppression_key),
+              KEY idx_feed_message_user_suppressions_user_created (user_id, created_at),
+              KEY idx_feed_message_user_suppressions_scope_message (scope, message_id, created_at),
+              KEY idx_feed_message_user_suppressions_scope_campaign (scope, campaign_key, created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+          `)
+          await db.query(`ALTER TABLE feed_message_user_suppressions ADD COLUMN IF NOT EXISTS user_id BIGINT UNSIGNED NOT NULL`)
+          await db.query(`ALTER TABLE feed_message_user_suppressions ADD COLUMN IF NOT EXISTS scope ENUM('message','campaign') NOT NULL`)
+          await db.query(`ALTER TABLE feed_message_user_suppressions ADD COLUMN IF NOT EXISTS suppression_key VARCHAR(191) NOT NULL`)
+          await db.query(`ALTER TABLE feed_message_user_suppressions ADD COLUMN IF NOT EXISTS message_id BIGINT UNSIGNED NULL`)
+          await db.query(`ALTER TABLE feed_message_user_suppressions ADD COLUMN IF NOT EXISTS campaign_key VARCHAR(64) NULL`)
+          await db.query(`ALTER TABLE feed_message_user_suppressions ADD COLUMN IF NOT EXISTS reason ENUM('auth_complete') NOT NULL DEFAULT 'auth_complete'`)
+          await db.query(`ALTER TABLE feed_message_user_suppressions ADD COLUMN IF NOT EXISTS source_intent_id CHAR(36) NULL`)
+          try { await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_feed_message_user_suppressions_user_key ON feed_message_user_suppressions (user_id, suppression_key)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_user_suppressions_user_created ON feed_message_user_suppressions (user_id, created_at)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_user_suppressions_scope_message ON feed_message_user_suppressions (scope, message_id, created_at)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_user_suppressions_scope_campaign ON feed_message_user_suppressions (scope, campaign_key, created_at)`); } catch {}
 
           await db.query(`
             CREATE TABLE IF NOT EXISTS feed_message_daily_stats (

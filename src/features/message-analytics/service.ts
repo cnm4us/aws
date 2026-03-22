@@ -105,6 +105,30 @@ function normalizeCtaKind(raw: any): MessageAnalyticsCtaKind {
   throw new DomainError('invalid_message_cta_kind', 'invalid_message_cta_kind', 400)
 }
 
+function normalizeFlow(raw: any): 'login' | 'register' | null {
+  if (raw == null || raw === '') return null
+  const v = String(raw).trim().toLowerCase()
+  if (v === 'login' || v === 'register') return v
+  throw new DomainError('invalid_message_flow', 'invalid_message_flow', 400)
+}
+
+function normalizeIntentId(raw: any): string | null {
+  if (raw == null || raw === '') return null
+  const v = String(raw).trim().toLowerCase()
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(v)) {
+    throw new DomainError('invalid_message_intent_id', 'invalid_message_intent_id', 400)
+  }
+  return v
+}
+
+function normalizeSequenceKey(raw: any): string | null {
+  if (raw == null || raw === '') return null
+  const v = String(raw).trim()
+  if (!v) return null
+  if (v.length > 191) throw new DomainError('invalid_message_sequence_key', 'invalid_message_sequence_key', 400)
+  return v
+}
+
 function mapToEventType(event: MessageAnalyticsInputEvent, ctaKind: MessageAnalyticsCtaKind) {
   if (event === 'impression') return 'message_impression' as const
   if (event === 'pass_through' || event === 'dismiss') return 'message_dismiss' as const
@@ -171,6 +195,9 @@ type RecordMessageEventInput = {
   messageId: number | string | null | undefined
   messageCampaignKey?: string | null
   ctaKind?: MessageAnalyticsCtaKind | string | null
+  flow?: 'login' | 'register' | string | null
+  intentId?: string | null
+  messageSequenceKey?: string | null
   occurredAt?: Date
 }
 
@@ -202,6 +229,9 @@ export async function recordMessageEvent(input: RecordMessageEventInput): Promis
 
       let messageCampaignKey = normalizeCampaignKey(input.messageCampaignKey)
       const ctaKind = normalizeCtaKind(input.ctaKind)
+      const flow = normalizeFlow(input.flow)
+      const intentId = normalizeIntentId(input.intentId)
+      const messageSequenceKey = normalizeSequenceKey(input.messageSequenceKey)
       const eventType = mapToEventType(event, ctaKind)
 
       if (!messageCampaignKey) {
@@ -224,6 +254,9 @@ export async function recordMessageEvent(input: RecordMessageEventInput): Promis
           input_event: event,
           ...(messageCampaignKey ? { message_campaign_key: messageCampaignKey } : {}),
           ...(ctaKind ? { cta_kind: ctaKind } : {}),
+          ...(flow ? { flow } : {}),
+          ...(intentId ? { intent_id: intentId } : {}),
+          ...(messageSequenceKey ? { message_sequence_key: messageSequenceKey } : {}),
           source_route: 'feed_message_events',
         },
       })
@@ -263,6 +296,9 @@ export async function recordMessageEvent(input: RecordMessageEventInput): Promis
         messageId: canonical.messageId || messageId,
         messageCampaignKey,
         ctaKind,
+        flow,
+        intentId,
+        messageSequenceKey,
         attributed,
         occurredAt,
         dedupeBucketStart: bucket.bucketStart,
@@ -326,6 +362,8 @@ export async function recordMessageEvent(input: RecordMessageEventInput): Promis
         'message.analytics.event_type': eventType,
         'message.analytics.deduped': inserted.inserted ? false : true,
         'message.analytics.attributed': attributed,
+        ...(flow ? { 'message.analytics.flow': flow } : {}),
+        ...(intentId ? { 'message.analytics.intent_id': intentId } : {}),
       })
       span.setStatus({ code: SpanStatusCode.OK })
 
@@ -340,6 +378,9 @@ export async function recordMessageEvent(input: RecordMessageEventInput): Promis
           message_event_type: eventType,
           message_event_deduped: !inserted.inserted,
           message_event_attributed: attributed,
+          message_flow: flow,
+          message_intent_id: intentId,
+          message_sequence_key: messageSequenceKey,
           viewer_state: canonical.viewerState,
           user_id: canonical.userId,
           session_id: canonical.sessionId,
