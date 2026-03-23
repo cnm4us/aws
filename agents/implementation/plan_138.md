@@ -66,8 +66,8 @@ Status: Planned
 - B: Completed
 - C: Completed
 - D: Completed
-- E: Pending
-- F: Pending
+- E: Skipped (intentional, dev-only hard cut)
+- F: Deferred
 
 ## Phase A — Schema + Service Contract
 - Goal:
@@ -132,17 +132,22 @@ Status: Planned
 ## Phase E — Migration + Compatibility Cleanup
 - Goal:
   - Safely migrate old message CTA data and reduce legacy coupling.
+- Decision:
+  - Intentionally skipped for this environment (single developer/tester, non-permanent dev data).
+  - We accept a hard cut to slot-based CTA model without legacy read-time fallback or migration script.
 - Steps:
-  - [ ] Read-time mapping from legacy `primary/secondary` when slots absent.
-  - [ ] Optional one-time migration script to write explicit slots for existing messages.
-  - [ ] Keep legacy fields populated for one release window.
-  - [ ] Remove dead/duplicate fields after validation window.
+  - [x] Skip read-time legacy mapping.
+  - [x] Skip one-time migration script.
+  - [x] Use data reset / manual re-save for any old test messages.
+  - [x] Defer dead-field removal to later cleanup when needed.
 - Acceptance:
-  - Existing messages continue to function while new slot model becomes canonical.
+  - Slot model is canonical in dev; legacy compatibility is not maintained by design.
 
 ## Phase F — Scoped Admin Rollout + Observability
 - Goal:
   - Enable group/channel admins to use constrained CTA tooling with auditability.
+- Decision:
+  - Deferred. Not needed for current single-developer/single-tester scope.
 - Steps:
   - [ ] Expose scoped CTA library in space-admin context.
   - [ ] Lock available surfaces/scope values in space-admin UI.
@@ -170,6 +175,7 @@ Status: Planned
 
 ## Resume Here
 - Next action:
-  - Begin Plan 138 Phase E (Migration + Compatibility Cleanup).
+  - Plan 138 is functionally complete for current scope (A-D done, E skipped, F deferred).
+  - Re-open at Phase F when scoped admin rollout is prioritized.
 - Blocking question (if any):
   - none
