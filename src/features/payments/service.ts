@@ -2,6 +2,8 @@ import crypto from 'crypto'
 import { trace, SpanStatusCode } from '@opentelemetry/api'
 import { DomainError } from '../../core/errors'
 import { getLogger } from '../../lib/logger'
+import * as messageAnalyticsSvc from '../message-analytics/service'
+import * as messageAttributionSvc from '../message-attribution/service'
 import { getPaymentProvider, registerPaymentProvider } from './provider'
 import * as repo from './repo'
 import type {
@@ -14,6 +16,7 @@ import type {
   PaymentCatalogItemRow,
   PaymentProviderConfigRow,
   PaymentWebhookParsedCompletion,
+  PaymentCheckoutSessionRow,
 } from './types'
 import { paypalProviderAdapter } from './providers/paypal'
 
@@ -127,6 +130,83 @@ function parseJsonObject(raw: any): Record<string, unknown> {
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed as Record<string, unknown>
   } catch {}
   return {}
+}
+
+function parseMetadata(raw: string | null | undefined): Record<string, unknown> {
+  if (!raw) return {}
+  try {
+    const parsed = JSON.parse(String(raw))
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed as Record<string, unknown>
+  } catch {}
+  return {}
+}
+
+function normalizeNullableString(raw: any): string | null {
+  if (raw == null || raw === '') return null
+  const v = String(raw).trim()
+  return v || null
+}
+
+function normalizeNullablePositiveInt(raw: any): number | null {
+  if (raw == null || raw === '') return null
+  const n = Number(raw)
+  if (!Number.isFinite(n) || n <= 0) return null
+  return Math.round(n)
+}
+
+async function emitMessageCompletionFromCheckout(input: {
+  session: PaymentCheckoutSessionRow
+  parsed: PaymentWebhookParsedCompletion
+}): Promise<void> {
+  const session = input.session
+  if (!session.message_id || Number(session.message_id) <= 0) return
+  if (session.status !== 'completed') return
+
+  const metadata = parseMetadata(session.metadata_json)
+  const checkoutIntent = String(metadata.checkout_intent || '').trim().toLowerCase()
+  const flow = checkoutIntent === 'upgrade'
+    ? 'upgrade'
+    : (session.intent === 'donate' ? 'donate' : 'subscribe')
+
+  const event = flow === 'donate'
+    ? 'donation_complete'
+    : (flow === 'upgrade' ? 'upgrade_complete' : 'subscription_complete')
+
+  const messageSessionId = normalizeNullableString(metadata.message_session_id)
+  const messageSequenceKey = normalizeNullableString(metadata.message_sequence_key)
+  const ctaKind = normalizeNullableString(metadata.message_cta_kind)
+  const messageCtaSlot = normalizeNullablePositiveInt(metadata.message_cta_slot)
+  const messageCtaIntentKey = normalizeNullableString(metadata.message_cta_intent_key)?.toLowerCase() || null
+  const messageCtaExecutorType = normalizeNullableString(metadata.message_cta_executor_type)?.toLowerCase() || null
+
+  await messageAnalyticsSvc.recordMessageEvent({
+    event,
+    messageId: Number(session.message_id),
+    messageCampaignKey: session.message_campaign_key || null,
+    ctaKind: ctaKind as any,
+    messageCtaSlot,
+    messageCtaDefinitionId: session.message_cta_definition_id == null ? null : Number(session.message_cta_definition_id),
+    messageCtaIntentKey,
+    messageCtaExecutorType,
+    flow: flow as any,
+    intentId: session.message_intent_id || null,
+    messageSequenceKey,
+    surface: 'global_feed',
+    sessionId: messageSessionId,
+    viewerState: session.user_id ? 'authenticated' : 'anonymous',
+    userId: session.user_id == null ? null : Number(session.user_id),
+  })
+
+  if (session.user_id && Number(session.user_id) > 0) {
+    await messageAttributionSvc.upsertUserSuppressionFromCompletion({
+      userId: Number(session.user_id),
+      scope: session.message_campaign_key ? 'campaign' : 'message',
+      campaignKey: session.message_campaign_key || null,
+      messageId: Number(session.message_id),
+      sourceIntentId: session.message_intent_id || null,
+      reason: 'flow_complete',
+    })
+  }
 }
 
 function toDateTimeUtc(d: Date): string {
@@ -471,6 +551,11 @@ export async function ingestWebhook(input: {
                 providerSessionId: parsed.providerSessionId || null,
                 providerOrderId: parsed.providerOrderId || null,
               })
+              if (parsed.checkoutStatus === 'completed') {
+                const refreshed = await repo.getCheckoutSessionById(Number(session.id))
+                const forEmit = refreshed || { ...session, status: 'completed' as const }
+                await emitMessageCompletionFromCheckout({ session: forEmit, parsed })
+              }
               await repo.markWebhookEventProcessed({
                 dedupeKey,
                 processingState: 'processed',

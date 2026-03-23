@@ -316,6 +316,12 @@ export async function getCheckoutSessionByProviderSession(params: {
   return ((rows as any[])[0] || null) as PaymentCheckoutSessionRow | null
 }
 
+export async function getCheckoutSessionById(id: number): Promise<PaymentCheckoutSessionRow | null> {
+  const db = getPool()
+  const [rows] = await db.query(`SELECT * FROM payment_checkout_sessions WHERE id = ? LIMIT 1`, [id])
+  return ((rows as any[])[0] || null) as PaymentCheckoutSessionRow | null
+}
+
 export async function getCheckoutSessionByProviderOrder(params: {
   provider: PaymentProvider
   providerOrderId: string

@@ -53,7 +53,7 @@ Status: In Progress
 - B: Complete
 - C: Complete
 - D: Complete
-- E: Pending
+- E: Complete
 - F: Pending
 
 ## Phase A — Provider Abstraction + Schema
@@ -104,9 +104,9 @@ Status: In Progress
 - Goal:
   - Connect verified payment completion to message analytics and suppression.
 - Steps:
-  - [ ] On verified completion, emit `donation_complete_from_message` / `subscription_complete_from_message`.
-  - [ ] Apply suppression scope via existing attribution service (`campaign` when key present, else `message`).
-  - [ ] Ensure no suppression on click-only or abandoned checkout.
+  - [x] On verified completion, emit `donation_complete_from_message` / `subscription_complete_from_message`.
+  - [x] Apply suppression scope via existing attribution service (`campaign` when key present, else `message`).
+  - [x] Ensure no suppression on click-only or abandoned checkout.
 - Acceptance:
   - Suppression occurs only after verified payment completion.
 
@@ -142,6 +142,6 @@ Status: In Progress
 
 ## Resume Here
 - Next action:
-  - Start Phase E (message completion + suppression integration).
+  - Start Phase F (observability + test harness).
 - Blocking question (if any):
   - confirm secret storage preference (`env-only` now vs encrypted DB config).
