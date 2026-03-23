@@ -29,6 +29,7 @@ const feedMessageEventPaths = ['/api/feed/message-events']
 const feedMessageAuthIntentPaths = ['/api/feed/message-auth-intent']
 const feedMessageMockCompletionPaths = ['/api/cta/mock/complete']
 const checkoutPagePaths = ['/checkout/:intent']
+const paypalWebhookPaths = ['/api/payments/paypal/webhook', '/api/payments/paypal/webhook/:mode']
 
 let globalSubscriptionSpaceCache: { spaceId: number | null; expiresAtMs: number } = { spaceId: null, expiresAtMs: 0 }
 
@@ -670,6 +671,57 @@ feedMessagesRouter.post(checkoutPagePaths, async (req: any, res: any, next: any)
     query.set('return', returnPath)
     query.set('error', String(err?.message || 'checkout_start_failed'))
     return res.redirect(`/checkout/${encodeURIComponent(intent)}?${query.toString()}`)
+  }
+})
+
+feedMessagesRouter.post(paypalWebhookPaths, async (req: any, res: any, next: any) => {
+  try {
+    const modeRaw = req.params?.mode != null ? String(req.params.mode).trim().toLowerCase() : String(req.query?.mode || '').trim().toLowerCase()
+    const mode: 'sandbox' | 'live' = modeRaw === 'live' ? 'live' : 'sandbox'
+    const rawBody = typeof req.body === 'string'
+      ? req.body
+      : (req.body && typeof req.body === 'object'
+        ? JSON.stringify(req.body)
+        : String(req.body || ''))
+
+    const ingested = await paymentsSvc.ingestWebhook({
+      provider: 'paypal',
+      mode,
+      verifyInput: {
+        mode,
+        credentials: {},
+        webhookId: null,
+        webhookSecret: null,
+        headers: req.headers as Record<string, string | string[] | undefined>,
+        rawBody,
+      },
+    })
+
+    const span = trace.getSpan(context.active())
+    if (span) {
+      span.setAttribute('app.operation', 'payments.webhook')
+      span.setAttribute('app.operation_detail', 'payments.webhook.paypal')
+      span.setAttribute('app.payment_provider', 'paypal')
+      span.setAttribute('app.payment_mode', mode)
+      span.setAttribute('app.payment_webhook_event_type', ingested.eventType)
+      span.setAttribute('app.payment_webhook_deduped', ingested.deduped ? 1 : 0)
+      span.setAttribute('app.outcome', 'success')
+    }
+
+    ;(req.log || feedMessagesLogger).info({
+      app_operation: 'payments.webhook',
+      app_operation_detail: 'payments.webhook.paypal',
+      app_outcome: 'success',
+      payment_provider: 'paypal',
+      payment_mode: mode,
+      payment_webhook_event_type: ingested.eventType,
+      payment_webhook_deduped: ingested.deduped,
+      payment_provider_event_id: ingested.providerEventId,
+    }, 'payments.webhook')
+
+    return res.status(200).json({ ok: true, deduped: ingested.deduped })
+  } catch (err) {
+    return next(err)
   }
 })
 

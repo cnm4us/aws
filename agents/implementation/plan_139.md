@@ -52,7 +52,7 @@ Status: In Progress
 - A: Complete
 - B: Complete
 - C: Complete
-- D: Pending
+- D: Complete
 - E: Pending
 - F: Pending
 
@@ -93,10 +93,10 @@ Status: In Progress
 - Goal:
   - Implement PayPal checkout + verified completion.
 - Steps:
-  - [ ] Implement PayPal session creation (sandbox/live endpoints).
-  - [ ] Add PayPal webhook endpoint + signature verification.
-  - [ ] Process completion/failure events idempotently.
-  - [ ] Update checkout session states from webhook processing.
+  - [x] Implement PayPal session creation (sandbox/live endpoints).
+  - [x] Add PayPal webhook endpoint + signature verification.
+  - [x] Process completion/failure events idempotently.
+  - [x] Update checkout session states from webhook processing.
 - Acceptance:
   - Verified PayPal events transition sessions to completion reliably.
 
@@ -142,6 +142,6 @@ Status: In Progress
 
 ## Resume Here
 - Next action:
-  - Start Phase D (PayPal adapter + webhooks).
+  - Start Phase E (message completion + suppression integration).
 - Blocking question (if any):
   - confirm secret storage preference (`env-only` now vs encrypted DB config).

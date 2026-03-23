@@ -1,5 +1,6 @@
 import { DomainError } from '../../core/errors'
 import type {
+  PaymentWebhookParsedCompletion,
   PaymentProvider,
   PaymentProviderCheckoutRequest,
   PaymentProviderCheckoutResult,
@@ -11,6 +12,7 @@ export interface PaymentProviderAdapter {
   readonly provider: PaymentProvider
   createCheckoutSession(input: PaymentProviderCheckoutRequest): Promise<PaymentProviderCheckoutResult>
   verifyWebhook(input: PaymentWebhookVerifyInput): Promise<PaymentWebhookVerifyResult>
+  parseCompletion(input: PaymentWebhookVerifyResult): PaymentWebhookParsedCompletion
 }
 
 const registry = new Map<PaymentProvider, PaymentProviderAdapter>()
@@ -24,4 +26,3 @@ export function getPaymentProvider(provider: PaymentProvider): PaymentProviderAd
   if (!adapter) throw new DomainError('payment_provider_not_registered', 'payment_provider_not_registered', 500)
   return adapter
 }
-

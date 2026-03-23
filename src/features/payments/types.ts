@@ -107,6 +107,7 @@ export type PaymentProviderCheckoutRequest = {
   checkoutId: string
   mode: PaymentMode
   intent: PaymentIntent
+  credentials: Record<string, unknown>
   amountCents: number | null
   currency: string
   returnUrl: string | null
@@ -122,6 +123,9 @@ export type PaymentProviderCheckoutResult = {
 
 export type PaymentWebhookVerifyInput = {
   mode: PaymentMode
+  credentials: Record<string, unknown>
+  webhookId: string | null
+  webhookSecret: string | null
   headers: Record<string, string | string[] | undefined>
   rawBody: string
 }
@@ -134,3 +138,10 @@ export type PaymentWebhookVerifyResult = {
   dedupeSource: string
 }
 
+export type PaymentWebhookParsedCompletion = {
+  checkoutStatus: PaymentCheckoutStatus | null
+  providerSessionId: string | null
+  providerOrderId: string | null
+  providerSubscriptionId: string | null
+  outcomeReason: string | null
+}

@@ -265,19 +265,40 @@ export async function updateCheckoutSessionAfterProviderStart(input: {
 }
 
 export async function updateCheckoutSessionStatus(input: {
-  checkoutId: string
+  checkoutId?: string
+  id?: number
   status: PaymentCheckoutStatus
   failedReason?: string | null
+  providerSessionId?: string | null
+  providerOrderId?: string | null
 }): Promise<void> {
   const db = getPool()
+  const sets: string[] = [
+    `status = ?`,
+    `completed_at = CASE WHEN ? = 'completed' THEN UTC_TIMESTAMP() ELSE completed_at END`,
+    `failed_at = CASE WHEN ? = 'failed' THEN UTC_TIMESTAMP() ELSE failed_at END`,
+    `updated_at = CURRENT_TIMESTAMP`,
+  ]
+  const args: any[] = [input.status, input.status, input.status]
+  if (input.providerSessionId) {
+    sets.push(`provider_session_id = COALESCE(NULLIF(provider_session_id,''), ?)`); args.push(input.providerSessionId)
+  }
+  if (input.providerOrderId) {
+    sets.push(`provider_order_id = COALESCE(NULLIF(provider_order_id,''), ?)`); args.push(input.providerOrderId)
+  }
+  let where = ''
+  if (input.id && Number.isFinite(input.id) && input.id > 0) {
+    where = `id = ?`
+    args.push(Math.round(input.id))
+  } else if (input.checkoutId) {
+    where = `checkout_id = ?`
+    args.push(input.checkoutId)
+  } else {
+    return
+  }
   await db.query(
-    `UPDATE payment_checkout_sessions
-        SET status = ?,
-            completed_at = CASE WHEN ? = 'completed' THEN UTC_TIMESTAMP() ELSE completed_at END,
-            failed_at = CASE WHEN ? = 'failed' THEN UTC_TIMESTAMP() ELSE failed_at END,
-            updated_at = CURRENT_TIMESTAMP
-      WHERE checkout_id = ?`,
-    [input.status, input.status, input.status, input.checkoutId]
+    `UPDATE payment_checkout_sessions SET ${sets.join(', ')} WHERE ${where}`,
+    args
   )
 }
 
@@ -291,6 +312,20 @@ export async function getCheckoutSessionByProviderSession(params: {
       WHERE provider = ? AND provider_session_id = ?
       ORDER BY id DESC LIMIT 1`,
     [params.provider, params.providerSessionId]
+  )
+  return ((rows as any[])[0] || null) as PaymentCheckoutSessionRow | null
+}
+
+export async function getCheckoutSessionByProviderOrder(params: {
+  provider: PaymentProvider
+  providerOrderId: string
+}): Promise<PaymentCheckoutSessionRow | null> {
+  const db = getPool()
+  const [rows] = await db.query(
+    `SELECT * FROM payment_checkout_sessions
+      WHERE provider = ? AND provider_order_id = ?
+      ORDER BY id DESC LIMIT 1`,
+    [params.provider, params.providerOrderId]
   )
   return ((rows as any[])[0] || null) as PaymentCheckoutSessionRow | null
 }

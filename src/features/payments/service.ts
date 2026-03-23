@@ -13,6 +13,7 @@ import type {
   PaymentWebhookVerifyInput,
   PaymentCatalogItemRow,
   PaymentProviderConfigRow,
+  PaymentWebhookParsedCompletion,
 } from './types'
 import { paypalProviderAdapter } from './providers/paypal'
 
@@ -116,6 +117,16 @@ function normalizeJsonConfig(raw: any): Record<string, unknown> {
   } catch {
     throw new DomainError('invalid_payment_catalog_config_json', 'invalid_payment_catalog_config_json', 400)
   }
+}
+
+function parseJsonObject(raw: any): Record<string, unknown> {
+  if (raw == null || raw === '') return {}
+  if (typeof raw === 'object' && !Array.isArray(raw)) return raw as Record<string, unknown>
+  try {
+    const parsed = JSON.parse(String(raw))
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed as Record<string, unknown>
+  } catch {}
+  return {}
 }
 
 function toDateTimeUtc(d: Date): string {
@@ -341,6 +352,7 @@ export async function createCheckoutSession(input: CreateCheckoutSessionInput): 
         checkoutId,
         mode,
         intent,
+        credentials: parseJsonObject(providerCfg.credentials_json),
         amountCents,
         currency,
         returnUrl,
@@ -402,8 +414,18 @@ export async function ingestWebhook(input: {
     try {
       const provider = normalizeProvider(input.provider)
       const mode = normalizeMode(input.mode)
+      const providerCfg = await repo.getProviderConfig({ provider, mode })
+      if (!providerCfg || providerCfg.status !== 'enabled') {
+        throw new DomainError('payment_provider_disabled', 'payment_provider_disabled', 400)
+      }
+      const providerCredentials = parseJsonObject(providerCfg.credentials_json)
       const adapter = getPaymentProvider(provider)
-      const verified = await adapter.verifyWebhook(input.verifyInput)
+      const verified = await adapter.verifyWebhook({
+        ...input.verifyInput,
+        credentials: providerCredentials,
+        webhookId: providerCfg.webhook_id || null,
+        webhookSecret: providerCfg.webhook_secret || null,
+      })
       const dedupeKey = buildWebhookDedupeKey({
         provider,
         mode,
@@ -430,6 +452,52 @@ export async function ingestWebhook(input: {
           errorMessage: 'invalid_signature',
         })
         throw new DomainError('invalid_payment_webhook_signature', 'invalid_payment_webhook_signature', 400)
+      }
+
+      if (saved.inserted) {
+        const parsed: PaymentWebhookParsedCompletion = adapter.parseCompletion(verified)
+        try {
+          if (parsed.checkoutStatus) {
+            let session = parsed.providerSessionId
+              ? await repo.getCheckoutSessionByProviderSession({ provider, providerSessionId: parsed.providerSessionId })
+              : null
+            if (!session && parsed.providerOrderId) {
+              session = await repo.getCheckoutSessionByProviderOrder({ provider, providerOrderId: parsed.providerOrderId })
+            }
+            if (session) {
+              await repo.updateCheckoutSessionStatus({
+                id: session.id,
+                status: parsed.checkoutStatus,
+                providerSessionId: parsed.providerSessionId || null,
+                providerOrderId: parsed.providerOrderId || null,
+              })
+              await repo.markWebhookEventProcessed({
+                dedupeKey,
+                processingState: 'processed',
+                errorMessage: null,
+              })
+            } else {
+              await repo.markWebhookEventProcessed({
+                dedupeKey,
+                processingState: 'ignored',
+                errorMessage: 'session_not_found',
+              })
+            }
+          } else {
+            await repo.markWebhookEventProcessed({
+              dedupeKey,
+              processingState: 'ignored',
+              errorMessage: parsed.outcomeReason || 'event_ignored',
+            })
+          }
+        } catch (err: any) {
+          await repo.markWebhookEventProcessed({
+            dedupeKey,
+            processingState: 'failed',
+            errorMessage: String(err?.message || 'webhook_processing_failed').slice(0, 500),
+          })
+          throw err
+        }
       }
 
       span.setAttributes({
