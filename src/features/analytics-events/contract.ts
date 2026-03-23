@@ -6,8 +6,7 @@ export type AnalyticsEventName =
   | 'feed_slide_complete'
   | 'feed_session_end'
   | 'message_impression'
-  | 'message_click_primary'
-  | 'message_click_secondary'
+  | 'message_click'
   | 'message_dismiss'
   | 'auth_start_from_message'
   | 'auth_complete_from_message'
@@ -126,8 +125,7 @@ function asEventName(raw: any): AnalyticsEventName {
     v === 'feed_slide_complete' ||
     v === 'feed_session_end' ||
     v === 'message_impression' ||
-    v === 'message_click_primary' ||
-    v === 'message_click_secondary' ||
+    v === 'message_click' ||
     v === 'message_dismiss' ||
     v === 'auth_start_from_message' ||
     v === 'auth_complete_from_message' ||

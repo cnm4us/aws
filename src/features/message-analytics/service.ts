@@ -139,7 +139,7 @@ function normalizeSequenceKey(raw: any): string | null {
   return v
 }
 
-function mapToEventType(event: MessageAnalyticsInputEvent, ctaKind: MessageAnalyticsCtaKind) {
+function mapToEventType(event: MessageAnalyticsInputEvent) {
   if (event === 'impression') return 'message_impression' as const
   if (event === 'pass_through' || event === 'dismiss') return 'message_dismiss' as const
   if (event === 'auth_start') return 'auth_start_from_message' as const
@@ -147,7 +147,7 @@ function mapToEventType(event: MessageAnalyticsInputEvent, ctaKind: MessageAnaly
   if (event === 'donation_complete') return 'donation_complete_from_message' as const
   if (event === 'subscription_complete') return 'subscription_complete_from_message' as const
   if (event === 'upgrade_complete') return 'upgrade_complete_from_message' as const
-  return ctaKind === 'secondary' ? 'message_click_secondary' : 'message_click_primary'
+  return 'message_click' as const
 }
 
 function computeRate(numerator: number, denominator: number): number {
@@ -183,12 +183,16 @@ function dedupeKey(input: {
   surface: MessageAnalyticsSurface
   messageId: number
   ctaKind: MessageAnalyticsCtaKind
+  messageCtaSlot: number | null
+  messageCtaDefinitionId: number | null
   identity: string
   bucketStartMs: number
 }): string {
   return crypto
     .createHash('sha256')
-    .update(`${input.eventType}|${input.surface}|${input.messageId}|${input.ctaKind || '-'}|${input.identity}|${input.bucketStartMs}`)
+    .update(
+      `${input.eventType}|${input.surface}|${input.messageId}|${input.ctaKind || '-'}|${input.messageCtaSlot ?? '-'}|${input.messageCtaDefinitionId ?? '-'}|${input.identity}|${input.bucketStartMs}`
+    )
     .digest('hex')
 }
 
@@ -275,7 +279,7 @@ export async function recordMessageEvent(input: RecordMessageEventInput): Promis
       const flow = normalizeFlow(input.flow)
       const intentId = normalizeIntentId(input.intentId)
       const messageSequenceKey = normalizeSequenceKey(input.messageSequenceKey)
-      const eventType = mapToEventType(event, ctaKind)
+      const eventType = mapToEventType(event)
 
       if (!messageCampaignKey) {
         try {
@@ -318,6 +322,8 @@ export async function recordMessageEvent(input: RecordMessageEventInput): Promis
         surface,
         messageId: canonical.messageId || messageId,
         ctaKind,
+        messageCtaSlot,
+        messageCtaDefinitionId,
         identity,
         bucketStartMs: bucket.bucketStartMs,
       })

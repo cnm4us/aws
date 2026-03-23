@@ -1043,8 +1043,7 @@ export async function ensureSchema(db: DB) {
               id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
               event_type ENUM(
                 'message_impression',
-                'message_click_primary',
-                'message_click_secondary',
+                'message_click',
                 'message_dismiss',
                 'auth_start_from_message',
                 'auth_complete_from_message',
@@ -1074,7 +1073,7 @@ export async function ensureSchema(db: DB) {
               KEY idx_feed_message_events_campaign_key_occurred (message_campaign_key, occurred_at, id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
           `)
-          await db.query(`ALTER TABLE feed_message_events ADD COLUMN IF NOT EXISTS event_type ENUM('message_impression','message_click_primary','message_click_secondary','message_dismiss','auth_start_from_message','auth_complete_from_message','donation_complete_from_message','subscription_complete_from_message','upgrade_complete_from_message') NOT NULL`)
+          await db.query(`ALTER TABLE feed_message_events ADD COLUMN IF NOT EXISTS event_type ENUM('message_impression','message_click','message_dismiss','auth_start_from_message','auth_complete_from_message','donation_complete_from_message','subscription_complete_from_message','upgrade_complete_from_message') NOT NULL`)
           await db.query(`ALTER TABLE feed_message_events ADD COLUMN IF NOT EXISTS surface ENUM('global_feed') NOT NULL DEFAULT 'global_feed'`)
           await db.query(`ALTER TABLE feed_message_events ADD COLUMN IF NOT EXISTS viewer_state ENUM('anonymous','authenticated') NOT NULL DEFAULT 'anonymous'`)
           await db.query(`ALTER TABLE feed_message_events ADD COLUMN IF NOT EXISTS session_id VARCHAR(120) NULL`)
@@ -1109,6 +1108,7 @@ export async function ensureSchema(db: DB) {
                    'message_impression',
                    'message_click_primary',
                    'message_click_secondary',
+                   'message_click',
                    'message_dismiss',
                    'auth_start_from_message',
                    'auth_complete_from_message',
@@ -1123,8 +1123,10 @@ export async function ensureSchema(db: DB) {
               UPDATE feed_message_events
                  SET event_type = CASE event_type
                    WHEN 'prompt_impression' THEN 'message_impression'
-                   WHEN 'prompt_click_primary' THEN 'message_click_primary'
-                   WHEN 'prompt_click_secondary' THEN 'message_click_secondary'
+                   WHEN 'prompt_click_primary' THEN 'message_click'
+                   WHEN 'prompt_click_secondary' THEN 'message_click'
+                   WHEN 'message_click_primary' THEN 'message_click'
+                   WHEN 'message_click_secondary' THEN 'message_click'
                    WHEN 'prompt_dismiss' THEN 'message_dismiss'
                    WHEN 'auth_start_from_prompt' THEN 'auth_start_from_message'
                    WHEN 'auth_complete_from_prompt' THEN 'auth_complete_from_message'
@@ -1134,6 +1136,8 @@ export async function ensureSchema(db: DB) {
                  'prompt_impression',
                  'prompt_click_primary',
                  'prompt_click_secondary',
+                 'message_click_primary',
+                 'message_click_secondary',
                  'prompt_dismiss',
                  'auth_start_from_prompt',
                  'auth_complete_from_prompt'
@@ -1145,8 +1149,7 @@ export async function ensureSchema(db: DB) {
               `ALTER TABLE feed_message_events
                  MODIFY COLUMN event_type ENUM(
                    'message_impression',
-                   'message_click_primary',
-                   'message_click_secondary',
+                   'message_click',
                    'message_dismiss',
                    'auth_start_from_message',
                    'auth_complete_from_message',
@@ -1272,8 +1275,7 @@ export async function ensureSchema(db: DB) {
               viewer_state ENUM('anonymous','authenticated') NOT NULL DEFAULT 'anonymous',
               event_type ENUM(
                 'message_impression',
-                'message_click_primary',
-                'message_click_secondary',
+                'message_click',
                 'message_dismiss',
                 'auth_start_from_message',
                 'auth_complete_from_message',
@@ -1299,7 +1301,7 @@ export async function ensureSchema(db: DB) {
           await db.query(`ALTER TABLE feed_message_daily_stats ADD COLUMN IF NOT EXISTS message_id BIGINT UNSIGNED NOT NULL DEFAULT 0`)
           await db.query(`ALTER TABLE feed_message_daily_stats ADD COLUMN IF NOT EXISTS message_campaign_key VARCHAR(64) NOT NULL DEFAULT ''`)
           await db.query(`ALTER TABLE feed_message_daily_stats ADD COLUMN IF NOT EXISTS viewer_state ENUM('anonymous','authenticated') NOT NULL DEFAULT 'anonymous'`)
-          await db.query(`ALTER TABLE feed_message_daily_stats ADD COLUMN IF NOT EXISTS event_type ENUM('message_impression','message_click_primary','message_click_secondary','message_dismiss','auth_start_from_message','auth_complete_from_message','donation_complete_from_message','subscription_complete_from_message','upgrade_complete_from_message') NOT NULL`)
+          await db.query(`ALTER TABLE feed_message_daily_stats ADD COLUMN IF NOT EXISTS event_type ENUM('message_impression','message_click','message_dismiss','auth_start_from_message','auth_complete_from_message','donation_complete_from_message','subscription_complete_from_message','upgrade_complete_from_message') NOT NULL`)
           await db.query(`ALTER TABLE feed_message_daily_stats ADD COLUMN IF NOT EXISTS total_events BIGINT UNSIGNED NOT NULL DEFAULT 0`)
           try {
             await db.query(
@@ -1314,6 +1316,7 @@ export async function ensureSchema(db: DB) {
                    'message_impression',
                    'message_click_primary',
                    'message_click_secondary',
+                   'message_click',
                    'message_dismiss',
                    'auth_start_from_message',
                    'auth_complete_from_message',
@@ -1328,8 +1331,10 @@ export async function ensureSchema(db: DB) {
               UPDATE feed_message_daily_stats
                  SET event_type = CASE event_type
                    WHEN 'prompt_impression' THEN 'message_impression'
-                   WHEN 'prompt_click_primary' THEN 'message_click_primary'
-                   WHEN 'prompt_click_secondary' THEN 'message_click_secondary'
+                   WHEN 'prompt_click_primary' THEN 'message_click'
+                   WHEN 'prompt_click_secondary' THEN 'message_click'
+                   WHEN 'message_click_primary' THEN 'message_click'
+                   WHEN 'message_click_secondary' THEN 'message_click'
                    WHEN 'prompt_dismiss' THEN 'message_dismiss'
                    WHEN 'auth_start_from_prompt' THEN 'auth_start_from_message'
                    WHEN 'auth_complete_from_prompt' THEN 'auth_complete_from_message'
@@ -1339,6 +1344,8 @@ export async function ensureSchema(db: DB) {
                  'prompt_impression',
                  'prompt_click_primary',
                  'prompt_click_secondary',
+                 'message_click_primary',
+                 'message_click_secondary',
                  'prompt_dismiss',
                  'auth_start_from_prompt',
                  'auth_complete_from_prompt'
@@ -1350,11 +1357,13 @@ export async function ensureSchema(db: DB) {
               `ALTER TABLE feed_message_daily_stats
                  MODIFY COLUMN event_type ENUM(
                    'message_impression',
-                   'message_click_primary',
-                   'message_click_secondary',
+                   'message_click',
                    'message_dismiss',
                    'auth_start_from_message',
-                   'auth_complete_from_message'
+                   'auth_complete_from_message',
+                   'donation_complete_from_message',
+                   'subscription_complete_from_message',
+                   'upgrade_complete_from_message'
                  ) NOT NULL`
             )
           } catch {}

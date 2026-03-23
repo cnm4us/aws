@@ -208,8 +208,8 @@ export async function getTotalsFromDaily(filter: MessageAnalyticsQueryFilter): P
   const [rows] = await db.query(
     `SELECT
         COALESCE(SUM(CASE WHEN event_type = 'message_impression' THEN total_events ELSE 0 END), 0) AS impressions,
-        COALESCE(SUM(CASE WHEN event_type = 'message_click_primary' THEN total_events ELSE 0 END), 0) AS clicks_primary,
-        COALESCE(SUM(CASE WHEN event_type = 'message_click_secondary' THEN total_events ELSE 0 END), 0) AS clicks_secondary,
+        COALESCE(SUM(CASE WHEN event_type = 'message_click' THEN total_events ELSE 0 END), 0) AS clicks_primary,
+        0 AS clicks_secondary,
         COALESCE(SUM(CASE WHEN event_type = 'message_dismiss' THEN total_events ELSE 0 END), 0) AS dismiss,
         COALESCE(SUM(CASE WHEN event_type = 'auth_start_from_message' THEN total_events ELSE 0 END), 0) AS auth_start,
         COALESCE(SUM(CASE WHEN event_type = 'auth_complete_from_message' THEN total_events ELSE 0 END), 0) AS auth_complete
@@ -230,8 +230,8 @@ export async function getByMessageFromDaily(filter: MessageAnalyticsQueryFilter)
         MAX(NULLIF(s.message_campaign_key, '')) AS message_campaign_key,
         MAX(p.name) AS message_name,
         COALESCE(SUM(CASE WHEN s.event_type = 'message_impression' THEN s.total_events ELSE 0 END), 0) AS impressions,
-        COALESCE(SUM(CASE WHEN s.event_type = 'message_click_primary' THEN s.total_events ELSE 0 END), 0) AS clicks_primary,
-        COALESCE(SUM(CASE WHEN s.event_type = 'message_click_secondary' THEN s.total_events ELSE 0 END), 0) AS clicks_secondary,
+        COALESCE(SUM(CASE WHEN s.event_type = 'message_click' THEN s.total_events ELSE 0 END), 0) AS clicks_primary,
+        0 AS clicks_secondary,
         COALESCE(SUM(CASE WHEN s.event_type = 'message_dismiss' THEN s.total_events ELSE 0 END), 0) AS dismiss,
         COALESCE(SUM(CASE WHEN s.event_type = 'auth_start_from_message' THEN s.total_events ELSE 0 END), 0) AS auth_start,
         COALESCE(SUM(CASE WHEN s.event_type = 'auth_complete_from_message' THEN s.total_events ELSE 0 END), 0) AS auth_complete
@@ -239,7 +239,7 @@ export async function getByMessageFromDaily(filter: MessageAnalyticsQueryFilter)
       LEFT JOIN feed_messages p ON p.id = s.message_id
       WHERE ${whereSql}
       GROUP BY s.message_id
-      ORDER BY impressions DESC, clicks_primary DESC, clicks_secondary DESC, s.message_id DESC
+      ORDER BY impressions DESC, (clicks_primary + clicks_secondary) DESC, s.message_id DESC
       LIMIT 1000`,
     args
   )
@@ -253,7 +253,7 @@ export async function getByDayFromDaily(filter: MessageAnalyticsQueryFilter): Pr
     `SELECT
         date_utc,
         COALESCE(SUM(CASE WHEN event_type = 'message_impression' THEN total_events ELSE 0 END), 0) AS impressions,
-        COALESCE(SUM(CASE WHEN event_type IN ('message_click_primary','message_click_secondary') THEN total_events ELSE 0 END), 0) AS clicks_total,
+        COALESCE(SUM(CASE WHEN event_type = 'message_click' THEN total_events ELSE 0 END), 0) AS clicks_total,
         COALESCE(SUM(CASE WHEN event_type = 'message_dismiss' THEN total_events ELSE 0 END), 0) AS dismiss,
         COALESCE(SUM(CASE WHEN event_type = 'auth_start_from_message' THEN total_events ELSE 0 END), 0) AS auth_start,
         COALESCE(SUM(CASE WHEN event_type = 'auth_complete_from_message' THEN total_events ELSE 0 END), 0) AS auth_complete
@@ -274,7 +274,7 @@ export async function getUniqueTotalsFromRaw(filter: MessageAnalyticsQueryFilter
   const [rows] = await db.query(
     `SELECT
         COUNT(DISTINCT CASE WHEN event_type = 'message_impression' THEN ${SESSION_KEY_EXPR} END) AS impressions_unique,
-        COUNT(DISTINCT CASE WHEN event_type IN ('message_click_primary','message_click_secondary') THEN ${SESSION_KEY_EXPR} END) AS clicks_total_unique,
+        COUNT(DISTINCT CASE WHEN event_type = 'message_click' THEN ${SESSION_KEY_EXPR} END) AS clicks_total_unique,
         COUNT(DISTINCT CASE WHEN event_type = 'message_dismiss' THEN ${SESSION_KEY_EXPR} END) AS dismiss_unique,
         COUNT(DISTINCT CASE WHEN event_type = 'auth_start_from_message' THEN ${SESSION_KEY_EXPR} END) AS auth_start_unique,
         COUNT(DISTINCT CASE WHEN event_type = 'auth_complete_from_message' AND attributed = 1 THEN ${SESSION_KEY_EXPR} END) AS auth_complete_unique
@@ -292,7 +292,7 @@ export async function getUniqueByMessageFromRaw(filter: MessageAnalyticsQueryFil
     `SELECT
         message_id AS message_id,
         COUNT(DISTINCT CASE WHEN event_type = 'message_impression' THEN ${SESSION_KEY_EXPR} END) AS impressions_unique,
-        COUNT(DISTINCT CASE WHEN event_type IN ('message_click_primary','message_click_secondary') THEN ${SESSION_KEY_EXPR} END) AS clicks_total_unique,
+        COUNT(DISTINCT CASE WHEN event_type = 'message_click' THEN ${SESSION_KEY_EXPR} END) AS clicks_total_unique,
         COUNT(DISTINCT CASE WHEN event_type = 'message_dismiss' THEN ${SESSION_KEY_EXPR} END) AS dismiss_unique,
         COUNT(DISTINCT CASE WHEN event_type = 'auth_start_from_message' THEN ${SESSION_KEY_EXPR} END) AS auth_start_unique,
         COUNT(DISTINCT CASE WHEN event_type = 'auth_complete_from_message' AND attributed = 1 THEN ${SESSION_KEY_EXPR} END) AS auth_complete_unique

@@ -15,8 +15,7 @@ export type MessageAnalyticsInputEvent =
 
 export type MessageAnalyticsEventType =
   | 'message_impression'
-  | 'message_click_primary'
-  | 'message_click_secondary'
+  | 'message_click'
   | 'message_dismiss'
   | 'auth_start_from_message'
   | 'auth_complete_from_message'
