@@ -14,6 +14,10 @@ HTTP_OPERATION_BY_PRESET = {
     "admin_messages": "HTTP GET /admin/messages",
     "admin_message_save": "HTTP POST /admin/messages/:id",
     "admin_message_analytics": "HTTP GET /admin/message-analytics",
+    "payment_checkout_page": "HTTP GET /checkout/:intent",
+    "payment_checkout_start": "HTTP POST /checkout/:intent",
+    "payment_webhook": "HTTP POST /api/payments/paypal/webhook",
+    "payment_webhook_ingest": "payments.webhook.ingest",
 }
 
 PRESET_FILES = [
@@ -23,6 +27,10 @@ PRESET_FILES = [
     "admin_messages",
     "admin_message_save",
     "admin_message_analytics",
+    "payment_checkout_page",
+    "payment_checkout_start",
+    "payment_webhook",
+    "payment_webhook_ingest",
 ]
 
 
@@ -122,8 +130,18 @@ def build_http_operation_counts(art_dir: Path, start_us: Optional[int], end_us: 
                 s for s in (tr.get("spans", []) or [])
                 if jaeger_span_in_window(s, start_us, end_us)
             ]
-            if any(str(s.get("operationName", "")) == operation_name for s in spans):
-                count += 1
+            if preset == "payment_webhook_ingest":
+                if any(
+                    any((t.get("key") == "app.operation" and str(t.get("value", "")) == operation_name) for t in (s.get("tags") or []))
+                    for s in spans
+                ):
+                    count += 1
+            else:
+                alt_ok = False
+                if preset == "payment_webhook":
+                    alt_ok = any(str(s.get("operationName", "")) == "HTTP POST /api/payments/paypal/webhook/:mode" for s in spans)
+                if any(str(s.get("operationName", "")) == operation_name for s in spans) or alt_ok:
+                    count += 1
         rows.append([preset, operation_name, str(count)])
     return rows
 
@@ -188,6 +206,12 @@ def build_expectation_checks(preset_rows: List[List[str]]) -> List[str]:
         lines.append("PASS: message_fetch/message_event relationship looks healthy")
     if warnings == 0:
         lines.append("PASS: no expectation warnings")
+    checkout_start = counts.get("payment_checkout_start", 0)
+    webhook = counts.get("payment_webhook", 0)
+    if checkout_start > 0 and webhook == 0:
+        lines.append("WARN: payment_checkout_start > 0 but payment_webhook == 0")
+    else:
+        lines.append("PASS: payment checkout/webhook relationship looks healthy")
     return lines
 
 
@@ -343,8 +367,10 @@ def parse_jaeger_events(art_dir: Path, start_us: Optional[int], end_us: Optional
                         or "/api/admin/messages" in name
                         or "/admin/message-analytics" in name
                         or "/admin/messages" in name
+                        or "/checkout/" in name
+                        or "/api/payments/paypal/webhook" in name
                     )
-                ) or op.startswith("feed.message") or op.startswith("message.analytics")
+                ) or op.startswith("feed.message") or op.startswith("message.analytics") or op.startswith("payments.")
                 if not keep:
                     continue
                 out.append({

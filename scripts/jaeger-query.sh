@@ -37,7 +37,12 @@ Presets:
   admin_messages           HTTP GET /admin/messages
   admin_message_save       HTTP POST /admin/messages/:id
   admin_message_analytics  HTTP GET /admin/message-analytics
+  payment_checkout_page    HTTP GET /checkout/:intent
+  payment_checkout_start   app.operation=payments.checkout.start
+  payment_webhook          app.operation=payments.webhook
+  payment_webhook_ingest   app.operation=payments.webhook.ingest
   feed_message_pipeline    Runs message_decide/message_fetch/message_event checks in sequence.
+  payment_pipeline         Runs payment checkout and webhook checks in sequence.
 
 Examples:
   npm run jaeger:query -- services
@@ -231,6 +236,18 @@ run_preset_once() {
     admin_message_analytics)
       op="HTTP GET /admin/message-analytics"
       ;;
+    payment_checkout_page)
+      op="HTTP GET /checkout/:intent"
+      ;;
+    payment_checkout_start)
+      tag="app.operation=payments.checkout.start"
+      ;;
+    payment_webhook)
+      tag="app.operation=payments.webhook"
+      ;;
+    payment_webhook_ingest)
+      tag="app.operation=payments.webhook.ingest"
+      ;;
     *)
       die "unknown preset: $name"
       ;;
@@ -253,6 +270,25 @@ run_preset() {
   local name="$1"
   if [[ "$name" == "feed_message_pipeline" ]]; then
     local names=("message_decide" "message_fetch" "message_event")
+    for n in "${names[@]}"; do
+      echo "== preset: $n =="
+      local old_out="$OUT_FILE"
+      if [[ -n "$OUT_FILE" ]]; then
+        local ext=""
+        if [[ "$OUT_FILE" == *.* ]]; then
+          ext=".${OUT_FILE##*.}"
+          OUT_FILE="${OUT_FILE%.*}"
+        fi
+        OUT_FILE="${OUT_FILE}-${n}${ext}"
+      fi
+      run_preset_once "$n"
+      OUT_FILE="$old_out"
+      echo
+    done
+    return 0
+  fi
+  if [[ "$name" == "payment_pipeline" ]]; then
+    local names=("payment_checkout_page" "payment_checkout_start" "payment_webhook" "payment_webhook_ingest")
     for n in "${names[@]}"; do
       echo "== preset: $n =="
       local old_out="$OUT_FILE"

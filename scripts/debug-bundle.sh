@@ -82,6 +82,10 @@ PRESETS=(
   "admin_messages"
   "admin_message_save"
   "admin_message_analytics"
+  "payment_checkout_page"
+  "payment_checkout_start"
+  "payment_webhook"
+  "payment_webhook_ingest"
 )
 
 JAEGER_BASE_URL="${JAEGER_BASE_URL:-http://127.0.0.1:16686}"
@@ -112,6 +116,10 @@ fi
 if [[ -f "$ART_DIR/jaeger-message_event.json" ]]; then
   jq -r '.data[].spans[] | select(.operationName=="HTTP POST /api/feed/message-events") | .tags[]?.key' \
     "$ART_DIR/jaeger-message_event.json" 2>/dev/null | sort -u > "$ART_DIR/jaeger-message-event-tags.txt" || true
+fi
+if [[ -f "$ART_DIR/jaeger-payment_webhook.json" ]]; then
+  jq -r '.data[].spans[] | select(.operationName=="HTTP POST /api/payments/paypal/webhook" or .operationName=="HTTP POST /api/payments/paypal/webhook/:mode") | .tags[]?.key' \
+    "$ART_DIR/jaeger-payment_webhook.json" 2>/dev/null | sort -u > "$ART_DIR/jaeger-payment-webhook-tags.txt" || true
 fi
 
 if [[ -f "$ART_DIR/console-latest.ndjson" ]]; then
@@ -181,6 +189,7 @@ fi
 
 if [[ -f "$ART_DIR/terminal-latest.log" ]]; then
   rg -o 'feed\.message\.[a-z_]+' "$ART_DIR/terminal-latest.log" | sort | uniq -c | sort -nr > "$ART_DIR/terminal-feed-message-signals.txt" || true
+  rg -o 'payments\.[a-z_\.]+' "$ART_DIR/terminal-latest.log" | sort | uniq -c | sort -nr > "$ART_DIR/terminal-payment-signals.txt" || true
 fi
 
 window_end_iso="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -266,7 +275,12 @@ now_iso="$window_end_iso"
   echo "- \`artifacts/jaeger-admin_messages.json\`"
   echo "- \`artifacts/jaeger-admin_message_save.json\`"
   echo "- \`artifacts/jaeger-admin_message_analytics.json\`"
+  echo "- \`artifacts/jaeger-payment_checkout_page.json\`"
+  echo "- \`artifacts/jaeger-payment_checkout_start.json\`"
+  echo "- \`artifacts/jaeger-payment_webhook.json\`"
+  echo "- \`artifacts/jaeger-payment_webhook_ingest.json\`"
   echo "- \`artifacts/jaeger-message-event-tags.txt\`"
+  echo "- \`artifacts/jaeger-payment-webhook-tags.txt\`"
   echo "- \`artifacts/console-categories.txt\`"
   echo "- \`artifacts/console-events.txt\`"
   echo "- \`artifacts/client-debug-config.json\`"
@@ -275,6 +289,7 @@ now_iso="$window_end_iso"
   echo "- \`artifacts/console-mode-mixed-events.txt\`"
   echo "- \`artifacts/feed-mode-checks.txt\`"
   echo "- \`artifacts/terminal-feed-message-signals.txt\`"
+  echo "- \`artifacts/terminal-payment-signals.txt\`"
   echo "- \`artifacts/timeline.ndjson\`"
   echo "- \`artifacts/timeline-top.txt\`"
   echo "- \`artifacts/human-signals.tsv\`"
@@ -401,6 +416,14 @@ now_iso="$window_end_iso"
     head -n 12 "$ART_DIR/terminal-feed-message-signals.txt" || true
     echo '```'
   fi
+  if [[ -f "$ART_DIR/terminal-payment-signals.txt" ]]; then
+    echo
+    echo "### Terminal payment signal counts (top)"
+    echo
+    echo '```text'
+    head -n 12 "$ART_DIR/terminal-payment-signals.txt" || true
+    echo '```'
+  fi
   if [[ -f "$ART_DIR/timeline-top.txt" ]]; then
     echo
     echo "### Correlated Timeline (top)"
@@ -414,6 +437,7 @@ now_iso="$window_end_iso"
   echo
   echo "- \`admin_message_analytics\` can be greater than 1 for a single manual check because page load and Apply/filter submit are separate requests."
   echo "- \`admin_messages\` currently counts \`HTTP GET /admin/messages\` (list/page view). Save actions are reported separately as \`admin_message_save\`."
+  echo "- \`payment_checkout_start\` without \`payment_webhook\` is expected when checkout is initiated but provider callback has not occurred yet."
 } > "$RUN_DIR/summary.md"
 
 echo "debug bundle created:"

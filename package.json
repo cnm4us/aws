@@ -53,7 +53,8 @@
     "e2e": "playwright test --config=e2e/playwright.config.ts",
     "e2e:headed": "cross-env HEADLESS=false playwright test --config=e2e/playwright.config.ts",
     "e2e:ui": "cross-env HEADLESS=false playwright test --config=e2e/playwright.config.ts --ui",
-    "e2e:install": "playwright install --with-deps"
+    "e2e:install": "playwright install --with-deps",
+    "payments:smoke": "bash scripts/smoke-payments.sh"
   },
   "dependencies": {
     "@aws-sdk/client-mediaconvert": "^3.645.0",

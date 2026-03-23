@@ -1,6 +1,6 @@
 # Plan 139: PayPal-First Payments With Multi-PSP Architecture
 
-Status: In Progress
+Status: Complete
 
 ## Feature Reference
 - Feature doc: `none`
@@ -54,7 +54,7 @@ Status: In Progress
 - C: Complete
 - D: Complete
 - E: Complete
-- F: Pending
+- F: Complete
 
 ## Phase A — Provider Abstraction + Schema
 - Goal:
@@ -114,9 +114,9 @@ Status: In Progress
 - Goal:
   - Make payment debugging first-class.
 - Steps:
-  - [ ] Add Jaeger/Pino tags for payment lifecycle (`provider`, `intent`, `session_id`, `status`).
-  - [ ] Add debug bundle presets for payment operations.
-  - [ ] Add smoke scripts for sandbox checkout success/failure and webhook replay idempotency.
+  - [x] Add Jaeger/Pino tags for payment lifecycle (`provider`, `intent`, `session_id`, `status`).
+  - [x] Add debug bundle presets for payment operations.
+  - [x] Add smoke scripts for sandbox checkout success/failure and webhook replay idempotency.
 - Acceptance:
   - We can quickly diagnose checkout start/complete/failure across browser, terminal, and traces.
 
@@ -142,6 +142,6 @@ Status: In Progress
 
 ## Resume Here
 - Next action:
-  - Start Phase F (observability + test harness).
+  - Plan 139 complete; move to production hardening and live/sandbox credential rollout checklist.
 - Blocking question (if any):
   - confirm secret storage preference (`env-only` now vs encrypted DB config).

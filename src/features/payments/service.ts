@@ -534,8 +534,10 @@ export async function ingestWebhook(input: {
         throw new DomainError('invalid_payment_webhook_signature', 'invalid_payment_webhook_signature', 400)
       }
 
+      let derivedPaymentStatus: string | null = null
       if (saved.inserted) {
         const parsed: PaymentWebhookParsedCompletion = adapter.parseCompletion(verified)
+        derivedPaymentStatus = parsed.checkoutStatus || null
         try {
           if (parsed.checkoutStatus) {
             let session = parsed.providerSessionId
@@ -591,6 +593,8 @@ export async function ingestWebhook(input: {
         'app.payment_mode': mode,
         'app.payment_webhook_deduped': saved.inserted ? 0 : 1,
       })
+      if (derivedPaymentStatus) span.setAttribute('app.payment_status', derivedPaymentStatus)
+      if (verified.providerEventId) span.setAttribute('app.payment_provider_event_id', verified.providerEventId)
       span.setStatus({ code: SpanStatusCode.OK })
 
       return {
