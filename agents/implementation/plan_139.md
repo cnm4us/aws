@@ -51,7 +51,7 @@ Status: In Progress
 ## Phase Status
 - A: Complete
 - B: Complete
-- C: Pending
+- C: Complete
 - D: Pending
 - E: Pending
 - F: Pending
@@ -82,10 +82,10 @@ Status: In Progress
 - Goal:
   - Route CTA payment clicks to internal checkout page with PSP options.
 - Steps:
-  - [ ] Add `/checkout/:intent` page.
-  - [ ] Carry message context (`message_id`, `campaign_key`, `message_intent_id`, `return`).
-  - [ ] Show available providers for this intent (PayPal first).
-  - [ ] Create checkout session and redirect to provider.
+  - [x] Add `/checkout/:intent` page.
+  - [x] Carry message context (`message_id`, `campaign_key`, `message_intent_id`, `return`).
+  - [x] Show available providers for this intent (PayPal first).
+  - [x] Create checkout session and redirect to provider.
 - Acceptance:
   - User can start checkout from message CTA through internal page.
 
@@ -142,6 +142,6 @@ Status: In Progress
 
 ## Resume Here
 - Next action:
-  - Start Phase C (internal checkout surface).
+  - Start Phase D (PayPal adapter + webhooks).
 - Blocking question (if any):
   - confirm secret storage preference (`env-only` now vs encrypted DB config).

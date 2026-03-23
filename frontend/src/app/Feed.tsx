@@ -2632,6 +2632,23 @@ export default function Feed() {
     try {
       const url = new URL(targetHref, window.location.origin)
       if (url.origin === window.location.origin) {
+        const returnPath = `${url.pathname}${url.search}${url.hash || ''}`
+        if ((flow === 'donate' || flow === 'subscribe' || flow === 'upgrade') && String(action.ctaExecutorType || '').toLowerCase() === 'provider_checkout') {
+          const checkout = new URL(`/checkout/${flow}`, window.location.origin)
+          checkout.searchParams.set('return', returnPath)
+          checkout.searchParams.set('message_id', String(message.id))
+          if (message.campaignKey) checkout.searchParams.set('message_campaign_key', message.campaignKey)
+          if (messageSessionId) checkout.searchParams.set('message_session_id', messageSessionId)
+          if (action.legacyKind) checkout.searchParams.set('message_cta_kind', action.legacyKind)
+          if (action.slot != null) checkout.searchParams.set('message_cta_slot', String(action.slot))
+          if (action.ctaDefinitionId != null) checkout.searchParams.set('message_cta_definition_id', String(action.ctaDefinitionId))
+          if (action.ctaIntentKey) checkout.searchParams.set('message_cta_intent_key', action.ctaIntentKey)
+          if (action.ctaExecutorType) checkout.searchParams.set('message_cta_executor_type', action.ctaExecutorType)
+          if (intentId) checkout.searchParams.set('message_intent_id', intentId)
+          if (activeSequence) checkout.searchParams.set('message_sequence_key', activeSequence)
+          window.location.href = `${checkout.pathname}${checkout.search}`
+          return
+        }
         url.searchParams.set('message_id', String(message.id))
         if (message.campaignKey) url.searchParams.set('message_campaign_key', message.campaignKey)
         if (messageSessionId) url.searchParams.set('message_session_id', messageSessionId)
@@ -2643,23 +2660,6 @@ export default function Feed() {
         if (flow) url.searchParams.set('message_flow', flow)
         if (intentId) url.searchParams.set('message_intent_id', intentId)
         if (activeSequence) url.searchParams.set('message_sequence_key', activeSequence)
-        if (flow === 'donate' || flow === 'subscribe' || flow === 'upgrade') {
-          const mock = new URL('/api/cta/mock/complete', window.location.origin)
-          mock.searchParams.set('message_id', String(message.id))
-          if (message.campaignKey) mock.searchParams.set('message_campaign_key', message.campaignKey)
-          if (messageSessionId) mock.searchParams.set('message_session_id', messageSessionId)
-          if (action.legacyKind) mock.searchParams.set('message_cta_kind', action.legacyKind)
-          if (action.slot != null) mock.searchParams.set('message_cta_slot', String(action.slot))
-          if (action.ctaDefinitionId != null) mock.searchParams.set('message_cta_definition_id', String(action.ctaDefinitionId))
-          if (action.ctaIntentKey) mock.searchParams.set('message_cta_intent_key', action.ctaIntentKey)
-          if (action.ctaExecutorType) mock.searchParams.set('message_cta_executor_type', action.ctaExecutorType)
-          mock.searchParams.set('message_flow', flow)
-          if (intentId) mock.searchParams.set('message_intent_id', intentId)
-          if (activeSequence) mock.searchParams.set('message_sequence_key', activeSequence)
-          mock.searchParams.set('return', `${url.pathname}${url.search}${url.hash || ''}`)
-          window.location.href = `${mock.pathname}${mock.search}`
-          return
-        }
         window.location.href = `${url.pathname}${url.search}${url.hash || ''}`
         return
       }

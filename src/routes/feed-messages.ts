@@ -16,6 +16,7 @@ import * as messageCtasSvc from '../features/message-cta-definitions/service'
 import * as uploadsSvc from '../features/uploads/service'
 import * as messageAnalyticsSvc from '../features/message-analytics/service'
 import * as messageAttributionSvc from '../features/message-attribution/service'
+import * as paymentsSvc from '../features/payments/service'
 import * as spacesRepo from '../features/spaces/repo'
 import { getLogger } from '../lib/logger'
 
@@ -27,6 +28,7 @@ const feedMessageFetchPaths = ['/api/feed/messages/:id']
 const feedMessageEventPaths = ['/api/feed/message-events']
 const feedMessageAuthIntentPaths = ['/api/feed/message-auth-intent']
 const feedMessageMockCompletionPaths = ['/api/cta/mock/complete']
+const checkoutPagePaths = ['/checkout/:intent']
 
 let globalSubscriptionSpaceCache: { spaceId: number | null; expiresAtMs: number } = { spaceId: null, expiresAtMs: 0 }
 
@@ -57,6 +59,61 @@ async function resolveAudienceSegment(userIdRaw: any): Promise<MessageAudienceSe
   } catch {
     return 'authenticated_non_subscriber'
   }
+}
+
+type CheckoutIntent = 'donate' | 'subscribe' | 'upgrade'
+type PaymentIntent = 'donate' | 'subscribe'
+
+function normalizeCheckoutIntent(raw: any): CheckoutIntent {
+  const value = String(raw || '').trim().toLowerCase()
+  if (value === 'donate' || value === 'subscribe' || value === 'upgrade') return value
+  throw new Error('invalid_checkout_intent')
+}
+
+function toPaymentIntent(intent: CheckoutIntent): PaymentIntent {
+  return intent === 'donate' ? 'donate' : 'subscribe'
+}
+
+function normalizeReturnPath(raw: any, fallback = '/'): string {
+  const value = String(raw || '').trim()
+  if (!value) return fallback
+  if (!value.startsWith('/')) return fallback
+  if (value.startsWith('//')) return fallback
+  if (value.length > 1200) return fallback
+  return value
+}
+
+function parsePositiveInt(raw: any): number | null {
+  if (raw == null || raw === '') return null
+  const n = Number(raw)
+  if (!Number.isFinite(n) || n <= 0) return null
+  return Math.round(n)
+}
+
+function htmlEscape(value: any): string {
+  return String(value == null ? '' : value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+async function listEnabledCheckoutModes(intent: CheckoutIntent): Promise<Array<{ provider: 'paypal'; mode: 'sandbox' | 'live'; label: string }>> {
+  const cfg = await paymentsSvc.listProviderConfigsForAdmin('paypal')
+  const modes: Array<{ provider: 'paypal'; mode: 'sandbox' | 'live'; label: string }> = []
+  for (const row of cfg.rows || []) {
+    if (String(row.status) !== 'enabled') continue
+    if (intent === 'donate' && !Number(row.donate_enabled || 0)) continue
+    if ((intent === 'subscribe' || intent === 'upgrade') && !Number(row.subscribe_enabled || 0)) continue
+    const mode = String(row.mode || '').toLowerCase() === 'live' ? 'live' : 'sandbox'
+    modes.push({
+      provider: 'paypal',
+      mode,
+      label: mode === 'live' ? 'PayPal (Live)' : 'PayPal (Sandbox)',
+    })
+  }
+  return modes
 }
 
 async function handleDecision(req: any, res: any, next: any) {
@@ -448,6 +505,171 @@ feedMessagesRouter.post(feedMessageEventPaths, async (req: any, res: any, next: 
     })
   } catch (err) {
     return next(err)
+  }
+})
+
+feedMessagesRouter.get(checkoutPagePaths, async (req: any, res: any, next: any) => {
+  try {
+    const intent = normalizeCheckoutIntent(req.params.intent)
+    const returnPath = normalizeReturnPath(req.query?.return, '/')
+    const cancelPath = normalizeReturnPath(req.query?.cancel, returnPath)
+    const messageId = parsePositiveInt(req.query?.message_id)
+    const messageCampaignKey = req.query?.message_campaign_key ? String(req.query.message_campaign_key).trim().toLowerCase() : null
+    const messageSessionId = req.query?.message_session_id ? String(req.query.message_session_id).trim() : null
+    const messageIntentId = req.query?.message_intent_id ? String(req.query.message_intent_id).trim().toLowerCase() : null
+    const messageCtaSlot = parsePositiveInt(req.query?.message_cta_slot)
+    const messageCtaDefinitionId = parsePositiveInt(req.query?.message_cta_definition_id)
+    const messageCtaKind = req.query?.message_cta_kind ? String(req.query.message_cta_kind).trim().toLowerCase() : null
+    const messageCtaIntentKey = req.query?.message_cta_intent_key ? String(req.query.message_cta_intent_key).trim().toLowerCase() : null
+    const messageCtaExecutorType = req.query?.message_cta_executor_type ? String(req.query.message_cta_executor_type).trim().toLowerCase() : null
+    const messageSequenceKey = req.query?.message_sequence_key ? String(req.query.message_sequence_key).trim() : null
+    const modes = await listEnabledCheckoutModes(intent)
+    const error = req.query?.error ? String(req.query.error) : ''
+
+    const cookies = parseCookies(req.headers.cookie)
+    const csrfToken = cookies['csrf'] || ''
+
+    let html = '<!doctype html><html lang="en"><head><meta charset="utf-8" />'
+    html += '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />'
+    html += `<title>${htmlEscape(intent)} checkout</title>`
+    html += '<style>html,body{margin:0;padding:0;background:#05070a;color:#eef2ff;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}main{max-width:640px;margin:0 auto;padding:24px 16px 36px}h1{margin:0 0 10px}p{opacity:.9}label{display:block;margin:8px 0}.card{border:1px solid rgba(255,255,255,.16);border-radius:12px;padding:14px;background:rgba(255,255,255,.03)}.error{margin:12px 0;padding:10px;border-radius:8px;background:rgba(255,81,81,.12);border:1px solid rgba(255,81,81,.35)}button,a.btn{display:inline-flex;align-items:center;justify-content:center;padding:10px 14px;border-radius:9px;border:1px solid rgba(255,255,255,.18);background:#0b2f84;color:#fff;text-decoration:none;font-weight:600}a.btn{background:transparent}.row{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}.hint{font-size:.92rem;opacity:.82}</style>'
+    html += '</head><body><main>'
+    html += `<h1>${htmlEscape(intent === 'upgrade' ? 'Upgrade checkout' : `${intent[0].toUpperCase()}${intent.slice(1)} checkout`)}</h1>`
+    html += '<p>Choose a payment provider to continue.</p>'
+    if (error) html += `<div class="error">${htmlEscape(error)}</div>`
+    if (!modes.length) {
+      html += '<div class="card"><p>No payment providers are enabled for this flow.</p>'
+      html += `<div class="row"><a class="btn" href="${htmlEscape(returnPath)}">Back</a></div></div>`
+      html += '</main></body></html>'
+      res.set('Content-Type', 'text/html; charset=utf-8')
+      return res.send(html)
+    }
+    html += `<form method="post" action="/checkout/${htmlEscape(intent)}" class="card">`
+    html += `<input type="hidden" name="_csrf" value="${htmlEscape(csrfToken)}" />`
+    html += `<input type="hidden" name="return" value="${htmlEscape(returnPath)}" />`
+    html += `<input type="hidden" name="cancel" value="${htmlEscape(cancelPath)}" />`
+    if (messageId != null) html += `<input type="hidden" name="message_id" value="${messageId}" />`
+    if (messageCampaignKey) html += `<input type="hidden" name="message_campaign_key" value="${htmlEscape(messageCampaignKey)}" />`
+    if (messageSessionId) html += `<input type="hidden" name="message_session_id" value="${htmlEscape(messageSessionId)}" />`
+    if (messageIntentId) html += `<input type="hidden" name="message_intent_id" value="${htmlEscape(messageIntentId)}" />`
+    if (messageCtaKind) html += `<input type="hidden" name="message_cta_kind" value="${htmlEscape(messageCtaKind)}" />`
+    if (messageCtaSlot != null) html += `<input type="hidden" name="message_cta_slot" value="${messageCtaSlot}" />`
+    if (messageCtaDefinitionId != null) html += `<input type="hidden" name="message_cta_definition_id" value="${messageCtaDefinitionId}" />`
+    if (messageCtaIntentKey) html += `<input type="hidden" name="message_cta_intent_key" value="${htmlEscape(messageCtaIntentKey)}" />`
+    if (messageCtaExecutorType) html += `<input type="hidden" name="message_cta_executor_type" value="${htmlEscape(messageCtaExecutorType)}" />`
+    if (messageSequenceKey) html += `<input type="hidden" name="message_sequence_key" value="${htmlEscape(messageSequenceKey)}" />`
+    html += '<div class="hint">Provider</div>'
+    for (const [idx, opt] of modes.entries()) {
+      const value = `${opt.provider}:${opt.mode}`
+      html += `<label><input type="radio" name="provider_mode" value="${htmlEscape(value)}"${idx === 0 ? ' checked' : ''} /> ${htmlEscape(opt.label)}</label>`
+    }
+    html += '<div class="row"><button type="submit">Continue</button>'
+    html += `<a class="btn" href="${htmlEscape(cancelPath)}">Cancel</a></div>`
+    html += '</form></main></body></html>'
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    return res.send(html)
+  } catch (err) {
+    return next(err)
+  }
+})
+
+feedMessagesRouter.post(checkoutPagePaths, async (req: any, res: any, next: any) => {
+  try {
+    const intent = normalizeCheckoutIntent(req.params.intent)
+    const rawProviderMode = String(req.body?.provider_mode || '').trim().toLowerCase()
+    const [providerRaw, modeRaw] = rawProviderMode.split(':')
+    const provider = providerRaw === 'paypal' ? 'paypal' : 'paypal'
+    const mode = modeRaw === 'live' ? 'live' : 'sandbox'
+    const returnPath = normalizeReturnPath(req.body?.return, '/')
+    const cancelPath = normalizeReturnPath(req.body?.cancel, returnPath)
+    const messageId = parsePositiveInt(req.body?.message_id)
+    const messageCampaignKey = req.body?.message_campaign_key ? String(req.body.message_campaign_key).trim().toLowerCase() : null
+    const messageIntentId = req.body?.message_intent_id ? String(req.body.message_intent_id).trim().toLowerCase() : null
+    const messageCtaDefinitionId = parsePositiveInt(req.body?.message_cta_definition_id)
+    const messageSessionId = req.body?.message_session_id ? String(req.body.message_session_id).trim() : null
+    const messageSequenceKey = req.body?.message_sequence_key ? String(req.body.message_sequence_key).trim() : null
+    const messageCtaSlot = parsePositiveInt(req.body?.message_cta_slot)
+    const messageCtaKind = req.body?.message_cta_kind ? String(req.body.message_cta_kind).trim().toLowerCase() : null
+    const messageCtaIntentKey = req.body?.message_cta_intent_key ? String(req.body.message_cta_intent_key).trim().toLowerCase() : null
+    const messageCtaExecutorType = req.body?.message_cta_executor_type ? String(req.body.message_cta_executor_type).trim().toLowerCase() : null
+
+    try {
+      const started = await paymentsSvc.createCheckoutSession({
+        provider,
+        mode,
+        intent: toPaymentIntent(intent),
+        userId: req.user?.id ? Number(req.user.id) : null,
+        messageId,
+        messageCampaignKey,
+        messageIntentId,
+        messageCtaDefinitionId,
+        returnUrl: returnPath,
+        cancelUrl: cancelPath,
+        metadata: {
+          checkout_intent: intent,
+          source: 'message_cta',
+          message_session_id: messageSessionId,
+          message_sequence_key: messageSequenceKey,
+          message_cta_slot: messageCtaSlot,
+          message_cta_kind: messageCtaKind,
+          message_cta_intent_key: messageCtaIntentKey,
+          message_cta_executor_type: messageCtaExecutorType,
+        },
+      })
+      const span = trace.getSpan(context.active())
+      if (span) {
+        span.setAttribute('app.operation', 'payments.checkout.start')
+        span.setAttribute('app.operation_detail', 'payments.checkout.redirect')
+        span.setAttribute('app.payment_provider', started.provider)
+        span.setAttribute('app.payment_mode', started.mode)
+        span.setAttribute('app.payment_intent', intent)
+        span.setAttribute('app.payment_checkout_id', started.checkoutId)
+        span.setAttribute('app.outcome', 'redirect')
+        if (messageId != null) span.setAttribute('app.message_id', String(messageId))
+      }
+      ;(req.log || feedMessagesLogger).info({
+        app_operation: 'payments.checkout.start',
+        app_operation_detail: 'payments.checkout.redirect',
+        app_outcome: 'redirect',
+        payment_provider: started.provider,
+        payment_mode: started.mode,
+        payment_intent: intent,
+        payment_checkout_id: started.checkoutId,
+        message_id: messageId,
+      }, 'payments.checkout.start')
+      return res.redirect(started.redirectUrl)
+    } catch (err: any) {
+      if (String(err?.code || '') === 'paypal_not_implemented' && (intent === 'donate' || intent === 'subscribe' || intent === 'upgrade')) {
+        const mock = new URL('/api/cta/mock/complete', `${req.protocol}://${req.get('host')}`)
+        if (messageId != null) mock.searchParams.set('message_id', String(messageId))
+        if (messageCampaignKey) mock.searchParams.set('message_campaign_key', messageCampaignKey)
+        if (messageSessionId) mock.searchParams.set('message_session_id', messageSessionId)
+        if (messageCtaKind) mock.searchParams.set('message_cta_kind', messageCtaKind)
+        if (messageCtaSlot != null) mock.searchParams.set('message_cta_slot', String(messageCtaSlot))
+        if (messageCtaDefinitionId != null) mock.searchParams.set('message_cta_definition_id', String(messageCtaDefinitionId))
+        if (messageCtaIntentKey) mock.searchParams.set('message_cta_intent_key', messageCtaIntentKey)
+        if (messageCtaExecutorType) mock.searchParams.set('message_cta_executor_type', messageCtaExecutorType)
+        mock.searchParams.set('message_flow', intent)
+        if (messageIntentId) mock.searchParams.set('message_intent_id', messageIntentId)
+        if (messageSequenceKey) mock.searchParams.set('message_sequence_key', messageSequenceKey)
+        mock.searchParams.set('return', returnPath)
+        const span = trace.getSpan(context.active())
+        if (span) {
+          span.setAttribute('app.operation', 'payments.checkout.start')
+          span.setAttribute('app.operation_detail', 'payments.checkout.mock_fallback')
+          span.setAttribute('app.outcome', 'redirect')
+        }
+        return res.redirect(`${mock.pathname}${mock.search}`)
+      }
+      throw err
+    }
+  } catch (err: any) {
+    const intent = String(req.params.intent || '').trim().toLowerCase()
+    const returnPath = normalizeReturnPath(req.body?.return, '/')
+    const query = new URLSearchParams()
+    query.set('return', returnPath)
+    query.set('error', String(err?.message || 'checkout_start_failed'))
+    return res.redirect(`/checkout/${encodeURIComponent(intent)}?${query.toString()}`)
   }
 })
 
