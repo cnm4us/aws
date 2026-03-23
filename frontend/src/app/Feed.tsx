@@ -53,6 +53,19 @@ type FeedMessagePayload = {
   ctaPrimaryHref: string
   ctaSecondaryLabel: string | null
   ctaSecondaryHref: string | null
+  ctaSlots: Array<{
+    slot: 1 | 2 | 3
+    ctaDefinitionId: number
+    label: string
+    labelOverride: string | null
+    styleOverride: {
+      bgColor?: string
+      textColor?: string
+    } | null
+    intentKey: string
+    executorType: string
+    executorConfig: Record<string, any>
+  }>
   widgets: {
     message: {
       enabled: boolean
@@ -431,6 +444,34 @@ async function fetchMessageById(messageId: number): Promise<FeedMessagePayload> 
   const ctaPrimaryHref = String(ctaAuthConfig.primaryHref || p.cta_primary_href || '/register?return=/')
   const ctaSecondaryHrefRaw = ctaAuthConfig.secondaryHref ?? p.cta_secondary_href
   const ctaSecondaryHref = ctaSecondaryHrefRaw == null || String(ctaSecondaryHrefRaw).trim() === '' ? null : String(ctaSecondaryHrefRaw)
+  const ctaSlots = Array.isArray(p.cta_slots)
+    ? p.cta_slots
+        .map((raw: any) => {
+          const slot = Number(raw?.slot || 0)
+          const ctaDefinitionId = Number(raw?.cta_definition_id || 0)
+          if (!Number.isFinite(slot) || slot < 1 || slot > 3) return null
+          if (!Number.isFinite(ctaDefinitionId) || ctaDefinitionId <= 0) return null
+          const styleSrc = raw?.style_override && typeof raw.style_override === 'object' ? raw.style_override : null
+          const styleOverride = styleSrc
+            ? {
+                ...(styleSrc.bgColor || styleSrc.bg_color ? { bgColor: parseHexColor(styleSrc.bgColor ?? styleSrc.bg_color, '#0B1320') } : {}),
+                ...(styleSrc.textColor || styleSrc.text_color ? { textColor: parseHexColor(styleSrc.textColor ?? styleSrc.text_color, '#FFFFFF') } : {}),
+              }
+            : null
+          return {
+            slot: Math.round(slot) as 1 | 2 | 3,
+            ctaDefinitionId: Math.round(ctaDefinitionId),
+            label: String(raw?.label || ''),
+            labelOverride: raw?.label_override == null ? null : String(raw.label_override),
+            styleOverride: styleOverride && (styleOverride.bgColor || styleOverride.textColor) ? styleOverride : null,
+            intentKey: String(raw?.intent_key || '').toLowerCase(),
+            executorType: String(raw?.executor_type || '').toLowerCase(),
+            executorConfig: raw?.executor_config && typeof raw.executor_config === 'object' ? raw.executor_config : {},
+          }
+        })
+        .filter((slot: any) => Boolean(slot))
+        .sort((a: any, b: any) => Number(a.slot) - Number(b.slot))
+    : []
   return {
     id: Number(p.id),
     campaignKey: p.campaign_key == null ? null : String(p.campaign_key),
@@ -449,6 +490,7 @@ async function fetchMessageById(messageId: number): Promise<FeedMessagePayload> 
     ctaPrimaryHref,
     ctaSecondaryLabel,
     ctaSecondaryHref,
+    ctaSlots,
     widgets: {
       message: {
         enabled: !(String(messageWidget.enabled).toLowerCase() === 'false' || Number(messageWidget.enabled) === 0),
@@ -513,6 +555,10 @@ async function sendMessageEvent(input: {
   messageCampaignKey: string | null
   sessionId: string | null
   ctaKind?: 'primary' | 'secondary'
+  messageCtaSlot?: 1 | 2 | 3 | null
+  messageCtaDefinitionId?: number | null
+  messageCtaIntentKey?: string | null
+  messageCtaExecutorType?: string | null
   flow?: 'login' | 'register' | 'donate' | 'subscribe' | 'upgrade' | null
   intentId?: string | null
   messageSequenceKey?: string | null
@@ -533,6 +579,10 @@ async function sendMessageEvent(input: {
         message_campaign_key: input.messageCampaignKey,
         message_session_id: input.sessionId,
         message_cta_kind: input.ctaKind || null,
+        message_cta_slot: input.messageCtaSlot ?? null,
+        message_cta_definition_id: input.messageCtaDefinitionId ?? null,
+        message_cta_intent_key: input.messageCtaIntentKey || null,
+        message_cta_executor_type: input.messageCtaExecutorType || null,
         message_flow: input.flow || null,
         message_intent_id: input.intentId || null,
         message_sequence_key: input.messageSequenceKey || null,
@@ -2447,6 +2497,16 @@ export default function Feed() {
   }
 
   type MessageFlow = 'login' | 'register' | 'donate' | 'subscribe' | 'upgrade'
+  type MessageCtaLegacyKind = 'primary' | 'secondary'
+  type MessageCtaAction = {
+    href: string | null
+    flow: MessageFlow | null
+    legacyKind: MessageCtaLegacyKind | null
+    slot: 1 | 2 | 3 | null
+    ctaDefinitionId: number | null
+    ctaIntentKey: string | null
+    ctaExecutorType: string | null
+  }
 
   function createClientIntentId(): string {
     try {
@@ -2458,26 +2518,63 @@ export default function Feed() {
     return `${hex()}${hex()}-${hex()}-4${hex().slice(1)}-${((8 + Math.floor(Math.random() * 4)).toString(16))}${hex().slice(1)}-${hex()}${hex()}${hex()}`.toLowerCase()
   }
 
-  function resolveCtaTarget(message: FeedMessagePayload, ctaKind: 'primary' | 'secondary'): { href: string | null; flow: MessageFlow | null } {
+  function resolveSlotAction(message: FeedMessagePayload, slotIndex: 1 | 2 | 3): MessageCtaAction {
+    const slot = Array.isArray(message.ctaSlots) ? message.ctaSlots.find((entry) => Number(entry.slot) === slotIndex) : null
+    if (!slot) {
+      return {
+        href: null,
+        flow: null,
+        legacyKind: slotIndex === 1 ? 'primary' : (slotIndex === 2 ? 'secondary' : null),
+        slot: slotIndex,
+        ctaDefinitionId: null,
+        ctaIntentKey: null,
+        ctaExecutorType: null,
+      }
+    }
+    const intent = String(slot.intentKey || '').toLowerCase()
+    const executor = String(slot.executorType || '').toLowerCase()
+    const config = slot.executorConfig && typeof slot.executorConfig === 'object' ? slot.executorConfig : {}
+    const hrefRaw = String(config.href ?? config.returnUrl ?? config.startPath ?? config.successReturn ?? '').trim()
+    let flow: MessageFlow | null = null
+    if (intent === 'login') flow = 'login'
+    else if (intent === 'register') flow = 'register'
+    else if (intent === 'donate') flow = 'donate'
+    else if (intent === 'subscribe') flow = 'subscribe'
+    else if (intent === 'upgrade') flow = 'upgrade'
+    return {
+      href: hrefRaw || null,
+      flow,
+      legacyKind: slotIndex === 1 ? 'primary' : (slotIndex === 2 ? 'secondary' : null),
+      slot: slotIndex,
+      ctaDefinitionId: Number(slot.ctaDefinitionId || 0) || null,
+      ctaIntentKey: intent || null,
+      ctaExecutorType: executor || null,
+    }
+  }
+
+  function resolveCtaTarget(message: FeedMessagePayload, ctaKind: 'primary' | 'secondary'): MessageCtaAction {
+    if (Array.isArray(message.ctaSlots) && message.ctaSlots.length > 0) {
+      return resolveSlotAction(message, ctaKind === 'primary' ? 1 : 2)
+    }
     const cta = message.widgets.cta
-    if (!cta || !cta.enabled) return { href: null, flow: null }
+    if (!cta || !cta.enabled) return { href: null, flow: null, legacyKind: ctaKind, slot: null, ctaDefinitionId: null, ctaIntentKey: null, ctaExecutorType: null }
     if (cta.type === 'auth') {
       const href = ctaKind === 'secondary' ? cta.config.auth.secondaryHref : cta.config.auth.primaryHref
       const normalized = String(href || '').trim()
-      if (!normalized) return { href: null, flow: null }
+      if (!normalized) return { href: null, flow: null, legacyKind: ctaKind, slot: null, ctaDefinitionId: null, ctaIntentKey: 'auth', ctaExecutorType: 'internal_link' }
       const lower = normalized.toLowerCase()
       const flow: 'login' | 'register' | null = lower.startsWith('/register')
         ? 'register'
         : (lower.startsWith('/login') ? 'login' : null)
-      return { href: normalized, flow }
+      return { href: normalized, flow, legacyKind: ctaKind, slot: null, ctaDefinitionId: null, ctaIntentKey: cta.type, ctaExecutorType: 'internal_link' }
     }
-    if (cta.type === 'donate') return { href: String(cta.config.donate.successReturn || '/'), flow: 'donate' }
-    if (cta.type === 'subscribe') return { href: String(cta.config.subscribe.successReturn || '/'), flow: 'subscribe' }
-    return { href: String(cta.config.upgrade.successReturn || '/'), flow: 'upgrade' }
+    if (cta.type === 'donate') return { href: String(cta.config.donate.successReturn || '/'), flow: 'donate', legacyKind: ctaKind, slot: null, ctaDefinitionId: null, ctaIntentKey: cta.type, ctaExecutorType: 'provider_checkout' }
+    if (cta.type === 'subscribe') return { href: String(cta.config.subscribe.successReturn || '/'), flow: 'subscribe', legacyKind: ctaKind, slot: null, ctaDefinitionId: null, ctaIntentKey: cta.type, ctaExecutorType: 'provider_checkout' }
+    return { href: String(cta.config.upgrade.successReturn || '/'), flow: 'upgrade', legacyKind: ctaKind, slot: null, ctaDefinitionId: null, ctaIntentKey: cta.type, ctaExecutorType: 'provider_checkout' }
   }
 
-  const handleMessageCtaClick = useCallback(async (message: FeedMessagePayload, href: string, ctaKind: 'primary' | 'secondary') => {
-    const targetHref = String(href || '').trim()
+  const handleMessageCtaClick = useCallback(async (message: FeedMessagePayload, action: MessageCtaAction) => {
+    const targetHref = String(action.href || '').trim()
     if (!targetHref) return
     const activeExposure = activeMessageExposureRef.current
     const activeSequence = activeExposure?.messageId === Number(message.id)
@@ -2486,8 +2583,7 @@ export default function Feed() {
     if (activeExposure && activeExposure.messageId === Number(message.id)) {
       activeExposure.clicked = true
     }
-    const target = resolveCtaTarget(message, ctaKind)
-    const flow = target.flow
+    const flow = action.flow
     let intentId: string | null = null
     if (flow === 'login' || flow === 'register') {
       const issued = await issueMessageAuthIntent({
@@ -2506,7 +2602,11 @@ export default function Feed() {
       messageId: message.id,
       messageCampaignKey: message.campaignKey || null,
       sessionId: messageSessionId,
-      ctaKind,
+      ctaKind: action.legacyKind,
+      messageCtaSlot: action.slot,
+      messageCtaDefinitionId: action.ctaDefinitionId,
+      messageCtaIntentKey: action.ctaIntentKey,
+      messageCtaExecutorType: action.ctaExecutorType,
       flow,
       intentId,
       messageSequenceKey: activeSequence || null,
@@ -2517,6 +2617,11 @@ export default function Feed() {
         messageId: message.id,
         messageCampaignKey: message.campaignKey || null,
         sessionId: messageSessionId,
+        ctaKind: action.legacyKind,
+        messageCtaSlot: action.slot,
+        messageCtaDefinitionId: action.ctaDefinitionId,
+        messageCtaIntentKey: action.ctaIntentKey,
+        messageCtaExecutorType: action.ctaExecutorType,
         flow,
         intentId,
         messageSequenceKey: activeSequence || null,
@@ -2528,7 +2633,11 @@ export default function Feed() {
         url.searchParams.set('message_id', String(message.id))
         if (message.campaignKey) url.searchParams.set('message_campaign_key', message.campaignKey)
         if (messageSessionId) url.searchParams.set('message_session_id', messageSessionId)
-        url.searchParams.set('message_cta_kind', ctaKind)
+        if (action.legacyKind) url.searchParams.set('message_cta_kind', action.legacyKind)
+        if (action.slot != null) url.searchParams.set('message_cta_slot', String(action.slot))
+        if (action.ctaDefinitionId != null) url.searchParams.set('message_cta_definition_id', String(action.ctaDefinitionId))
+        if (action.ctaIntentKey) url.searchParams.set('message_cta_intent_key', action.ctaIntentKey)
+        if (action.ctaExecutorType) url.searchParams.set('message_cta_executor_type', action.ctaExecutorType)
         if (flow) url.searchParams.set('message_flow', flow)
         if (intentId) url.searchParams.set('message_intent_id', intentId)
         if (activeSequence) url.searchParams.set('message_sequence_key', activeSequence)
@@ -2537,7 +2646,11 @@ export default function Feed() {
           mock.searchParams.set('message_id', String(message.id))
           if (message.campaignKey) mock.searchParams.set('message_campaign_key', message.campaignKey)
           if (messageSessionId) mock.searchParams.set('message_session_id', messageSessionId)
-          mock.searchParams.set('message_cta_kind', ctaKind)
+          if (action.legacyKind) mock.searchParams.set('message_cta_kind', action.legacyKind)
+          if (action.slot != null) mock.searchParams.set('message_cta_slot', String(action.slot))
+          if (action.ctaDefinitionId != null) mock.searchParams.set('message_cta_definition_id', String(action.ctaDefinitionId))
+          if (action.ctaIntentKey) mock.searchParams.set('message_cta_intent_key', action.ctaIntentKey)
+          if (action.ctaExecutorType) mock.searchParams.set('message_cta_executor_type', action.ctaExecutorType)
           mock.searchParams.set('message_flow', flow)
           if (intentId) mock.searchParams.set('message_intent_id', intentId)
           if (activeSequence) mock.searchParams.set('message_sequence_key', activeSequence)
@@ -3245,8 +3358,29 @@ export default function Feed() {
           const messagePlacement = messageWidgetPlacement(message.widgets.message.position, message.widgets.message.yOffsetPct, 'message')
           const ctaPlacement = messageWidgetPlacement(message.widgets.cta.position, message.widgets.cta.yOffsetPct, 'cta')
           const isCtaStacked = message.widgets.cta.layout === 'stacked'
+          const ctaSlotCount = Array.isArray(message.ctaSlots) && message.ctaSlots.length > 0
+            ? Math.max(1, Math.min(3, Number(message.widgets.cta.count || message.ctaSlots.length || 1)))
+            : (message.widgets.cta.secondaryLabel ? 2 : 1)
           const ctaPrimaryTarget = resolveCtaTarget(message, 'primary')
           const ctaSecondaryTarget = resolveCtaTarget(message, 'secondary')
+          const ctaTertiaryTarget = Array.isArray(message.ctaSlots) && message.ctaSlots.length > 0 ? resolveSlotAction(message, 3) : null
+          const slotStyle = (slot: 1 | 2 | 3) => {
+            const found = Array.isArray(message.ctaSlots) ? message.ctaSlots.find((item) => item.slot === slot) : null
+            if (!found || !found.styleOverride) return {}
+            return {
+              ...(found.styleOverride.bgColor ? { background: found.styleOverride.bgColor } : {}),
+              ...(found.styleOverride.textColor ? { color: found.styleOverride.textColor } : {}),
+            }
+          }
+          const ctaPrimaryLabel = Array.isArray(message.ctaSlots) && message.ctaSlots.length > 0
+            ? (message.ctaSlots.find((slot) => slot.slot === 1)?.label || message.widgets.cta.primaryLabel || message.ctaPrimaryLabel || 'Primary')
+            : (message.widgets.cta.primaryLabel || message.ctaPrimaryLabel || 'Primary')
+          const ctaSecondaryLabel = Array.isArray(message.ctaSlots) && message.ctaSlots.length > 0
+            ? (message.ctaSlots.find((slot) => slot.slot === 2)?.label || message.widgets.cta.secondaryLabel || 'Secondary')
+            : (message.widgets.cta.secondaryLabel || null)
+          const ctaTertiaryLabel = Array.isArray(message.ctaSlots) && message.ctaSlots.length > 0
+            ? (message.ctaSlots.find((slot) => slot.slot === 3)?.label || 'More')
+            : null
           return (
             <div
               key={slideId}
@@ -3452,8 +3586,10 @@ export default function Feed() {
                         </div>
                         <div
                           style={{
-                            display: isCtaStacked ? 'grid' : 'grid',
-                            gridTemplateColumns: isCtaStacked ? '1fr' : '1fr 1fr',
+                            display: 'grid',
+                            gridTemplateColumns: isCtaStacked
+                              ? '1fr'
+                              : (ctaSlotCount >= 3 ? '1fr 1fr 1fr' : (ctaSlotCount === 2 ? '1fr 1fr' : '1fr')),
                             alignItems: 'center',
                             width: '100%',
                             gap: 8,
@@ -3464,7 +3600,7 @@ export default function Feed() {
                             onClick={(e) => {
                               e.stopPropagation()
                               if (!ctaPrimaryTarget.href) return
-                              handleMessageCtaClick(message, ctaPrimaryTarget.href, 'primary')
+                              handleMessageCtaClick(message, ctaPrimaryTarget)
                             }}
                             style={{
                               justifySelf: isCtaStacked ? 'stretch' : 'start',
@@ -3477,18 +3613,45 @@ export default function Feed() {
                               fontWeight: 700,
                               cursor: ctaPrimaryTarget.href ? 'pointer' : 'not-allowed',
                               opacity: ctaPrimaryTarget.href ? 1 : 0.6,
+                              ...slotStyle(1),
                             }}
                             disabled={!ctaPrimaryTarget.href}
                           >
-                            {message.widgets.cta.primaryLabel || message.ctaPrimaryLabel || 'Primary'}
+                            {ctaPrimaryLabel}
                           </button>
-                          {message.widgets.cta.secondaryLabel ? (
+                          {ctaSlotCount >= 2 && ctaSecondaryLabel ? (
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation()
                                 if (!ctaSecondaryTarget.href) return
-                                handleMessageCtaClick(message, ctaSecondaryTarget.href, 'secondary')
+                                handleMessageCtaClick(message, ctaSecondaryTarget)
+                              }}
+                              style={{
+                                justifySelf: isCtaStacked ? 'stretch' : (ctaSlotCount >= 3 ? 'center' : 'end'),
+                                border: '1px solid rgba(255,255,255,0.45)',
+                                background: 'rgba(0,0,0,0.5)',
+                                color: '#fff',
+                                borderRadius: 11,
+                                padding: '8px 12px',
+                                fontSize: 15,
+                                fontWeight: 700,
+                                cursor: ctaSecondaryTarget.href ? 'pointer' : 'not-allowed',
+                                opacity: ctaSecondaryTarget.href ? 1 : 0.6,
+                                ...slotStyle(2),
+                              }}
+                              disabled={!ctaSecondaryTarget.href}
+                            >
+                              {ctaSecondaryLabel}
+                            </button>
+                          ) : null}
+                          {ctaSlotCount >= 3 && ctaTertiaryLabel && ctaTertiaryTarget ? (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                if (!ctaTertiaryTarget.href) return
+                                handleMessageCtaClick(message, ctaTertiaryTarget)
                               }}
                               style={{
                                 justifySelf: isCtaStacked ? 'stretch' : 'end',
@@ -3499,12 +3662,13 @@ export default function Feed() {
                                 padding: '8px 12px',
                                 fontSize: 15,
                                 fontWeight: 700,
-                                cursor: ctaSecondaryTarget.href ? 'pointer' : 'not-allowed',
-                                opacity: ctaSecondaryTarget.href ? 1 : 0.6,
+                                cursor: ctaTertiaryTarget.href ? 'pointer' : 'not-allowed',
+                                opacity: ctaTertiaryTarget.href ? 1 : 0.6,
+                                ...slotStyle(3),
                               }}
-                              disabled={!ctaSecondaryTarget.href}
+                              disabled={!ctaTertiaryTarget.href}
                             >
-                              {message.widgets.cta.secondaryLabel}
+                              {ctaTertiaryLabel}
                             </button>
                           ) : null}
                         </div>

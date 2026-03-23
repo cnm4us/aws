@@ -27,6 +27,10 @@ export async function insertEvent(input: {
   messageId: number
   messageCampaignKey: string | null
   ctaKind: MessageAnalyticsCtaKind
+  messageCtaSlot: number | null
+  messageCtaDefinitionId: number | null
+  messageCtaIntentKey: string | null
+  messageCtaExecutorType: string | null
   flow: 'login' | 'register' | 'donate' | 'subscribe' | 'upgrade' | null
   intentId: string | null
   messageSequenceKey: string | null
@@ -42,10 +46,11 @@ export async function insertEvent(input: {
         event_type, surface, viewer_state,
         session_id, user_id,
         message_id, message_campaign_key,
-        cta_kind, flow, intent_id, message_sequence_key, attributed,
+        cta_kind, message_cta_slot, message_cta_definition_id, message_cta_intent_key, message_cta_executor_type,
+        flow, intent_id, message_sequence_key, attributed,
         occurred_at, dedupe_bucket_start, dedupe_key
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.eventType,
       input.surface,
@@ -55,6 +60,10 @@ export async function insertEvent(input: {
       input.messageId,
       input.messageCampaignKey,
       input.ctaKind,
+      input.messageCtaSlot,
+      input.messageCtaDefinitionId,
+      input.messageCtaIntentKey,
+      input.messageCtaExecutorType,
       input.flow,
       input.intentId,
       input.messageSequenceKey,

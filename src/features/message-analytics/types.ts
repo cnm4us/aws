@@ -34,6 +34,10 @@ export type MessageAnalyticsEventRow = {
   message_id: number
   message_campaign_key: string | null
   cta_kind: string | null
+  message_cta_slot: number | null
+  message_cta_definition_id: number | null
+  message_cta_intent_key: string | null
+  message_cta_executor_type: string | null
   flow: 'login' | 'register' | 'donate' | 'subscribe' | 'upgrade' | null
   intent_id: string | null
   message_sequence_key: string | null

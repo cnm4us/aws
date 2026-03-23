@@ -65,7 +65,7 @@ Status: Planned
 - A: Completed
 - B: Completed
 - C: Completed
-- D: Pending
+- D: Completed
 - E: Pending
 - F: Pending
 
@@ -170,6 +170,6 @@ Status: Planned
 
 ## Resume Here
 - Next action:
-  - Begin Plan 138 Phase D (Feed Runtime + Click Flow).
+  - Begin Plan 138 Phase E (Migration + Compatibility Cleanup).
 - Blocking question (if any):
   - none

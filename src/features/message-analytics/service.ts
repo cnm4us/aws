@@ -208,10 +208,36 @@ type RecordMessageEventInput = {
   messageId: number | string | null | undefined
   messageCampaignKey?: string | null
   ctaKind?: MessageAnalyticsCtaKind | string | null
+  messageCtaSlot?: number | string | null
+  messageCtaDefinitionId?: number | string | null
+  messageCtaIntentKey?: string | null
+  messageCtaExecutorType?: string | null
   flow?: 'login' | 'register' | 'donate' | 'subscribe' | 'upgrade' | string | null
   intentId?: string | null
   messageSequenceKey?: string | null
   occurredAt?: Date
+}
+
+function normalizeMessageCtaSlot(raw: any): number | null {
+  if (raw == null || raw === '') return null
+  const n = Number(raw)
+  if (!Number.isFinite(n) || n < 1 || n > 3) throw new DomainError('invalid_message_cta_slot', 'invalid_message_cta_slot', 400)
+  return Math.round(n)
+}
+
+function normalizeMessageCtaDefinitionId(raw: any): number | null {
+  if (raw == null || raw === '') return null
+  const n = Number(raw)
+  if (!Number.isFinite(n) || n <= 0) throw new DomainError('invalid_message_cta_definition_id', 'invalid_message_cta_definition_id', 400)
+  return Math.round(n)
+}
+
+function normalizeMessageCtaKey(raw: any, code: string): string | null {
+  if (raw == null || raw === '') return null
+  const v = String(raw).trim().toLowerCase()
+  if (!v) return null
+  if (!/^[a-z0-9_:-]{1,64}$/.test(v)) throw new DomainError(code, code, 400)
+  return v
 }
 
 export async function recordMessageEvent(input: RecordMessageEventInput): Promise<{
@@ -242,6 +268,10 @@ export async function recordMessageEvent(input: RecordMessageEventInput): Promis
 
       let messageCampaignKey = normalizeCampaignKey(input.messageCampaignKey)
       const ctaKind = normalizeCtaKind(input.ctaKind)
+      const messageCtaSlot = normalizeMessageCtaSlot(input.messageCtaSlot)
+      const messageCtaDefinitionId = normalizeMessageCtaDefinitionId(input.messageCtaDefinitionId)
+      const messageCtaIntentKey = normalizeMessageCtaKey(input.messageCtaIntentKey, 'invalid_message_cta_intent_key')
+      const messageCtaExecutorType = normalizeMessageCtaKey(input.messageCtaExecutorType, 'invalid_message_cta_executor_type')
       const flow = normalizeFlow(input.flow)
       const intentId = normalizeIntentId(input.intentId)
       const messageSequenceKey = normalizeSequenceKey(input.messageSequenceKey)
@@ -267,6 +297,10 @@ export async function recordMessageEvent(input: RecordMessageEventInput): Promis
           input_event: event,
           ...(messageCampaignKey ? { message_campaign_key: messageCampaignKey } : {}),
           ...(ctaKind ? { cta_kind: ctaKind } : {}),
+          ...(messageCtaSlot != null ? { message_cta_slot: messageCtaSlot } : {}),
+          ...(messageCtaDefinitionId != null ? { message_cta_definition_id: messageCtaDefinitionId } : {}),
+          ...(messageCtaIntentKey ? { message_cta_intent_key: messageCtaIntentKey } : {}),
+          ...(messageCtaExecutorType ? { message_cta_executor_type: messageCtaExecutorType } : {}),
           ...(flow ? { flow } : {}),
           ...(intentId ? { intent_id: intentId } : {}),
           ...(messageSequenceKey ? { message_sequence_key: messageSequenceKey } : {}),
@@ -309,6 +343,10 @@ export async function recordMessageEvent(input: RecordMessageEventInput): Promis
         messageId: canonical.messageId || messageId,
         messageCampaignKey,
         ctaKind,
+        messageCtaSlot,
+        messageCtaDefinitionId,
+        messageCtaIntentKey,
+        messageCtaExecutorType,
         flow,
         intentId,
         messageSequenceKey,

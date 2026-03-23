@@ -12,6 +12,7 @@ import {
 } from '../features/message-decision/service'
 import type { MessageAudienceSegment, MessageDecisionSurface } from '../features/message-decision/types'
 import * as messagesSvc from '../features/messages/service'
+import * as messageCtasSvc from '../features/message-cta-definitions/service'
 import * as uploadsSvc from '../features/uploads/service'
 import * as messageAnalyticsSvc from '../features/message-analytics/service'
 import * as messageAttributionSvc from '../features/message-attribution/service'
@@ -157,6 +158,43 @@ feedMessagesRouter.get(feedMessageFetchPaths, async (req: any, res: any, next: a
     const dpr = Number.isFinite(dprRaw) && dprRaw > 0 ? dprRaw : null
 
     const message = await messagesSvc.getActiveMessageForFeedById(id)
+    const ctaSlotsRaw = Array.isArray((message as any)?.creative?.widgets?.cta?.slots)
+      ? ((message as any).creative.widgets.cta.slots as any[])
+      : []
+    const ctaDefinitionIds = Array.from(
+      new Set(
+        ctaSlotsRaw
+          .map((slot) => Number(slot?.ctaDefinitionId ?? slot?.cta_definition_id))
+          .filter((value) => Number.isFinite(value) && value > 0)
+          .map((value) => Math.round(value))
+      )
+    )
+    const resolvedCtaDefinitions = ctaDefinitionIds.length
+      ? await messageCtasSvc.resolveRuntimeDefinitionsById({ ids: ctaDefinitionIds })
+      : new Map<number, any>()
+    const resolvedCtaSlots = ctaSlotsRaw
+      .map((slotRaw) => {
+        const slot = Number(slotRaw?.slot || 0)
+        const definitionId = Number((slotRaw?.ctaDefinitionId ?? slotRaw?.cta_definition_id) || 0)
+        if (!Number.isFinite(slot) || slot < 1 || slot > 3) return null
+        if (!Number.isFinite(definitionId) || definitionId <= 0) return null
+        const resolved = resolvedCtaDefinitions.get(Math.round(definitionId))
+        if (!resolved) return null
+        const labelOverride = slotRaw?.labelOverride ?? slotRaw?.label_override
+        const styleOverride = slotRaw?.styleOverride ?? slotRaw?.style_override
+        return {
+          slot: Math.round(slot),
+          cta_definition_id: Math.round(definitionId),
+          label: labelOverride ? String(labelOverride) : String(resolved.label || ''),
+          label_override: labelOverride ? String(labelOverride) : null,
+          style_override: styleOverride && typeof styleOverride === 'object' ? styleOverride : null,
+          intent_key: String(resolved.intentKey || ''),
+          executor_type: String(resolved.executorType || ''),
+          executor_config: resolved.executorConfig || {},
+        }
+      })
+      .filter((slot): slot is NonNullable<typeof slot> => Boolean(slot))
+      .sort((a, b) => a.slot - b.slot)
 
     let media: any = null
     const backgroundMode = String(message.creative?.background?.mode || 'none').toLowerCase()
@@ -262,6 +300,7 @@ feedMessagesRouter.get(feedMessageFetchPaths, async (req: any, res: any, next: a
         cta_primary_href: message.ctaPrimaryHref,
         cta_secondary_label: message.ctaSecondaryLabel,
         cta_secondary_href: message.ctaSecondaryHref,
+        cta_slots: resolvedCtaSlots,
         creative: message.creative,
         media,
       },
@@ -281,6 +320,10 @@ feedMessagesRouter.post(feedMessageEventPaths, async (req: any, res: any, next: 
       : (body.session_id ? String(body.session_id).trim() : null)
     const messageId = body.message_id
     const flow = body.message_flow ? String(body.message_flow).trim().toLowerCase() : (body.flow ? String(body.flow).trim().toLowerCase() : null)
+    const messageCtaSlot = body.message_cta_slot != null && body.message_cta_slot !== '' ? Number(body.message_cta_slot) : null
+    const messageCtaDefinitionId = body.message_cta_definition_id != null && body.message_cta_definition_id !== '' ? Number(body.message_cta_definition_id) : null
+    const messageCtaIntentKey = body.message_cta_intent_key ? String(body.message_cta_intent_key).trim().toLowerCase() : null
+    const messageCtaExecutorType = body.message_cta_executor_type ? String(body.message_cta_executor_type).trim().toLowerCase() : null
     const intentId = body.message_intent_id
       ? String(body.message_intent_id).trim().toLowerCase()
       : (body.intent_id ? String(body.intent_id).trim().toLowerCase() : null)
@@ -291,6 +334,10 @@ feedMessagesRouter.post(feedMessageEventPaths, async (req: any, res: any, next: 
       messageId,
       messageCampaignKey,
       ctaKind,
+      messageCtaSlot,
+      messageCtaDefinitionId,
+      messageCtaIntentKey,
+      messageCtaExecutorType,
       flow,
       intentId,
       messageSequenceKey,
@@ -360,6 +407,10 @@ feedMessagesRouter.post(feedMessageEventPaths, async (req: any, res: any, next: 
       if (sessionId) span.setAttribute('app.message_session_id', sessionId)
       if (intentId) span.setAttribute('app.message_intent_id', intentId)
       if (flow) span.setAttribute('app.message_flow', flow)
+      if (messageCtaSlot != null && Number.isFinite(messageCtaSlot)) span.setAttribute('app.message_cta_slot', String(Math.round(messageCtaSlot)))
+      if (messageCtaDefinitionId != null && Number.isFinite(messageCtaDefinitionId)) span.setAttribute('app.message_cta_definition_id', String(Math.round(messageCtaDefinitionId)))
+      if (messageCtaIntentKey) span.setAttribute('app.message_cta_intent_key', messageCtaIntentKey)
+      if (messageCtaExecutorType) span.setAttribute('app.message_cta_executor_type', messageCtaExecutorType)
     }
 
     ;(req.log || feedMessagesLogger).info(
@@ -372,6 +423,10 @@ feedMessagesRouter.post(feedMessageEventPaths, async (req: any, res: any, next: 
         message_campaign_key: messageCampaignKey,
         cta_kind: ctaKind,
         message_flow: flow,
+        message_cta_slot: messageCtaSlot,
+        message_cta_definition_id: messageCtaDefinitionId,
+        message_cta_intent_key: messageCtaIntentKey,
+        message_cta_executor_type: messageCtaExecutorType,
         message_intent_id: intentId,
         message_sequence_key: messageSequenceKey,
         message_session_id: sessionId,
@@ -409,6 +464,10 @@ feedMessagesRouter.get(feedMessageMockCompletionPaths, async (req: any, res: any
     const messageId = q.message_id
     const messageCampaignKey = q.message_campaign_key ? String(q.message_campaign_key) : null
     const ctaKind = q.message_cta_kind ? String(q.message_cta_kind) : (q.cta_kind ? String(q.cta_kind) : null)
+    const messageCtaSlot = q.message_cta_slot != null && q.message_cta_slot !== '' ? Number(q.message_cta_slot) : null
+    const messageCtaDefinitionId = q.message_cta_definition_id != null && q.message_cta_definition_id !== '' ? Number(q.message_cta_definition_id) : null
+    const messageCtaIntentKey = q.message_cta_intent_key ? String(q.message_cta_intent_key).trim().toLowerCase() : null
+    const messageCtaExecutorType = q.message_cta_executor_type ? String(q.message_cta_executor_type).trim().toLowerCase() : null
     const sessionId = q.message_session_id ? String(q.message_session_id).trim() : (q.session_id ? String(q.session_id).trim() : null)
     const intentId = q.message_intent_id ? String(q.message_intent_id).trim().toLowerCase() : (q.intent_id ? String(q.intent_id).trim().toLowerCase() : null)
     const messageSequenceKey = q.message_sequence_key ? String(q.message_sequence_key).trim() : null
@@ -418,6 +477,10 @@ feedMessagesRouter.get(feedMessageMockCompletionPaths, async (req: any, res: any
       messageId,
       messageCampaignKey,
       ctaKind,
+      messageCtaSlot,
+      messageCtaDefinitionId,
+      messageCtaIntentKey,
+      messageCtaExecutorType,
       flow: rawFlow,
       intentId,
       messageSequenceKey,
@@ -454,6 +517,10 @@ feedMessagesRouter.get(feedMessageMockCompletionPaths, async (req: any, res: any
       span.setAttribute('app.outcome', event)
       if (intentId) span.setAttribute('app.message_intent_id', intentId)
       if (rawFlow) span.setAttribute('app.message_flow', rawFlow)
+      if (messageCtaSlot != null && Number.isFinite(messageCtaSlot)) span.setAttribute('app.message_cta_slot', String(Math.round(messageCtaSlot)))
+      if (messageCtaDefinitionId != null && Number.isFinite(messageCtaDefinitionId)) span.setAttribute('app.message_cta_definition_id', String(Math.round(messageCtaDefinitionId)))
+      if (messageCtaIntentKey) span.setAttribute('app.message_cta_intent_key', messageCtaIntentKey)
+      if (messageCtaExecutorType) span.setAttribute('app.message_cta_executor_type', messageCtaExecutorType)
     }
 
     ;(req.log || feedMessagesLogger).info({
@@ -465,6 +532,10 @@ feedMessagesRouter.get(feedMessageMockCompletionPaths, async (req: any, res: any
       message_campaign_key: messageCampaignKey,
       cta_kind: ctaKind,
       message_flow: rawFlow || null,
+      message_cta_slot: messageCtaSlot,
+      message_cta_definition_id: messageCtaDefinitionId,
+      message_cta_intent_key: messageCtaIntentKey,
+      message_cta_executor_type: messageCtaExecutorType,
       message_intent_id: intentId,
       message_sequence_key: messageSequenceKey,
       message_session_id: sessionId,

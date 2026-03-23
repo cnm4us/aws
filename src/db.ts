@@ -1084,6 +1084,10 @@ export async function ensureSchema(db: DB) {
           await db.query(`ALTER TABLE feed_message_events ADD COLUMN IF NOT EXISTS message_id BIGINT UNSIGNED NOT NULL DEFAULT 0`)
           await db.query(`ALTER TABLE feed_message_events ADD COLUMN IF NOT EXISTS message_campaign_key VARCHAR(64) NULL`)
           await db.query(`ALTER TABLE feed_message_events ADD COLUMN IF NOT EXISTS cta_kind ENUM('primary','secondary') NULL`)
+          await db.query(`ALTER TABLE feed_message_events ADD COLUMN IF NOT EXISTS message_cta_slot TINYINT UNSIGNED NULL`)
+          await db.query(`ALTER TABLE feed_message_events ADD COLUMN IF NOT EXISTS message_cta_definition_id BIGINT UNSIGNED NULL`)
+          await db.query(`ALTER TABLE feed_message_events ADD COLUMN IF NOT EXISTS message_cta_intent_key VARCHAR(64) NULL`)
+          await db.query(`ALTER TABLE feed_message_events ADD COLUMN IF NOT EXISTS message_cta_executor_type VARCHAR(64) NULL`)
           await db.query(`ALTER TABLE feed_message_events ADD COLUMN IF NOT EXISTS flow ENUM('login','register','donate','subscribe','upgrade') NULL`)
           try { await db.query(`ALTER TABLE feed_message_events MODIFY COLUMN flow ENUM('login','register','donate','subscribe','upgrade') NULL`) } catch {}
           await db.query(`ALTER TABLE feed_message_events ADD COLUMN IF NOT EXISTS intent_id CHAR(36) NULL`)
@@ -1170,6 +1174,8 @@ export async function ensureSchema(db: DB) {
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_events_user_event ON feed_message_events (user_id, event_type, occurred_at, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_events_intent_event ON feed_message_events (intent_id, event_type, occurred_at, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_events_sequence_occurred ON feed_message_events (message_sequence_key, occurred_at, id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_events_slot_event ON feed_message_events (message_cta_slot, event_type, occurred_at, id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_events_definition_event ON feed_message_events (message_cta_definition_id, event_type, occurred_at, id)`); } catch {}
           try {
             await db.query(`
               UPDATE feed_message_events
