@@ -1,6 +1,6 @@
 # Plan 139: PayPal-First Payments With Multi-PSP Architecture
 
-Status: Planned
+Status: In Progress
 
 ## Feature Reference
 - Feature doc: `none`
@@ -49,8 +49,8 @@ Status: Planned
   - `provider`, `provider_event_id` (unique), payload, signature status, processed status, processed_at.
 
 ## Phase Status
-- A: Pending
-- B: Pending
+- A: Complete
+- B: Complete
 - C: Pending
 - D: Pending
 - E: Pending
@@ -60,10 +60,10 @@ Status: Planned
 - Goal:
   - Add provider-neutral payment domain and persistence.
 - Steps:
-  - [ ] Add payment tables (configs, catalog, sessions, webhook events).
-  - [ ] Add provider adapter interface + registry.
-  - [ ] Add base payment service contracts (create session, mark complete, fail/cancel).
-  - [ ] Add strict idempotency strategy for webhook events.
+  - [x] Add payment tables (configs, catalog, sessions, webhook events).
+  - [x] Add provider adapter interface + registry.
+  - [x] Add base payment service contracts (create session, mark complete, fail/cancel).
+  - [x] Add strict idempotency strategy for webhook events.
 - Acceptance:
   - Core payment domain compiles and stores sessions/events independently of PayPal SDK details.
 
@@ -71,10 +71,10 @@ Status: Planned
 - Goal:
   - Let admin manage PayPal credentials and mode safely.
 - Steps:
-  - [ ] `/admin/payments/providers` for provider config.
-  - [ ] Sandbox/live mode selector + enabled toggles.
-  - [ ] Credential input with masked display and update audit logging.
-  - [ ] `/admin/payments/catalog` for donate campaigns and subscribe plans.
+  - [x] `/admin/payments/providers` for provider config.
+  - [x] Sandbox/live mode selector + enabled toggles.
+  - [x] Credential input with masked display and update audit logging.
+  - [x] `/admin/payments/catalog` for donate campaigns and subscribe plans.
 - Acceptance:
   - Admin can configure PayPal sandbox/live and maintain catalog mappings.
 
@@ -142,6 +142,6 @@ Status: Planned
 
 ## Resume Here
 - Next action:
-  - Start Phase A (provider abstraction + schema).
+  - Start Phase C (internal checkout surface).
 - Blocking question (if any):
   - confirm secret storage preference (`env-only` now vs encrypted DB config).

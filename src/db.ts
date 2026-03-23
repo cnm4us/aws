@@ -1410,6 +1410,186 @@ export async function ensureSchema(db: DB) {
             )
           } catch {}
 
+          // --- Payments domain foundation (plan_139A) ---
+          await db.query(`
+            CREATE TABLE IF NOT EXISTS payment_provider_configs (
+              id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+              provider ENUM('paypal') NOT NULL,
+              mode ENUM('sandbox','live') NOT NULL DEFAULT 'sandbox',
+              status ENUM('disabled','enabled') NOT NULL DEFAULT 'disabled',
+              donate_enabled TINYINT(1) NOT NULL DEFAULT 0,
+              subscribe_enabled TINYINT(1) NOT NULL DEFAULT 0,
+              credentials_json JSON NOT NULL,
+              webhook_id VARCHAR(191) NULL,
+              webhook_secret VARCHAR(191) NULL,
+              notes VARCHAR(500) NULL,
+              created_by BIGINT UNSIGNED NOT NULL DEFAULT 0,
+              updated_by BIGINT UNSIGNED NOT NULL DEFAULT 0,
+              created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              UNIQUE KEY uniq_payment_provider_mode (provider, mode),
+              KEY idx_payment_provider_status (status, provider, mode)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+          `)
+          await db.query(`ALTER TABLE payment_provider_configs ADD COLUMN IF NOT EXISTS provider ENUM('paypal') NOT NULL`)
+          await db.query(`ALTER TABLE payment_provider_configs ADD COLUMN IF NOT EXISTS mode ENUM('sandbox','live') NOT NULL DEFAULT 'sandbox'`)
+          await db.query(`ALTER TABLE payment_provider_configs ADD COLUMN IF NOT EXISTS status ENUM('disabled','enabled') NOT NULL DEFAULT 'disabled'`)
+          await db.query(`ALTER TABLE payment_provider_configs ADD COLUMN IF NOT EXISTS donate_enabled TINYINT(1) NOT NULL DEFAULT 0`)
+          await db.query(`ALTER TABLE payment_provider_configs ADD COLUMN IF NOT EXISTS subscribe_enabled TINYINT(1) NOT NULL DEFAULT 0`)
+          await db.query(`ALTER TABLE payment_provider_configs ADD COLUMN IF NOT EXISTS credentials_json JSON NULL`)
+          try { await db.query(`UPDATE payment_provider_configs SET credentials_json = JSON_OBJECT() WHERE credentials_json IS NULL`) } catch {}
+          try { await db.query(`ALTER TABLE payment_provider_configs MODIFY COLUMN credentials_json JSON NOT NULL`) } catch {}
+          await db.query(`ALTER TABLE payment_provider_configs ADD COLUMN IF NOT EXISTS webhook_id VARCHAR(191) NULL`)
+          await db.query(`ALTER TABLE payment_provider_configs ADD COLUMN IF NOT EXISTS webhook_secret VARCHAR(191) NULL`)
+          await db.query(`ALTER TABLE payment_provider_configs ADD COLUMN IF NOT EXISTS notes VARCHAR(500) NULL`)
+          await db.query(`ALTER TABLE payment_provider_configs ADD COLUMN IF NOT EXISTS created_by BIGINT UNSIGNED NOT NULL DEFAULT 0`)
+          await db.query(`ALTER TABLE payment_provider_configs ADD COLUMN IF NOT EXISTS updated_by BIGINT UNSIGNED NOT NULL DEFAULT 0`)
+          try { await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_payment_provider_mode ON payment_provider_configs (provider, mode)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_payment_provider_status ON payment_provider_configs (status, provider, mode)`); } catch {}
+
+          await db.query(`
+            CREATE TABLE IF NOT EXISTS payment_catalog_items (
+              id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+              kind ENUM('donate_campaign','subscribe_plan') NOT NULL,
+              item_key VARCHAR(64) NOT NULL,
+              label VARCHAR(160) NOT NULL,
+              status ENUM('draft','active','archived') NOT NULL DEFAULT 'draft',
+              amount_cents BIGINT UNSIGNED NULL,
+              currency CHAR(3) NOT NULL DEFAULT 'USD',
+              provider ENUM('paypal') NOT NULL DEFAULT 'paypal',
+              provider_ref VARCHAR(191) NULL,
+              config_json JSON NOT NULL,
+              created_by BIGINT UNSIGNED NOT NULL DEFAULT 0,
+              updated_by BIGINT UNSIGNED NOT NULL DEFAULT 0,
+              created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              UNIQUE KEY uniq_payment_catalog_kind_key (kind, item_key),
+              KEY idx_payment_catalog_status_kind (status, kind, id),
+              KEY idx_payment_catalog_provider_ref (provider, provider_ref)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+          `)
+          await db.query(`ALTER TABLE payment_catalog_items ADD COLUMN IF NOT EXISTS kind ENUM('donate_campaign','subscribe_plan') NOT NULL`)
+          await db.query(`ALTER TABLE payment_catalog_items ADD COLUMN IF NOT EXISTS item_key VARCHAR(64) NOT NULL`)
+          await db.query(`ALTER TABLE payment_catalog_items ADD COLUMN IF NOT EXISTS label VARCHAR(160) NOT NULL`)
+          await db.query(`ALTER TABLE payment_catalog_items ADD COLUMN IF NOT EXISTS status ENUM('draft','active','archived') NOT NULL DEFAULT 'draft'`)
+          await db.query(`ALTER TABLE payment_catalog_items ADD COLUMN IF NOT EXISTS amount_cents BIGINT UNSIGNED NULL`)
+          await db.query(`ALTER TABLE payment_catalog_items ADD COLUMN IF NOT EXISTS currency CHAR(3) NOT NULL DEFAULT 'USD'`)
+          await db.query(`ALTER TABLE payment_catalog_items ADD COLUMN IF NOT EXISTS provider ENUM('paypal') NOT NULL DEFAULT 'paypal'`)
+          await db.query(`ALTER TABLE payment_catalog_items ADD COLUMN IF NOT EXISTS provider_ref VARCHAR(191) NULL`)
+          await db.query(`ALTER TABLE payment_catalog_items ADD COLUMN IF NOT EXISTS config_json JSON NULL`)
+          try { await db.query(`UPDATE payment_catalog_items SET config_json = JSON_OBJECT() WHERE config_json IS NULL`) } catch {}
+          try { await db.query(`ALTER TABLE payment_catalog_items MODIFY COLUMN config_json JSON NOT NULL`) } catch {}
+          await db.query(`ALTER TABLE payment_catalog_items ADD COLUMN IF NOT EXISTS created_by BIGINT UNSIGNED NOT NULL DEFAULT 0`)
+          await db.query(`ALTER TABLE payment_catalog_items ADD COLUMN IF NOT EXISTS updated_by BIGINT UNSIGNED NOT NULL DEFAULT 0`)
+          try { await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_payment_catalog_kind_key ON payment_catalog_items (kind, item_key)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_payment_catalog_status_kind ON payment_catalog_items (status, kind, id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_payment_catalog_provider_ref ON payment_catalog_items (provider, provider_ref)`); } catch {}
+
+          await db.query(`
+            CREATE TABLE IF NOT EXISTS payment_checkout_sessions (
+              id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+              checkout_id CHAR(36) NOT NULL,
+              provider ENUM('paypal') NOT NULL DEFAULT 'paypal',
+              mode ENUM('sandbox','live') NOT NULL DEFAULT 'sandbox',
+              intent ENUM('donate','subscribe') NOT NULL,
+              status ENUM('pending','redirected','completed','failed','canceled','expired') NOT NULL DEFAULT 'pending',
+              user_id BIGINT UNSIGNED NULL,
+              message_id BIGINT UNSIGNED NULL,
+              message_campaign_key VARCHAR(64) NULL,
+              message_intent_id CHAR(36) NULL,
+              message_cta_definition_id BIGINT UNSIGNED NULL,
+              catalog_item_id BIGINT UNSIGNED NULL,
+              amount_cents BIGINT UNSIGNED NULL,
+              currency CHAR(3) NOT NULL DEFAULT 'USD',
+              provider_session_id VARCHAR(191) NULL,
+              provider_order_id VARCHAR(191) NULL,
+              return_url VARCHAR(1200) NULL,
+              cancel_url VARCHAR(1200) NULL,
+              metadata_json JSON NOT NULL,
+              completed_at DATETIME NULL,
+              failed_at DATETIME NULL,
+              expired_at DATETIME NULL,
+              created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              UNIQUE KEY uniq_payment_checkout_checkout_id (checkout_id),
+              UNIQUE KEY uniq_payment_checkout_provider_session (provider, provider_session_id),
+              KEY idx_payment_checkout_status_created (status, created_at, id),
+              KEY idx_payment_checkout_message_intent (message_intent_id, created_at, id),
+              KEY idx_payment_checkout_user_created (user_id, created_at, id),
+              KEY idx_payment_checkout_provider_order (provider, provider_order_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+          `)
+          await db.query(`ALTER TABLE payment_checkout_sessions ADD COLUMN IF NOT EXISTS checkout_id CHAR(36) NOT NULL`)
+          await db.query(`ALTER TABLE payment_checkout_sessions ADD COLUMN IF NOT EXISTS provider ENUM('paypal') NOT NULL DEFAULT 'paypal'`)
+          await db.query(`ALTER TABLE payment_checkout_sessions ADD COLUMN IF NOT EXISTS mode ENUM('sandbox','live') NOT NULL DEFAULT 'sandbox'`)
+          await db.query(`ALTER TABLE payment_checkout_sessions ADD COLUMN IF NOT EXISTS intent ENUM('donate','subscribe') NOT NULL`)
+          await db.query(`ALTER TABLE payment_checkout_sessions ADD COLUMN IF NOT EXISTS status ENUM('pending','redirected','completed','failed','canceled','expired') NOT NULL DEFAULT 'pending'`)
+          await db.query(`ALTER TABLE payment_checkout_sessions ADD COLUMN IF NOT EXISTS user_id BIGINT UNSIGNED NULL`)
+          await db.query(`ALTER TABLE payment_checkout_sessions ADD COLUMN IF NOT EXISTS message_id BIGINT UNSIGNED NULL`)
+          await db.query(`ALTER TABLE payment_checkout_sessions ADD COLUMN IF NOT EXISTS message_campaign_key VARCHAR(64) NULL`)
+          await db.query(`ALTER TABLE payment_checkout_sessions ADD COLUMN IF NOT EXISTS message_intent_id CHAR(36) NULL`)
+          await db.query(`ALTER TABLE payment_checkout_sessions ADD COLUMN IF NOT EXISTS message_cta_definition_id BIGINT UNSIGNED NULL`)
+          await db.query(`ALTER TABLE payment_checkout_sessions ADD COLUMN IF NOT EXISTS catalog_item_id BIGINT UNSIGNED NULL`)
+          await db.query(`ALTER TABLE payment_checkout_sessions ADD COLUMN IF NOT EXISTS amount_cents BIGINT UNSIGNED NULL`)
+          await db.query(`ALTER TABLE payment_checkout_sessions ADD COLUMN IF NOT EXISTS currency CHAR(3) NOT NULL DEFAULT 'USD'`)
+          await db.query(`ALTER TABLE payment_checkout_sessions ADD COLUMN IF NOT EXISTS provider_session_id VARCHAR(191) NULL`)
+          await db.query(`ALTER TABLE payment_checkout_sessions ADD COLUMN IF NOT EXISTS provider_order_id VARCHAR(191) NULL`)
+          await db.query(`ALTER TABLE payment_checkout_sessions ADD COLUMN IF NOT EXISTS return_url VARCHAR(1200) NULL`)
+          await db.query(`ALTER TABLE payment_checkout_sessions ADD COLUMN IF NOT EXISTS cancel_url VARCHAR(1200) NULL`)
+          await db.query(`ALTER TABLE payment_checkout_sessions ADD COLUMN IF NOT EXISTS metadata_json JSON NULL`)
+          try { await db.query(`UPDATE payment_checkout_sessions SET metadata_json = JSON_OBJECT() WHERE metadata_json IS NULL`) } catch {}
+          try { await db.query(`ALTER TABLE payment_checkout_sessions MODIFY COLUMN metadata_json JSON NOT NULL`) } catch {}
+          await db.query(`ALTER TABLE payment_checkout_sessions ADD COLUMN IF NOT EXISTS completed_at DATETIME NULL`)
+          await db.query(`ALTER TABLE payment_checkout_sessions ADD COLUMN IF NOT EXISTS failed_at DATETIME NULL`)
+          await db.query(`ALTER TABLE payment_checkout_sessions ADD COLUMN IF NOT EXISTS expired_at DATETIME NULL`)
+          try { await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_payment_checkout_checkout_id ON payment_checkout_sessions (checkout_id)`); } catch {}
+          try { await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_payment_checkout_provider_session ON payment_checkout_sessions (provider, provider_session_id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_payment_checkout_status_created ON payment_checkout_sessions (status, created_at, id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_payment_checkout_message_intent ON payment_checkout_sessions (message_intent_id, created_at, id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_payment_checkout_user_created ON payment_checkout_sessions (user_id, created_at, id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_payment_checkout_provider_order ON payment_checkout_sessions (provider, provider_order_id)`); } catch {}
+
+          await db.query(`
+            CREATE TABLE IF NOT EXISTS payment_webhook_events (
+              id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+              provider ENUM('paypal') NOT NULL DEFAULT 'paypal',
+              mode ENUM('sandbox','live') NOT NULL DEFAULT 'sandbox',
+              provider_event_id VARCHAR(191) NULL,
+              event_type VARCHAR(120) NOT NULL,
+              dedupe_key CHAR(64) NOT NULL,
+              signature_valid TINYINT(1) NOT NULL DEFAULT 0,
+              processing_state ENUM('pending','processed','ignored','failed') NOT NULL DEFAULT 'pending',
+              error_message VARCHAR(500) NULL,
+              payload_json JSON NOT NULL,
+              headers_json JSON NULL,
+              received_at DATETIME NOT NULL,
+              processed_at DATETIME NULL,
+              created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              UNIQUE KEY uniq_payment_webhook_dedupe_key (dedupe_key),
+              KEY idx_payment_webhook_provider_event (provider, mode, provider_event_id),
+              KEY idx_payment_webhook_state_received (processing_state, received_at, id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+          `)
+          await db.query(`ALTER TABLE payment_webhook_events ADD COLUMN IF NOT EXISTS provider ENUM('paypal') NOT NULL DEFAULT 'paypal'`)
+          await db.query(`ALTER TABLE payment_webhook_events ADD COLUMN IF NOT EXISTS mode ENUM('sandbox','live') NOT NULL DEFAULT 'sandbox'`)
+          await db.query(`ALTER TABLE payment_webhook_events ADD COLUMN IF NOT EXISTS provider_event_id VARCHAR(191) NULL`)
+          await db.query(`ALTER TABLE payment_webhook_events ADD COLUMN IF NOT EXISTS event_type VARCHAR(120) NOT NULL`)
+          await db.query(`ALTER TABLE payment_webhook_events ADD COLUMN IF NOT EXISTS dedupe_key CHAR(64) NULL`)
+          try { await db.query(`UPDATE payment_webhook_events SET dedupe_key = LPAD(HEX(id), 64, '0') WHERE dedupe_key IS NULL OR dedupe_key = ''`) } catch {}
+          try { await db.query(`ALTER TABLE payment_webhook_events MODIFY COLUMN dedupe_key CHAR(64) NOT NULL`) } catch {}
+          await db.query(`ALTER TABLE payment_webhook_events ADD COLUMN IF NOT EXISTS signature_valid TINYINT(1) NOT NULL DEFAULT 0`)
+          await db.query(`ALTER TABLE payment_webhook_events ADD COLUMN IF NOT EXISTS processing_state ENUM('pending','processed','ignored','failed') NOT NULL DEFAULT 'pending'`)
+          await db.query(`ALTER TABLE payment_webhook_events ADD COLUMN IF NOT EXISTS error_message VARCHAR(500) NULL`)
+          await db.query(`ALTER TABLE payment_webhook_events ADD COLUMN IF NOT EXISTS payload_json JSON NULL`)
+          try { await db.query(`UPDATE payment_webhook_events SET payload_json = JSON_OBJECT() WHERE payload_json IS NULL`) } catch {}
+          try { await db.query(`ALTER TABLE payment_webhook_events MODIFY COLUMN payload_json JSON NOT NULL`) } catch {}
+          await db.query(`ALTER TABLE payment_webhook_events ADD COLUMN IF NOT EXISTS headers_json JSON NULL`)
+          await db.query(`ALTER TABLE payment_webhook_events ADD COLUMN IF NOT EXISTS received_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP`)
+          await db.query(`ALTER TABLE payment_webhook_events ADD COLUMN IF NOT EXISTS processed_at DATETIME NULL`)
+          try { await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_payment_webhook_dedupe_key ON payment_webhook_events (dedupe_key)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_payment_webhook_provider_event ON payment_webhook_events (provider, mode, provider_event_id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_payment_webhook_state_received ON payment_webhook_events (processing_state, received_at, id)`); } catch {}
+
           await reconcileLegacyPromptNamedTables(db)
 
           // --- Feed baseline activity analytics (plan_115 Phase B) ---

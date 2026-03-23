@@ -21,6 +21,7 @@ import * as messagesSvc from '../features/messages/service'
 import * as messageCtasSvc from '../features/message-cta-definitions/service'
 import * as messageAnalyticsSvc from '../features/message-analytics/service'
 import * as feedActivitySvc from '../features/feed-activity/service'
+import * as paymentsSvc from '../features/payments/service'
 import { getAnalyticsSinkHealth } from '../features/analytics-sink/service'
 import { GetObjectCommand, DeleteObjectsCommand, ListObjectsV2Command } from '@aws-sdk/client-s3'
 import { s3 } from '../services/s3'
@@ -649,6 +650,8 @@ type AdminNavKey =
   | 'media_jobs'
   | 'messages'
   | 'message_ctas'
+  | 'payment_providers'
+  | 'payment_catalog'
   | 'analytics'
   | 'message_analytics'
   | 'analytics_sink'
@@ -674,6 +677,8 @@ const ADMIN_NAV_ITEMS: Array<{ key: AdminNavKey; label: string; href: string }> 
 	{ key: 'media_jobs', label: 'Media Jobs', href: '/admin/media-jobs' },
   { key: 'messages', label: 'Messages', href: '/admin/messages' },
   { key: 'message_ctas', label: 'Message CTAs', href: '/admin/message-ctas' },
+  { key: 'payment_providers', label: 'Payment Providers', href: '/admin/payments/providers' },
+  { key: 'payment_catalog', label: 'Payment Catalog', href: '/admin/payments/catalog' },
   { key: 'analytics', label: 'Analytics', href: '/admin/analytics' },
   { key: 'message_analytics', label: 'Message Analytics', href: '/admin/message-analytics' },
   { key: 'analytics_sink', label: 'Analytics Sink', href: '/admin/analytics-sink' },
@@ -2994,6 +2999,8 @@ pagesRouter.get('/admin', async (_req: any, res: any) => {
     { title: 'Media Jobs', href: '/admin/media-jobs', desc: 'Debug ffmpeg mastering jobs (logs, retries, purge)' },
     { title: 'Messages', href: '/admin/messages', desc: 'Manage in-feed message units, targeting, and lifecycle controls' },
     { title: 'Message CTAs', href: '/admin/message-ctas', desc: 'Reusable CTA definitions (intent + executor + config) for in-feed messages' },
+    { title: 'Payment Providers', href: '/admin/payments/providers', desc: 'Configure PSP credentials and sandbox/live mode toggles' },
+    { title: 'Payment Catalog', href: '/admin/payments/catalog', desc: 'Manage donation campaigns and subscription plans mapped to PSP products' },
     { title: 'Analytics', href: '/admin/analytics', desc: 'Cross-metric baseline feed + message conversion view with daily trend' },
     { title: 'Message Analytics', href: '/admin/message-analytics', desc: 'Funnel metrics, conversion rates, and overexposure detection for in-feed messages' },
     { title: 'Analytics Sink', href: '/admin/analytics-sink', desc: 'Optional external sink health and counters (secondary analytics path)' },
@@ -3102,6 +3109,31 @@ const MESSAGE_CTA_PROVIDER_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'square', label: 'Square' },
 ]
 
+const PAYMENT_PROVIDER_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'paypal', label: 'PayPal' },
+]
+
+const PAYMENT_MODE_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'sandbox', label: 'Sandbox' },
+  { value: 'live', label: 'Live' },
+]
+
+const PAYMENT_PROVIDER_STATUS_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'disabled', label: 'Disabled' },
+  { value: 'enabled', label: 'Enabled' },
+]
+
+const PAYMENT_CATALOG_KIND_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'donate_campaign', label: 'Donate Campaign' },
+  { value: 'subscribe_plan', label: 'Subscribe Plan' },
+]
+
+const PAYMENT_CATALOG_STATUS_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'draft', label: 'Draft' },
+  { value: 'active', label: 'Active' },
+  { value: 'archived', label: 'Archived' },
+]
+
 function parseBoolLoose(raw: any, fallback = false): boolean {
   if (raw == null || raw === '') return fallback
   if (typeof raw === 'boolean') return raw
@@ -3120,6 +3152,22 @@ function parseColorLoose(raw: any, fallback: string): string {
   const value = String(raw || '').trim()
   if (!/^#[0-9a-fA-F]{6}$/.test(value)) return fallback
   return value.toUpperCase()
+}
+
+function parseJsonObjectLoose(raw: any): Record<string, any> {
+  if (raw == null || raw === '') return {}
+  try {
+    const obj = typeof raw === 'string' ? JSON.parse(raw) : raw
+    if (obj && typeof obj === 'object' && !Array.isArray(obj)) return obj as Record<string, any>
+  } catch {}
+  return {}
+}
+
+function maskToken(value: string): string {
+  const v = String(value || '')
+  if (!v) return 'not set'
+  if (v.length <= 8) return '***'
+  return `${v.slice(0, 4)}…${v.slice(-4)}`
 }
 
 function hexToRgba(hex: string, opacity: number): string {
@@ -4891,6 +4939,379 @@ pagesRouter.post('/admin/message-ctas/:id/archive', async (req: any, res: any) =
     res.redirect(`/admin/message-ctas/${id}?notice=${encodeURIComponent('Archived.')}`)
   } catch (err: any) {
     res.redirect(`/admin/message-ctas/${id}?error=${encodeURIComponent(String(err?.message || 'Failed to archive CTA definition'))}`)
+  }
+})
+
+function buildPaymentCatalogPayload(body: any): {
+  kind: string
+  itemKey: string
+  label: string
+  status: string
+  amountCents: string
+  currency: string
+  provider: string
+  providerRef: string
+  configJson: string
+} {
+  return {
+    kind: String(body?.kind || '').trim(),
+    itemKey: String(body?.item_key || '').trim(),
+    label: String(body?.label || '').trim(),
+    status: String(body?.status || '').trim(),
+    amountCents: String(body?.amount_cents || '').trim(),
+    currency: String(body?.currency || '').trim().toUpperCase(),
+    provider: String(body?.provider || '').trim(),
+    providerRef: String(body?.provider_ref || '').trim(),
+    configJson: String(body?.config_json || '').trim(),
+  }
+}
+
+function parseOptionalInteger(raw: string): number | null {
+  const v = String(raw || '').trim()
+  if (!v) return null
+  const n = Number(v)
+  if (!Number.isFinite(n)) return null
+  return Math.trunc(n)
+}
+
+function renderAdminPaymentCatalogForm(opts: {
+  title: string
+  action: string
+  csrfToken: string
+  backHref: string
+  values: ReturnType<typeof buildPaymentCatalogPayload>
+  notice?: string
+  error?: string
+}): string {
+  const v = opts.values
+  let body = `<h1>${escapeHtml(opts.title)}</h1>`
+  body += `<div class="toolbar"><div><span class="pill">Payment Catalog Item</span></div><div><a href="${escapeHtml(opts.backHref)}">Back to Catalog</a></div></div>`
+  if (opts.notice) body += `<div class="notice">${escapeHtml(opts.notice)}</div>`
+  if (opts.error) body += `<div class="error">${escapeHtml(opts.error)}</div>`
+  body += `<form method="post" action="${escapeHtml(opts.action)}" class="section">`
+  body += `<input type="hidden" name="_csrf" value="${escapeHtml(opts.csrfToken)}" />`
+  body += `<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px">`
+  body += `<label>Kind<select name="kind">`
+  for (const opt of PAYMENT_CATALOG_KIND_OPTIONS) {
+    body += `<option value="${escapeHtml(opt.value)}"${v.kind === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+  }
+  body += `</select></label>`
+  body += `<label>Item Key<input type="text" name="item_key" value="${escapeHtml(v.itemKey)}" required placeholder="monthly_support" /></label>`
+  body += `<label>Label<input type="text" name="label" value="${escapeHtml(v.label)}" required placeholder="Monthly Support" /></label>`
+  body += `<label>Status<select name="status">`
+  for (const opt of PAYMENT_CATALOG_STATUS_OPTIONS) {
+    body += `<option value="${escapeHtml(opt.value)}"${v.status === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+  }
+  body += `</select></label>`
+  body += `<label>Amount (cents)<input type="number" min="0" step="1" name="amount_cents" value="${escapeHtml(v.amountCents)}" placeholder="500" /></label>`
+  body += `<label>Currency<input type="text" maxlength="3" name="currency" value="${escapeHtml(v.currency || 'USD')}" required /></label>`
+  body += `<label>Provider<select name="provider">`
+  for (const opt of PAYMENT_PROVIDER_OPTIONS) {
+    body += `<option value="${escapeHtml(opt.value)}"${v.provider === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+  }
+  body += `</select></label>`
+  body += `<label>Provider Ref<input type="text" name="provider_ref" value="${escapeHtml(v.providerRef)}" placeholder="paypal_plan_or_product_id" /></label>`
+  body += `</div>`
+  body += `<label style="display:block; margin-top:12px">Config JSON<textarea name="config_json" rows="6" placeholder='{\"notes\":\"optional\"}'>${escapeHtml(v.configJson || '{}')}</textarea></label>`
+  body += `<div class="field-hint">Config JSON is optional and reserved for provider-specific metadata.</div>`
+  body += `<div style="display:flex; gap:10px; margin-top:14px"><button class="btn" type="submit">Save</button><a class="btn" href="${escapeHtml(opts.backHref)}">Cancel</a></div>`
+  body += `</form>`
+  return renderAdminPage({ title: opts.title, bodyHtml: body, active: 'payment_catalog' })
+}
+
+pagesRouter.get('/admin/payments/providers', async (req: any, res: any) => {
+  try {
+    const provider = String(req.query?.provider || 'paypal').trim().toLowerCase()
+    const notice = req.query?.notice ? String(req.query.notice) : ''
+    const error = req.query?.error ? String(req.query.error) : ''
+    const configs = await paymentsSvc.listProviderConfigsForAdmin(provider)
+    const byMode = new Map<string, any>()
+    for (const row of configs.rows || []) byMode.set(String(row.mode), row)
+
+    let body = '<h1>Payment Providers</h1>'
+    body += '<div class="toolbar"><div><span class="pill">Provider Config</span></div><div><a href="/admin/payments/catalog">Payment Catalog</a></div></div>'
+    if (notice) body += `<div class="notice">${escapeHtml(notice)}</div>`
+    if (error) body += `<div class="error">${escapeHtml(error)}</div>`
+    body += `<form method="get" action="/admin/payments/providers" class="section" style="margin:12px 0">`
+    body += `<label>Provider<select name="provider">`
+    for (const opt of PAYMENT_PROVIDER_OPTIONS) {
+      body += `<option value="${escapeHtml(opt.value)}"${provider === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+    }
+    body += `</select></label> <button class="btn" type="submit">Load</button>`
+    body += `</form>`
+
+    const cookies = parseCookies(req.headers.cookie)
+    const csrfToken = cookies['csrf'] || ''
+    for (const modeOpt of PAYMENT_MODE_OPTIONS) {
+      const cfg = byMode.get(modeOpt.value)
+      const credentials = parseJsonObjectLoose(cfg?.credentials_json)
+      const currentClientId = String(credentials?.clientId || credentials?.client_id || '')
+      const statusValue = String(cfg?.status || 'disabled')
+      body += `<form method="post" action="/admin/payments/providers" class="section" style="margin:12px 0">`
+      body += `<input type="hidden" name="_csrf" value="${escapeHtml(csrfToken)}" />`
+      body += `<input type="hidden" name="provider" value="${escapeHtml(provider)}" />`
+      body += `<input type="hidden" name="mode" value="${escapeHtml(modeOpt.value)}" />`
+      body += `<div class="section-title">${escapeHtml(modeOpt.label)} Mode</div>`
+      body += `<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px; align-items:end">`
+      body += `<label>Status<select name="status">`
+      for (const opt of PAYMENT_PROVIDER_STATUS_OPTIONS) {
+        body += `<option value="${escapeHtml(opt.value)}"${statusValue === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+      }
+      body += `</select></label>`
+      const donateChecked = Number(cfg?.donate_enabled || 0) > 0 ? ' checked' : ''
+      const subscribeChecked = Number(cfg?.subscribe_enabled || 0) > 0 ? ' checked' : ''
+      body += `<label><input type="checkbox" name="donate_enabled" value="1"${donateChecked} /> Donate enabled</label>`
+      body += `<label><input type="checkbox" name="subscribe_enabled" value="1"${subscribeChecked} /> Subscribe enabled</label>`
+      body += `<label>Client ID<input type="text" name="client_id" value="" placeholder="Leave blank to keep current" /></label>`
+      body += `<label>Client Secret<input type="password" name="client_secret" value="" placeholder="Leave blank to keep current" /></label>`
+      body += `<label>Webhook ID<input type="text" name="webhook_id" value="${escapeHtml(String(cfg?.webhook_id || ''))}" /></label>`
+      body += `<label>Webhook Secret<input type="password" name="webhook_secret" value="" placeholder="Leave blank to keep current" /></label>`
+      body += `</div>`
+      body += `<label style="display:block; margin-top:10px">Notes<textarea name="notes" rows="3" placeholder="optional">${escapeHtml(String(cfg?.notes || ''))}</textarea></label>`
+      body += `<div class="field-hint">Current client id: ${escapeHtml(maskToken(currentClientId))}. Secrets are never rendered back to the page.</div>`
+      body += `<div style="display:flex; gap:10px; margin-top:12px"><button class="btn" type="submit">Save ${escapeHtml(modeOpt.label)} Config</button></div>`
+      body += `</form>`
+    }
+
+    const doc = renderAdminPage({ title: 'Payment Providers', bodyHtml: body, active: 'payment_providers' })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.send(doc)
+  } catch (err) {
+    logError(req.log || pagesLogger, err, 'admin payments providers failed', { path: req.path })
+    res.status(500).send('Failed to load payment providers')
+  }
+})
+
+pagesRouter.post('/admin/payments/providers', async (req: any, res: any) => {
+  const provider = String(req.body?.provider || 'paypal').trim().toLowerCase()
+  const mode = String(req.body?.mode || 'sandbox').trim().toLowerCase()
+  try {
+    const existing = await paymentsSvc.getProviderConfigForAdmin({ provider, mode })
+    const prevCredentials = parseJsonObjectLoose(existing?.credentials_json)
+    const clientId = String(req.body?.client_id || '').trim()
+    const clientSecret = String(req.body?.client_secret || '').trim()
+    const webhookSecretInput = String(req.body?.webhook_secret || '').trim()
+
+    const credentials = {
+      ...prevCredentials,
+      ...(clientId ? { clientId } : {}),
+      ...(clientSecret ? { clientSecret } : {}),
+    }
+
+    await paymentsSvc.configureProvider({
+      provider,
+      mode,
+      status: String(req.body?.status || 'disabled'),
+      donateEnabled: parseBoolLoose(req.body?.donate_enabled, false),
+      subscribeEnabled: parseBoolLoose(req.body?.subscribe_enabled, false),
+      credentials,
+      webhookId: String(req.body?.webhook_id || '').trim() || String(existing?.webhook_id || '').trim() || null,
+      webhookSecret: webhookSecretInput || String(existing?.webhook_secret || '').trim() || null,
+      notes: String(req.body?.notes || '').trim() || null,
+      actorUserId: Number(req.user?.id || 0),
+    })
+
+    pagesLogger.info({
+      app_operation: 'admin.payments.providers.write',
+      app_operation_detail: 'admin.payments.providers.update',
+      app_outcome: 'redirect',
+      payment_provider: provider,
+      payment_mode: mode,
+      actor_user_id: Number(req.user?.id || 0),
+    }, 'admin.payments.providers.write')
+
+    res.redirect(`/admin/payments/providers?provider=${encodeURIComponent(provider)}&notice=${encodeURIComponent('Saved provider config.')}`)
+  } catch (err: any) {
+    res.redirect(`/admin/payments/providers?provider=${encodeURIComponent(provider)}&error=${encodeURIComponent(String(err?.message || 'Failed to save provider config'))}`)
+  }
+})
+
+pagesRouter.get('/admin/payments/catalog', async (req: any, res: any) => {
+  try {
+    const includeArchived = String(req.query?.include_archived || '0') === '1'
+    const kind = req.query?.kind ? String(req.query.kind) : ''
+    const status = req.query?.status ? String(req.query.status) : ''
+    const notice = req.query?.notice ? String(req.query.notice) : ''
+    const error = req.query?.error ? String(req.query.error) : ''
+
+    const items = await paymentsSvc.listCatalogItemsForAdmin({
+      kind: kind || null,
+      status: status || null,
+      includeArchived,
+      limit: 500,
+    })
+
+    let body = '<h1>Payment Catalog</h1>'
+    body += '<div class="toolbar"><div><span class="pill">Catalog</span></div><div><a href="/admin/payments/catalog/new">New Catalog Item</a></div></div>'
+    if (notice) body += `<div class="notice">${escapeHtml(notice)}</div>`
+    if (error) body += `<div class="error">${escapeHtml(error)}</div>`
+    body += `<form method="get" action="/admin/payments/catalog" class="section" style="margin:12px 0">`
+    body += `<div style="display:flex; gap:10px; flex-wrap:wrap; align-items:end">`
+    body += `<label>Kind<select name="kind"><option value="">All</option>`
+    for (const opt of PAYMENT_CATALOG_KIND_OPTIONS) {
+      body += `<option value="${escapeHtml(opt.value)}"${kind === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+    }
+    body += `</select></label>`
+    body += `<label>Status<select name="status"><option value="">All</option>`
+    for (const opt of PAYMENT_CATALOG_STATUS_OPTIONS) {
+      body += `<option value="${escapeHtml(opt.value)}"${status === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+    }
+    body += `</select></label>`
+    body += `<label><input type="checkbox" name="include_archived" value="1"${includeArchived ? ' checked' : ''} /> Include archived</label>`
+    body += `<button class="btn" type="submit">Apply</button>`
+    body += `</div></form>`
+
+    if (!items.length) {
+      body += '<p>No payment catalog items found.</p>'
+    } else {
+      body += '<table><thead><tr><th>ID</th><th>Kind</th><th>Item Key</th><th>Label</th><th>Status</th><th>Amount</th><th>Provider</th><th>Provider Ref</th><th>Updated</th></tr></thead><tbody>'
+      for (const item of items) {
+        const amountText = item.amount_cents == null ? '—' : `${Number(item.amount_cents)} ${escapeHtml(String(item.currency || 'USD'))}`
+        body += `<tr>
+          <td>${item.id}</td>
+          <td>${escapeHtml(item.kind)}</td>
+          <td><a href="/admin/payments/catalog/${item.id}">${escapeHtml(item.item_key)}</a></td>
+          <td>${escapeHtml(item.label)}</td>
+          <td>${escapeHtml(item.status)}</td>
+          <td>${amountText}</td>
+          <td>${escapeHtml(item.provider)}</td>
+          <td>${escapeHtml(String(item.provider_ref || ''))}</td>
+          <td>${escapeHtml(String(item.updated_at || ''))}</td>
+        </tr>`
+      }
+      body += '</tbody></table>'
+    }
+
+    const doc = renderAdminPage({ title: 'Payment Catalog', bodyHtml: body, active: 'payment_catalog' })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.send(doc)
+  } catch (err) {
+    logError(req.log || pagesLogger, err, 'admin payments catalog failed', { path: req.path })
+    res.status(500).send('Failed to load payment catalog')
+  }
+})
+
+pagesRouter.get('/admin/payments/catalog/new', async (req: any, res: any) => {
+  const cookies = parseCookies(req.headers.cookie)
+  const csrfToken = cookies['csrf'] || ''
+  const doc = renderAdminPaymentCatalogForm({
+    title: 'New Payment Catalog Item',
+    action: '/admin/payments/catalog',
+    csrfToken,
+    backHref: '/admin/payments/catalog',
+    values: {
+      kind: 'donate_campaign',
+      itemKey: '',
+      label: '',
+      status: 'draft',
+      amountCents: '',
+      currency: 'USD',
+      provider: 'paypal',
+      providerRef: '',
+      configJson: '{}',
+    },
+  })
+  res.set('Content-Type', 'text/html; charset=utf-8')
+  res.send(doc)
+})
+
+pagesRouter.post('/admin/payments/catalog', async (req: any, res: any) => {
+  const cookies = parseCookies(req.headers.cookie)
+  const csrfToken = cookies['csrf'] || ''
+  const payload = buildPaymentCatalogPayload(req.body || {})
+  try {
+    const created = await paymentsSvc.createCatalogItemForAdmin({
+      kind: payload.kind,
+      itemKey: payload.itemKey,
+      label: payload.label,
+      status: payload.status,
+      amountCents: parseOptionalInteger(payload.amountCents),
+      currency: payload.currency || 'USD',
+      provider: payload.provider || 'paypal',
+      providerRef: payload.providerRef || null,
+      configJson: payload.configJson || '{}',
+      actorUserId: Number(req.user?.id || 0),
+    })
+    res.redirect(`/admin/payments/catalog/${created.id}?notice=${encodeURIComponent('Catalog item created.')}`)
+  } catch (err: any) {
+    const doc = renderAdminPaymentCatalogForm({
+      title: 'New Payment Catalog Item',
+      action: '/admin/payments/catalog',
+      csrfToken,
+      backHref: '/admin/payments/catalog',
+      values: payload,
+      error: String(err?.message || 'Failed to create payment catalog item'),
+    })
+    res.status(400).set('Content-Type', 'text/html; charset=utf-8').send(doc)
+  }
+})
+
+pagesRouter.get('/admin/payments/catalog/:id', async (req: any, res: any) => {
+  const id = Number(req.params.id)
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).send('Bad payment catalog id')
+  try {
+    const row = await paymentsSvc.getCatalogItemForAdmin(id)
+    if (!row) return res.status(404).send('Payment catalog item not found')
+    const cookies = parseCookies(req.headers.cookie)
+    const csrfToken = cookies['csrf'] || ''
+    const doc = renderAdminPaymentCatalogForm({
+      title: `Edit Payment Catalog Item #${id}`,
+      action: `/admin/payments/catalog/${id}`,
+      csrfToken,
+      backHref: '/admin/payments/catalog',
+      values: {
+        kind: String(row.kind || ''),
+        itemKey: String(row.item_key || ''),
+        label: String(row.label || ''),
+        status: String(row.status || ''),
+        amountCents: row.amount_cents == null ? '' : String(row.amount_cents),
+        currency: String(row.currency || 'USD'),
+        provider: String(row.provider || 'paypal'),
+        providerRef: String(row.provider_ref || ''),
+        configJson: String(row.config_json || '{}'),
+      },
+      notice: req.query?.notice ? String(req.query.notice) : '',
+      error: req.query?.error ? String(req.query.error) : '',
+    })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.send(doc)
+  } catch (err) {
+    logError(req.log || pagesLogger, err, 'admin payment catalog detail failed', { path: req.path, payment_catalog_id: id })
+    res.status(500).send('Failed to load payment catalog item')
+  }
+})
+
+pagesRouter.post('/admin/payments/catalog/:id', async (req: any, res: any) => {
+  const id = Number(req.params.id)
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).send('Bad payment catalog id')
+  const cookies = parseCookies(req.headers.cookie)
+  const csrfToken = cookies['csrf'] || ''
+  const payload = buildPaymentCatalogPayload(req.body || {})
+  try {
+    await paymentsSvc.updateCatalogItemForAdmin({
+      id,
+      kind: payload.kind,
+      itemKey: payload.itemKey,
+      label: payload.label,
+      status: payload.status,
+      amountCents: parseOptionalInteger(payload.amountCents),
+      currency: payload.currency || 'USD',
+      provider: payload.provider || 'paypal',
+      providerRef: payload.providerRef || null,
+      configJson: payload.configJson || '{}',
+      actorUserId: Number(req.user?.id || 0),
+    })
+    res.redirect(`/admin/payments/catalog/${id}?notice=${encodeURIComponent('Saved.')}`)
+  } catch (err: any) {
+    const doc = renderAdminPaymentCatalogForm({
+      title: `Edit Payment Catalog Item #${id}`,
+      action: `/admin/payments/catalog/${id}`,
+      csrfToken,
+      backHref: '/admin/payments/catalog',
+      values: payload,
+      error: String(err?.message || 'Failed to save payment catalog item'),
+    })
+    res.status(400).set('Content-Type', 'text/html; charset=utf-8').send(doc)
   }
 })
 
