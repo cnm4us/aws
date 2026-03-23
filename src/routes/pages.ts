@@ -3311,16 +3311,19 @@ function buildMessageCreateOrUpdatePayload(body: any): any {
   const normalizedEndsAt = endsAtDate ? `${endsAtDate}T${endsAtTime || '23:59'}` : ''
   const ctaSlotCountRaw = Number(body?.creativeCtaSlotCount)
   const ctaSlotCount = Number.isFinite(ctaSlotCountRaw) ? Math.max(1, Math.min(3, Math.round(ctaSlotCountRaw))) : null
-  const ctaSlots: Array<{ slot: 1 | 2 | 3; ctaDefinitionId: number; labelOverride?: string | null; styleOverride?: { bgColor?: string; textColor?: string } | null }> = []
+  const ctaSlots: Array<{ slot: 1 | 2 | 3; ctaDefinitionId: number; labelOverride?: string | null; styleOverride?: { bgColor?: string; bgOpacity?: number; textColor?: string } | null }> = []
   for (const slot of [1, 2, 3] as const) {
+    if (ctaSlotCount != null && slot > ctaSlotCount) continue
     const idRaw = String((body as any)?.[`creativeCtaSlot${slot}DefinitionId`] || '').trim()
     if (!/^\d+$/.test(idRaw)) continue
     const ctaDefinitionId = Number(idRaw)
     const labelOverrideRaw = String((body as any)?.[`creativeCtaSlot${slot}LabelOverride`] || '').trim()
     const bgColorRaw = String((body as any)?.[`creativeCtaSlot${slot}BgColor`] || '').trim()
+    const bgOpacityRaw = Number((body as any)?.[`creativeCtaSlot${slot}BgOpacity`])
     const textColorRaw = String((body as any)?.[`creativeCtaSlot${slot}TextColor`] || '').trim()
     const styleOverride = {
       ...( /^#[0-9a-fA-F]{6}$/.test(bgColorRaw) ? { bgColor: bgColorRaw.toUpperCase() } : {}),
+      ...( Number.isFinite(bgOpacityRaw) ? { bgOpacity: Math.max(0, Math.min(1, bgOpacityRaw)) } : {}),
       ...( /^#[0-9a-fA-F]{6}$/.test(textColorRaw) ? { textColor: textColorRaw.toUpperCase() } : {}),
     }
     ctaSlots.push({
@@ -3761,6 +3764,8 @@ function renderAdminMessageForm(opts: {
       ? slotValue.styleOverride
       : (slotValue.style_override && typeof slotValue.style_override === 'object' ? slotValue.style_override : {})
     const slotBgColor = String(styleOverride.bgColor || styleOverride.bg_color || '')
+    const slotBgOpacityRaw = Number(styleOverride.bgOpacity ?? styleOverride.bg_opacity)
+    const slotBgOpacity = Number.isFinite(slotBgOpacityRaw) ? Math.max(0, Math.min(1, slotBgOpacityRaw)) : 1
     const slotTextColor = String(styleOverride.textColor || styleOverride.text_color || '')
     body += `<div class="cta-slot-row" data-slot-row="${slot}" style="display:${slot <= slotCount ? 'grid' : 'none'}; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:10px; margin-top:10px">`
     body += `<label>Slot ${slot}: CTA Definition<select name="creativeCtaSlot${slot}DefinitionId">`
@@ -3772,8 +3777,11 @@ function renderAdminMessageForm(opts: {
     }
     body += `</select></label>`
     body += `<label>Label Override<input type="text" name="creativeCtaSlot${slot}LabelOverride" value="${escapeHtml(String(slotValue.labelOverride || slotValue.label_override || ''))}" maxlength="100" /></label>`
-    body += `<label>BG Color Override<input type="color" name="creativeCtaSlot${slot}BgColor" value="${escapeHtml(/^#[0-9a-fA-F]{6}$/.test(slotBgColor) ? slotBgColor : '#0B1320')}" /></label>`
-    body += `<label>Text Color Override<input type="color" name="creativeCtaSlot${slot}TextColor" value="${escapeHtml(/^#[0-9a-fA-F]{6}$/.test(slotTextColor) ? slotTextColor : '#FFFFFF')}" /></label>`
+    body += `<div style="grid-column:1 / -1; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px">`
+    body += `<div class="mini-field"><div class="mini-field-label">Background</div><input class="color-swatch-input" type="color" name="creativeCtaSlot${slot}BgColor" value="${escapeHtml(/^#[0-9a-fA-F]{6}$/.test(slotBgColor) ? slotBgColor : '#0B1320')}" /></div>`
+    body += `<div class="mini-field"><div class="mini-field-label">Opacity</div><input type="number" name="creativeCtaSlot${slot}BgOpacity" min="0" max="1" step="0.05" value="${escapeHtml(String(slotBgOpacity))}" /></div>`
+    body += `<div class="mini-field"><div class="mini-field-label">Text</div><input class="color-swatch-input" type="color" name="creativeCtaSlot${slot}TextColor" value="${escapeHtml(/^#[0-9a-fA-F]{6}$/.test(slotTextColor) ? slotTextColor : '#FFFFFF')}" /></div>`
+    body += `</div>`
     body += `</div>`
   }
   body += `<div class="field-hint" style="margin-top:8px">Slot selections are saved in creative JSON. Legacy primary/secondary fields remain for backward compatibility until Phase D.</div>`
@@ -4097,6 +4105,22 @@ function renderAdminMessageForm(opts: {
         const slot1 = slotLabel(1, primary || 'Primary');
         const slot2 = slotLabel(2, secondary || 'Secondary');
         const slot3 = slotLabel(3, 'Tertiary');
+        const slotStyle = (slotIndex) => {
+          return {
+            bg: hex(v('creativeCtaSlot' + slotIndex + 'BgColor', ''), ''),
+            bgOpacity: clamp(vn('creativeCtaSlot' + slotIndex + 'BgOpacity', 1), 0, 1),
+            text: hex(v('creativeCtaSlot' + slotIndex + 'TextColor', ''), ''),
+          };
+        };
+        const slot1Style = slotStyle(1);
+        const slot2Style = slotStyle(2);
+        const slot3Style = slotStyle(3);
+
+        const applySlotStyle = (btn, style) => {
+          if (!btn) return;
+          btn.style.background = style.bg ? hexToRgba(style.bg, style.bgOpacity) : 'rgba(0,0,0,0.5)';
+          btn.style.color = style.text || '#fff';
+        };
 
         if (preview.messageLabel) preview.messageLabel.textContent = label;
         if (preview.messageHeadline) preview.messageHeadline.textContent = headline;
@@ -4107,14 +4131,17 @@ function renderAdminMessageForm(opts: {
         if (preview.slot1Btn) {
           preview.slot1Btn.textContent = slot1;
           preview.slot1Btn.style.display = ctaSlotCount >= 1 ? 'inline-flex' : 'none';
+          applySlotStyle(preview.slot1Btn, slot1Style);
         }
         if (preview.slot2Btn) {
           preview.slot2Btn.textContent = slot2;
           preview.slot2Btn.style.display = ctaSlotCount >= 2 ? 'inline-flex' : 'none';
+          applySlotStyle(preview.slot2Btn, slot2Style);
         }
         if (preview.slot3Btn) {
           preview.slot3Btn.textContent = slot3;
           preview.slot3Btn.style.display = ctaSlotCount >= 3 ? 'inline-flex' : 'none';
+          applySlotStyle(preview.slot3Btn, slot3Style);
         }
         if (preview.ctaType) preview.ctaType.textContent = 'CTA: ' + (ctaType || 'auth');
         if (preview.ctaButtons) {

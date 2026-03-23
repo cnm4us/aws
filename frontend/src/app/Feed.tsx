@@ -60,6 +60,7 @@ type FeedMessagePayload = {
     labelOverride: string | null
     styleOverride: {
       bgColor?: string
+      bgOpacity?: number
       textColor?: string
     } | null
     intentKey: string
@@ -455,6 +456,7 @@ async function fetchMessageById(messageId: number): Promise<FeedMessagePayload> 
           const styleOverride = styleSrc
             ? {
                 ...(styleSrc.bgColor || styleSrc.bg_color ? { bgColor: parseHexColor(styleSrc.bgColor ?? styleSrc.bg_color, '#0B1320') } : {}),
+                ...(Number.isFinite(Number(styleSrc.bgOpacity ?? styleSrc.bg_opacity)) ? { bgOpacity: parseOpacity(styleSrc.bgOpacity ?? styleSrc.bg_opacity, 1) } : {}),
                 ...(styleSrc.textColor || styleSrc.text_color ? { textColor: parseHexColor(styleSrc.textColor ?? styleSrc.text_color, '#FFFFFF') } : {}),
               }
             : null
@@ -463,7 +465,7 @@ async function fetchMessageById(messageId: number): Promise<FeedMessagePayload> 
             ctaDefinitionId: Math.round(ctaDefinitionId),
             label: String(raw?.label || ''),
             labelOverride: raw?.label_override == null ? null : String(raw.label_override),
-            styleOverride: styleOverride && (styleOverride.bgColor || styleOverride.textColor) ? styleOverride : null,
+            styleOverride: styleOverride && (styleOverride.bgColor || styleOverride.textColor || styleOverride.bgOpacity != null) ? styleOverride : null,
             intentKey: String(raw?.intent_key || '').toLowerCase(),
             executorType: String(raw?.executor_type || '').toLowerCase(),
             executorConfig: raw?.executor_config && typeof raw.executor_config === 'object' ? raw.executor_config : {},
@@ -3368,7 +3370,7 @@ export default function Feed() {
             const found = Array.isArray(message.ctaSlots) ? message.ctaSlots.find((item) => item.slot === slot) : null
             if (!found || !found.styleOverride) return {}
             return {
-              ...(found.styleOverride.bgColor ? { background: found.styleOverride.bgColor } : {}),
+              ...(found.styleOverride.bgColor ? { background: toRgba(found.styleOverride.bgColor, parseOpacity(found.styleOverride.bgOpacity, 1)) } : {}),
               ...(found.styleOverride.textColor ? { color: found.styleOverride.textColor } : {}),
             }
           }
