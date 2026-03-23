@@ -3737,12 +3737,6 @@ function renderAdminMessageForm(opts: {
   body += `</div>`
   body += `<div id="cta-widget-style-section" class="section"${creativeForm.ctaEnabled ? '' : ' style="display:none"'}>`
   body += `<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px">`
-  body += `<label>CTA Type<select name="creativeCtaType">
-    <option value="auth"${creativeForm.ctaType === 'auth' ? ' selected' : ''}>Auth</option>
-    <option value="donate"${creativeForm.ctaType === 'donate' ? ' selected' : ''}>Donate</option>
-    <option value="subscribe"${creativeForm.ctaType === 'subscribe' ? ' selected' : ''}>Subscribe</option>
-    <option value="upgrade"${creativeForm.ctaType === 'upgrade' ? ' selected' : ''}>Upgrade</option>
-  </select></label>`
   body += `<label>Layout<select name="creativeCtaLayout">
     <option value="inline"${creativeForm.ctaLayout === 'inline' ? ' selected' : ''}>Inline</option>
     <option value="stacked"${creativeForm.ctaLayout === 'stacked' ? ' selected' : ''}>Stacked</option>
@@ -3799,25 +3793,7 @@ function renderAdminMessageForm(opts: {
   body += `<div class="mini-field"><div class="mini-field-label">Background Color</div><input class="color-swatch-input" type="color" name="creativeCtaBgColor" value="${escapeHtml(String(creativeForm.ctaBgColor || '#0B1320'))}" /></div>`
   body += `<div class="mini-field"><div class="mini-field-label">Background Opacity</div><input type="number" name="creativeCtaBgOpacity" min="0" max="1" step="0.05" value="${escapeHtml(String(creativeForm.ctaBgOpacity))}" /></div>`
   body += `</div>`
-  body += `<div id="cta-auth-config-section" style="display:${creativeForm.ctaType === 'auth' ? 'grid' : 'none'}; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px; margin-top:10px">`
-  body += `<label>Primary Href<input type="text" name="creativeCtaAuthPrimaryHref" value="${escapeHtml(String(creativeForm.ctaAuthPrimaryHref || '/register?return=/'))}" maxlength="1200" /></label>`
-  body += `<label>Secondary Href<input type="text" name="creativeCtaAuthSecondaryHref" value="${escapeHtml(String(creativeForm.ctaAuthSecondaryHref || '/login?return=/'))}" maxlength="1200" /></label>`
-  body += `</div>`
-  body += `<div id="cta-donate-config-section" style="display:${creativeForm.ctaType === 'donate' ? 'grid' : 'none'}; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px; margin-top:10px">`
-  body += `<label>Provider<select name="creativeCtaDonateProvider"><option value="mock"${creativeForm.ctaDonateProvider === 'mock' ? ' selected' : ''}>Mock</option><option value="paypal"${creativeForm.ctaDonateProvider === 'paypal' ? ' selected' : ''}>PayPal</option></select></label>`
-  body += `<label>Campaign Key<input type="text" name="creativeCtaDonateCampaignKey" value="${escapeHtml(String(creativeForm.ctaDonateCampaignKey || ''))}" maxlength="64" placeholder="fund_drive_spring_2026" /></label>`
-  body += `<label>Success Return<input type="text" name="creativeCtaDonateSuccessReturn" value="${escapeHtml(String(creativeForm.ctaDonateSuccessReturn || '/channels/global-feed'))}" maxlength="1200" /></label>`
-  body += `</div>`
-  body += `<div id="cta-subscribe-config-section" style="display:${creativeForm.ctaType === 'subscribe' ? 'grid' : 'none'}; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px; margin-top:10px">`
-  body += `<label>Provider<select name="creativeCtaSubscribeProvider"><option value="mock"${creativeForm.ctaSubscribeProvider === 'mock' ? ' selected' : ''}>Mock</option><option value="paypal"${creativeForm.ctaSubscribeProvider === 'paypal' ? ' selected' : ''}>PayPal</option></select></label>`
-  body += `<label>Plan Key<input type="text" name="creativeCtaSubscribePlanKey" value="${escapeHtml(String(creativeForm.ctaSubscribePlanKey || ''))}" maxlength="64" placeholder="premium_monthly" /></label>`
-  body += `<label>Success Return<input type="text" name="creativeCtaSubscribeSuccessReturn" value="${escapeHtml(String(creativeForm.ctaSubscribeSuccessReturn || '/channels/global-feed'))}" maxlength="1200" /></label>`
-  body += `</div>`
-  body += `<div id="cta-upgrade-config-section" style="display:${creativeForm.ctaType === 'upgrade' ? 'grid' : 'none'}; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px; margin-top:10px">`
-  body += `<label>Target Tier<input type="text" name="creativeCtaUpgradeTargetTier" value="${escapeHtml(String(creativeForm.ctaUpgradeTargetTier || ''))}" maxlength="64" placeholder="pro" /></label>`
-  body += `<label>Success Return<input type="text" name="creativeCtaUpgradeSuccessReturn" value="${escapeHtml(String(creativeForm.ctaUpgradeSuccessReturn || '/channels/global-feed'))}" maxlength="1200" /></label>`
-  body += `</div>`
-  body += `<div class="field-hint" style="margin-top:8px">Internal paths only (e.g. <code>/register?return=/</code>, <code>/login?return=/</code>, <code>/channels/global-feed</code>).</div>`
+  body += `<div class="field-hint" style="margin-top:8px">CTA behavior is defined by selected CTA slot definitions (intent + executor + config).</div>`
   body += `</div>`
 
   body += `<div class="section-title" style="margin:10px 0 6px">Scheduling</div>`
@@ -3862,7 +3838,6 @@ function renderAdminMessageForm(opts: {
   const previewSlot2Label = slotLabel(2, String(creativeForm.ctaSecondaryLabel || 'Secondary'))
   const previewSlot3Label = slotLabel(3, 'Tertiary')
   body += `<div id="message-preview-cta" style="display:${creativeForm.ctaEnabled ? 'block' : 'none'}; position:absolute; left:14px; right:14px; ${ctaPosStyle}; z-index:2; border:1px solid rgba(255,255,255,0.24); border-radius:10px; background:${hexToRgba(creativeForm.ctaBgColor, creativeForm.ctaBgOpacity)}; color:${escapeHtml(creativeForm.ctaTextColor)}; padding:8px">`
-  body += `<div id="message-preview-cta-type" style="font-size:11px; opacity:0.9; margin-bottom:6px">CTA: ${escapeHtml(String(creativeForm.ctaType || 'auth'))}</div>`
   body += `<div id="message-preview-cta-buttons" style="display:${creativeForm.ctaLayout === 'stacked' ? 'grid' : 'flex'}; grid-template-columns:${creativeForm.ctaLayout === 'stacked' ? '1fr' : 'none'}; justify-content:space-between; align-items:center; gap:8px">`
   body += `<span id="message-preview-slot-1-btn" class="btn" style="justify-self:start; border:1px solid rgba(255,255,255,0.45); border-radius:11px; background:rgba(0,0,0,0.5); padding:8px 12px; display:${slotCount >= 1 ? 'inline-flex' : 'none'}">${escapeHtml(previewSlot1Label)}</span>`
   body += `<span id="message-preview-slot-2-btn" class="btn" style="justify-self:center; border:1px solid rgba(255,255,255,0.45); border-radius:11px; background:rgba(0,0,0,0.5); padding:8px 12px; display:${slotCount >= 2 ? 'inline-flex' : 'none'}">${escapeHtml(previewSlot2Label)}</span>`
@@ -3910,17 +3885,12 @@ function renderAdminMessageForm(opts: {
       const preview = {
         messageSection: document.getElementById('message-widget-content-section'),
         ctaSection: document.getElementById('cta-widget-style-section'),
-        ctaAuthConfigSection: document.getElementById('cta-auth-config-section'),
-        ctaDonateConfigSection: document.getElementById('cta-donate-config-section'),
-        ctaSubscribeConfigSection: document.getElementById('cta-subscribe-config-section'),
-        ctaUpgradeConfigSection: document.getElementById('cta-upgrade-config-section'),
         videoPlaybackRow: document.getElementById('message-video-playback-row'),
         device: document.getElementById('message-preview-device'),
         overlay: document.getElementById('message-preview-overlay'),
         modeBadge: document.getElementById('message-preview-mode-badge'),
         message: document.getElementById('message-preview-message'),
         cta: document.getElementById('message-preview-cta'),
-        ctaType: document.getElementById('message-preview-cta-type'),
         ctaButtons: document.getElementById('message-preview-cta-buttons'),
         messageLabel: document.getElementById('message-preview-message-label'),
         messageHeadline: document.getElementById('message-preview-message-headline'),
@@ -4039,7 +4009,6 @@ function renderAdminMessageForm(opts: {
         const msgText = hex(v('creativeMessageTextColor', '#FFFFFF'), '#FFFFFF');
 
         const ctaEnabled = vb('creativeCtaEnabled', false);
-        const ctaType = String(v('creativeCtaType', 'auth')).toLowerCase();
         const ctaLayout = String(v('creativeCtaLayout', 'inline')).toLowerCase();
         const ctaSlotCount = clamp(vn('creativeCtaSlotCount', 2), 1, 3);
         const ctaPos = String(v('creativeCtaPosition', 'bottom')).toLowerCase();
@@ -4071,10 +4040,6 @@ function renderAdminMessageForm(opts: {
         preview.cta.style.display = ctaEnabled ? 'block' : 'none';
         if (preview.messageSection) preview.messageSection.style.display = msgEnabled ? '' : 'none';
         if (preview.ctaSection) preview.ctaSection.style.display = ctaEnabled ? '' : 'none';
-        if (preview.ctaAuthConfigSection) preview.ctaAuthConfigSection.style.display = ctaType === 'auth' ? 'grid' : 'none';
-        if (preview.ctaDonateConfigSection) preview.ctaDonateConfigSection.style.display = ctaType === 'donate' ? 'grid' : 'none';
-        if (preview.ctaSubscribeConfigSection) preview.ctaSubscribeConfigSection.style.display = ctaType === 'subscribe' ? 'grid' : 'none';
-        if (preview.ctaUpgradeConfigSection) preview.ctaUpgradeConfigSection.style.display = ctaType === 'upgrade' ? 'grid' : 'none';
 
         preview.message.style.background = hexToRgba(msgBg, msgBgOpacity);
         preview.message.style.color = msgText;
@@ -4143,7 +4108,6 @@ function renderAdminMessageForm(opts: {
           preview.slot3Btn.style.display = ctaSlotCount >= 3 ? 'inline-flex' : 'none';
           applySlotStyle(preview.slot3Btn, slot3Style);
         }
-        if (preview.ctaType) preview.ctaType.textContent = 'CTA: ' + (ctaType || 'auth');
         if (preview.ctaButtons) {
           const stacked = ctaLayout === 'stacked';
           preview.ctaButtons.style.display = stacked ? 'grid' : 'flex';
