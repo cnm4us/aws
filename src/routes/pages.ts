@@ -10761,6 +10761,84 @@ pagesRouter.post('/support', async (req: any, res: any) => {
   }
 })
 
+pagesRouter.get('/my/support', async (req: any, res: any) => {
+  try {
+    const from = encodeURIComponent(req.originalUrl || '/my/support')
+    if (!req.user || !req.session) return res.redirect(`/login?from=${from}`)
+    const userId = Number(req.user?.id || 0)
+    if (!Number.isFinite(userId) || userId <= 0) return res.redirect(`/login?from=${from}`)
+
+    const snapshot = await paymentsSvc.getMySupportSnapshot({ userId, recentLimit: 30 })
+    const dollars = (cents: number | null | undefined): string => {
+      const n = Number(cents || 0)
+      if (!Number.isFinite(n)) return '$0.00'
+      return `$${(n / 100).toFixed(2)}`
+    }
+    const asText = (v: any): string => escapeHtml(String(v == null ? '' : v))
+
+    let body = '<h1>My Support</h1>'
+    body += '<div class="toolbar"><div><span class="pill">Support</span></div><div><a href="/support?return=%2Fmy%2Fsupport&cancel=%2Fmy%2Fsupport">Support Again</a></div></div>'
+    body += '<div class="section">'
+    body += '<div class="section-title">Totals</div>'
+    body += `<p><strong>Lifetime Donations:</strong> ${dollars(snapshot.lifetimeDonatedCents)}</p>`
+    body += `<p><strong>Last 30 Days:</strong> ${dollars(snapshot.last30DaysDonatedCents)}</p>`
+    body += '</div>'
+
+    body += '<div class="section"><div class="section-title">Recent Transactions</div>'
+    if (!snapshot.recentTransactions.length) {
+      body += '<p>No transactions yet.</p>'
+    } else {
+      body += '<table><thead><tr><th>Date</th><th>Intent</th><th>Status</th><th>Amount</th><th>Provider</th><th>Source</th></tr></thead><tbody>'
+      for (const row of snapshot.recentTransactions) {
+        body += `<tr>
+          <td>${asText(row.occurred_at || row.created_at || '')}</td>
+          <td>${asText(row.intent)}</td>
+          <td>${asText(row.status)}</td>
+          <td>${asText(dollars(row.amount_cents))} ${asText(row.currency || 'USD')}</td>
+          <td>${asText(row.provider)} (${asText(row.mode)})</td>
+          <td>${asText(row.source)}</td>
+        </tr>`
+      }
+      body += '</tbody></table>'
+    }
+    body += '</div>'
+
+    body += '<div class="section"><div class="section-title">Subscriptions</div>'
+    if (!snapshot.subscriptions.length) {
+      body += '<p>No subscription records yet.</p>'
+    } else {
+      body += '<table><thead><tr><th>Status</th><th>Provider Sub ID</th><th>Amount</th><th>Last Event</th><th>Updated</th></tr></thead><tbody>'
+      for (const row of snapshot.subscriptions) {
+        body += `<tr>
+          <td>${asText(row.status)}</td>
+          <td>${asText(row.provider_subscription_id)}</td>
+          <td>${asText(dollars(row.amount_cents))} ${asText(row.currency || 'USD')}</td>
+          <td>${asText(row.last_event_type || '')}</td>
+          <td>${asText(row.updated_at || '')}</td>
+        </tr>`
+      }
+      body += '</tbody></table>'
+    }
+    body += '</div>'
+
+    const doc = renderPageDocument('My Support', body)
+    ;(req.log || pagesLogger).info({
+      app_operation: 'my.support.view',
+      app_outcome: 'success',
+      user_id: userId,
+      payment_tx_count: snapshot.recentTransactions.length,
+      payment_sub_count: snapshot.subscriptions.length,
+      payment_lifetime_donated_cents: snapshot.lifetimeDonatedCents,
+      payment_last_30d_donated_cents: snapshot.last30DaysDonatedCents,
+    }, 'my.support.view')
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    return res.send(doc)
+  } catch (err) {
+    logError(req.log || pagesLogger, err, 'my support page failed', { path: req.path })
+    return res.status(500).send('Failed to load support account page')
+  }
+})
+
 pagesRouter.get('/publish/:id', (_req, res) => {
   serveHtml(res, path.join('app', 'index.html'));
 });

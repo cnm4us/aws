@@ -8,7 +8,9 @@ import type {
   PaymentMode,
   PaymentProvider,
   PaymentProviderConfigRow,
+  PaymentSubscriptionRow,
   PaymentSubscriptionStatus,
+  PaymentTransactionRow,
   PaymentTransactionStatus,
   PaymentWebhookEventRow,
   PaymentWebhookProcessingState,
@@ -524,4 +526,52 @@ export async function upsertPaymentSubscription(input: {
       input.lastEventAtUtc,
     ]
   )
+}
+
+export async function listRecentTransactionsForUser(input: {
+  userId: number
+  limit?: number
+}): Promise<PaymentTransactionRow[]> {
+  const db = getPool()
+  const lim = Number.isFinite(Number(input.limit)) ? Math.max(1, Math.min(200, Math.floor(Number(input.limit)))) : 50
+  const [rows] = await db.query(
+    `SELECT * FROM payment_transactions
+      WHERE user_id = ?
+      ORDER BY occurred_at DESC, id DESC
+      LIMIT ${lim}`,
+    [input.userId]
+  )
+  return (rows as any[]) as PaymentTransactionRow[]
+}
+
+export async function sumCompletedTransactionsForUser(input: {
+  userId: number
+  sinceUtc?: string | null
+}): Promise<number> {
+  const db = getPool()
+  let sql = `SELECT COALESCE(SUM(amount_cents), 0) AS total FROM payment_transactions WHERE user_id = ? AND status = 'completed'`
+  const args: any[] = [input.userId]
+  if (input.sinceUtc) {
+    sql += ` AND occurred_at >= ?`
+    args.push(input.sinceUtc)
+  }
+  const [rows] = await db.query(sql, args)
+  const n = Number((rows as any[])[0]?.total || 0)
+  return Number.isFinite(n) ? Math.round(n) : 0
+}
+
+export async function listSubscriptionsForUser(input: {
+  userId: number
+  limit?: number
+}): Promise<PaymentSubscriptionRow[]> {
+  const db = getPool()
+  const lim = Number.isFinite(Number(input.limit)) ? Math.max(1, Math.min(200, Math.floor(Number(input.limit)))) : 20
+  const [rows] = await db.query(
+    `SELECT * FROM payment_subscriptions
+      WHERE user_id = ?
+      ORDER BY updated_at DESC, id DESC
+      LIMIT ${lim}`,
+    [input.userId]
+  )
+  return (rows as any[]) as PaymentSubscriptionRow[]
 }

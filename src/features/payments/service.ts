@@ -15,7 +15,9 @@ import type {
   PaymentWebhookVerifyInput,
   PaymentCatalogItemRow,
   PaymentProviderConfigRow,
+  PaymentSubscriptionRow,
   PaymentWebhookParsedCompletion,
+  PaymentTransactionRow,
   PaymentCheckoutSessionRow,
 } from './types'
 import { capturePaypalOrder, paypalProviderAdapter } from './providers/paypal'
@@ -852,4 +854,36 @@ export async function completePaypalOrderFromReturn(input: {
       span.end()
     }
   })
+}
+
+export async function getMySupportSnapshot(input: {
+  userId: number
+  recentLimit?: number
+}): Promise<{
+  lifetimeDonatedCents: number
+  last30DaysDonatedCents: number
+  recentTransactions: PaymentTransactionRow[]
+  subscriptions: PaymentSubscriptionRow[]
+}> {
+  const userId = normalizePositiveId(input.userId, 'invalid_user_id')
+  if (!userId) throw new DomainError('invalid_user_id', 'invalid_user_id', 400)
+  const recentLimit = Number.isFinite(Number(input.recentLimit)) ? Math.max(1, Math.min(100, Math.floor(Number(input.recentLimit)))) : 25
+  const now = new Date()
+  const since30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+  const p2 = (n: number) => String(n).padStart(2, '0')
+  const since30Utc = `${since30.getUTCFullYear()}-${p2(since30.getUTCMonth() + 1)}-${p2(since30.getUTCDate())} ${p2(since30.getUTCHours())}:${p2(since30.getUTCMinutes())}:${p2(since30.getUTCSeconds())}`
+
+  const [lifetimeDonatedCents, last30DaysDonatedCents, recentTransactions, subscriptions] = await Promise.all([
+    repo.sumCompletedTransactionsForUser({ userId }),
+    repo.sumCompletedTransactionsForUser({ userId, sinceUtc: since30Utc }),
+    repo.listRecentTransactionsForUser({ userId, limit: recentLimit }),
+    repo.listSubscriptionsForUser({ userId, limit: 20 }),
+  ])
+
+  return {
+    lifetimeDonatedCents,
+    last30DaysDonatedCents,
+    recentTransactions,
+    subscriptions,
+  }
 }
