@@ -106,6 +106,24 @@ function normalizeLabel(raw: any): string {
   return v
 }
 
+function normalizeProviderRef(raw: any): string | null {
+  if (raw == null || raw === '') return null
+  const v = String(raw).trim()
+  return v || null
+}
+
+function assertCatalogProviderRefPolicy(input: {
+  kind: PaymentCatalogKind
+  status: PaymentCatalogStatus
+  provider: PaymentProvider
+  providerRef: string | null
+}): void {
+  // Phase A policy: active subscribe plans must map to a provider-side plan id.
+  if (input.kind === 'subscribe_plan' && input.status === 'active' && !input.providerRef) {
+    throw new DomainError('payment_catalog_provider_ref_required', 'payment_catalog_provider_ref_required', 400)
+  }
+}
+
 function normalizeOptionalUuid(raw: any, code: string): string | null {
   if (raw == null || raw === '') return null
   const v = String(raw).trim().toLowerCase()
@@ -263,6 +281,26 @@ function mapPaypalSubscriptionStatusFromEvent(eventTypeRaw: string): 'pending' |
   return 'pending'
 }
 
+function shouldClearPendingActionFromEvent(eventTypeRaw: string | null | undefined): boolean {
+  const eventType = String(eventTypeRaw || '').trim().toUpperCase()
+  if (!eventType.startsWith('BILLING.SUBSCRIPTION.')) return false
+  if (eventType.endsWith('.ACTIVATED')) return true
+  if (eventType.endsWith('.RE-ACTIVATED')) return true
+  if (eventType.endsWith('.SUSPENDED')) return true
+  if (eventType.endsWith('.CANCELLED')) return true
+  if (eventType.endsWith('.EXPIRED')) return true
+  return false
+}
+
+function isTransactionEventType(eventTypeRaw: string | null | undefined): boolean {
+  const eventType = String(eventTypeRaw || '').trim().toUpperCase()
+  if (!eventType) return false
+  if (eventType.startsWith('CHECKOUT.ORDER.')) return true
+  if (eventType.startsWith('PAYMENT.CAPTURE.')) return true
+  if (eventType.startsWith('PAYMENT.REFUND.')) return true
+  return false
+}
+
 async function persistDurablePaymentState(input: {
   session: PaymentCheckoutSessionRow
   parsed: PaymentWebhookParsedCompletion
@@ -281,33 +319,37 @@ async function persistDurablePaymentState(input: {
     : selectedAmount
   const occurredAt = toDateTimeUtc(new Date())
 
-  await repo.upsertPaymentTransaction({
-    checkoutSessionId: Number(session.id),
-    checkoutId: session.checkout_id,
-    provider: session.provider,
-    mode: session.mode,
-    intent: session.intent,
-    status: mapCheckoutToTransactionStatus(session.status),
-    source: input.source,
-    providerEventId: input.providerEventId || null,
-    providerEventType: input.eventType || null,
-    providerSessionId: input.parsed.providerSessionId || session.provider_session_id || null,
-    providerOrderId: input.parsed.providerOrderId || session.provider_order_id || null,
-    providerSubscriptionId: input.parsed.providerSubscriptionId || null,
-    userId: session.user_id == null ? null : Number(session.user_id),
-    messageId: session.message_id == null ? null : Number(session.message_id),
-    messageCampaignKey: session.message_campaign_key || null,
-    messageIntentId: session.message_intent_id || null,
-    messageCtaDefinitionId: session.message_cta_definition_id == null ? null : Number(session.message_cta_definition_id),
-    catalogItemId: session.catalog_item_id == null ? null : Number(session.catalog_item_id),
-    amountCents: amountCents == null ? null : Number(amountCents),
-    currency: session.currency || 'USD',
-    occurredAtUtc: occurredAt,
-  })
+  const shouldWriteTransaction = input.source === 'return' || isTransactionEventType(input.eventType)
+  if (shouldWriteTransaction) {
+    await repo.upsertPaymentTransaction({
+      checkoutSessionId: Number(session.id),
+      checkoutId: session.checkout_id,
+      provider: session.provider,
+      mode: session.mode,
+      intent: session.intent,
+      status: mapCheckoutToTransactionStatus(session.status),
+      source: input.source,
+      providerEventId: input.providerEventId || null,
+      providerEventType: input.eventType || null,
+      providerSessionId: input.parsed.providerSessionId || session.provider_session_id || null,
+      providerOrderId: input.parsed.providerOrderId || session.provider_order_id || null,
+      providerSubscriptionId: input.parsed.providerSubscriptionId || null,
+      userId: session.user_id == null ? null : Number(session.user_id),
+      messageId: session.message_id == null ? null : Number(session.message_id),
+      messageCampaignKey: session.message_campaign_key || null,
+      messageIntentId: session.message_intent_id || null,
+      messageCtaDefinitionId: session.message_cta_definition_id == null ? null : Number(session.message_cta_definition_id),
+      catalogItemId: session.catalog_item_id == null ? null : Number(session.catalog_item_id),
+      amountCents: amountCents == null ? null : Number(amountCents),
+      currency: session.currency || 'USD',
+      occurredAtUtc: occurredAt,
+    })
+  }
 
   const subscriptionId = input.parsed.providerSubscriptionId ? String(input.parsed.providerSubscriptionId).trim() : ''
   const subscriptionStatus = mapPaypalSubscriptionStatusFromEvent(String(input.eventType || ''))
   if (subscriptionId && subscriptionStatus) {
+    const clearPendingAction = shouldClearPendingActionFromEvent(input.eventType)
     await repo.upsertPaymentSubscription({
       provider: session.provider,
       mode: session.mode,
@@ -324,6 +366,7 @@ async function persistDurablePaymentState(input: {
       messageCampaignKey: session.message_campaign_key || null,
       lastEventType: input.eventType || null,
       lastEventAtUtc: occurredAt,
+      clearPendingAction,
     })
   }
 }
@@ -417,15 +460,25 @@ export async function createCatalogItemForAdmin(input: {
 }): Promise<PaymentCatalogItemRow> {
   const actorUserId = normalizePositiveId(input.actorUserId, 'invalid_actor_user_id')
   if (!actorUserId) throw new DomainError('invalid_actor_user_id', 'invalid_actor_user_id', 400)
+  const kind = normalizeCatalogKind(input.kind)
+  const status = normalizeCatalogStatus(input.status)
+  const provider = normalizeProvider(input.provider || 'paypal')
+  const providerRef = normalizeProviderRef(input.providerRef)
+  assertCatalogProviderRefPolicy({
+    kind,
+    status,
+    provider,
+    providerRef,
+  })
   const created = await repo.insertCatalogItem({
-    kind: normalizeCatalogKind(input.kind),
+    kind,
     itemKey: normalizeItemKey(input.itemKey),
     label: normalizeLabel(input.label),
-    status: normalizeCatalogStatus(input.status),
+    status,
     amountCents: normalizeAmountCents(input.amountCents),
     currency: normalizeCurrency(input.currency),
-    provider: normalizeProvider(input.provider || 'paypal'),
-    providerRef: input.providerRef == null || input.providerRef === '' ? null : String(input.providerRef).trim(),
+    provider,
+    providerRef,
     configJson: JSON.stringify(normalizeJsonConfig(input.configJson)),
     actorUserId,
   })
@@ -450,16 +503,26 @@ export async function updateCatalogItemForAdmin(input: {
   const id = normalizePositiveId(input.id, 'invalid_payment_catalog_id')
   if (!actorUserId) throw new DomainError('invalid_actor_user_id', 'invalid_actor_user_id', 400)
   if (!id) throw new DomainError('invalid_payment_catalog_id', 'invalid_payment_catalog_id', 400)
+  const kind = normalizeCatalogKind(input.kind)
+  const status = normalizeCatalogStatus(input.status)
+  const provider = normalizeProvider(input.provider || 'paypal')
+  const providerRef = normalizeProviderRef(input.providerRef)
+  assertCatalogProviderRefPolicy({
+    kind,
+    status,
+    provider,
+    providerRef,
+  })
   await repo.updateCatalogItem({
     id,
-    kind: normalizeCatalogKind(input.kind),
+    kind,
     itemKey: normalizeItemKey(input.itemKey),
     label: normalizeLabel(input.label),
-    status: normalizeCatalogStatus(input.status),
+    status,
     amountCents: normalizeAmountCents(input.amountCents),
     currency: normalizeCurrency(input.currency),
-    provider: normalizeProvider(input.provider || 'paypal'),
-    providerRef: input.providerRef == null || input.providerRef === '' ? null : String(input.providerRef).trim(),
+    provider,
+    providerRef,
     configJson: JSON.stringify(normalizeJsonConfig(input.configJson)),
     actorUserId,
   })
@@ -505,6 +568,9 @@ export async function createCheckoutSession(input: CreateCheckoutSessionInput): 
         const kind = String(catalogItem.kind || '')
         if ((intent === 'donate' && kind !== 'donate_campaign') || (intent === 'subscribe' && kind !== 'subscribe_plan')) {
           throw new DomainError('payment_catalog_item_kind_mismatch', 'payment_catalog_item_kind_mismatch', 400)
+        }
+        if (intent === 'subscribe' && !String(catalogItem.provider_ref || '').trim()) {
+          throw new DomainError('payment_catalog_provider_ref_required', 'payment_catalog_provider_ref_required', 400)
         }
       }
 
@@ -553,17 +619,50 @@ export async function createCheckoutSession(input: CreateCheckoutSessionInput): 
       })
 
       const adapter = getPaymentProvider(provider)
-      const providerStart = await adapter.createCheckoutSession({
-        checkoutId,
-        mode,
-        intent,
-        credentials: parseJsonObject(providerCfg.credentials_json),
-        amountCents,
-        currency,
-        returnUrl,
-        cancelUrl,
-        metadata: enrichedMetadata,
-      })
+      const providerCredentials = parseJsonObject(providerCfg.credentials_json)
+      const providerStart = intent === 'subscribe'
+        ? await (async () => {
+            if (!adapter.createSubscriptionSession) {
+              throw new DomainError('payment_subscription_not_supported', 'payment_subscription_not_supported', 400)
+            }
+            if (!catalogItem || !String(catalogItem.provider_ref || '').trim()) {
+              throw new DomainError('payment_catalog_provider_ref_required', 'payment_catalog_provider_ref_required', 400)
+            }
+            const subStart = await adapter.createSubscriptionSession({
+              checkoutId,
+              mode,
+              credentials: providerCredentials,
+              providerPlanId: String(catalogItem.provider_ref || '').trim(),
+              returnUrl,
+              cancelUrl,
+              metadata: enrichedMetadata,
+            })
+            return {
+              providerSessionId: subStart.providerSessionId,
+              providerOrderId: null as string | null,
+              redirectUrl: subStart.redirectUrl,
+              providerSubscriptionId: subStart.providerSubscriptionId,
+            }
+          })()
+        : await (async () => {
+            const orderStart = await adapter.createCheckoutSession({
+              checkoutId,
+              mode,
+              intent,
+              credentials: providerCredentials,
+              amountCents,
+              currency,
+              returnUrl,
+              cancelUrl,
+              metadata: enrichedMetadata,
+            })
+            return {
+              providerSessionId: orderStart.providerSessionId,
+              providerOrderId: orderStart.providerOrderId || null,
+              redirectUrl: orderStart.redirectUrl,
+              providerSubscriptionId: null as string | null,
+            }
+          })()
 
       await repo.updateCheckoutSessionAfterProviderStart({
         checkoutId,
@@ -582,6 +681,7 @@ export async function createCheckoutSession(input: CreateCheckoutSessionInput): 
       if (catalogItemId != null) span.setAttribute('app.payment_catalog_item_id', String(catalogItemId))
       if (amountCents != null) span.setAttribute('app.payment_amount_cents', String(amountCents))
       if (enrichedMetadata.support_source) span.setAttribute('app.support_source', String(enrichedMetadata.support_source))
+      if (providerStart.providerSubscriptionId) span.setAttribute('app.payment_provider_subscription_id', providerStart.providerSubscriptionId)
       span.setStatus({ code: SpanStatusCode.OK })
 
       paymentLogger.info({
@@ -594,6 +694,7 @@ export async function createCheckoutSession(input: CreateCheckoutSessionInput): 
         payment_catalog_item_id: catalogItemId,
         payment_amount_cents: amountCents,
         support_source: enrichedMetadata.support_source || null,
+        payment_provider_subscription_id: providerStart.providerSubscriptionId,
         message_id: messageId,
         message_campaign_key: campaignKey,
       }, 'payments.checkout.create')
@@ -669,84 +770,111 @@ export async function ingestWebhook(input: {
       if (saved.inserted) {
         const parsed: PaymentWebhookParsedCompletion = adapter.parseCompletion(verified)
         derivedPaymentStatus = parsed.checkoutStatus || null
+        const payloadResource: any = verified.payload?.resource && typeof verified.payload.resource === 'object' ? verified.payload.resource : null
+        const customCheckoutId = payloadResource?.custom_id ? String(payloadResource.custom_id).trim().toLowerCase() : ''
         try {
-          if (parsed.checkoutStatus) {
-            let session = parsed.providerSessionId
-              ? await repo.getCheckoutSessionByProviderSession({ provider, providerSessionId: parsed.providerSessionId })
-              : null
-            if (!session && parsed.providerOrderId) {
-              session = await repo.getCheckoutSessionByProviderOrder({ provider, providerOrderId: parsed.providerOrderId })
-            }
-            if (session) {
+          let session = parsed.providerSessionId
+            ? await repo.getCheckoutSessionByProviderSession({ provider, providerSessionId: parsed.providerSessionId })
+            : null
+          if (!session && customCheckoutId) {
+            session = await repo.getCheckoutSessionByCheckoutId(customCheckoutId)
+          }
+          if (!session && parsed.providerOrderId) {
+            session = await repo.getCheckoutSessionByProviderOrder({ provider, providerOrderId: parsed.providerOrderId })
+          }
+          const subscriptionStatus = mapPaypalSubscriptionStatusFromEvent(String(verified.eventType || ''))
+          const clearPendingAction = shouldClearPendingActionFromEvent(verified.eventType)
+          const providerSubscriptionId = parsed.providerSubscriptionId ? String(parsed.providerSubscriptionId).trim() : ''
+          if (session) {
+            if (parsed.checkoutStatus) {
               await repo.updateCheckoutSessionStatus({
                 id: session.id,
                 status: parsed.checkoutStatus,
                 providerSessionId: parsed.providerSessionId || null,
                 providerOrderId: parsed.providerOrderId || null,
               })
-              const refreshed = await repo.getCheckoutSessionById(Number(session.id))
-              const latest = refreshed || {
-                ...session,
-                status: parsed.checkoutStatus,
-                provider_session_id: parsed.providerSessionId || session.provider_session_id,
-                provider_order_id: parsed.providerOrderId || session.provider_order_id,
-              }
-              await persistDurablePaymentState({
-                session: latest as PaymentCheckoutSessionRow,
-                parsed,
-                source: 'webhook',
-                eventType: verified.eventType,
-                providerEventId: verified.providerEventId,
+            }
+            const refreshed = await repo.getCheckoutSessionById(Number(session.id))
+            const latest = refreshed || {
+              ...session,
+              status: parsed.checkoutStatus || session.status,
+              provider_session_id: parsed.providerSessionId || session.provider_session_id,
+              provider_order_id: parsed.providerOrderId || session.provider_order_id,
+            }
+            await persistDurablePaymentState({
+              session: latest as PaymentCheckoutSessionRow,
+              parsed,
+              source: 'webhook',
+              eventType: verified.eventType,
+              providerEventId: verified.providerEventId,
+            })
+            if (parsed.checkoutStatus === 'completed') {
+              const forEmit = refreshed || { ...session, status: 'completed' as const }
+              await emitMessageCompletionFromCheckout({ session: forEmit, parsed })
+            }
+            if (providerSubscriptionId && subscriptionStatus && !parsed.providerSessionId) {
+              await repo.upsertPaymentSubscription({
+                provider,
+                mode,
+                providerSubscriptionId,
+                status: subscriptionStatus,
+                userId: latest.user_id == null ? null : Number(latest.user_id),
+                checkoutSessionId: Number(latest.id),
+                checkoutId: latest.checkout_id || null,
+                providerOrderId: parsed.providerOrderId || latest.provider_order_id || null,
+                catalogItemId: latest.catalog_item_id == null ? null : Number(latest.catalog_item_id),
+                amountCents: latest.amount_cents == null ? null : Number(latest.amount_cents),
+                currency: latest.currency || 'USD',
+                messageId: latest.message_id == null ? null : Number(latest.message_id),
+                messageCampaignKey: latest.message_campaign_key || null,
+                lastEventType: verified.eventType || null,
+                lastEventAtUtc: toDateTimeUtc(new Date()),
+                clearPendingAction,
               })
-              if (parsed.checkoutStatus === 'completed') {
-                const forEmit = refreshed || { ...session, status: 'completed' as const }
-                await emitMessageCompletionFromCheckout({ session: forEmit, parsed })
-              }
+            }
+            await repo.markWebhookEventProcessed({
+              dedupeKey,
+              processingState: 'processed',
+              errorMessage: null,
+            })
+          } else {
+            if (providerSubscriptionId && subscriptionStatus) {
+              await repo.upsertPaymentSubscription({
+                provider,
+                mode,
+                providerSubscriptionId,
+                status: subscriptionStatus,
+                userId: null,
+                checkoutSessionId: null,
+                checkoutId: null,
+                providerOrderId: parsed.providerOrderId || null,
+                catalogItemId: null,
+                amountCents: null,
+                currency: 'USD',
+                messageId: null,
+                messageCampaignKey: null,
+                lastEventType: verified.eventType || null,
+                lastEventAtUtc: toDateTimeUtc(new Date()),
+                clearPendingAction,
+              })
               await repo.markWebhookEventProcessed({
                 dedupeKey,
                 processingState: 'processed',
                 errorMessage: null,
               })
+            } else if (parsed.checkoutStatus) {
+              await repo.markWebhookEventProcessed({
+                dedupeKey,
+                processingState: 'ignored',
+                errorMessage: 'session_not_found',
+              })
             } else {
-              const subId = parsed.providerSubscriptionId ? String(parsed.providerSubscriptionId).trim() : ''
-              const subStatus = mapPaypalSubscriptionStatusFromEvent(String(verified.eventType || ''))
-              if (subId && subStatus) {
-                await repo.upsertPaymentSubscription({
-                  provider,
-                  mode,
-                  providerSubscriptionId: subId,
-                  status: subStatus,
-                  userId: null,
-                  checkoutSessionId: null,
-                  checkoutId: null,
-                  providerOrderId: parsed.providerOrderId || null,
-                  catalogItemId: null,
-                  amountCents: null,
-                  currency: 'USD',
-                  messageId: null,
-                  messageCampaignKey: null,
-                  lastEventType: verified.eventType || null,
-                  lastEventAtUtc: toDateTimeUtc(new Date()),
-                })
-                await repo.markWebhookEventProcessed({
-                  dedupeKey,
-                  processingState: 'processed',
-                  errorMessage: null,
-                })
-              } else {
-                await repo.markWebhookEventProcessed({
-                  dedupeKey,
-                  processingState: 'ignored',
-                  errorMessage: 'session_not_found',
-                })
-              }
+              await repo.markWebhookEventProcessed({
+                dedupeKey,
+                processingState: 'ignored',
+                errorMessage: parsed.outcomeReason || 'event_ignored',
+              })
             }
-          } else {
-            await repo.markWebhookEventProcessed({
-              dedupeKey,
-              processingState: 'ignored',
-              errorMessage: parsed.outcomeReason || 'event_ignored',
-            })
           }
         } catch (err: any) {
           await repo.markWebhookEventProcessed({
@@ -879,6 +1007,56 @@ export async function completePaypalOrderFromReturn(input: {
       }, 'payments.checkout.return')
 
       return { returnUrl, checkoutId: session.checkout_id, status: 'completed' as const }
+    } catch (err: any) {
+      span.recordException(err)
+      span.setAttributes({ 'app.outcome': 'client_error' })
+      span.setStatus({ code: SpanStatusCode.ERROR, message: String(err?.message || err || 'payment_checkout_return_failed') })
+      throw err
+    } finally {
+      span.end()
+    }
+  })
+}
+
+export async function completePaypalSubscriptionReturn(input: {
+  providerSubscriptionId: string
+}): Promise<{ returnUrl: string; checkoutId: string; status: 'redirected' | 'completed' }> {
+  return tracer.startActiveSpan('payments.checkout.return', { attributes: { 'app.operation': 'payments.checkout.return' } }, async (span) => {
+    try {
+      const providerSubscriptionId = String(input.providerSubscriptionId || '').trim()
+      if (!providerSubscriptionId) throw new DomainError('invalid_payment_provider_subscription_id', 'invalid_payment_provider_subscription_id', 400)
+
+      const session = await repo.getCheckoutSessionByProviderSession({
+        provider: 'paypal',
+        providerSessionId: providerSubscriptionId,
+      })
+      if (!session) throw new DomainError('payment_checkout_not_found', 'payment_checkout_not_found', 404)
+
+      const metadata = parseMetadata(session.metadata_json)
+      const returnUrl = normalizeNullablePath(metadata.final_return_path || session.return_url, 'invalid_payment_return_url') || '/'
+      span.setAttributes({
+        'app.outcome': 'success',
+        'app.payment_provider': 'paypal',
+        'app.payment_mode': session.mode,
+        'app.payment_checkout_id': session.checkout_id,
+        'app.payment_provider_subscription_id': providerSubscriptionId,
+        'app.payment_status': session.status,
+      })
+      span.setStatus({ code: SpanStatusCode.OK })
+
+      paymentLogger.info({
+        app_operation: 'payments.checkout.return',
+        app_operation_detail: 'payments.checkout.subscription_redirect',
+        app_outcome: 'redirect',
+        payment_provider: 'paypal',
+        payment_mode: session.mode,
+        payment_checkout_id: session.checkout_id,
+        payment_provider_subscription_id: providerSubscriptionId,
+        payment_status: session.status,
+      }, 'payments.checkout.return')
+
+      const status: 'completed' | 'redirected' = session.status === 'completed' ? 'completed' : 'redirected'
+      return { returnUrl, checkoutId: session.checkout_id, status }
     } catch (err: any) {
       span.recordException(err)
       span.setAttributes({ 'app.outcome': 'client_error' })

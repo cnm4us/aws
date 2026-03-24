@@ -3,6 +3,8 @@ import { DomainError } from '../../../core/errors'
 import type {
   PaymentProviderCheckoutRequest,
   PaymentProviderCheckoutResult,
+  PaymentProviderSubscriptionRequest,
+  PaymentProviderSubscriptionResult,
   PaymentWebhookParsedCompletion,
   PaymentWebhookVerifyInput,
   PaymentWebhookVerifyResult,
@@ -196,6 +198,53 @@ export const paypalProviderAdapter: PaymentProviderAdapter = {
     }
   },
 
+  async createSubscriptionSession(input: PaymentProviderSubscriptionRequest): Promise<PaymentProviderSubscriptionResult> {
+    const creds = parseCredentials(input.credentials || {})
+    const token = await getAccessToken({
+      mode: input.mode,
+      clientId: creds.clientId,
+      clientSecret: creds.clientSecret,
+    })
+    const returnUrl = normalizeReturnUrl(input.returnUrl) || normalizeReturnUrl('/') || 'https://aws.bawebtech.com/'
+    const cancelUrl = normalizeReturnUrl(input.cancelUrl) || returnUrl
+    const providerPlanId = String(input.providerPlanId || '').trim()
+    if (!providerPlanId) {
+      throw new DomainError('paypal_provider_plan_id_missing', 'paypal_provider_plan_id_missing', 400)
+    }
+
+    const payload: any = {
+      plan_id: providerPlanId,
+      custom_id: input.checkoutId,
+      application_context: {
+        return_url: returnUrl,
+        cancel_url: cancelUrl,
+      },
+    }
+
+    const res = await fetchJson(`${PAYPAL_BASE[input.mode]}/v1/billing/subscriptions`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+        accept: 'application/json',
+      },
+      body: JSON.stringify(payload),
+    })
+    if (res.status < 200 || res.status >= 300) {
+      throw new DomainError('paypal_subscription_create_failed', 'paypal_subscription_create_failed', 502)
+    }
+    const providerSubscriptionId = String(res.data?.id || '').trim()
+    const redirectUrl = findApproveUrl(Array.isArray(res.data?.links) ? res.data.links : [])
+    if (!providerSubscriptionId || !redirectUrl) {
+      throw new DomainError('paypal_subscription_create_invalid_response', 'paypal_subscription_create_invalid_response', 502)
+    }
+    return {
+      providerSessionId: providerSubscriptionId,
+      providerSubscriptionId,
+      redirectUrl,
+    }
+  },
+
   async verifyWebhook(input: PaymentWebhookVerifyInput): Promise<PaymentWebhookVerifyResult> {
     const creds = parseCredentials(input.credentials || {})
     const token = await getAccessToken({
@@ -250,13 +299,14 @@ export const paypalProviderAdapter: PaymentProviderAdapter = {
   parseCompletion(input: PaymentWebhookVerifyResult): PaymentWebhookParsedCompletion {
     const eventType = String(input.eventType || '').trim().toUpperCase()
     const resource: any = input.payload?.resource && typeof input.payload.resource === 'object' ? input.payload.resource : {}
-    const orderIdFromResource = resource?.id != null ? String(resource.id || '').trim() : null
+    const resourceId = resource?.id != null ? String(resource.id || '').trim() : null
     const orderIdFromRelated = resource?.supplementary_data?.related_ids?.order_id != null
       ? String(resource.supplementary_data.related_ids.order_id || '').trim()
       : null
-    const providerOrderId = orderIdFromRelated || orderIdFromResource || null
-    const providerSessionId = providerOrderId
-    const providerSubscriptionId = resource?.id != null ? String(resource.id || '').trim() : null
+    const isSubscriptionEvent = eventType.startsWith('BILLING.SUBSCRIPTION.')
+    const providerSubscriptionId = isSubscriptionEvent && resourceId ? resourceId : null
+    const providerOrderId = orderIdFromRelated || (!isSubscriptionEvent ? resourceId : null)
+    const providerSessionId = providerSubscriptionId || providerOrderId
 
     if (eventType === 'CHECKOUT.ORDER.COMPLETED' || eventType === 'PAYMENT.CAPTURE.COMPLETED' || eventType === 'BILLING.SUBSCRIPTION.ACTIVATED') {
       return {

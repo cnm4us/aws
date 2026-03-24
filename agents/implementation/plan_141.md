@@ -1,6 +1,6 @@
 # Plan 141: Provider-Native Subscriptions (PayPal Billing)
 
-Status: Planned
+Status: In Progress
 
 ## Context
 - Current `subscribe` checkout is still PayPal Orders/Capture.
@@ -32,10 +32,10 @@ Status: Planned
 - Return route may show pending/accepted, but no final status without webhook.
 
 ## Phase Status
-- A: Pending
-- B: Pending
-- C: Pending
-- D: Pending
+- A: Completed
+- B: Completed
+- C: Completed
+- D: Completed
 - E: Pending
 - F: Pending
 
@@ -43,9 +43,9 @@ Status: Planned
 - Goal:
   - Enforce clean subscription catalog contract.
 - Steps:
-  - [ ] Add validation path for `subscribe_plan` requiring non-empty `provider_ref`.
-  - [ ] Add diagnostics for invalid subscription catalog rows (CLI/report).
-  - [ ] Keep backwards compatibility for existing rows (no destructive migration).
+  - [x] Add validation path for `subscribe_plan` requiring non-empty `provider_ref`.
+  - [x] Add diagnostics for invalid subscription catalog rows (CLI/report).
+  - [x] Keep backwards compatibility for existing rows (no destructive migration).
 - Acceptance:
   - Starting a subscribe checkout fails fast with clear error if plan mapping is invalid.
 
@@ -53,10 +53,10 @@ Status: Planned
 - Goal:
   - Add PayPal create-subscription API support.
 - Steps:
-  - [ ] Extend provider adapter with `createSubscriptionSession(...)`.
-  - [ ] Implement PayPal call (`/v1/billing/subscriptions`) using `plan_id=provider_ref`.
-  - [ ] Return approval URL + provider subscription id (if available at create).
-  - [ ] Add robust error mapping (`paypal_subscription_create_failed`, etc.).
+  - [x] Extend provider adapter with `createSubscriptionSession(...)`.
+  - [x] Implement PayPal call (`/v1/billing/subscriptions`) using `plan_id=provider_ref`.
+  - [x] Return approval URL + provider subscription id (if available at create).
+  - [x] Add robust error mapping (`paypal_subscription_create_failed`, etc.).
 - Acceptance:
   - Adapter can create a real PayPal subscription approval flow.
 
@@ -64,12 +64,12 @@ Status: Planned
 - Goal:
   - Route `subscribe` checkout to native subscription path.
 - Steps:
-  - [ ] In `payments.createCheckoutSession`, branch by intent:
+  - [x] In `payments.createCheckoutSession`, branch by intent:
     - donate => existing order/capture
     - subscribe => new subscription create path
-  - [ ] Persist provider subscription/session identifiers on checkout session.
-  - [ ] Preserve message attribution metadata and support source tags.
-  - [ ] Keep `/checkout/:intent` UX unchanged for user where possible.
+  - [x] Persist provider subscription/session identifiers on checkout session.
+  - [x] Preserve message attribution metadata and support source tags.
+  - [x] Keep `/checkout/:intent` UX unchanged for user where possible.
 - Acceptance:
   - Subscribe path no longer creates order-capture as primary mechanism.
 
@@ -77,16 +77,16 @@ Status: Planned
 - Goal:
   - Ensure subscription lifecycle events update durable records end-to-end.
 - Steps:
-  - [ ] Expand webhook handling for:
+  - [x] Expand webhook handling for:
     - `BILLING.SUBSCRIPTION.CREATED`
     - `...ACTIVATED`
     - `...UPDATED`
     - `...SUSPENDED`
     - `...CANCELLED`
     - `...EXPIRED`
-  - [ ] Upsert `payment_subscriptions` with user/linking when known.
-  - [ ] Clear pending action fields on confirming lifecycle events.
-  - [ ] Ensure `payment_transactions` only captures true transaction events (captures/refunds), not lifecycle-only events unless explicitly desired.
+  - [x] Upsert `payment_subscriptions` with user/linking when known.
+  - [x] Clear pending action fields on confirming lifecycle events.
+  - [x] Ensure `payment_transactions` only captures true transaction events (captures/refunds), not lifecycle-only events unless explicitly desired.
 - Acceptance:
   - Lifecycle actions + webhooks converge deterministically in `payment_subscriptions`.
 
@@ -139,4 +139,4 @@ Status: Planned
 
 ## Resume Here
 - Next action:
-  - Start Phase A: enforce `subscribe_plan.provider_ref` validity and add diagnostics.
+  - Start Phase E: `/my/support` lifecycle UX hardening.

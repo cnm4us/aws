@@ -58,7 +58,9 @@
     "db:query:donations": "ts-node scripts/db-query-donations.ts",
     "db:query:subscriptions": "ts-node scripts/db-query-subscriptions.ts",
     "db:backfill:donation-amounts": "ts-node scripts/db-backfill-donation-amounts.ts",
-    "payments:reconcile": "ts-node scripts/payments-reconcile.ts"
+    "payments:diagnose:subscribe-plans": "ts-node scripts/payments-diagnose-subscribe-plans.ts",
+    "payments:reconcile": "ts-node scripts/payments-reconcile.ts",
+    "payments:paypal:create-plans": "ts-node scripts/payments-paypal-create-plans.ts"
   },
   "dependencies": {
     "@aws-sdk/client-mediaconvert": "^3.645.0",

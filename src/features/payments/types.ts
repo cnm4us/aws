@@ -175,6 +175,22 @@ export type PaymentProviderCheckoutResult = {
   providerOrderId?: string | null
 }
 
+export type PaymentProviderSubscriptionRequest = {
+  checkoutId: string
+  mode: PaymentMode
+  credentials: Record<string, unknown>
+  providerPlanId: string
+  returnUrl: string | null
+  cancelUrl: string | null
+  metadata: Record<string, unknown>
+}
+
+export type PaymentProviderSubscriptionResult = {
+  providerSessionId: string
+  providerSubscriptionId: string
+  redirectUrl: string
+}
+
 export type PaymentWebhookVerifyInput = {
   mode: PaymentMode
   credentials: Record<string, unknown>

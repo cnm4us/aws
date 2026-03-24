@@ -327,6 +327,12 @@ export async function getCheckoutSessionById(id: number): Promise<PaymentCheckou
   return ((rows as any[])[0] || null) as PaymentCheckoutSessionRow | null
 }
 
+export async function getCheckoutSessionByCheckoutId(checkoutId: string): Promise<PaymentCheckoutSessionRow | null> {
+  const db = getPool()
+  const [rows] = await db.query(`SELECT * FROM payment_checkout_sessions WHERE checkout_id = ? LIMIT 1`, [checkoutId])
+  return ((rows as any[])[0] || null) as PaymentCheckoutSessionRow | null
+}
+
 export async function getCheckoutSessionByProviderOrder(params: {
   provider: PaymentProvider
   providerOrderId: string
@@ -484,8 +490,10 @@ export async function upsertPaymentSubscription(input: {
   messageCampaignKey: string | null
   lastEventType: string | null
   lastEventAtUtc: string
+  clearPendingAction?: boolean
 }): Promise<void> {
   const db = getPool()
+  const clearPendingAction = input.clearPendingAction !== false
   await db.query(
     `INSERT INTO payment_subscriptions
       (
@@ -509,9 +517,9 @@ export async function upsertPaymentSubscription(input: {
         message_campaign_key = COALESCE(VALUES(message_campaign_key), message_campaign_key),
         last_event_type = COALESCE(VALUES(last_event_type), last_event_type),
         last_event_at = VALUES(last_event_at),
-        pending_action = NULL,
-        pending_plan_key = NULL,
-        pending_requested_at = NULL,
+        pending_action = CASE WHEN ? = 1 THEN NULL ELSE pending_action END,
+        pending_plan_key = CASE WHEN ? = 1 THEN NULL ELSE pending_plan_key END,
+        pending_requested_at = CASE WHEN ? = 1 THEN NULL ELSE pending_requested_at END,
         updated_at = CURRENT_TIMESTAMP`,
     [
       input.provider,
@@ -529,6 +537,9 @@ export async function upsertPaymentSubscription(input: {
       input.messageCampaignKey,
       input.lastEventType,
       input.lastEventAtUtc,
+      clearPendingAction ? 1 : 0,
+      clearPendingAction ? 1 : 0,
+      clearPendingAction ? 1 : 0,
     ]
   )
 }

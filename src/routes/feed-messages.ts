@@ -711,6 +711,23 @@ feedMessagesRouter.post(checkoutPagePaths, async (req: any, res: any, next: any)
 
 feedMessagesRouter.get(paypalReturnPaths, async (req: any, res: any, next: any) => {
   try {
+    const subscriptionId = String(req.query?.subscription_id || req.query?.ba_token || '').trim()
+    if (subscriptionId) {
+      const completed = await paymentsSvc.completePaypalSubscriptionReturn({
+        providerSubscriptionId: subscriptionId,
+      })
+      const span = trace.getSpan(context.active())
+      if (span) {
+        span.setAttribute('app.operation', 'payments.checkout.return')
+        span.setAttribute('app.operation_detail', 'payments.checkout.return.subscription_redirect')
+        span.setAttribute('app.payment_provider', 'paypal')
+        span.setAttribute('app.payment_checkout_id', completed.checkoutId)
+        span.setAttribute('app.payment_provider_subscription_id', subscriptionId)
+        span.setAttribute('app.payment_status', completed.status)
+        span.setAttribute('app.outcome', 'redirect')
+      }
+      return res.redirect(completed.returnUrl || '/')
+    }
     const token = String(req.query?.token || '').trim()
     if (!token) return res.redirect('/')
     const completed = await paymentsSvc.completePaypalOrderFromReturn({

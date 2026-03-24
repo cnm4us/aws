@@ -4,6 +4,8 @@ import type {
   PaymentProvider,
   PaymentProviderCheckoutRequest,
   PaymentProviderCheckoutResult,
+  PaymentProviderSubscriptionRequest,
+  PaymentProviderSubscriptionResult,
   PaymentWebhookVerifyInput,
   PaymentWebhookVerifyResult,
 } from './types'
@@ -11,6 +13,7 @@ import type {
 export interface PaymentProviderAdapter {
   readonly provider: PaymentProvider
   createCheckoutSession(input: PaymentProviderCheckoutRequest): Promise<PaymentProviderCheckoutResult>
+  createSubscriptionSession?(input: PaymentProviderSubscriptionRequest): Promise<PaymentProviderSubscriptionResult>
   verifyWebhook(input: PaymentWebhookVerifyInput): Promise<PaymentWebhookVerifyResult>
   parseCompletion(input: PaymentWebhookVerifyResult): PaymentWebhookParsedCompletion
   cancelSubscription?(input: {
