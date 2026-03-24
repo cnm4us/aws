@@ -30,6 +30,7 @@ const feedMessageAuthIntentPaths = ['/api/feed/message-auth-intent']
 const feedMessageMockCompletionPaths = ['/api/cta/mock/complete']
 const checkoutPagePaths = ['/checkout/:intent']
 const paypalWebhookPaths = ['/api/payments/paypal/webhook', '/api/payments/paypal/webhook/:mode']
+const paypalReturnPaths = ['/api/payments/paypal/return']
 
 let globalSubscriptionSpaceCache: { spaceId: number | null; expiresAtMs: number } = { spaceId: null, expiresAtMs: 0 }
 
@@ -594,6 +595,8 @@ feedMessagesRouter.post(checkoutPagePaths, async (req: any, res: any, next: any)
     const messageCtaIntentKey = req.body?.message_cta_intent_key ? String(req.body.message_cta_intent_key).trim().toLowerCase() : null
     const messageCtaExecutorType = req.body?.message_cta_executor_type ? String(req.body.message_cta_executor_type).trim().toLowerCase() : null
 
+    const providerReturnPath = '/api/payments/paypal/return'
+
     try {
       const started = await paymentsSvc.createCheckoutSession({
         provider,
@@ -604,11 +607,12 @@ feedMessagesRouter.post(checkoutPagePaths, async (req: any, res: any, next: any)
         messageCampaignKey,
         messageIntentId,
         messageCtaDefinitionId,
-        returnUrl: returnPath,
+        returnUrl: providerReturnPath,
         cancelUrl: cancelPath,
         metadata: {
           checkout_intent: intent,
           source: 'message_cta',
+          final_return_path: returnPath,
           message_session_id: messageSessionId,
           message_sequence_key: messageSequenceKey,
           message_cta_slot: messageCtaSlot,
@@ -671,6 +675,31 @@ feedMessagesRouter.post(checkoutPagePaths, async (req: any, res: any, next: any)
     query.set('return', returnPath)
     query.set('error', String(err?.message || 'checkout_start_failed'))
     return res.redirect(`/checkout/${encodeURIComponent(intent)}?${query.toString()}`)
+  }
+})
+
+feedMessagesRouter.get(paypalReturnPaths, async (req: any, res: any, next: any) => {
+  try {
+    const token = String(req.query?.token || '').trim()
+    if (!token) return res.redirect('/')
+    const completed = await paymentsSvc.completePaypalOrderFromReturn({
+      providerOrderId: token,
+      payerId: req.query?.PayerID ? String(req.query.PayerID).trim() : null,
+    })
+    const span = trace.getSpan(context.active())
+    if (span) {
+      span.setAttribute('app.operation', 'payments.checkout.return')
+      span.setAttribute('app.operation_detail', 'payments.checkout.return.redirect')
+      span.setAttribute('app.payment_provider', 'paypal')
+      span.setAttribute('app.payment_checkout_id', completed.checkoutId)
+      span.setAttribute('app.payment_status', completed.status)
+      span.setAttribute('app.outcome', 'redirect')
+    }
+    return res.redirect(completed.returnUrl || '/')
+  } catch (err: any) {
+    const fallback = normalizeReturnPath(req.query?.return, '/')
+    if (String(err?.code || '') === 'payment_checkout_not_found') return res.redirect(fallback)
+    return next(err)
   }
 })
 

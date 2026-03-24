@@ -18,7 +18,7 @@ import type {
   PaymentWebhookParsedCompletion,
   PaymentCheckoutSessionRow,
 } from './types'
-import { paypalProviderAdapter } from './providers/paypal'
+import { capturePaypalOrder, paypalProviderAdapter } from './providers/paypal'
 
 const paymentLogger = getLogger({ component: 'features.payments' })
 const tracer = trace.getTracer('aws.payments')
@@ -606,6 +606,99 @@ export async function ingestWebhook(input: {
       span.recordException(err)
       span.setAttributes({ 'app.outcome': 'client_error' })
       span.setStatus({ code: SpanStatusCode.ERROR, message: String(err?.message || err || 'payment_webhook_ingest_failed') })
+      throw err
+    } finally {
+      span.end()
+    }
+  })
+}
+
+export async function completePaypalOrderFromReturn(input: {
+  providerOrderId: string
+  payerId?: string | null
+}): Promise<{ returnUrl: string; checkoutId: string; status: 'completed' | 'already_completed' }> {
+  return tracer.startActiveSpan('payments.checkout.return', { attributes: { 'app.operation': 'payments.checkout.return' } }, async (span) => {
+    try {
+      const providerOrderId = String(input.providerOrderId || '').trim()
+      if (!providerOrderId) throw new DomainError('invalid_payment_provider_order_id', 'invalid_payment_provider_order_id', 400)
+
+      const session = await repo.getCheckoutSessionByProviderOrder({
+        provider: 'paypal',
+        providerOrderId,
+      })
+      if (!session) throw new DomainError('payment_checkout_not_found', 'payment_checkout_not_found', 404)
+
+      const metadata = parseMetadata(session.metadata_json)
+      const returnUrl = normalizeNullablePath(metadata.final_return_path || session.return_url, 'invalid_payment_return_url') || '/'
+      if (session.status === 'completed') {
+        span.setAttributes({
+          'app.outcome': 'success',
+          'app.payment_provider': 'paypal',
+          'app.payment_mode': session.mode,
+          'app.payment_checkout_id': session.checkout_id,
+          'app.payment_status': 'completed',
+        })
+        span.setStatus({ code: SpanStatusCode.OK })
+        return { returnUrl, checkoutId: session.checkout_id, status: 'already_completed' as const }
+      }
+
+      const providerCfg = await repo.getProviderConfig({ provider: 'paypal', mode: session.mode })
+      if (!providerCfg || providerCfg.status !== 'enabled') {
+        throw new DomainError('payment_provider_disabled', 'payment_provider_disabled', 400)
+      }
+      const providerCredentials = parseJsonObject(providerCfg.credentials_json)
+      const captured = await capturePaypalOrder({
+        mode: session.mode,
+        credentials: providerCredentials,
+        providerOrderId,
+      })
+      if (captured.status !== 'COMPLETED') {
+        throw new DomainError('paypal_capture_not_completed', 'paypal_capture_not_completed', 409)
+      }
+
+      await repo.updateCheckoutSessionStatus({
+        id: Number(session.id),
+        status: 'completed',
+        providerSessionId: captured.orderId || providerOrderId,
+        providerOrderId,
+      })
+      const refreshed = await repo.getCheckoutSessionById(Number(session.id))
+      const forEmit = refreshed || { ...session, status: 'completed' as const }
+      await emitMessageCompletionFromCheckout({
+        session: forEmit,
+        parsed: {
+          checkoutStatus: 'completed',
+          providerSessionId: captured.orderId || providerOrderId,
+          providerOrderId,
+          providerSubscriptionId: null,
+          outcomeReason: 'capture_from_return',
+        },
+      })
+
+      span.setAttributes({
+        'app.outcome': 'success',
+        'app.payment_provider': 'paypal',
+        'app.payment_mode': session.mode,
+        'app.payment_checkout_id': session.checkout_id,
+        'app.payment_status': 'completed',
+      })
+      span.setStatus({ code: SpanStatusCode.OK })
+
+      paymentLogger.info({
+        app_operation: 'payments.checkout.return',
+        app_operation_detail: 'payments.checkout.capture',
+        app_outcome: 'success',
+        payment_provider: 'paypal',
+        payment_mode: session.mode,
+        payment_checkout_id: session.checkout_id,
+        payment_order_id: providerOrderId,
+      }, 'payments.checkout.return')
+
+      return { returnUrl, checkoutId: session.checkout_id, status: 'completed' as const }
+    } catch (err: any) {
+      span.recordException(err)
+      span.setAttributes({ 'app.outcome': 'client_error' })
+      span.setStatus({ code: SpanStatusCode.ERROR, message: String(err?.message || err || 'payment_checkout_return_failed') })
       throw err
     } finally {
       span.end()

@@ -103,6 +103,40 @@ function hashDedupeSource(rawBody: string): string {
   return crypto.createHash('sha256').update(rawBody).digest('hex')
 }
 
+export async function capturePaypalOrder(input: {
+  mode: 'sandbox' | 'live'
+  credentials: Record<string, unknown>
+  providerOrderId: string
+}): Promise<{ orderId: string; captureId: string | null; status: string }> {
+  const creds = parseCredentials(input.credentials || {})
+  const token = await getAccessToken({
+    mode: input.mode,
+    clientId: creds.clientId,
+    clientSecret: creds.clientSecret,
+  })
+  const orderId = String(input.providerOrderId || '').trim()
+  if (!orderId) throw new DomainError('paypal_order_id_missing', 'paypal_order_id_missing', 400)
+  const res = await fetchJson(`${PAYPAL_BASE[input.mode]}/v2/checkout/orders/${encodeURIComponent(orderId)}/capture`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${token}`,
+      'content-type': 'application/json',
+      accept: 'application/json',
+    },
+    body: JSON.stringify({}),
+  })
+  if (res.status < 200 || res.status >= 300) {
+    const errName = String(res.data?.name || '').trim()
+    const detail = [res.status, errName].filter(Boolean).join(':')
+    throw new DomainError(`paypal_capture_failed${detail ? `:${detail}` : ''}`, 'paypal_capture_failed', 502)
+  }
+  const status = String(res.data?.status || '').trim().toUpperCase()
+  const purchaseUnit = Array.isArray(res.data?.purchase_units) ? res.data.purchase_units[0] : null
+  const captures = Array.isArray(purchaseUnit?.payments?.captures) ? purchaseUnit.payments.captures : []
+  const captureId = captures.length ? String(captures[0]?.id || '').trim() || null : null
+  return { orderId, captureId, status }
+}
+
 export const paypalProviderAdapter: PaymentProviderAdapter = {
   provider: 'paypal',
 
