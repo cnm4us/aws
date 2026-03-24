@@ -9,6 +9,7 @@ export type PaymentCheckoutStatus = 'pending' | 'redirected' | 'completed' | 'fa
 export type PaymentWebhookProcessingState = 'pending' | 'processed' | 'ignored' | 'failed'
 export type PaymentTransactionStatus = 'pending' | 'completed' | 'failed' | 'canceled' | 'expired'
 export type PaymentSubscriptionStatus = 'pending' | 'active' | 'suspended' | 'canceled' | 'expired'
+export type PaymentSubscriptionAction = 'cancel' | 'resume' | 'change_plan'
 
 export type PaymentProviderConfigRow = {
   id: number
@@ -130,6 +131,9 @@ export type PaymentSubscriptionRow = {
   currency: string
   message_id: number | null
   message_campaign_key: string | null
+  pending_action: PaymentSubscriptionAction | null
+  pending_plan_key: string | null
+  pending_requested_at: string | null
   last_event_type: string | null
   last_event_at: string | null
   created_at: string

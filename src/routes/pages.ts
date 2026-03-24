@@ -10767,6 +10767,10 @@ pagesRouter.get('/my/support', async (req: any, res: any) => {
     if (!req.user || !req.session) return res.redirect(`/login?from=${from}`)
     const userId = Number(req.user?.id || 0)
     if (!Number.isFinite(userId) || userId <= 0) return res.redirect(`/login?from=${from}`)
+    const cookies = parseCookies(req.headers.cookie)
+    const csrfToken = cookies['csrf'] || ''
+    const notice = req.query?.notice ? String(req.query.notice) : ''
+    const error = req.query?.error ? String(req.query.error) : ''
 
     const snapshot = await paymentsSvc.getMySupportSnapshot({ userId, recentLimit: 30 })
     const dollars = (cents: number | null | undefined): string => {
@@ -10778,6 +10782,8 @@ pagesRouter.get('/my/support', async (req: any, res: any) => {
 
     let body = '<h1>My Support</h1>'
     body += '<div class="toolbar"><div><span class="pill">Support</span></div><div><a href="/support?return=%2Fmy%2Fsupport&cancel=%2Fmy%2Fsupport">Support Again</a></div></div>'
+    if (notice) body += `<div class="notice">${escapeHtml(notice)}</div>`
+    if (error) body += `<div class="error">${escapeHtml(error)}</div>`
     body += '<div class="section">'
     body += '<div class="section-title">Totals</div>'
     body += `<p><strong>Lifetime Donations:</strong> ${dollars(snapshot.lifetimeDonatedCents)}</p>`
@@ -10809,12 +10815,30 @@ pagesRouter.get('/my/support', async (req: any, res: any) => {
     } else {
       body += '<table><thead><tr><th>Status</th><th>Provider Sub ID</th><th>Amount</th><th>Last Event</th><th>Updated</th></tr></thead><tbody>'
       for (const row of snapshot.subscriptions) {
+        const supportsActions = String(row.provider || '').toLowerCase() === 'paypal' && String(row.provider_subscription_id || '').trim().length > 0
         body += `<tr>
           <td>${asText(row.status)}</td>
           <td>${asText(row.provider_subscription_id)}</td>
           <td>${asText(dollars(row.amount_cents))} ${asText(row.currency || 'USD')}</td>
-          <td>${asText(row.last_event_type || '')}</td>
-          <td>${asText(row.updated_at || '')}</td>
+          <td>${asText(row.last_event_type || '')}${row.pending_action ? `<div style="font-size:.85em; opacity:.8">pending: ${asText(row.pending_action)}${row.pending_plan_key ? ` (${asText(row.pending_plan_key)})` : ''}</div>` : ''}</td>
+          <td>${asText(row.updated_at || '')}${supportsActions ? `<div class="row" style="margin-top:8px">
+            <form method="post" action="/api/payments/subscriptions/${Number(row.id)}/cancel" style="display:inline-flex; gap:6px; align-items:center">
+              <input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />
+              <input type="hidden" name="return" value="/my/support" />
+              <button type="submit">Cancel</button>
+            </form>
+            <form method="post" action="/api/payments/subscriptions/${Number(row.id)}/resume" style="display:inline-flex; gap:6px; align-items:center">
+              <input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />
+              <input type="hidden" name="return" value="/my/support" />
+              <button type="submit">Resume</button>
+            </form>
+            <form method="post" action="/api/payments/subscriptions/${Number(row.id)}/change_plan" style="display:inline-flex; gap:6px; align-items:center">
+              <input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />
+              <input type="hidden" name="return" value="/my/support" />
+              <input type="text" name="target_plan_key" placeholder="target plan key" style="min-width:160px" />
+              <button type="submit">Change Plan</button>
+            </form>
+          </div>` : ''}</td>
         </tr>`
       }
       body += '</tbody></table>'

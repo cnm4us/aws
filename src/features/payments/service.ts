@@ -15,6 +15,7 @@ import type {
   PaymentWebhookVerifyInput,
   PaymentCatalogItemRow,
   PaymentProviderConfigRow,
+  PaymentSubscriptionAction,
   PaymentSubscriptionRow,
   PaymentWebhookParsedCompletion,
   PaymentTransactionRow,
@@ -701,11 +702,38 @@ export async function ingestWebhook(input: {
                 errorMessage: null,
               })
             } else {
-              await repo.markWebhookEventProcessed({
-                dedupeKey,
-                processingState: 'ignored',
-                errorMessage: 'session_not_found',
-              })
+              const subId = parsed.providerSubscriptionId ? String(parsed.providerSubscriptionId).trim() : ''
+              const subStatus = mapPaypalSubscriptionStatusFromEvent(String(verified.eventType || ''))
+              if (subId && subStatus) {
+                await repo.upsertPaymentSubscription({
+                  provider,
+                  mode,
+                  providerSubscriptionId: subId,
+                  status: subStatus,
+                  userId: null,
+                  checkoutSessionId: null,
+                  checkoutId: null,
+                  providerOrderId: parsed.providerOrderId || null,
+                  catalogItemId: null,
+                  amountCents: null,
+                  currency: 'USD',
+                  messageId: null,
+                  messageCampaignKey: null,
+                  lastEventType: verified.eventType || null,
+                  lastEventAtUtc: toDateTimeUtc(new Date()),
+                })
+                await repo.markWebhookEventProcessed({
+                  dedupeKey,
+                  processingState: 'processed',
+                  errorMessage: null,
+                })
+              } else {
+                await repo.markWebhookEventProcessed({
+                  dedupeKey,
+                  processingState: 'ignored',
+                  errorMessage: 'session_not_found',
+                })
+              }
             }
           } else {
             await repo.markWebhookEventProcessed({
@@ -886,4 +914,105 @@ export async function getMySupportSnapshot(input: {
     recentTransactions,
     subscriptions,
   }
+}
+
+function normalizeSubscriptionAction(raw: any): PaymentSubscriptionAction {
+  const v = String(raw || '').trim().toLowerCase()
+  if (v === 'cancel' || v === 'resume' || v === 'change_plan') return v
+  throw new DomainError('invalid_subscription_action', 'invalid_subscription_action', 400)
+}
+
+export async function requestSubscriptionAction(input: {
+  userId: number
+  subscriptionId: number
+  action: PaymentSubscriptionAction | string
+  targetPlanKey?: string | null
+}): Promise<{ queued: true; subscriptionId: number; action: PaymentSubscriptionAction }> {
+  const userId = normalizePositiveId(input.userId, 'invalid_user_id')
+  const subscriptionId = normalizePositiveId(input.subscriptionId, 'invalid_subscription_id')
+  const action = normalizeSubscriptionAction(input.action)
+  if (!userId) throw new DomainError('invalid_user_id', 'invalid_user_id', 400)
+  if (!subscriptionId) throw new DomainError('invalid_subscription_id', 'invalid_subscription_id', 400)
+
+  const subscription = await repo.getSubscriptionByIdForUser({ id: subscriptionId, userId })
+  if (!subscription) throw new DomainError('subscription_not_found', 'subscription_not_found', 404)
+  const providerSubscriptionId = String(subscription.provider_subscription_id || '').trim()
+  if (!providerSubscriptionId) throw new DomainError('subscription_provider_id_missing', 'subscription_provider_id_missing', 400)
+
+  const providerCfg = await repo.getProviderConfig({ provider: subscription.provider, mode: subscription.mode })
+  if (!providerCfg || providerCfg.status !== 'enabled') {
+    throw new DomainError('payment_provider_disabled', 'payment_provider_disabled', 400)
+  }
+  const providerCredentials = parseJsonObject(providerCfg.credentials_json)
+  const adapter = getPaymentProvider(subscription.provider)
+  const requestedAtUtc = toDateTimeUtc(new Date())
+  const isSeededTestSubscription = /^I-TEST-/i.test(providerSubscriptionId)
+
+  let pendingPlanKey: string | null = null
+  if (action === 'cancel') {
+    if (!adapter.cancelSubscription) throw new DomainError('subscription_action_not_supported', 'subscription_action_not_supported', 400)
+    if (!isSeededTestSubscription) {
+      await adapter.cancelSubscription({
+        mode: subscription.mode,
+        credentials: providerCredentials,
+        subscriptionId: providerSubscriptionId,
+        reason: 'Canceled by user',
+      })
+    }
+  } else if (action === 'resume') {
+    if (!adapter.resumeSubscription) throw new DomainError('subscription_action_not_supported', 'subscription_action_not_supported', 400)
+    if (!isSeededTestSubscription) {
+      await adapter.resumeSubscription({
+        mode: subscription.mode,
+        credentials: providerCredentials,
+        subscriptionId: providerSubscriptionId,
+        reason: 'Resumed by user',
+      })
+    }
+  } else {
+    if (!adapter.changeSubscriptionPlan) throw new DomainError('subscription_action_not_supported', 'subscription_action_not_supported', 400)
+    const targetPlanKey = normalizeItemKey(input.targetPlanKey)
+    const plans = await repo.listCatalogItems({
+      kind: 'subscribe_plan',
+      status: 'active',
+      includeArchived: false,
+      limit: 500,
+    })
+    const target = plans.find((p) => String(p.item_key || '').toLowerCase() === targetPlanKey)
+    if (!target) throw new DomainError('subscription_target_plan_not_found', 'subscription_target_plan_not_found', 400)
+    const providerPlanId = String(target.provider_ref || '').trim()
+    if (!providerPlanId) throw new DomainError('subscription_target_plan_provider_ref_missing', 'subscription_target_plan_provider_ref_missing', 400)
+    if (!isSeededTestSubscription) {
+      await adapter.changeSubscriptionPlan({
+        mode: subscription.mode,
+        credentials: providerCredentials,
+        subscriptionId: providerSubscriptionId,
+        providerPlanId,
+      })
+    }
+    pendingPlanKey = targetPlanKey
+  }
+
+  await repo.setSubscriptionPendingAction({
+    id: Number(subscription.id),
+    action,
+    pendingPlanKey,
+    requestedAtUtc,
+  })
+
+  paymentLogger.info({
+    app_operation: 'payments.subscription.action',
+    app_operation_detail: `payments.subscription.${action}`,
+    app_outcome: 'accepted',
+    user_id: Number(userId),
+    payment_subscription_id: Number(subscription.id),
+    payment_provider: subscription.provider,
+    payment_mode: subscription.mode,
+    payment_provider_subscription_id: providerSubscriptionId,
+    payment_pending_action: action,
+    payment_pending_plan_key: pendingPlanKey,
+    payment_test_subscription: isSeededTestSubscription ? 1 : 0,
+  }, 'payments.subscription.action')
+
+  return { queued: true, subscriptionId: Number(subscription.id), action }
 }

@@ -1670,6 +1670,9 @@ export async function ensureSchema(db: DB) {
               currency CHAR(3) NOT NULL DEFAULT 'USD',
               message_id BIGINT UNSIGNED NULL,
               message_campaign_key VARCHAR(64) NULL,
+              pending_action ENUM('cancel','resume','change_plan') NULL,
+              pending_plan_key VARCHAR(64) NULL,
+              pending_requested_at DATETIME NULL,
               last_event_type VARCHAR(120) NULL,
               last_event_at DATETIME NULL,
               created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -1693,6 +1696,9 @@ export async function ensureSchema(db: DB) {
           await db.query(`ALTER TABLE payment_subscriptions ADD COLUMN IF NOT EXISTS currency CHAR(3) NOT NULL DEFAULT 'USD'`)
           await db.query(`ALTER TABLE payment_subscriptions ADD COLUMN IF NOT EXISTS message_id BIGINT UNSIGNED NULL`)
           await db.query(`ALTER TABLE payment_subscriptions ADD COLUMN IF NOT EXISTS message_campaign_key VARCHAR(64) NULL`)
+          await db.query(`ALTER TABLE payment_subscriptions ADD COLUMN IF NOT EXISTS pending_action ENUM('cancel','resume','change_plan') NULL`)
+          await db.query(`ALTER TABLE payment_subscriptions ADD COLUMN IF NOT EXISTS pending_plan_key VARCHAR(64) NULL`)
+          await db.query(`ALTER TABLE payment_subscriptions ADD COLUMN IF NOT EXISTS pending_requested_at DATETIME NULL`)
           await db.query(`ALTER TABLE payment_subscriptions ADD COLUMN IF NOT EXISTS last_event_type VARCHAR(120) NULL`)
           await db.query(`ALTER TABLE payment_subscriptions ADD COLUMN IF NOT EXISTS last_event_at DATETIME NULL`)
           try { await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_payment_sub_provider_id ON payment_subscriptions (provider, mode, provider_subscription_id)`); } catch {}

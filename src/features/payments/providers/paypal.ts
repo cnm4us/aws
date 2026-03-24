@@ -293,4 +293,75 @@ export const paypalProviderAdapter: PaymentProviderAdapter = {
       outcomeReason: 'event_ignored',
     }
   },
+
+  async cancelSubscription(input): Promise<void> {
+    const creds = parseCredentials(input.credentials || {})
+    const token = await getAccessToken({
+      mode: input.mode,
+      clientId: creds.clientId,
+      clientSecret: creds.clientSecret,
+    })
+    const subscriptionId = String(input.subscriptionId || '').trim()
+    if (!subscriptionId) throw new DomainError('paypal_subscription_id_missing', 'paypal_subscription_id_missing', 400)
+    const res = await fetchJson(`${PAYPAL_BASE[input.mode]}/v1/billing/subscriptions/${encodeURIComponent(subscriptionId)}/cancel`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+        accept: 'application/json',
+      },
+      body: JSON.stringify({ reason: String(input.reason || 'Canceled by customer').slice(0, 127) }),
+    })
+    if (res.status < 200 || res.status >= 300) {
+      throw new DomainError('paypal_subscription_cancel_failed', 'paypal_subscription_cancel_failed', 502)
+    }
+  },
+
+  async resumeSubscription(input): Promise<void> {
+    const creds = parseCredentials(input.credentials || {})
+    const token = await getAccessToken({
+      mode: input.mode,
+      clientId: creds.clientId,
+      clientSecret: creds.clientSecret,
+    })
+    const subscriptionId = String(input.subscriptionId || '').trim()
+    if (!subscriptionId) throw new DomainError('paypal_subscription_id_missing', 'paypal_subscription_id_missing', 400)
+    const res = await fetchJson(`${PAYPAL_BASE[input.mode]}/v1/billing/subscriptions/${encodeURIComponent(subscriptionId)}/activate`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+        accept: 'application/json',
+      },
+      body: JSON.stringify({ reason: String(input.reason || 'Reactivated by customer').slice(0, 127) }),
+    })
+    if (res.status < 200 || res.status >= 300) {
+      throw new DomainError('paypal_subscription_resume_failed', 'paypal_subscription_resume_failed', 502)
+    }
+  },
+
+  async changeSubscriptionPlan(input): Promise<void> {
+    const creds = parseCredentials(input.credentials || {})
+    const token = await getAccessToken({
+      mode: input.mode,
+      clientId: creds.clientId,
+      clientSecret: creds.clientSecret,
+    })
+    const subscriptionId = String(input.subscriptionId || '').trim()
+    const providerPlanId = String(input.providerPlanId || '').trim()
+    if (!subscriptionId) throw new DomainError('paypal_subscription_id_missing', 'paypal_subscription_id_missing', 400)
+    if (!providerPlanId) throw new DomainError('paypal_provider_plan_id_missing', 'paypal_provider_plan_id_missing', 400)
+    const res = await fetchJson(`${PAYPAL_BASE[input.mode]}/v1/billing/subscriptions/${encodeURIComponent(subscriptionId)}/revise`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+        accept: 'application/json',
+      },
+      body: JSON.stringify({ plan_id: providerPlanId }),
+    })
+    if (res.status < 200 || res.status >= 300) {
+      throw new DomainError('paypal_subscription_change_plan_failed', 'paypal_subscription_change_plan_failed', 502)
+    }
+  },
 }

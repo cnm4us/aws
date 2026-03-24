@@ -8,6 +8,7 @@ import type {
   PaymentMode,
   PaymentProvider,
   PaymentProviderConfigRow,
+  PaymentSubscriptionAction,
   PaymentSubscriptionRow,
   PaymentSubscriptionStatus,
   PaymentTransactionRow,
@@ -491,9 +492,10 @@ export async function upsertPaymentSubscription(input: {
         provider, mode, provider_subscription_id, status,
         user_id, checkout_session_id, checkout_id, provider_order_id, catalog_item_id,
         amount_cents, currency, message_id, message_campaign_key,
-        last_event_type, last_event_at
+        last_event_type, last_event_at,
+        pending_action, pending_plan_key, pending_requested_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL)
       ON DUPLICATE KEY UPDATE
         status = VALUES(status),
         user_id = COALESCE(VALUES(user_id), user_id),
@@ -507,6 +509,9 @@ export async function upsertPaymentSubscription(input: {
         message_campaign_key = COALESCE(VALUES(message_campaign_key), message_campaign_key),
         last_event_type = COALESCE(VALUES(last_event_type), last_event_type),
         last_event_at = VALUES(last_event_at),
+        pending_action = NULL,
+        pending_plan_key = NULL,
+        pending_requested_at = NULL,
         updated_at = CURRENT_TIMESTAMP`,
     [
       input.provider,
@@ -574,4 +579,34 @@ export async function listSubscriptionsForUser(input: {
     [input.userId]
   )
   return (rows as any[]) as PaymentSubscriptionRow[]
+}
+
+export async function getSubscriptionByIdForUser(input: {
+  id: number
+  userId: number
+}): Promise<PaymentSubscriptionRow | null> {
+  const db = getPool()
+  const [rows] = await db.query(
+    `SELECT * FROM payment_subscriptions WHERE id = ? AND user_id = ? LIMIT 1`,
+    [input.id, input.userId]
+  )
+  return ((rows as any[])[0] || null) as PaymentSubscriptionRow | null
+}
+
+export async function setSubscriptionPendingAction(input: {
+  id: number
+  action: PaymentSubscriptionAction
+  pendingPlanKey?: string | null
+  requestedAtUtc: string
+}): Promise<void> {
+  const db = getPool()
+  await db.query(
+    `UPDATE payment_subscriptions
+      SET pending_action = ?,
+          pending_plan_key = ?,
+          pending_requested_at = ?,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?`,
+    [input.action, input.pendingPlanKey || null, input.requestedAtUtc, input.id]
+  )
 }

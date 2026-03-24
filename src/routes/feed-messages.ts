@@ -31,6 +31,7 @@ const feedMessageMockCompletionPaths = ['/api/cta/mock/complete']
 const checkoutPagePaths = ['/checkout/:intent']
 const paypalWebhookPaths = ['/api/payments/paypal/webhook', '/api/payments/paypal/webhook/:mode']
 const paypalReturnPaths = ['/api/payments/paypal/return']
+const subscriptionActionPaths = ['/api/payments/subscriptions/:id/:action']
 
 let globalSubscriptionSpaceCache: { spaceId: number | null; expiresAtMs: number } = { spaceId: null, expiresAtMs: 0 }
 
@@ -774,6 +775,49 @@ feedMessagesRouter.post(paypalWebhookPaths, async (req: any, res: any, next: any
 
     return res.status(200).json({ ok: true, deduped: ingested.deduped })
   } catch (err) {
+    return next(err)
+  }
+})
+
+feedMessagesRouter.post(subscriptionActionPaths, async (req: any, res: any, next: any) => {
+  try {
+    if (!req.user || !req.user.id) return res.status(401).json({ error: 'unauthorized' })
+    const subscriptionId = parsePositiveInt(req.params?.id)
+    const action = String(req.params?.action || '').trim().toLowerCase()
+    if (!subscriptionId) return res.status(400).json({ error: 'invalid_subscription_id' })
+    const targetPlanKey = req.body?.target_plan_key ? String(req.body.target_plan_key).trim().toLowerCase() : null
+    const result = await paymentsSvc.requestSubscriptionAction({
+      userId: Number(req.user.id),
+      subscriptionId,
+      action,
+      targetPlanKey,
+    })
+    const span = trace.getSpan(context.active())
+    if (span) {
+      span.setAttribute('app.operation', 'payments.subscription.action')
+      span.setAttribute('app.operation_detail', `payments.subscription.${action}`)
+      span.setAttribute('app.outcome', 'accepted')
+      span.setAttribute('app.payment_subscription_id', String(subscriptionId))
+      span.setAttribute('app.payment_subscription_action', action)
+      if (targetPlanKey) span.setAttribute('app.payment_target_plan_key', targetPlanKey)
+    }
+    ;(req.log || feedMessagesLogger).info({
+      app_operation: 'payments.subscription.action',
+      app_operation_detail: `payments.subscription.${action}`,
+      app_outcome: 'accepted',
+      payment_subscription_id: subscriptionId,
+      payment_subscription_action: action,
+      payment_target_plan_key: targetPlanKey,
+      user_id: Number(req.user.id),
+    }, 'payments.subscription.action')
+    const returnPath = normalizeReturnPath(req.body?.return, '/my/support')
+    const isHtml = String(req.headers?.accept || '').toLowerCase().includes('text/html')
+    if (isHtml) return res.redirect(`${returnPath}${returnPath.includes('?') ? '&' : '?'}notice=${encodeURIComponent('Subscription action queued.')}`)
+    return res.json({ ok: true, ...result })
+  } catch (err: any) {
+    const returnPath = normalizeReturnPath(req.body?.return, '/my/support')
+    const isHtml = String(req.headers?.accept || '').toLowerCase().includes('text/html')
+    if (isHtml) return res.redirect(`${returnPath}${returnPath.includes('?') ? '&' : '?'}error=${encodeURIComponent(String(err?.message || 'subscription_action_failed'))}`)
     return next(err)
   }
 })

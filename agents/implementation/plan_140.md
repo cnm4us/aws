@@ -80,7 +80,7 @@ Status: In Progress
 - C: Completed
 - D: Completed
 - E: Completed
-- F: Pending
+- F: Completed
 - G: Pending
 
 ## Phase A — CTA + Routing Foundation
@@ -195,4 +195,4 @@ Status: In Progress
 
 ## Resume Here
 - Next action:
-  - Start Phase F for subscription lifecycle actions with provider-confirmed state transitions.
+  - Start Phase G observability, debug-bundle support presets, and reconciliation scripts.

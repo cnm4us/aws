@@ -13,6 +13,24 @@ export interface PaymentProviderAdapter {
   createCheckoutSession(input: PaymentProviderCheckoutRequest): Promise<PaymentProviderCheckoutResult>
   verifyWebhook(input: PaymentWebhookVerifyInput): Promise<PaymentWebhookVerifyResult>
   parseCompletion(input: PaymentWebhookVerifyResult): PaymentWebhookParsedCompletion
+  cancelSubscription?(input: {
+    mode: 'sandbox' | 'live'
+    credentials: Record<string, unknown>
+    subscriptionId: string
+    reason?: string | null
+  }): Promise<void>
+  resumeSubscription?(input: {
+    mode: 'sandbox' | 'live'
+    credentials: Record<string, unknown>
+    subscriptionId: string
+    reason?: string | null
+  }): Promise<void>
+  changeSubscriptionPlan?(input: {
+    mode: 'sandbox' | 'live'
+    credentials: Record<string, unknown>
+    subscriptionId: string
+    providerPlanId: string
+  }): Promise<void>
 }
 
 const registry = new Map<PaymentProvider, PaymentProviderAdapter>()
