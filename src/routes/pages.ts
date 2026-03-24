@@ -621,6 +621,7 @@ const RESERVED_PAGE_ROOT_SLUGS = new Set([
   'auth',
   'login',
   'logout',
+  'support',
   'assets',
   'static',
 ]);
@@ -3084,6 +3085,7 @@ const MESSAGE_CTA_SCOPE_OPTIONS: Array<{ value: string; label: string }> = [
 ]
 
 const MESSAGE_CTA_INTENT_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'support', label: 'Support Us' },
   { value: 'visit_link', label: 'Visit Link' },
   { value: 'visit_sponsor', label: 'Visit Sponsor' },
   { value: 'login', label: 'Login' },
@@ -10414,6 +10416,10 @@ pagesRouter.get('/uploads/new', async (req: any, res) => {
 
 pagesRouter.get('/publish', (_req, res) => {
   serveHtml(res, path.join('app', 'index.html'));
+});
+
+pagesRouter.get('/support', (_req, res) => {
+  serveAppSpa(res);
 });
 
 pagesRouter.get('/publish/:id', (_req, res) => {

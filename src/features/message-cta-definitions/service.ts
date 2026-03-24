@@ -26,6 +26,7 @@ const ctaLogger = getLogger({ component: 'features.message-cta-definitions' })
 const STATUSES: readonly MessageCtaDefinitionStatus[] = ['draft', 'active', 'archived']
 const SCOPE_TYPES: readonly MessageCtaScopeType[] = ['global', 'space']
 const INTENT_KEYS: readonly MessageCtaIntentKey[] = [
+  'support',
   'login',
   'register',
   'donate',
@@ -144,6 +145,13 @@ function parseConfig(raw: unknown): Record<string, unknown> {
 }
 
 function validateIntentExecutor(intentKey: MessageCtaIntentKey, executorType: MessageCtaExecutorType): void {
+  if (intentKey === 'support') {
+    if (executorType !== 'internal_link') {
+      throw new DomainError('invalid_intent_executor_pair', 'invalid_intent_executor_pair', 400)
+    }
+    return
+  }
+
   if (intentKey === 'login' || intentKey === 'register') {
     if (executorType !== 'internal_link' && executorType !== 'verification_flow') {
       throw new DomainError('invalid_intent_executor_pair', 'invalid_intent_executor_pair', 400)

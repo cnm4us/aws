@@ -2,6 +2,7 @@ export type MessageCtaDefinitionStatus = 'draft' | 'active' | 'archived'
 export type MessageCtaScopeType = 'global' | 'space'
 
 export type MessageCtaIntentKey =
+  | 'support'
   | 'login'
   | 'register'
   | 'donate'

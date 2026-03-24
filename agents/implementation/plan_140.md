@@ -1,6 +1,6 @@
 # Plan 140: Support Us + My Support (Donations & Subscriptions)
 
-Status: Planned
+Status: In Progress
 
 ## Context
 - We currently have separate `donate` and `subscribe` CTA flows.
@@ -75,7 +75,7 @@ Status: Planned
 - Keep `payment_webhook_events` idempotent ingest log; reconciliation derives final state.
 
 ## Phase Status
-- A: Pending
+- A: Completed
 - B: Pending
 - C: Pending
 - D: Pending
@@ -195,4 +195,4 @@ Status: Planned
 
 ## Resume Here
 - Next action:
-  - Discuss open issues and lock decisions for Phases A/B (especially taxonomy + bounds).
+  - Start Phase B by adding a first server-rendered `/support` page shell and catalog read path.
