@@ -390,13 +390,8 @@ export async function createCheckoutSession(input: CreateCheckoutSessionInput): 
       const provider = normalizeProvider(input.provider)
       const mode = normalizeMode(input.mode)
       const intent = normalizeIntent(input.intent)
-      const currency = normalizeCurrency(input.currency)
+      const requestedCurrency = normalizeCurrency(input.currency)
       const requestedAmountCents = normalizeAmountCents(input.amountCents)
-      // Keep DB/session amount aligned with provider payload defaults.
-      // Today, donate defaults to $1.00 when no explicit amount is provided.
-      const amountCents = requestedAmountCents != null
-        ? requestedAmountCents
-        : (intent === 'donate' ? 100 : null)
       const messageId = normalizePositiveId(input.messageId, 'invalid_message_id')
       const userId = normalizePositiveId(input.userId, 'invalid_user_id')
       const messageCtaDefinitionId = normalizePositiveId(input.messageCtaDefinitionId, 'invalid_message_cta_definition_id')
@@ -412,6 +407,44 @@ export async function createCheckoutSession(input: CreateCheckoutSessionInput): 
       }
       if (intent === 'donate' && !providerCfg.donate_enabled) throw new DomainError('payment_intent_disabled', 'payment_intent_disabled', 400)
       if (intent === 'subscribe' && !providerCfg.subscribe_enabled) throw new DomainError('payment_intent_disabled', 'payment_intent_disabled', 400)
+
+      let catalogItem: PaymentCatalogItemRow | null = null
+      if (catalogItemId != null) {
+        catalogItem = await repo.getCatalogItemById(catalogItemId)
+        if (!catalogItem) throw new DomainError('payment_catalog_item_not_found', 'payment_catalog_item_not_found', 400)
+        if (String(catalogItem.status || '').toLowerCase() !== 'active') {
+          throw new DomainError('payment_catalog_item_inactive', 'payment_catalog_item_inactive', 400)
+        }
+        const kind = String(catalogItem.kind || '')
+        if ((intent === 'donate' && kind !== 'donate_campaign') || (intent === 'subscribe' && kind !== 'subscribe_plan')) {
+          throw new DomainError('payment_catalog_item_kind_mismatch', 'payment_catalog_item_kind_mismatch', 400)
+        }
+      }
+
+      const catalogCurrency = catalogItem?.currency ? normalizeCurrency(catalogItem.currency) : null
+      const currency = catalogCurrency || requestedCurrency
+      const catalogAmountCents = catalogItem?.amount_cents != null ? normalizeAmountCents(catalogItem.amount_cents) : null
+      // Amount precedence:
+      // 1) explicit request amount (used by custom donate on /support)
+      // 2) catalog item amount (plan/campaign default)
+      // 3) donate fallback $1.00 (legacy behavior)
+      const amountCents = requestedAmountCents != null
+        ? requestedAmountCents
+        : (catalogAmountCents != null ? catalogAmountCents : (intent === 'donate' ? 100 : null))
+      if (intent === 'subscribe' && (amountCents == null || amountCents <= 0)) {
+        throw new DomainError('invalid_payment_amount_cents', 'invalid_payment_amount_cents', 400)
+      }
+
+      const enrichedMetadata: Record<string, unknown> = {
+        ...(input.metadata || {}),
+        catalog_item_id: catalogItemId ?? null,
+      }
+      if (catalogItem) {
+        enrichedMetadata.catalog_item_key = String(catalogItem.item_key || '')
+        enrichedMetadata.catalog_item_kind = String(catalogItem.kind || '')
+        enrichedMetadata.catalog_item_provider_ref = catalogItem.provider_ref || null
+      }
+      enrichedMetadata.selected_amount_cents = amountCents
 
       const checkoutId = createCheckoutId()
       await repo.insertCheckoutSession({
@@ -429,7 +462,7 @@ export async function createCheckoutSession(input: CreateCheckoutSessionInput): 
         currency,
         returnUrl,
         cancelUrl,
-        metadataJson: JSON.stringify(input.metadata || {}),
+        metadataJson: JSON.stringify(enrichedMetadata),
       })
 
       const adapter = getPaymentProvider(provider)
@@ -442,7 +475,7 @@ export async function createCheckoutSession(input: CreateCheckoutSessionInput): 
         currency,
         returnUrl,
         cancelUrl,
-        metadata: (input.metadata || {}) as Record<string, unknown>,
+        metadata: enrichedMetadata,
       })
 
       await repo.updateCheckoutSessionAfterProviderStart({

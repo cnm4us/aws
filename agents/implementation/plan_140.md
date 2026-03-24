@@ -77,7 +77,7 @@ Status: In Progress
 ## Phase Status
 - A: Completed
 - B: Completed
-- C: Pending
+- C: Completed
 - D: Pending
 - E: Pending
 - F: Pending
@@ -195,4 +195,4 @@ Status: In Progress
 
 ## Resume Here
 - Next action:
-  - Start Phase C by wiring `/support` selection metadata into checkout session persistence and provider payload parity checks.
+  - Start Phase D by adding durable `payment_transactions` and `payment_subscriptions` persistence from completion/webhook flows.
