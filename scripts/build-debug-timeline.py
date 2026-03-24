@@ -137,10 +137,19 @@ def build_http_operation_counts(art_dir: Path, start_us: Optional[int], end_us: 
                 ):
                     count += 1
             else:
-                alt_ok = False
-                if preset == "payment_webhook":
-                    alt_ok = any(str(s.get("operationName", "")) == "HTTP POST /api/payments/paypal/webhook/:mode" for s in spans)
-                if any(str(s.get("operationName", "")) == operation_name for s in spans) or alt_ok:
+                def op_match(op_name: str) -> bool:
+                    op = str(op_name or "")
+                    if op == operation_name:
+                        return True
+                    if preset == "payment_checkout_page":
+                        return op.startswith("HTTP GET /checkout/")
+                    if preset == "payment_checkout_start":
+                        return op.startswith("HTTP POST /checkout/")
+                    if preset == "payment_webhook":
+                        return op.startswith("HTTP POST /api/payments/paypal/webhook")
+                    return False
+
+                if any(op_match(str(s.get("operationName", ""))) for s in spans):
                     count += 1
         rows.append([preset, operation_name, str(count)])
     return rows
