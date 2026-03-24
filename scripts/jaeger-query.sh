@@ -2,6 +2,7 @@
 set -euo pipefail
 
 BASE_URL="${JAEGER_BASE_URL:-http://127.0.0.1:16686}"
+DEFAULT_SERVICE="${JAEGER_DEFAULT_SERVICE:-aws-mediaconvert-service}"
 CMD="${1:-}"
 if [[ -z "$CMD" ]]; then
   CMD="help"
@@ -169,6 +170,9 @@ run_operations() {
 }
 
 run_traces() {
+  if [[ -z "$SERVICE" ]]; then
+    SERVICE="$DEFAULT_SERVICE"
+  fi
   local tags_json
   tags_json="$(build_tags_json)"
 
@@ -177,8 +181,8 @@ run_traces() {
     --data-urlencode "lookback=$LOOKBACK"
     --data-urlencode "limit=$LIMIT"
     --data-urlencode "tags=$tags_json"
+    --data-urlencode "service=$SERVICE"
   )
-  if [[ -n "$SERVICE" ]]; then curl_args+=(--data-urlencode "service=$SERVICE"); fi
   if [[ -n "$OPERATION" ]]; then curl_args+=(--data-urlencode "operation=$OPERATION"); fi
   if [[ -n "$START" ]]; then curl_args+=(--data-urlencode "start=$START"); fi
   if [[ -n "$END" ]]; then curl_args+=(--data-urlencode "end=$END"); fi
@@ -268,6 +272,9 @@ run_preset_once() {
 
 run_preset() {
   local name="$1"
+  if [[ -z "$SERVICE" ]]; then
+    SERVICE="$DEFAULT_SERVICE"
+  fi
   if [[ "$name" == "feed_message_pipeline" ]]; then
     local names=("message_decide" "message_fetch" "message_event")
     for n in "${names[@]}"; do
