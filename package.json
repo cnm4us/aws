@@ -56,7 +56,9 @@
     "e2e:install": "playwright install --with-deps",
     "payments:smoke": "bash scripts/smoke-payments.sh",
     "db:query:donations": "ts-node scripts/db-query-donations.ts",
-    "db:backfill:donation-amounts": "ts-node scripts/db-backfill-donation-amounts.ts"
+    "db:query:subscriptions": "ts-node scripts/db-query-subscriptions.ts",
+    "db:backfill:donation-amounts": "ts-node scripts/db-backfill-donation-amounts.ts",
+    "payments:reconcile": "ts-node scripts/payments-reconcile.ts"
   },
   "dependencies": {
     "@aws-sdk/client-mediaconvert": "^3.645.0",

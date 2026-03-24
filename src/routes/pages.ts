@@ -10667,6 +10667,18 @@ pagesRouter.get('/support', async (req: any, res: any) => {
       error,
       context,
     })
+    ;(req.log || pagesLogger).info({
+      app_operation: 'support.page.view',
+      app_outcome: 'success',
+      support_return: returnPath,
+      support_cancel: cancelPath,
+      support_donate_items: donateItems.length,
+      support_subscribe_items: subscribeItems.length,
+      support_donate_modes: donateModes.length,
+      support_subscribe_modes: subscribeModes.length,
+      message_id: context.messageId,
+      message_campaign_key: context.campaignKey,
+    }, 'support.page.view')
     res.set('Content-Type', 'text/html; charset=utf-8')
     return res.send(doc)
   } catch (err) {
@@ -10753,6 +10765,16 @@ pagesRouter.post('/support', async (req: any, res: any) => {
     if (catalogItemId != null) query.set('catalog_item_id', String(catalogItemId))
     if (amountCents != null) query.set('amount_cents', String(amountCents))
     appendSupportContext(query, context)
+    ;(req.log || pagesLogger).info({
+      app_operation: 'support.page.start',
+      app_outcome: 'redirect',
+      support_intent: intent,
+      support_catalog_item_id: catalogItemId,
+      support_amount_cents: amountCents,
+      support_provider_mode: `${modeParsed.provider}:${modeParsed.mode}`,
+      message_id: context.messageId,
+      message_campaign_key: context.campaignKey,
+    }, 'support.page.start')
     return res.redirect(`/checkout/${intent}?${query.toString()}`)
   } catch (err: any) {
     const query = new URLSearchParams()

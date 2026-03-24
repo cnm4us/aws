@@ -579,6 +579,9 @@ export async function createCheckoutSession(input: CreateCheckoutSessionInput): 
         'app.payment_intent': intent,
         'app.payment_checkout_id': checkoutId,
       })
+      if (catalogItemId != null) span.setAttribute('app.payment_catalog_item_id', String(catalogItemId))
+      if (amountCents != null) span.setAttribute('app.payment_amount_cents', String(amountCents))
+      if (enrichedMetadata.support_source) span.setAttribute('app.support_source', String(enrichedMetadata.support_source))
       span.setStatus({ code: SpanStatusCode.OK })
 
       paymentLogger.info({
@@ -588,6 +591,9 @@ export async function createCheckoutSession(input: CreateCheckoutSessionInput): 
         payment_mode: mode,
         payment_intent: intent,
         payment_checkout_id: checkoutId,
+        payment_catalog_item_id: catalogItemId,
+        payment_amount_cents: amountCents,
+        support_source: enrichedMetadata.support_source || null,
         message_id: messageId,
         message_campaign_key: campaignKey,
       }, 'payments.checkout.create')

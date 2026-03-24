@@ -654,6 +654,9 @@ feedMessagesRouter.post(checkoutPagePaths, async (req: any, res: any, next: any)
         span.setAttribute('app.payment_mode', started.mode)
         span.setAttribute('app.payment_intent', intent)
         span.setAttribute('app.payment_checkout_id', started.checkoutId)
+        if (catalogItemId != null) span.setAttribute('app.payment_catalog_item_id', String(catalogItemId))
+        if (amountCents != null) span.setAttribute('app.payment_amount_cents', String(amountCents))
+        if (req.body?.support_source) span.setAttribute('app.support_source', String(req.body.support_source))
         span.setAttribute('app.outcome', 'redirect')
         if (messageId != null) span.setAttribute('app.message_id', String(messageId))
       }
@@ -665,6 +668,9 @@ feedMessagesRouter.post(checkoutPagePaths, async (req: any, res: any, next: any)
         payment_mode: started.mode,
         payment_intent: intent,
         payment_checkout_id: started.checkoutId,
+        payment_catalog_item_id: catalogItemId,
+        payment_amount_cents: amountCents,
+        support_source: req.body?.support_source ? String(req.body.support_source) : null,
         message_id: messageId,
       }, 'payments.checkout.start')
       return res.redirect(started.redirectUrl)

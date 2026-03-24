@@ -14,10 +14,13 @@ HTTP_OPERATION_BY_PRESET = {
     "admin_messages": "HTTP GET /admin/messages",
     "admin_message_save": "HTTP POST /admin/messages/:id",
     "admin_message_analytics": "HTTP GET /admin/message-analytics",
+    "support_page": "HTTP GET /support",
+    "my_support_view": "HTTP GET /my/support",
     "payment_checkout_page": "HTTP GET /checkout/:intent",
     "payment_checkout_start": "HTTP POST /checkout/:intent",
     "payment_webhook": "HTTP POST /api/payments/paypal/webhook",
     "payment_webhook_ingest": "payments.webhook.ingest",
+    "payment_subscription_action": "payments.subscription.action",
 }
 
 PRESET_FILES = [
@@ -27,10 +30,13 @@ PRESET_FILES = [
     "admin_messages",
     "admin_message_save",
     "admin_message_analytics",
+    "support_page",
+    "my_support_view",
     "payment_checkout_page",
     "payment_checkout_start",
     "payment_webhook",
     "payment_webhook_ingest",
+    "payment_subscription_action",
 ]
 
 
@@ -130,7 +136,7 @@ def build_http_operation_counts(art_dir: Path, start_us: Optional[int], end_us: 
                 s for s in (tr.get("spans", []) or [])
                 if jaeger_span_in_window(s, start_us, end_us)
             ]
-            if preset == "payment_webhook_ingest":
+            if preset == "payment_webhook_ingest" or preset == "payment_subscription_action":
                 if any(
                     any((t.get("key") == "app.operation" and str(t.get("value", "")) == operation_name) for t in (s.get("tags") or []))
                     for s in spans
@@ -147,6 +153,10 @@ def build_http_operation_counts(art_dir: Path, start_us: Optional[int], end_us: 
                         return op.startswith("HTTP POST /checkout/")
                     if preset == "payment_webhook":
                         return op.startswith("HTTP POST /api/payments/paypal/webhook")
+                    if preset == "support_page":
+                        return op.startswith("HTTP GET /support")
+                    if preset == "my_support_view":
+                        return op.startswith("HTTP GET /my/support")
                     return False
 
                 if any(op_match(str(s.get("operationName", ""))) for s in spans):

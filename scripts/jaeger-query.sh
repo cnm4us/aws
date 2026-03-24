@@ -42,8 +42,12 @@ Presets:
   payment_checkout_start   app.operation=payments.checkout.start
   payment_webhook          app.operation=payments.webhook
   payment_webhook_ingest   app.operation=payments.webhook.ingest
+  support_page             HTTP GET /support
+  my_support_view          HTTP GET /my/support
+  payment_subscription_action app.operation=payments.subscription.action
   feed_message_pipeline    Runs message_decide/message_fetch/message_event checks in sequence.
   payment_pipeline         Runs payment checkout and webhook checks in sequence.
+  support_pipeline         Runs support/payment lifecycle checks in sequence.
 
 Examples:
   npm run jaeger:query -- services
@@ -252,6 +256,15 @@ run_preset_once() {
     payment_webhook_ingest)
       tag="app.operation=payments.webhook.ingest"
       ;;
+    support_page)
+      op="HTTP GET /support"
+      ;;
+    my_support_view)
+      op="HTTP GET /my/support"
+      ;;
+    payment_subscription_action)
+      tag="app.operation=payments.subscription.action"
+      ;;
     *)
       die "unknown preset: $name"
       ;;
@@ -295,7 +308,26 @@ run_preset() {
     return 0
   fi
   if [[ "$name" == "payment_pipeline" ]]; then
-    local names=("payment_checkout_page" "payment_checkout_start" "payment_webhook" "payment_webhook_ingest")
+    local names=("payment_checkout_page" "payment_checkout_start" "payment_webhook" "payment_webhook_ingest" "payment_subscription_action")
+    for n in "${names[@]}"; do
+      echo "== preset: $n =="
+      local old_out="$OUT_FILE"
+      if [[ -n "$OUT_FILE" ]]; then
+        local ext=""
+        if [[ "$OUT_FILE" == *.* ]]; then
+          ext=".${OUT_FILE##*.}"
+          OUT_FILE="${OUT_FILE%.*}"
+        fi
+        OUT_FILE="${OUT_FILE}-${n}${ext}"
+      fi
+      run_preset_once "$n"
+      OUT_FILE="$old_out"
+      echo
+    done
+    return 0
+  fi
+  if [[ "$name" == "support_pipeline" ]]; then
+    local names=("support_page" "payment_checkout_page" "payment_checkout_start" "payment_webhook" "payment_webhook_ingest" "my_support_view" "payment_subscription_action")
     for n in "${names[@]}"; do
       echo "== preset: $n =="
       local old_out="$OUT_FILE"

@@ -81,7 +81,7 @@ Status: In Progress
 - D: Completed
 - E: Completed
 - F: Completed
-- G: Pending
+- G: Completed
 
 ## Phase A — CTA + Routing Foundation
 - Goal:
@@ -195,4 +195,4 @@ Status: In Progress
 
 ## Resume Here
 - Next action:
-  - Start Phase G observability, debug-bundle support presets, and reconciliation scripts.
+  - Plan complete. Next step is implementing true provider-native subscription checkout (Billing Subscriptions API) in a follow-on plan.
