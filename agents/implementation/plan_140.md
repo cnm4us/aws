@@ -76,7 +76,7 @@ Status: In Progress
 
 ## Phase Status
 - A: Completed
-- B: Pending
+- B: Completed
 - C: Pending
 - D: Pending
 - E: Pending
@@ -195,4 +195,4 @@ Status: In Progress
 
 ## Resume Here
 - Next action:
-  - Start Phase B by adding a first server-rendered `/support` page shell and catalog read path.
+  - Start Phase C by wiring `/support` selection metadata into checkout session persistence and provider payload parity checks.

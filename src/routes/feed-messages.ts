@@ -92,6 +92,13 @@ function parsePositiveInt(raw: any): number | null {
   return Math.round(n)
 }
 
+function parseNonNegativeInt(raw: any): number | null {
+  if (raw == null || raw === '') return null
+  const n = Number(raw)
+  if (!Number.isFinite(n) || n < 0) return null
+  return Math.round(n)
+}
+
 function htmlEscape(value: any): string {
   return String(value == null ? '' : value)
     .replace(/&/g, '&amp;')
@@ -525,6 +532,10 @@ feedMessagesRouter.get(checkoutPagePaths, async (req: any, res: any, next: any) 
     const messageCtaIntentKey = req.query?.message_cta_intent_key ? String(req.query.message_cta_intent_key).trim().toLowerCase() : null
     const messageCtaExecutorType = req.query?.message_cta_executor_type ? String(req.query.message_cta_executor_type).trim().toLowerCase() : null
     const messageSequenceKey = req.query?.message_sequence_key ? String(req.query.message_sequence_key).trim() : null
+    const supportSource = req.query?.support_source ? String(req.query.support_source).trim() : null
+    const catalogItemId = parsePositiveInt(req.query?.catalog_item_id)
+    const amountCents = parseNonNegativeInt(req.query?.amount_cents)
+    const preselectedProviderMode = req.query?.provider_mode ? String(req.query.provider_mode).trim().toLowerCase() : null
     const modes = await listEnabledCheckoutModes(intent)
     const error = req.query?.error ? String(req.query.error) : ''
 
@@ -560,10 +571,16 @@ feedMessagesRouter.get(checkoutPagePaths, async (req: any, res: any, next: any) 
     if (messageCtaIntentKey) html += `<input type="hidden" name="message_cta_intent_key" value="${htmlEscape(messageCtaIntentKey)}" />`
     if (messageCtaExecutorType) html += `<input type="hidden" name="message_cta_executor_type" value="${htmlEscape(messageCtaExecutorType)}" />`
     if (messageSequenceKey) html += `<input type="hidden" name="message_sequence_key" value="${htmlEscape(messageSequenceKey)}" />`
+    if (supportSource) html += `<input type="hidden" name="support_source" value="${htmlEscape(supportSource)}" />`
+    if (catalogItemId != null) html += `<input type="hidden" name="catalog_item_id" value="${catalogItemId}" />`
+    if (amountCents != null) html += `<input type="hidden" name="amount_cents" value="${amountCents}" />`
     html += '<div class="hint">Provider</div>'
     for (const [idx, opt] of modes.entries()) {
       const value = `${opt.provider}:${opt.mode}`
-      html += `<label><input type="radio" name="provider_mode" value="${htmlEscape(value)}"${idx === 0 ? ' checked' : ''} /> ${htmlEscape(opt.label)}</label>`
+      const isSelected = preselectedProviderMode
+        ? preselectedProviderMode === value
+        : idx === 0
+      html += `<label><input type="radio" name="provider_mode" value="${htmlEscape(value)}"${isSelected ? ' checked' : ''} /> ${htmlEscape(opt.label)}</label>`
     }
     html += '<div class="row"><button type="submit">Continue</button>'
     html += `<a class="btn" href="${htmlEscape(cancelPath)}">Cancel</a></div>`
@@ -594,6 +611,8 @@ feedMessagesRouter.post(checkoutPagePaths, async (req: any, res: any, next: any)
     const messageCtaKind = req.body?.message_cta_kind ? String(req.body.message_cta_kind).trim().toLowerCase() : null
     const messageCtaIntentKey = req.body?.message_cta_intent_key ? String(req.body.message_cta_intent_key).trim().toLowerCase() : null
     const messageCtaExecutorType = req.body?.message_cta_executor_type ? String(req.body.message_cta_executor_type).trim().toLowerCase() : null
+    const catalogItemId = parsePositiveInt(req.body?.catalog_item_id)
+    const amountCents = parseNonNegativeInt(req.body?.amount_cents)
 
     const providerReturnPath = '/api/payments/paypal/return'
 
@@ -607,12 +626,17 @@ feedMessagesRouter.post(checkoutPagePaths, async (req: any, res: any, next: any)
         messageCampaignKey,
         messageIntentId,
         messageCtaDefinitionId,
+        catalogItemId,
+        amountCents,
         returnUrl: providerReturnPath,
         cancelUrl: cancelPath,
         metadata: {
           checkout_intent: intent,
           source: 'message_cta',
+          support_source: req.body?.support_source ? String(req.body.support_source).trim() : null,
           final_return_path: returnPath,
+          catalog_item_id: catalogItemId,
+          amount_cents: amountCents,
           message_session_id: messageSessionId,
           message_sequence_key: messageSequenceKey,
           message_cta_slot: messageCtaSlot,
