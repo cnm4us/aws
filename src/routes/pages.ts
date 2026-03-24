@@ -4989,7 +4989,7 @@ function renderAdminPaymentCatalogForm(opts: {
   if (opts.notice) body += `<div class="notice">${escapeHtml(opts.notice)}</div>`
   if (opts.error) body += `<div class="error">${escapeHtml(opts.error)}</div>`
   body += `<form method="post" action="${escapeHtml(opts.action)}" class="section">`
-  body += `<input type="hidden" name="_csrf" value="${escapeHtml(opts.csrfToken)}" />`
+  body += `<input type="hidden" name="csrf" value="${escapeHtml(opts.csrfToken)}" />`
   body += `<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px">`
   body += `<label>Kind<select name="kind">`
   for (const opt of PAYMENT_CATALOG_KIND_OPTIONS) {
@@ -5048,7 +5048,7 @@ pagesRouter.get('/admin/payments/providers', async (req: any, res: any) => {
       const currentClientId = String(credentials?.clientId || credentials?.client_id || '')
       const statusValue = String(cfg?.status || 'disabled')
       body += `<form method="post" action="/admin/payments/providers" class="section" style="margin:12px 0">`
-      body += `<input type="hidden" name="_csrf" value="${escapeHtml(csrfToken)}" />`
+      body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
       body += `<input type="hidden" name="provider" value="${escapeHtml(provider)}" />`
       body += `<input type="hidden" name="mode" value="${escapeHtml(modeOpt.value)}" />`
       body += `<div class="section-title">${escapeHtml(modeOpt.label)} Mode</div>`

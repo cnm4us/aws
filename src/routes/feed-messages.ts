@@ -546,7 +546,7 @@ feedMessagesRouter.get(checkoutPagePaths, async (req: any, res: any, next: any) 
       return res.send(html)
     }
     html += `<form method="post" action="/checkout/${htmlEscape(intent)}" class="card">`
-    html += `<input type="hidden" name="_csrf" value="${htmlEscape(csrfToken)}" />`
+    html += `<input type="hidden" name="csrf" value="${htmlEscape(csrfToken)}" />`
     html += `<input type="hidden" name="return" value="${htmlEscape(returnPath)}" />`
     html += `<input type="hidden" name="cancel" value="${htmlEscape(cancelPath)}" />`
     if (messageId != null) html += `<input type="hidden" name="message_id" value="${messageId}" />`

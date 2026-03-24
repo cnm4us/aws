@@ -49,7 +49,10 @@ async function getAccessToken(input: {
     body,
   })
   if (res.status < 200 || res.status >= 300) {
-    throw new DomainError('paypal_access_token_failed', 'paypal_access_token_failed', 502)
+    const errName = String(res.data?.error || '').trim()
+    const errDesc = String(res.data?.error_description || '').trim()
+    const detail = [res.status, errName, errDesc].filter(Boolean).join(':')
+    throw new DomainError(`paypal_access_token_failed${detail ? `:${detail}` : ''}`, 'paypal_access_token_failed', 502)
   }
   const token = String(res.data?.access_token || '').trim()
   if (!token) throw new DomainError('paypal_access_token_missing', 'paypal_access_token_missing', 502)
@@ -74,7 +77,8 @@ function normalizeAmount(input: PaymentProviderCheckoutRequest): { value: string
 
 function findApproveUrl(links: any[]): string | null {
   for (const link of links || []) {
-    if (String(link?.rel || '').toLowerCase() === 'approve' && String(link?.href || '').trim()) {
+    const rel = String(link?.rel || '').toLowerCase()
+    if ((rel === 'approve' || rel === 'payer-action') && String(link?.href || '').trim()) {
       return String(link.href).trim()
     }
   }
