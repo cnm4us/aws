@@ -1122,6 +1122,18 @@ export async function requestSubscriptionAction(input: {
   if (!subscription) throw new DomainError('subscription_not_found', 'subscription_not_found', 404)
   const providerSubscriptionId = String(subscription.provider_subscription_id || '').trim()
   if (!providerSubscriptionId) throw new DomainError('subscription_provider_id_missing', 'subscription_provider_id_missing', 400)
+  const status = String(subscription.status || '').trim().toLowerCase()
+  const actionAllowed = (
+    (action === 'cancel' && status === 'active') ||
+    (action === 'change_plan' && status === 'active') ||
+    (action === 'resume' && (status === 'canceled' || status === 'suspended'))
+  )
+  if (!actionAllowed) {
+    throw new DomainError('subscription_action_invalid_for_status', 'subscription_action_invalid_for_status', 409)
+  }
+  if (subscription.pending_action) {
+    throw new DomainError('subscription_action_already_pending', 'subscription_action_already_pending', 409)
+  }
 
   const providerCfg = await repo.getProviderConfig({ provider: subscription.provider, mode: subscription.mode })
   if (!providerCfg || providerCfg.status !== 'enabled') {

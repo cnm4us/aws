@@ -86,6 +86,28 @@ function normalizeReturnPath(raw: any, fallback = '/'): string {
   return value
 }
 
+function mapSubscriptionActionErrorToUserMessage(err: any): string {
+  const haystack = [
+    err?.code,
+    err?.message,
+    err?.cause?.code,
+    err?.cause?.message,
+    err?.error,
+  ]
+    .map((v) => String(v || '').trim().toLowerCase())
+    .filter(Boolean)
+    .join(' | ')
+  if (!haystack) return 'Unable to process subscription action right now.'
+  if (haystack.includes('subscription_action_invalid_for_status')) return 'This action is not available for the current subscription status.'
+  if (haystack.includes('subscription_action_already_pending')) return 'A subscription action is already pending provider confirmation.'
+  if (haystack.includes('subscription_target_plan_not_found') || haystack.includes('subscription_target_plan_provider_ref_missing')) {
+    return 'Unable to change plan right now. Please choose a different plan or try again.'
+  }
+  if (haystack.includes('payment_provider_disabled')) return 'Payment provider is currently unavailable.'
+  if (haystack.includes('subscription_not_found')) return 'Subscription not found.'
+  return 'Unable to process subscription action right now.'
+}
+
 function parsePositiveInt(raw: any): number | null {
   if (raw == null || raw === '') return null
   const n = Number(raw)
@@ -840,7 +862,16 @@ feedMessagesRouter.post(subscriptionActionPaths, async (req: any, res: any, next
   } catch (err: any) {
     const returnPath = normalizeReturnPath(req.body?.return, '/my/support')
     const isHtml = String(req.headers?.accept || '').toLowerCase().includes('text/html')
-    if (isHtml) return res.redirect(`${returnPath}${returnPath.includes('?') ? '&' : '?'}error=${encodeURIComponent(String(err?.message || 'subscription_action_failed'))}`)
+    if (isHtml) {
+      const msg = mapSubscriptionActionErrorToUserMessage(err)
+      ;(req.log || feedMessagesLogger).warn({
+        app_operation: 'payments.subscription.action',
+        app_outcome: 'client_error',
+        payment_subscription_error_code: String(err?.code || err?.cause?.code || ''),
+        payment_subscription_error_message: String(err?.message || err?.cause?.message || ''),
+      }, 'payments.subscription.action')
+      return res.redirect(`${returnPath}${returnPath.includes('?') ? '&' : '?'}error=${encodeURIComponent(msg)}`)
+    }
     return next(err)
   }
 })

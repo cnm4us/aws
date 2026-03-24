@@ -10838,27 +10838,35 @@ pagesRouter.get('/my/support', async (req: any, res: any) => {
       body += '<table><thead><tr><th>Status</th><th>Provider Sub ID</th><th>Amount</th><th>Last Event</th><th>Updated</th></tr></thead><tbody>'
       for (const row of snapshot.subscriptions) {
         const supportsActions = String(row.provider || '').toLowerCase() === 'paypal' && String(row.provider_subscription_id || '').trim().length > 0
+        const status = String(row.status || '').trim().toLowerCase()
+        const hasPending = !!row.pending_action
+        const canCancel = supportsActions && status === 'active' && !hasPending
+        const canChangePlan = supportsActions && status === 'active' && !hasPending
+        const canResume = supportsActions && (status === 'canceled' || status === 'suspended') && !hasPending
+        const pendingText = hasPending
+          ? `Pending ${asText(row.pending_action)}${row.pending_plan_key ? ` (${asText(row.pending_plan_key)})` : ''} requested ${asText(row.pending_requested_at || '')}. Waiting for provider confirmation.`
+          : ''
         body += `<tr>
           <td>${asText(row.status)}</td>
           <td>${asText(row.provider_subscription_id)}</td>
           <td>${asText(dollars(row.amount_cents))} ${asText(row.currency || 'USD')}</td>
-          <td>${asText(row.last_event_type || '')}${row.pending_action ? `<div style="font-size:.85em; opacity:.8">pending: ${asText(row.pending_action)}${row.pending_plan_key ? ` (${asText(row.pending_plan_key)})` : ''}</div>` : ''}</td>
+          <td>${asText(row.last_event_type || '')}${pendingText ? `<div style="font-size:.85em; opacity:.8">${pendingText}</div>` : ''}</td>
           <td>${asText(row.updated_at || '')}${supportsActions ? `<div class="row" style="margin-top:8px">
             <form method="post" action="/api/payments/subscriptions/${Number(row.id)}/cancel" style="display:inline-flex; gap:6px; align-items:center">
               <input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />
               <input type="hidden" name="return" value="/my/support" />
-              <button type="submit">Cancel</button>
+              <button type="submit"${canCancel ? '' : ' disabled'}>Cancel</button>
             </form>
             <form method="post" action="/api/payments/subscriptions/${Number(row.id)}/resume" style="display:inline-flex; gap:6px; align-items:center">
               <input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />
               <input type="hidden" name="return" value="/my/support" />
-              <button type="submit">Resume</button>
+              <button type="submit"${canResume ? '' : ' disabled'}>Resume</button>
             </form>
             <form method="post" action="/api/payments/subscriptions/${Number(row.id)}/change_plan" style="display:inline-flex; gap:6px; align-items:center">
               <input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />
               <input type="hidden" name="return" value="/my/support" />
-              <input type="text" name="target_plan_key" placeholder="target plan key" style="min-width:160px" />
-              <button type="submit">Change Plan</button>
+              <input type="text" name="target_plan_key" placeholder="target plan key" style="min-width:160px" ${canChangePlan ? '' : 'disabled'} />
+              <button type="submit"${canChangePlan ? '' : ' disabled'}>Change Plan</button>
             </form>
           </div>` : ''}</td>
         </tr>`

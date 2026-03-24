@@ -36,7 +36,7 @@ Status: In Progress
 - B: Completed
 - C: Completed
 - D: Completed
-- E: Pending
+- E: Completed
 - F: Pending
 
 ## Phase A — Data & Contract Tightening
@@ -94,11 +94,11 @@ Status: In Progress
 - Goal:
   - Make account page reflect valid actions by state.
 - Steps:
-  - [ ] Hide/disable invalid actions based on status:
+  - [x] Hide/disable invalid actions based on status:
     - `active`: cancel/change-plan
     - `canceled|suspended`: resume
-  - [ ] Show clear pending state text + last webhook event.
-  - [ ] Show action errors/notices with user-safe messaging.
+  - [x] Show clear pending state text + last webhook event.
+  - [x] Show action errors/notices with user-safe messaging.
 - Acceptance:
   - User can only trigger coherent actions from current status.
 
@@ -139,4 +139,4 @@ Status: In Progress
 
 ## Resume Here
 - Next action:
-  - Start Phase E: `/my/support` lifecycle UX hardening.
+  - Start Phase F: observability, smoke, and migration safety.
