@@ -10535,7 +10535,6 @@ function renderSupportPage(opts: {
     if (cents == null || !Number.isFinite(Number(cents))) return 'Flexible amount'
     return `${(Number(cents) / 100).toFixed(2)} ${String(currency || 'USD').toUpperCase()}`
   }
-  const selectedDonateAmount = opts.selectedDonateAmountCents == null ? 100 : opts.selectedDonateAmountCents
   const selectedDonateMode = opts.selectedDonateMode || (opts.donateModes[0]?.value || '')
   const selectedSubscribeMode = opts.selectedSubscribeMode || (opts.subscribeModes[0]?.value || '')
 
@@ -10570,7 +10569,8 @@ function renderSupportPage(opts: {
     }
   }
   body += '</select></label>'
-  body += `<label>Amount (USD cents)<input type="number" name="amount_cents" min="${SUPPORT_MIN_DONATION_CENTS}" max="${SUPPORT_MAX_DONATION_CENTS}" step="${SUPPORT_DONATION_STEP_CENTS}" value="${escapeHtml(String(selectedDonateAmount))}" /></label>`
+  const selectedDonateAmountValue = opts.selectedDonateAmountCents == null ? '' : String(opts.selectedDonateAmountCents)
+  body += `<label>Custom Amount (USD cents, optional)<input type="number" name="amount_cents" min="${SUPPORT_MIN_DONATION_CENTS}" max="${SUPPORT_MAX_DONATION_CENTS}" step="${SUPPORT_DONATION_STEP_CENTS}" value="${escapeHtml(selectedDonateAmountValue)}" placeholder="leave blank to use campaign amount" /></label>`
   body += '<label>Provider<select name="provider_mode">'
   if (!opts.donateModes.length) {
     body += '<option value="">No enabled provider</option>'
