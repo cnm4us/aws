@@ -78,7 +78,7 @@ Status: In Progress
 - A: Completed
 - B: Completed
 - C: Completed
-- D: Pending
+- D: Completed
 - E: Pending
 - F: Pending
 - G: Pending
@@ -195,4 +195,4 @@ Status: In Progress
 
 ## Resume Here
 - Next action:
-  - Start Phase D by adding durable `payment_transactions` and `payment_subscriptions` persistence from completion/webhook flows.
+  - Start Phase E by building a read-only `/my/support` account surface over durable payment tables.

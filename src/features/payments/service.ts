@@ -241,6 +241,90 @@ function buildWebhookDedupeKey(input: {
   return crypto.createHash('sha256').update(src).digest('hex')
 }
 
+function mapCheckoutToTransactionStatus(status: PaymentCheckoutSessionRow['status']): 'pending' | 'completed' | 'failed' | 'canceled' | 'expired' {
+  if (status === 'completed') return 'completed'
+  if (status === 'failed') return 'failed'
+  if (status === 'canceled') return 'canceled'
+  if (status === 'expired') return 'expired'
+  return 'pending'
+}
+
+function mapPaypalSubscriptionStatusFromEvent(eventTypeRaw: string): 'pending' | 'active' | 'suspended' | 'canceled' | 'expired' | null {
+  const eventType = String(eventTypeRaw || '').trim().toUpperCase()
+  if (!eventType.startsWith('BILLING.SUBSCRIPTION.')) return null
+  if (eventType.endsWith('.ACTIVATED') || eventType.endsWith('.RE-ACTIVATED')) return 'active'
+  if (eventType.endsWith('.SUSPENDED')) return 'suspended'
+  if (eventType.endsWith('.CANCELLED')) return 'canceled'
+  if (eventType.endsWith('.EXPIRED')) return 'expired'
+  if (eventType.endsWith('.CREATED') || eventType.endsWith('.UPDATED') || eventType.endsWith('.PAYMENT.FAILED')) return 'pending'
+  return 'pending'
+}
+
+async function persistDurablePaymentState(input: {
+  session: PaymentCheckoutSessionRow
+  parsed: PaymentWebhookParsedCompletion
+  source: 'webhook' | 'return'
+  eventType?: string | null
+  providerEventId?: string | null
+}): Promise<void> {
+  const session = input.session
+  const metadata = parseMetadata(session.metadata_json)
+  const selectedAmountRaw = metadata.selected_amount_cents
+  const selectedAmount = selectedAmountRaw == null || selectedAmountRaw === ''
+    ? null
+    : (Number.isFinite(Number(selectedAmountRaw)) ? Math.round(Number(selectedAmountRaw)) : null)
+  const amountCents = session.amount_cents != null
+    ? Number(session.amount_cents)
+    : selectedAmount
+  const occurredAt = toDateTimeUtc(new Date())
+
+  await repo.upsertPaymentTransaction({
+    checkoutSessionId: Number(session.id),
+    checkoutId: session.checkout_id,
+    provider: session.provider,
+    mode: session.mode,
+    intent: session.intent,
+    status: mapCheckoutToTransactionStatus(session.status),
+    source: input.source,
+    providerEventId: input.providerEventId || null,
+    providerEventType: input.eventType || null,
+    providerSessionId: input.parsed.providerSessionId || session.provider_session_id || null,
+    providerOrderId: input.parsed.providerOrderId || session.provider_order_id || null,
+    providerSubscriptionId: input.parsed.providerSubscriptionId || null,
+    userId: session.user_id == null ? null : Number(session.user_id),
+    messageId: session.message_id == null ? null : Number(session.message_id),
+    messageCampaignKey: session.message_campaign_key || null,
+    messageIntentId: session.message_intent_id || null,
+    messageCtaDefinitionId: session.message_cta_definition_id == null ? null : Number(session.message_cta_definition_id),
+    catalogItemId: session.catalog_item_id == null ? null : Number(session.catalog_item_id),
+    amountCents: amountCents == null ? null : Number(amountCents),
+    currency: session.currency || 'USD',
+    occurredAtUtc: occurredAt,
+  })
+
+  const subscriptionId = input.parsed.providerSubscriptionId ? String(input.parsed.providerSubscriptionId).trim() : ''
+  const subscriptionStatus = mapPaypalSubscriptionStatusFromEvent(String(input.eventType || ''))
+  if (subscriptionId && subscriptionStatus) {
+    await repo.upsertPaymentSubscription({
+      provider: session.provider,
+      mode: session.mode,
+      providerSubscriptionId: subscriptionId,
+      status: subscriptionStatus,
+      userId: session.user_id == null ? null : Number(session.user_id),
+      checkoutSessionId: Number(session.id),
+      checkoutId: session.checkout_id || null,
+      providerOrderId: input.parsed.providerOrderId || session.provider_order_id || null,
+      catalogItemId: session.catalog_item_id == null ? null : Number(session.catalog_item_id),
+      amountCents: amountCents == null ? null : Number(amountCents),
+      currency: session.currency || 'USD',
+      messageId: session.message_id == null ? null : Number(session.message_id),
+      messageCampaignKey: session.message_campaign_key || null,
+      lastEventType: input.eventType || null,
+      lastEventAtUtc: occurredAt,
+    })
+  }
+}
+
 export async function configureProvider(input: {
   provider: PaymentProvider | string
   mode: PaymentMode | string
@@ -591,8 +675,21 @@ export async function ingestWebhook(input: {
                 providerSessionId: parsed.providerSessionId || null,
                 providerOrderId: parsed.providerOrderId || null,
               })
+              const refreshed = await repo.getCheckoutSessionById(Number(session.id))
+              const latest = refreshed || {
+                ...session,
+                status: parsed.checkoutStatus,
+                provider_session_id: parsed.providerSessionId || session.provider_session_id,
+                provider_order_id: parsed.providerOrderId || session.provider_order_id,
+              }
+              await persistDurablePaymentState({
+                session: latest as PaymentCheckoutSessionRow,
+                parsed,
+                source: 'webhook',
+                eventType: verified.eventType,
+                providerEventId: verified.providerEventId,
+              })
               if (parsed.checkoutStatus === 'completed') {
-                const refreshed = await repo.getCheckoutSessionById(Number(session.id))
                 const forEmit = refreshed || { ...session, status: 'completed' as const }
                 await emitMessageCompletionFromCheckout({ session: forEmit, parsed })
               }
@@ -702,6 +799,19 @@ export async function completePaypalOrderFromReturn(input: {
       })
       const refreshed = await repo.getCheckoutSessionById(Number(session.id))
       const forEmit = refreshed || { ...session, status: 'completed' as const }
+      await persistDurablePaymentState({
+        session: forEmit as PaymentCheckoutSessionRow,
+        parsed: {
+          checkoutStatus: 'completed',
+          providerSessionId: captured.orderId || providerOrderId,
+          providerOrderId,
+          providerSubscriptionId: null,
+          outcomeReason: 'capture_from_return',
+        },
+        source: 'return',
+        eventType: 'CHECKOUT.ORDER.COMPLETED',
+        providerEventId: null,
+      })
       await emitMessageCompletionFromCheckout({
         session: forEmit,
         parsed: {

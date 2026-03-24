@@ -8,6 +8,8 @@ import type {
   PaymentMode,
   PaymentProvider,
   PaymentProviderConfigRow,
+  PaymentSubscriptionStatus,
+  PaymentTransactionStatus,
   PaymentWebhookEventRow,
   PaymentWebhookProcessingState,
 } from './types'
@@ -389,5 +391,137 @@ export async function markWebhookEventProcessed(input: {
           processed_at = CASE WHEN ? IN ('processed','ignored','failed') THEN UTC_TIMESTAMP() ELSE processed_at END
       WHERE dedupe_key = ?`,
     [input.processingState, input.errorMessage || null, input.processingState, input.dedupeKey]
+  )
+}
+
+export async function upsertPaymentTransaction(input: {
+  checkoutSessionId: number
+  checkoutId: string
+  provider: PaymentProvider
+  mode: PaymentMode
+  intent: 'donate' | 'subscribe'
+  status: PaymentTransactionStatus
+  source: 'webhook' | 'return'
+  providerEventId: string | null
+  providerEventType: string | null
+  providerSessionId: string | null
+  providerOrderId: string | null
+  providerSubscriptionId: string | null
+  userId: number | null
+  messageId: number | null
+  messageCampaignKey: string | null
+  messageIntentId: string | null
+  messageCtaDefinitionId: number | null
+  catalogItemId: number | null
+  amountCents: number | null
+  currency: string
+  occurredAtUtc: string
+}): Promise<void> {
+  const db = getPool()
+  await db.query(
+    `INSERT INTO payment_transactions
+      (
+        checkout_session_id, checkout_id, provider, mode, intent, status, source,
+        provider_event_id, provider_event_type, provider_session_id, provider_order_id, provider_subscription_id,
+        user_id, message_id, message_campaign_key, message_intent_id, message_cta_definition_id, catalog_item_id,
+        amount_cents, currency, occurred_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON DUPLICATE KEY UPDATE
+        status = VALUES(status),
+        source = VALUES(source),
+        provider_event_id = COALESCE(VALUES(provider_event_id), provider_event_id),
+        provider_event_type = COALESCE(VALUES(provider_event_type), provider_event_type),
+        provider_session_id = COALESCE(VALUES(provider_session_id), provider_session_id),
+        provider_order_id = COALESCE(VALUES(provider_order_id), provider_order_id),
+        provider_subscription_id = COALESCE(VALUES(provider_subscription_id), provider_subscription_id),
+        amount_cents = COALESCE(VALUES(amount_cents), amount_cents),
+        currency = COALESCE(VALUES(currency), currency),
+        occurred_at = VALUES(occurred_at),
+        updated_at = CURRENT_TIMESTAMP`,
+    [
+      input.checkoutSessionId,
+      input.checkoutId,
+      input.provider,
+      input.mode,
+      input.intent,
+      input.status,
+      input.source,
+      input.providerEventId,
+      input.providerEventType,
+      input.providerSessionId,
+      input.providerOrderId,
+      input.providerSubscriptionId,
+      input.userId,
+      input.messageId,
+      input.messageCampaignKey,
+      input.messageIntentId,
+      input.messageCtaDefinitionId,
+      input.catalogItemId,
+      input.amountCents,
+      input.currency,
+      input.occurredAtUtc,
+    ]
+  )
+}
+
+export async function upsertPaymentSubscription(input: {
+  provider: PaymentProvider
+  mode: PaymentMode
+  providerSubscriptionId: string
+  status: PaymentSubscriptionStatus
+  userId: number | null
+  checkoutSessionId: number | null
+  checkoutId: string | null
+  providerOrderId: string | null
+  catalogItemId: number | null
+  amountCents: number | null
+  currency: string
+  messageId: number | null
+  messageCampaignKey: string | null
+  lastEventType: string | null
+  lastEventAtUtc: string
+}): Promise<void> {
+  const db = getPool()
+  await db.query(
+    `INSERT INTO payment_subscriptions
+      (
+        provider, mode, provider_subscription_id, status,
+        user_id, checkout_session_id, checkout_id, provider_order_id, catalog_item_id,
+        amount_cents, currency, message_id, message_campaign_key,
+        last_event_type, last_event_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON DUPLICATE KEY UPDATE
+        status = VALUES(status),
+        user_id = COALESCE(VALUES(user_id), user_id),
+        checkout_session_id = COALESCE(VALUES(checkout_session_id), checkout_session_id),
+        checkout_id = COALESCE(VALUES(checkout_id), checkout_id),
+        provider_order_id = COALESCE(VALUES(provider_order_id), provider_order_id),
+        catalog_item_id = COALESCE(VALUES(catalog_item_id), catalog_item_id),
+        amount_cents = COALESCE(VALUES(amount_cents), amount_cents),
+        currency = COALESCE(VALUES(currency), currency),
+        message_id = COALESCE(VALUES(message_id), message_id),
+        message_campaign_key = COALESCE(VALUES(message_campaign_key), message_campaign_key),
+        last_event_type = COALESCE(VALUES(last_event_type), last_event_type),
+        last_event_at = VALUES(last_event_at),
+        updated_at = CURRENT_TIMESTAMP`,
+    [
+      input.provider,
+      input.mode,
+      input.providerSubscriptionId,
+      input.status,
+      input.userId,
+      input.checkoutSessionId,
+      input.checkoutId,
+      input.providerOrderId,
+      input.catalogItemId,
+      input.amountCents,
+      input.currency,
+      input.messageId,
+      input.messageCampaignKey,
+      input.lastEventType,
+      input.lastEventAtUtc,
+    ]
   )
 }

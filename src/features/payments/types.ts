@@ -7,6 +7,8 @@ export type PaymentCatalogKind = 'donate_campaign' | 'subscribe_plan'
 export type PaymentCatalogStatus = 'draft' | 'active' | 'archived'
 export type PaymentCheckoutStatus = 'pending' | 'redirected' | 'completed' | 'failed' | 'canceled' | 'expired'
 export type PaymentWebhookProcessingState = 'pending' | 'processed' | 'ignored' | 'failed'
+export type PaymentTransactionStatus = 'pending' | 'completed' | 'failed' | 'canceled' | 'expired'
+export type PaymentSubscriptionStatus = 'pending' | 'active' | 'suspended' | 'canceled' | 'expired'
 
 export type PaymentProviderConfigRow = {
   id: number
@@ -84,6 +86,54 @@ export type PaymentWebhookEventRow = {
   received_at: string
   processed_at: string | null
   created_at: string
+}
+
+export type PaymentTransactionRow = {
+  id: number
+  checkout_session_id: number
+  checkout_id: string
+  provider: PaymentProvider
+  mode: PaymentMode
+  intent: PaymentIntent
+  status: PaymentTransactionStatus
+  source: 'webhook' | 'return'
+  provider_event_id: string | null
+  provider_event_type: string | null
+  provider_session_id: string | null
+  provider_order_id: string | null
+  provider_subscription_id: string | null
+  user_id: number | null
+  message_id: number | null
+  message_campaign_key: string | null
+  message_intent_id: string | null
+  message_cta_definition_id: number | null
+  catalog_item_id: number | null
+  amount_cents: number | null
+  currency: string
+  occurred_at: string
+  created_at: string
+  updated_at: string
+}
+
+export type PaymentSubscriptionRow = {
+  id: number
+  provider: PaymentProvider
+  mode: PaymentMode
+  provider_subscription_id: string
+  status: PaymentSubscriptionStatus
+  user_id: number | null
+  checkout_session_id: number | null
+  checkout_id: string | null
+  provider_order_id: string | null
+  catalog_item_id: number | null
+  amount_cents: number | null
+  currency: string
+  message_id: number | null
+  message_campaign_key: string | null
+  last_event_type: string | null
+  last_event_at: string | null
+  created_at: string
+  updated_at: string
 }
 
 export type CreateCheckoutSessionInput = {
