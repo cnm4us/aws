@@ -391,7 +391,12 @@ export async function createCheckoutSession(input: CreateCheckoutSessionInput): 
       const mode = normalizeMode(input.mode)
       const intent = normalizeIntent(input.intent)
       const currency = normalizeCurrency(input.currency)
-      const amountCents = normalizeAmountCents(input.amountCents)
+      const requestedAmountCents = normalizeAmountCents(input.amountCents)
+      // Keep DB/session amount aligned with provider payload defaults.
+      // Today, donate defaults to $1.00 when no explicit amount is provided.
+      const amountCents = requestedAmountCents != null
+        ? requestedAmountCents
+        : (intent === 'donate' ? 100 : null)
       const messageId = normalizePositiveId(input.messageId, 'invalid_message_id')
       const userId = normalizePositiveId(input.userId, 'invalid_user_id')
       const messageCtaDefinitionId = normalizePositiveId(input.messageCtaDefinitionId, 'invalid_message_cta_definition_id')
