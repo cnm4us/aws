@@ -19,6 +19,7 @@ import * as licenseSourcesRepo from '../features/license-sources/repo'
 import * as lowerThirdsSvc from '../features/lower-thirds/service'
 import * as messagesSvc from '../features/messages/service'
 import * as messageCtasSvc from '../features/message-cta-definitions/service'
+import * as messageRulesetsSvc from '../features/message-eligibility-rulesets/service'
 import * as messageAnalyticsSvc from '../features/message-analytics/service'
 import * as feedActivitySvc from '../features/feed-activity/service'
 import * as paymentsSvc from '../features/payments/service'
@@ -665,6 +666,7 @@ type AdminNavKey =
   | 'media_jobs'
   | 'messages'
   | 'message_ctas'
+  | 'message_rulesets'
   | 'payment_providers'
   | 'payment_catalog'
   | 'analytics'
@@ -692,6 +694,7 @@ const ADMIN_NAV_ITEMS: Array<{ key: AdminNavKey; label: string; href: string }> 
 	{ key: 'media_jobs', label: 'Media Jobs', href: '/admin/media-jobs' },
   { key: 'messages', label: 'Messages', href: '/admin/messages' },
   { key: 'message_ctas', label: 'Message CTAs', href: '/admin/message-ctas' },
+  { key: 'message_rulesets', label: 'Message Rulesets', href: '/admin/message-rulesets' },
   { key: 'payment_providers', label: 'Payment Providers', href: '/admin/payments/providers' },
   { key: 'payment_catalog', label: 'Payment Catalog', href: '/admin/payments/catalog' },
   { key: 'analytics', label: 'Analytics', href: '/admin/analytics' },
@@ -3014,6 +3017,7 @@ pagesRouter.get('/admin', async (_req: any, res: any) => {
     { title: 'Media Jobs', href: '/admin/media-jobs', desc: 'Debug ffmpeg mastering jobs (logs, retries, purge)' },
     { title: 'Messages', href: '/admin/messages', desc: 'Manage in-feed message units, targeting, and lifecycle controls' },
     { title: 'Message CTAs', href: '/admin/message-ctas', desc: 'Reusable CTA definitions (intent + executor + config) for in-feed messages' },
+    { title: 'Message Rulesets', href: '/admin/message-rulesets', desc: 'Reusable inclusion/exclusion eligibility rulesets for message targeting' },
     { title: 'Payment Providers', href: '/admin/payments/providers', desc: 'Configure PSP credentials and sandbox/live mode toggles' },
     { title: 'Payment Catalog', href: '/admin/payments/catalog', desc: 'Manage donation campaigns and subscription plans mapped to PSP products' },
     { title: 'Analytics', href: '/admin/analytics', desc: 'Cross-metric baseline feed + message conversion view with daily trend' },
@@ -3113,16 +3117,13 @@ const MESSAGE_CTA_INTENT_OPTIONS: Array<{ value: string; label: string }> = [
 
 const MESSAGE_CTA_EXECUTOR_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'internal_link', label: 'Internal Link' },
-  { value: 'provider_checkout', label: 'Provider Checkout' },
-  { value: 'verification_flow', label: 'Verification Flow' },
   { value: 'api_action', label: 'API Action' },
 ]
 
-const MESSAGE_CTA_PROVIDER_OPTIONS: Array<{ value: string; label: string }> = [
-  { value: 'mock', label: 'Mock' },
-  { value: 'paypal', label: 'PayPal' },
-  { value: 'stripe', label: 'Stripe' },
-  { value: 'square', label: 'Square' },
+const MESSAGE_RULESET_STATUS_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'draft', label: 'Draft' },
+  { value: 'active', label: 'Active' },
+  { value: 'archived', label: 'Archived' },
 ]
 
 const PAYMENT_PROVIDER_OPTIONS: Array<{ value: string; label: string }> = [
@@ -3367,6 +3368,8 @@ function buildMessageCreateOrUpdatePayload(body: any): any {
   const audienceSegment = String(body?.audienceSegment ?? body?.audience_segment ?? 'anonymous').trim().toLowerCase() || 'anonymous'
   const tieBreakStrategy = String(body?.tieBreakStrategy ?? body?.tie_break_strategy ?? 'round_robin').trim().toLowerCase() || 'round_robin'
   const campaignKey = String(body?.campaignKey ?? body?.campaign_key ?? '').trim().toLowerCase()
+  const eligibilityRulesetIdRaw = String(body?.eligibilityRulesetId ?? body?.eligibility_ruleset_id ?? '').trim()
+  const eligibilityRulesetId = /^\d+$/.test(eligibilityRulesetIdRaw) ? Number(eligibilityRulesetIdRaw) : null
   const startsAtDate = String(body?.startsAtDate || '').trim()
   const startsAtTime = String(body?.startsAtTime || '').trim()
   const endsAtDate = String(body?.endsAtDate || '').trim()
@@ -3405,6 +3408,7 @@ function buildMessageCreateOrUpdatePayload(body: any): any {
     audienceSegment,
     tieBreakStrategy,
     campaignKey: campaignKey || null,
+    eligibilityRulesetId,
     mediaUploadId: mediaUploadId || null,
     startsAt: normalizedStartsAt,
     endsAt: normalizedEndsAt,
@@ -3494,6 +3498,11 @@ function renderAdminMessageForm(opts: {
     executorType: string
     status: string
   }>
+  eligibilityRulesetOptions?: Array<{
+    id: number
+    name: string
+    status: string
+  }>
   error?: string | null
   notice?: string | null
   showClone?: boolean
@@ -3501,6 +3510,7 @@ function renderAdminMessageForm(opts: {
   const csrfToken = opts.csrfToken ? String(opts.csrfToken) : ''
   const values = opts.values || {}
   const ctaDefinitionOptions = Array.isArray(opts.ctaDefinitionOptions) ? opts.ctaDefinitionOptions : []
+  const eligibilityRulesetOptions = Array.isArray(opts.eligibilityRulesetOptions) ? opts.eligibilityRulesetOptions : []
   const id = values.id ? Number(values.id) : null
   const draftKey = id ? `admin_message_editor_draft_${id}` : 'admin_message_editor_draft_new'
   const creativeForm = extractMessageCreativeForm(values)
@@ -3710,6 +3720,7 @@ function renderAdminMessageForm(opts: {
     tieBreakOptions.unshift({ value: tieBreakValue, label: `Custom (${tieBreakValue})` })
   }
   const campaignKeyValue = String(values.campaignKey || values.campaign_key || '').trim().toLowerCase()
+  const eligibilityRulesetIdValue = String(values.eligibilityRulesetId ?? values.eligibility_ruleset_id ?? '').trim()
 
   body += `<div class="section-title" style="margin:10px 0 6px">Identity</div>`
   body += `<div class="section">`
@@ -3736,6 +3747,14 @@ function renderAdminMessageForm(opts: {
   }
   body += `</select></div>`
   body += `<div class="mini-field"><div class="mini-field-label">Campaign Key</div><input type="text" name="campaignKey" value="${escapeHtml(campaignKeyValue)}" maxlength="64" placeholder="spring_2026_drive" /></div>`
+  body += `<div class="mini-field"><div class="mini-field-label">Eligibility Ruleset</div><select name="eligibilityRulesetId">`
+  body += `<option value="">(none)</option>`
+  for (const opt of eligibilityRulesetOptions) {
+    const idValue = String(Number(opt.id))
+    const label = `${opt.name} [${opt.status}] #${opt.id}`
+    body += `<option value="${escapeHtml(idValue)}"${eligibilityRulesetIdValue === idValue ? ' selected' : ''}>${escapeHtml(label)}</option>`
+  }
+  body += `</select></div>`
   body += `<div class="mini-field"><div class="mini-field-label">Priority</div><input type="number" name="priority" value="${escapeHtml(String(values.priority ?? 100))}" /></div>`
   body += `<div class="mini-field"><div class="mini-field-label">Status</div><select name="status">
     <option value="draft"${String(values.status || '') === 'draft' ? ' selected' : ''}>Draft</option>
@@ -4292,6 +4311,42 @@ function renderAdminMessageForm(opts: {
   return renderAdminPage({ title: opts.title, bodyHtml: body, active: 'messages' })
 }
 
+function withSupportIntentHref(baseHref: string, intentKey: string): string {
+  const href = String(baseHref || '').trim()
+  const intent = String(intentKey || '').trim().toLowerCase()
+  if (!href) return href
+  if (intent !== 'donate' && intent !== 'subscribe' && intent !== 'upgrade') return href
+  try {
+    const u = new URL(href, 'http://local.invalid')
+    if (u.pathname !== '/support') return href
+    u.searchParams.set('intent', intent)
+    return `${u.pathname}${u.search}${u.hash || ''}`
+  } catch {
+    if (!href.startsWith('/support')) return href
+    const hasQuery = href.includes('?')
+    const hasIntent = /([?&])intent=/.test(href)
+    if (hasIntent) return href.replace(/([?&])intent=[^&]*/i, `$1intent=${intent}`)
+    return `${href}${hasQuery ? '&' : '?'}intent=${intent}`
+  }
+}
+
+function withoutSupportIntentQuery(rawHref: string): string {
+  const href = String(rawHref || '').trim()
+  if (!href) return href
+  try {
+    const u = new URL(href, 'http://local.invalid')
+    if (u.pathname !== '/support') return href
+    u.searchParams.delete('intent')
+    return `${u.pathname}${u.search}${u.hash || ''}`
+  } catch {
+    if (!href.startsWith('/support')) return href
+    return href
+      .replace(/([?&])intent=[^&]*(&?)/gi, (_m, p1, p2) => (p1 === '?' ? '?' : (p2 ? '&' : '')))
+      .replace(/\?&/, '?')
+      .replace(/[?&]$/, '')
+  }
+}
+
 function buildMessageCtaCreateOrUpdatePayload(body: any): any {
   const scopeType = String(body?.scopeType || 'global').trim().toLowerCase()
   const executorType = String(body?.executorType || 'internal_link').trim().toLowerCase()
@@ -4302,25 +4357,11 @@ function buildMessageCtaCreateOrUpdatePayload(body: any): any {
 
   let config: any = {}
   if (executorType === 'internal_link') {
+    const baseHref = String(body?.configInternalHref || '').trim()
     config = {
-      href: String(body?.configInternalHref || '').trim(),
+      href: withSupportIntentHref(baseHref, intentKey),
       successReturn: String(body?.configInternalSuccessReturn || '').trim() || null,
       openInNewTab: parseBoolLoose(body?.configInternalOpenInNewTab, false),
-    }
-  } else if (executorType === 'provider_checkout') {
-    config = {
-      provider: String(body?.configProvider || 'mock').trim().toLowerCase(),
-      mode: String(body?.configProviderMode || '').trim().toLowerCase(),
-      returnUrl: String(body?.configProviderReturnUrl || '').trim(),
-      cancelUrl: String(body?.configProviderCancelUrl || '').trim() || null,
-      campaignKey: String(body?.configProviderCampaignKey || '').trim() || null,
-      planKey: String(body?.configProviderPlanKey || '').trim() || null,
-    }
-  } else if (executorType === 'verification_flow') {
-    config = {
-      method: String(body?.configVerifyMethod || '').trim().toLowerCase(),
-      startPath: String(body?.configVerifyStartPath || '').trim(),
-      successReturn: String(body?.configVerifySuccessReturn || '').trim() || null,
     }
   } else if (executorType === 'api_action') {
     config = {
@@ -4399,39 +4440,11 @@ function renderAdminMessageCtaForm(opts: {
   body += `</div></div>`
 
   body += `<div class="section executor-config" data-executor="internal_link"><div class="section-title">Internal Link Config</div>`
-  body += `<label>Href<input type="text" name="configInternalHref" value="${escapeHtml(String(config?.href || ''))}" placeholder="/channels/global-feed" /></label>`
+  body += `<label>Base Href<input type="text" id="configInternalHref" name="configInternalHref" value="${escapeHtml(withoutSupportIntentQuery(String(config?.href || config?.returnUrl || config?.startPath || '')))}" placeholder="/channels/global-feed" /></label>`
+  body += `<label>Resolved Href<input type="text" id="configInternalResolvedHref" value="${escapeHtml(String(config?.href || config?.returnUrl || config?.startPath || ''))}" readonly /></label>`
+  body += `<div class="field-hint">For donate/subscribe/upgrade intents, <code>?intent=...</code> is applied automatically when needed.</div>`
   body += `<label>Success Return (optional)<input type="text" name="configInternalSuccessReturn" value="${escapeHtml(String(config?.successReturn || ''))}" placeholder="/" /></label>`
   body += `<label style="display:flex; align-items:center; gap:8px;"><input type="checkbox" name="configInternalOpenInNewTab" value="1"${parseBoolLoose(config?.openInNewTab, false) ? ' checked' : ''}/> Open in new tab</label>`
-  body += `</div>`
-
-  body += `<div class="section executor-config" data-executor="provider_checkout"><div class="section-title">Provider Checkout Config</div>`
-  body += `<div style="display:grid; gap:12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">`
-  body += `<label>Provider<select name="configProvider">`
-  for (const opt of MESSAGE_CTA_PROVIDER_OPTIONS) {
-    body += `<option value="${escapeHtml(opt.value)}"${String(config?.provider || 'mock') === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
-  }
-  body += `</select></label>`
-  body += `<label>Mode<select name="configProviderMode">`
-  for (const opt of [{ value: 'donate', label: 'Donate' }, { value: 'subscribe', label: 'Subscribe' }, { value: 'upgrade', label: 'Upgrade' }]) {
-    body += `<option value="${escapeHtml(opt.value)}"${String(config?.mode || '') === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
-  }
-  body += `</select></label>`
-  body += `</div>`
-  body += `<label>Return URL<input type="text" name="configProviderReturnUrl" value="${escapeHtml(String(config?.returnUrl || ''))}" placeholder="/" /></label>`
-  body += `<label>Cancel URL (optional)<input type="text" name="configProviderCancelUrl" value="${escapeHtml(String(config?.cancelUrl || ''))}" placeholder="/" /></label>`
-  body += `<div style="display:grid; gap:12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">`
-  body += `<label>Campaign Key (optional)<input type="text" name="configProviderCampaignKey" value="${escapeHtml(String(config?.campaignKey || ''))}" /></label>`
-  body += `<label>Plan Key (optional)<input type="text" name="configProviderPlanKey" value="${escapeHtml(String(config?.planKey || ''))}" /></label>`
-  body += `</div></div>`
-
-  body += `<div class="section executor-config" data-executor="verification_flow"><div class="section-title">Verification Flow Config</div>`
-  body += `<label>Method<select name="configVerifyMethod">`
-  for (const opt of [{ value: 'email', label: 'Email' }, { value: 'phone', label: 'Phone' }, { value: 'identity', label: 'Identity' }]) {
-    body += `<option value="${escapeHtml(opt.value)}"${String(config?.method || '') === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
-  }
-  body += `</select></label>`
-  body += `<label>Start Path<input type="text" name="configVerifyStartPath" value="${escapeHtml(String(config?.startPath || ''))}" placeholder="/verify/email" /></label>`
-  body += `<label>Success Return (optional)<input type="text" name="configVerifySuccessReturn" value="${escapeHtml(String(config?.successReturn || ''))}" placeholder="/" /></label>`
   body += `</div>`
 
   body += `<div class="section executor-config" data-executor="api_action"><div class="section-title">API Action Config</div>`
@@ -4463,8 +4476,34 @@ function renderAdminMessageCtaForm(opts: {
   body += `<script>
     (function () {
       const executorSel = document.getElementById('executorType');
+      const intentSel = document.querySelector('select[name="intentKey"]');
       const scopeSel = document.getElementById('scopeType');
       const scopeSpaceRow = document.getElementById('scopeSpaceRow');
+      const hrefInput = document.getElementById('configInternalHref');
+      const resolvedHrefInput = document.getElementById('configInternalResolvedHref');
+      function withIntentQuery(baseHref, intent) {
+        const href = String(baseHref || '').trim();
+        const flow = String(intent || '').trim().toLowerCase();
+        if (!href) return '';
+        if (flow !== 'donate' && flow !== 'subscribe' && flow !== 'upgrade') return href;
+        try {
+          const u = new URL(href, window.location.origin);
+          if (u.pathname === '/support') u.searchParams.set('intent', flow);
+          return (u.origin === window.location.origin) ? (u.pathname + u.search + (u.hash || '')) : u.toString();
+        } catch {
+          if (!href.startsWith('/support')) return href;
+          const hasQuery = href.includes('?');
+          const hasIntent = /([?&])intent=/.test(href);
+          if (hasIntent) return href.replace(/([?&])intent=[^&]*/i, '$1intent=' + flow);
+          return href + (hasQuery ? '&' : '?') + 'intent=' + flow;
+        }
+      }
+      function syncResolvedHref() {
+        if (!resolvedHrefInput) return;
+        const baseHref = hrefInput && 'value' in hrefInput ? hrefInput.value : '';
+        const intent = intentSel && 'value' in intentSel ? intentSel.value : '';
+        resolvedHrefInput.value = withIntentQuery(baseHref, intent);
+      }
       function syncExecutor() {
         const current = String(executorSel && executorSel.value || 'internal_link');
         document.querySelectorAll('.executor-config').forEach((el) => {
@@ -4477,9 +4516,12 @@ function renderAdminMessageCtaForm(opts: {
         if (scopeSpaceRow) scopeSpaceRow.style.display = scope === 'space' ? '' : 'none';
       }
       if (executorSel) executorSel.addEventListener('change', syncExecutor);
+      if (intentSel) intentSel.addEventListener('change', syncResolvedHref);
+      if (hrefInput) hrefInput.addEventListener('input', syncResolvedHref);
       if (scopeSel) scopeSel.addEventListener('change', syncScope);
       syncExecutor();
       syncScope();
+      syncResolvedHref();
     })();
   </script>`
 
@@ -4507,6 +4549,24 @@ async function loadMessageCtaOptionsForEditor(actorUserId: number): Promise<Arra
       intentKey: String(item.intentKey || ''),
       executorType: String(item.executorType || ''),
       status: String(item.status || ''),
+    }))
+    .sort((a, b) => a.id - b.id)
+}
+
+async function loadMessageEligibilityRulesetOptionsForEditor(): Promise<Array<{
+  id: number
+  name: string
+  status: string
+}>> {
+  const items = await messageRulesetsSvc.listRulesetsForAdmin({
+    includeArchived: true,
+    limit: 500,
+  })
+  return items
+    .map((item) => ({
+      id: Number(item.id),
+      name: String(item.name || ''),
+      status: String(item.status || 'draft'),
     }))
     .sort((a, b) => a.id - b.id)
 }
@@ -4567,7 +4627,7 @@ pagesRouter.get('/admin/messages', async (req: any, res: any) => {
     if (!items.length) {
       body += '<p>No messages found for current filters.</p>'
     } else {
-      body += '<table><thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Audience</th><th>Surface</th><th>Campaign Key</th><th>Priority</th><th>Status</th><th>Window</th><th>Updated</th></tr></thead><tbody>'
+      body += '<table><thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Audience</th><th>Surface</th><th>Campaign Key</th><th>Ruleset</th><th>Priority</th><th>Status</th><th>Window</th><th>Updated</th></tr></thead><tbody>'
       for (const item of items) {
         const windowLabel = item.startsAt || item.endsAt ? `${item.startsAt || '—'} → ${item.endsAt || '—'}` : 'Always'
         body += `<tr>
@@ -4577,6 +4637,7 @@ pagesRouter.get('/admin/messages', async (req: any, res: any) => {
           <td>${escapeHtml(item.audienceSegment)}</td>
           <td>${escapeHtml(item.appliesToSurface)}</td>
           <td>${escapeHtml(item.campaignKey || '—')}</td>
+          <td>${item.eligibilityRulesetId == null ? '—' : String(item.eligibilityRulesetId)}</td>
           <td>${item.priority}</td>
           <td>${escapeHtml(item.status)}</td>
           <td>${escapeHtml(windowLabel)}</td>
@@ -4600,12 +4661,14 @@ pagesRouter.get('/admin/messages/new', async (req: any, res: any) => {
     const cookies = parseCookies(req.headers.cookie)
     const csrfToken = cookies['csrf'] || ''
     const ctaDefinitionOptions = await loadMessageCtaOptionsForEditor(Number(req.user?.id || 0))
+    const eligibilityRulesetOptions = await loadMessageEligibilityRulesetOptionsForEditor()
     const doc = renderAdminMessageForm({
       title: 'New Message',
       action: '/admin/messages',
       csrfToken,
       backHref: '/admin/messages',
       ctaDefinitionOptions,
+      eligibilityRulesetOptions,
       values: {
         name: '',
         headline: '',
@@ -4635,6 +4698,7 @@ pagesRouter.get('/admin/messages/new', async (req: any, res: any) => {
         appliesToSurface: 'global_feed',
         tieBreakStrategy: 'round_robin',
         campaignKey: '',
+        eligibilityRulesetId: '',
         priority: 100,
         status: 'draft',
         startsAt: '',
@@ -4655,8 +4719,10 @@ pagesRouter.post('/admin/messages', async (req: any, res: any) => {
   const csrfToken = cookies['csrf'] || ''
   const payload = buildMessageCreateOrUpdatePayload(req.body || {})
   let ctaDefinitionOptions: Awaited<ReturnType<typeof loadMessageCtaOptionsForEditor>> = []
+  let eligibilityRulesetOptions: Awaited<ReturnType<typeof loadMessageEligibilityRulesetOptionsForEditor>> = []
   try {
     ctaDefinitionOptions = await loadMessageCtaOptionsForEditor(Number(req.user?.id || 0))
+    eligibilityRulesetOptions = await loadMessageEligibilityRulesetOptionsForEditor()
     const created = await messagesSvc.createMessageForAdmin(payload, Number(req.user?.id || 0))
     res.redirect(`/admin/messages/${created.id}?notice=${encodeURIComponent('Message created.')}`)
   } catch (err: any) {
@@ -4666,6 +4732,7 @@ pagesRouter.post('/admin/messages', async (req: any, res: any) => {
       csrfToken,
       backHref: '/admin/messages',
       ctaDefinitionOptions,
+      eligibilityRulesetOptions,
       values: payload,
       error: String(err?.message || 'Failed to create message'),
     })
@@ -4681,12 +4748,14 @@ pagesRouter.get('/admin/messages/:id', async (req: any, res: any) => {
     const cookies = parseCookies(req.headers.cookie)
     const csrfToken = cookies['csrf'] || ''
     const ctaDefinitionOptions = await loadMessageCtaOptionsForEditor(Number(req.user?.id || 0))
+    const eligibilityRulesetOptions = await loadMessageEligibilityRulesetOptionsForEditor()
     const doc = renderAdminMessageForm({
       title: `Edit Message #${id}`,
       action: `/admin/messages/${id}`,
       csrfToken,
       backHref: '/admin/messages',
       ctaDefinitionOptions,
+      eligibilityRulesetOptions,
       values: message,
       notice: req.query?.notice ? String(req.query.notice) : '',
       error: req.query?.error ? String(req.query.error) : '',
@@ -4707,8 +4776,10 @@ pagesRouter.post('/admin/messages/:id', async (req: any, res: any) => {
   const csrfToken = cookies['csrf'] || ''
   const payload = buildMessageCreateOrUpdatePayload(req.body || {})
   let ctaDefinitionOptions: Awaited<ReturnType<typeof loadMessageCtaOptionsForEditor>> = []
+  let eligibilityRulesetOptions: Awaited<ReturnType<typeof loadMessageEligibilityRulesetOptionsForEditor>> = []
   try {
     ctaDefinitionOptions = await loadMessageCtaOptionsForEditor(Number(req.user?.id || 0))
+    eligibilityRulesetOptions = await loadMessageEligibilityRulesetOptionsForEditor()
     await messagesSvc.updateMessageForAdmin(id, payload, Number(req.user?.id || 0))
     res.redirect(`/admin/messages/${id}?notice=${encodeURIComponent('Saved.')}`)
   } catch (err: any) {
@@ -4718,6 +4789,7 @@ pagesRouter.post('/admin/messages/:id', async (req: any, res: any) => {
       csrfToken,
       backHref: '/admin/messages',
       ctaDefinitionOptions,
+      eligibilityRulesetOptions,
       values: { ...payload, id },
       error: String(err?.message || 'Failed to save message'),
       showClone: true,
@@ -4955,6 +5027,201 @@ pagesRouter.post('/admin/message-ctas/:id/archive', async (req: any, res: any) =
     res.redirect(`/admin/message-ctas/${id}?notice=${encodeURIComponent('Archived.')}`)
   } catch (err: any) {
     res.redirect(`/admin/message-ctas/${id}?error=${encodeURIComponent(String(err?.message || 'Failed to archive CTA definition'))}`)
+  }
+})
+
+function buildMessageRulesetCreateOrUpdatePayload(body: any): any {
+  return {
+    name: String(body?.name || '').trim(),
+    status: String(body?.status || 'draft').trim().toLowerCase(),
+    description: String(body?.description || '').trim() || null,
+    criteria: String(body?.criteriaJson || body?.criteria_json || '').trim(),
+  }
+}
+
+function renderAdminMessageRulesetForm(opts: {
+  title: string
+  action: string
+  csrfToken?: string | null
+  backHref: string
+  values: any
+  error?: string | null
+  notice?: string | null
+}): string {
+  const csrfToken = opts.csrfToken ? String(opts.csrfToken) : ''
+  const values = opts.values || {}
+  const criteriaValue = String(values?.criteriaJson || values?.criteria || '').trim()
+
+  let body = `<h1>${escapeHtml(opts.title)}</h1>`
+  body += `<div class="toolbar"><div><a href="${escapeHtml(opts.backHref)}">← Back to message rulesets</a></div><div></div></div>`
+  if (opts.error) body += `<div class="error">${escapeHtml(String(opts.error))}</div>`
+  if (opts.notice) body += `<div class="notice">${escapeHtml(String(opts.notice))}</div>`
+  body += `<form method="post" action="${escapeHtml(opts.action)}">`
+  if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
+
+  body += `<div class="section"><div class="section-title">Ruleset</div>`
+  body += `<label>Name<input type="text" name="name" maxlength="120" value="${escapeHtml(String(values?.name || ''))}" required /></label>`
+  body += `<label>Status<select name="status">`
+  for (const opt of MESSAGE_RULESET_STATUS_OPTIONS) {
+    body += `<option value="${escapeHtml(opt.value)}"${String(values?.status || 'draft') === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+  }
+  body += `</select></label>`
+  body += `<label>Description (optional)<input type="text" name="description" maxlength="500" value="${escapeHtml(String(values?.description || ''))}" /></label>`
+  body += `<label>Criteria JSON<textarea name="criteriaJson" rows="14" style="font-family: ui-monospace,SFMono-Regular,Menlo,monospace;">${escapeHtml(criteriaValue || `{
+  "version": 1,
+  "inclusion": [],
+  "exclusion": []
+}`)}</textarea></label>`
+  body += `<div class="field-hint">Allowed ops: user.is_authenticated, support.is_subscriber, support.subscription_tier_in, support.donated_within_days, support.donated_amount_last_days_gte, support.completed_intent_in</div>`
+  body += `</div>`
+
+  body += `<div class="toolbar"><div></div><div style="display:flex; gap:8px"><button class="btn btn-primary-accent" type="submit">Save</button></div></div>`
+  body += `</form>`
+  return renderAdminPage({ title: opts.title, bodyHtml: body, active: 'message_rulesets' })
+}
+
+pagesRouter.get('/admin/message-rulesets', async (req: any, res: any) => {
+  try {
+    const includeArchived = String(req.query?.include_archived || '0') === '1'
+    const status = req.query?.status ? String(req.query.status) : ''
+    const notice = req.query?.notice ? String(req.query.notice) : ''
+    const error = req.query?.error ? String(req.query.error) : ''
+    const items = await messageRulesetsSvc.listRulesetsForAdmin({
+      includeArchived,
+      limit: 500,
+      status,
+    })
+
+    let body = '<h1>Message Rulesets</h1>'
+    body += '<div class="toolbar"><div><span class="pill">Eligibility Rulesets</span></div><div><a href="/admin/message-rulesets/new">New ruleset</a></div></div>'
+    if (notice) body += `<div class="notice">${escapeHtml(notice)}</div>`
+    if (error) body += `<div class="error">${escapeHtml(error)}</div>`
+    body += `<form method="get" action="/admin/message-rulesets" class="section" style="margin:12px 0">`
+    body += `<div style="display:flex; gap:10px; flex-wrap:wrap; align-items:end">`
+    body += `<label style="min-width:160px">Status<select name="status"><option value="">All</option>`
+    for (const opt of MESSAGE_RULESET_STATUS_OPTIONS) {
+      body += `<option value="${escapeHtml(opt.value)}"${status === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+    }
+    body += `</select></label>`
+    body += `<label><input type="checkbox" name="include_archived" value="1"${includeArchived ? ' checked' : ''} /> Include archived</label>`
+    body += `<button class="btn" type="submit">Apply</button>`
+    body += `</div></form>`
+
+    if (!items.length) {
+      body += '<p>No rulesets found for current filters.</p>'
+    } else {
+      body += '<table><thead><tr><th>ID</th><th>Name</th><th>Status</th><th>Inclusion</th><th>Exclusion</th><th>Updated</th></tr></thead><tbody>'
+      for (const item of items) {
+        const inclusion = Array.isArray(item.criteria?.inclusion) ? item.criteria.inclusion.length : 0
+        const exclusion = Array.isArray(item.criteria?.exclusion) ? item.criteria.exclusion.length : 0
+        body += `<tr>
+          <td>${item.id}</td>
+          <td><a href="/admin/message-rulesets/${item.id}">${escapeHtml(item.name)}</a></td>
+          <td>${escapeHtml(item.status)}</td>
+          <td>${inclusion}</td>
+          <td>${exclusion}</td>
+          <td>${escapeHtml(item.updatedAt || '')}</td>
+        </tr>`
+      }
+      body += '</tbody></table>'
+    }
+    const doc = renderAdminPage({ title: 'Message Rulesets', bodyHtml: body, active: 'message_rulesets' })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.send(doc)
+  } catch (err) {
+    logError(req.log || pagesLogger, err, 'admin message rulesets list failed', { path: req.path })
+    res.status(500).send('Failed to load message rulesets')
+  }
+})
+
+pagesRouter.get('/admin/message-rulesets/new', async (req: any, res: any) => {
+  try {
+    const cookies = parseCookies(req.headers.cookie)
+    const csrfToken = cookies['csrf'] || ''
+    const doc = renderAdminMessageRulesetForm({
+      title: 'New Message Ruleset',
+      action: '/admin/message-rulesets',
+      csrfToken,
+      backHref: '/admin/message-rulesets',
+      values: { name: '', status: 'draft', description: '', criteriaJson: '' },
+    })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.send(doc)
+  } catch (err) {
+    logError(req.log || pagesLogger, err, 'admin message ruleset new page failed', { path: req.path })
+    res.status(500).send('Failed to load ruleset editor')
+  }
+})
+
+pagesRouter.post('/admin/message-rulesets', async (req: any, res: any) => {
+  const cookies = parseCookies(req.headers.cookie)
+  const csrfToken = cookies['csrf'] || ''
+  const payload = buildMessageRulesetCreateOrUpdatePayload(req.body || {})
+  try {
+    const created = await messageRulesetsSvc.createRulesetForAdmin(payload, Number(req.user?.id || 0))
+    res.redirect(`/admin/message-rulesets/${created.id}?notice=${encodeURIComponent('Message ruleset created.')}`)
+  } catch (err: any) {
+    const doc = renderAdminMessageRulesetForm({
+      title: 'New Message Ruleset',
+      action: '/admin/message-rulesets',
+      csrfToken,
+      backHref: '/admin/message-rulesets',
+      values: payload,
+      error: String(err?.message || 'Failed to create message ruleset'),
+    })
+    res.status(400).set('Content-Type', 'text/html; charset=utf-8').send(doc)
+  }
+})
+
+pagesRouter.get('/admin/message-rulesets/:id', async (req: any, res: any) => {
+  const id = Number(req.params.id)
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).send('Bad ruleset id')
+  try {
+    const item = await messageRulesetsSvc.getRulesetForAdmin(id)
+    const cookies = parseCookies(req.headers.cookie)
+    const csrfToken = cookies['csrf'] || ''
+    const doc = renderAdminMessageRulesetForm({
+      title: `Edit Message Ruleset #${id}`,
+      action: `/admin/message-rulesets/${id}`,
+      csrfToken,
+      backHref: '/admin/message-rulesets',
+      values: {
+        id: item.id,
+        name: item.name,
+        status: item.status,
+        description: item.description || '',
+        criteriaJson: JSON.stringify(item.criteria, null, 2),
+      },
+      notice: req.query?.notice ? String(req.query.notice) : '',
+      error: req.query?.error ? String(req.query.error) : '',
+    })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.send(doc)
+  } catch (err) {
+    logError(req.log || pagesLogger, err, 'admin message ruleset detail failed', { path: req.path, ruleset_id: id })
+    res.status(404).send('Message ruleset not found')
+  }
+})
+
+pagesRouter.post('/admin/message-rulesets/:id', async (req: any, res: any) => {
+  const id = Number(req.params.id)
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).send('Bad ruleset id')
+  const cookies = parseCookies(req.headers.cookie)
+  const csrfToken = cookies['csrf'] || ''
+  const payload = buildMessageRulesetCreateOrUpdatePayload(req.body || {})
+  try {
+    await messageRulesetsSvc.updateRulesetForAdmin(id, payload, Number(req.user?.id || 0))
+    res.redirect(`/admin/message-rulesets/${id}?notice=${encodeURIComponent('Saved.')}`)
+  } catch (err: any) {
+    const doc = renderAdminMessageRulesetForm({
+      title: `Edit Message Ruleset #${id}`,
+      action: `/admin/message-rulesets/${id}`,
+      csrfToken,
+      backHref: '/admin/message-rulesets',
+      values: { ...payload, id },
+      error: String(err?.message || 'Failed to save message ruleset'),
+    })
+    res.status(400).set('Content-Type', 'text/html; charset=utf-8').send(doc)
   }
 })
 

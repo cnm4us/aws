@@ -149,6 +149,7 @@ Add decision debug/telemetry fields:
 - ruleset admin pages
 - message editor select for ruleset
 - save/read path for `eligibility_ruleset_id`
+ - Status: Completed (2026-03-25)
 
 ### Phase E — Observability + Smoke
 - add Jaeger/Pino decision tags for ruleset pass/reject
