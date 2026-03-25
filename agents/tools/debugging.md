@@ -39,7 +39,16 @@ npm run jaeger:query -- <subcommand> [flags]
 - `admin_messages`
 - `admin_message_save`
 - `admin_message_analytics`
+- `payment_checkout_page`
+- `payment_checkout_start`
+- `payment_subscribe_create`
+- `payment_webhook`
+- `payment_webhook_ingest`
+- `payment_subscription_lifecycle`
+- `payment_subscription_action`
 - `feed_message_pipeline` (runs decide/fetch/event in sequence)
+- `payment_pipeline` (runs payment lifecycle presets in sequence)
+- `support_pipeline` (runs support + payment lifecycle presets in sequence)
 
 Note:
 - Message presets are tag-based (`app.operation=...`).

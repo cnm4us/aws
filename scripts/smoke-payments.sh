@@ -11,8 +11,11 @@ mkdir -p "$OUT_DIR"
 presets=(
   payment_checkout_page
   payment_checkout_start
+  payment_subscribe_create
   payment_webhook
   payment_webhook_ingest
+  payment_subscription_lifecycle
+  payment_subscription_action
 )
 
 {
@@ -36,6 +39,8 @@ Manual smoke checklist:
 4) Confirm redirect to PayPal OR mock fallback (if adapter path returns not implemented).
 5) For webhook validation, trigger real PayPal sandbox webhook and verify payment_webhook + payment_webhook_ingest counts.
 6) Replay the same webhook event and verify webhook trace count increases while completion side effects remain idempotent (no duplicate suppression rows).
+7) Run legacy classification report:
+   npm run payments:report:legacy-subscribe
 TXT
 
 echo "payment smoke artifact directory:"

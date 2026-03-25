@@ -37,7 +37,7 @@ Status: In Progress
 - C: Completed
 - D: Completed
 - E: Completed
-- F: Pending
+- F: Completed
 
 ## Phase A — Data & Contract Tightening
 - Goal:
@@ -106,10 +106,10 @@ Status: In Progress
 - Goal:
   - Validate production-readiness of native subscription flow.
 - Steps:
-  - [ ] Add Jaeger tags for subscription create path (`plan_key`, `provider_ref`, `provider_subscription_id`).
-  - [ ] Add/adjust Jaeger presets for subscription create + lifecycle events.
-  - [ ] Add smoke script for native subscription flow (sandbox).
-  - [ ] Add one-time migration guard/report:
+  - [x] Add Jaeger tags for subscription create path (`plan_key`, `provider_ref`, `provider_subscription_id`).
+  - [x] Add/adjust Jaeger presets for subscription create + lifecycle events.
+  - [x] Add smoke script for native subscription flow (sandbox).
+  - [x] Add one-time migration guard/report:
     - identify old subscribe checkouts that were capture-based
     - classify as legacy for UI/reporting clarity.
 - Acceptance:
@@ -139,4 +139,4 @@ Status: In Progress
 
 ## Resume Here
 - Next action:
-  - Start Phase F: observability, smoke, and migration safety.
+  - Plan 141 complete. Next: choose follow-up plan for lifecycle/action polish and provider-sync UX.

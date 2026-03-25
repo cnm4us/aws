@@ -681,6 +681,12 @@ export async function createCheckoutSession(input: CreateCheckoutSessionInput): 
       if (catalogItemId != null) span.setAttribute('app.payment_catalog_item_id', String(catalogItemId))
       if (amountCents != null) span.setAttribute('app.payment_amount_cents', String(amountCents))
       if (enrichedMetadata.support_source) span.setAttribute('app.support_source', String(enrichedMetadata.support_source))
+      if (intent === 'subscribe' && catalogItem) {
+        const planKey = String(catalogItem.item_key || '').trim()
+        const providerRef = String(catalogItem.provider_ref || '').trim()
+        if (planKey) span.setAttribute('app.payment_plan_key', planKey)
+        if (providerRef) span.setAttribute('app.payment_provider_ref', providerRef)
+      }
       if (providerStart.providerSubscriptionId) span.setAttribute('app.payment_provider_subscription_id', providerStart.providerSubscriptionId)
       span.setStatus({ code: SpanStatusCode.OK })
 
@@ -693,6 +699,8 @@ export async function createCheckoutSession(input: CreateCheckoutSessionInput): 
         payment_checkout_id: checkoutId,
         payment_catalog_item_id: catalogItemId,
         payment_amount_cents: amountCents,
+        payment_plan_key: intent === 'subscribe' ? (catalogItem?.item_key || null) : null,
+        payment_provider_ref: intent === 'subscribe' ? (catalogItem?.provider_ref || null) : null,
         support_source: enrichedMetadata.support_source || null,
         payment_provider_subscription_id: providerStart.providerSubscriptionId,
         message_id: messageId,
@@ -767,9 +775,11 @@ export async function ingestWebhook(input: {
       }
 
       let derivedPaymentStatus: string | null = null
+      let derivedProviderSubscriptionId: string | null = null
       if (saved.inserted) {
         const parsed: PaymentWebhookParsedCompletion = adapter.parseCompletion(verified)
         derivedPaymentStatus = parsed.checkoutStatus || null
+        derivedProviderSubscriptionId = parsed.providerSubscriptionId ? String(parsed.providerSubscriptionId).trim() : null
         const payloadResource: any = verified.payload?.resource && typeof verified.payload.resource === 'object' ? verified.payload.resource : null
         const customCheckoutId = payloadResource?.custom_id ? String(payloadResource.custom_id).trim().toLowerCase() : ''
         try {
@@ -891,9 +901,11 @@ export async function ingestWebhook(input: {
         'app.payment_provider': provider,
         'app.payment_mode': mode,
         'app.payment_webhook_deduped': saved.inserted ? 0 : 1,
+        'app.payment_webhook_event_type': verified.eventType,
       })
       if (derivedPaymentStatus) span.setAttribute('app.payment_status', derivedPaymentStatus)
       if (verified.providerEventId) span.setAttribute('app.payment_provider_event_id', verified.providerEventId)
+      if (derivedProviderSubscriptionId) span.setAttribute('app.payment_provider_subscription_id', derivedProviderSubscriptionId)
       span.setStatus({ code: SpanStatusCode.OK })
 
       return {

@@ -42,6 +42,8 @@ Presets:
   payment_checkout_start   app.operation=payments.checkout.start
   payment_webhook          app.operation=payments.webhook
   payment_webhook_ingest   app.operation=payments.webhook.ingest
+  payment_subscribe_create app.operation=payments.checkout.create + app.payment_intent=subscribe
+  payment_subscription_lifecycle app.operation=payments.webhook.ingest + app.payment_webhook_event_type=BILLING.SUBSCRIPTION.*
   support_page             HTTP GET /support
   my_support_view          HTTP GET /my/support
   payment_subscription_action app.operation=payments.subscription.action
@@ -224,16 +226,16 @@ run_trace() {
 run_preset_once() {
   local name="$1"
   local op=""
-  local tag=""
+  local preset_tags=()
   case "$name" in
     message_decide)
-      tag="app.operation=feed.message.decide"
+      preset_tags=("app.operation=feed.message.decide")
       ;;
     message_fetch)
-      tag="app.operation=feed.message.fetch"
+      preset_tags=("app.operation=feed.message.fetch")
       ;;
     message_event)
-      tag="app.operation=feed.message.event"
+      preset_tags=("app.operation=feed.message.event")
       ;;
     admin_messages)
       op="HTTP GET /admin/messages"
@@ -248,13 +250,19 @@ run_preset_once() {
       op="HTTP GET /checkout/:intent"
       ;;
     payment_checkout_start)
-      tag="app.operation=payments.checkout.start"
+      preset_tags=("app.operation=payments.checkout.start")
       ;;
     payment_webhook)
-      tag="app.operation=payments.webhook"
+      preset_tags=("app.operation=payments.webhook")
       ;;
     payment_webhook_ingest)
-      tag="app.operation=payments.webhook.ingest"
+      preset_tags=("app.operation=payments.webhook.ingest")
+      ;;
+    payment_subscribe_create)
+      preset_tags=("app.operation=payments.checkout.create" "app.payment_intent=subscribe")
+      ;;
+    payment_subscription_lifecycle)
+      preset_tags=("app.operation=payments.webhook.ingest" "app.payment_webhook_event_type=BILLING.SUBSCRIPTION.ACTIVATED")
       ;;
     support_page)
       op="HTTP GET /support"
@@ -273,8 +281,8 @@ run_preset_once() {
   local old_operation="$OPERATION"
   local old_tags=("${TAGS[@]}")
   OPERATION="$op"
-  if [[ -n "$tag" ]]; then
-    TAGS=("$tag")
+  if [[ ${#preset_tags[@]} -gt 0 ]]; then
+    TAGS=("${preset_tags[@]}")
   else
     TAGS=()
   fi
@@ -308,7 +316,7 @@ run_preset() {
     return 0
   fi
   if [[ "$name" == "payment_pipeline" ]]; then
-    local names=("payment_checkout_page" "payment_checkout_start" "payment_webhook" "payment_webhook_ingest" "payment_subscription_action")
+    local names=("payment_checkout_page" "payment_checkout_start" "payment_subscribe_create" "payment_webhook" "payment_webhook_ingest" "payment_subscription_lifecycle" "payment_subscription_action")
     for n in "${names[@]}"; do
       echo "== preset: $n =="
       local old_out="$OUT_FILE"
@@ -327,7 +335,7 @@ run_preset() {
     return 0
   fi
   if [[ "$name" == "support_pipeline" ]]; then
-    local names=("support_page" "payment_checkout_page" "payment_checkout_start" "payment_webhook" "payment_webhook_ingest" "my_support_view" "payment_subscription_action")
+    local names=("support_page" "payment_checkout_page" "payment_checkout_start" "payment_subscribe_create" "payment_webhook" "payment_webhook_ingest" "payment_subscription_lifecycle" "my_support_view" "payment_subscription_action")
     for n in "${names[@]}"; do
       echo "== preset: $n =="
       local old_out="$OUT_FILE"
