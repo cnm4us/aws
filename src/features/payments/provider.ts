@@ -16,6 +16,14 @@ export interface PaymentProviderAdapter {
   createSubscriptionSession?(input: PaymentProviderSubscriptionRequest): Promise<PaymentProviderSubscriptionResult>
   verifyWebhook(input: PaymentWebhookVerifyInput): Promise<PaymentWebhookVerifyResult>
   parseCompletion(input: PaymentWebhookVerifyResult): PaymentWebhookParsedCompletion
+  getSubscription?(input: {
+    mode: 'sandbox' | 'live'
+    credentials: Record<string, unknown>
+    subscriptionId: string
+  }): Promise<{
+    status: string | null
+    providerPlanId: string | null
+  }>
   cancelSubscription?(input: {
     mode: 'sandbox' | 'live'
     credentials: Record<string, unknown>

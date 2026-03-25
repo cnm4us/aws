@@ -394,6 +394,31 @@ export const paypalProviderAdapter: PaymentProviderAdapter = {
     }
   },
 
+  async getSubscription(input): Promise<{ status: string | null; providerPlanId: string | null }> {
+    const creds = parseCredentials(input.credentials || {})
+    const token = await getAccessToken({
+      mode: input.mode,
+      clientId: creds.clientId,
+      clientSecret: creds.clientSecret,
+    })
+    const subscriptionId = String(input.subscriptionId || '').trim()
+    if (!subscriptionId) throw new DomainError('invalid_payment_provider_subscription_id', 'invalid_payment_provider_subscription_id', 400)
+    const res = await fetchJson(`${PAYPAL_BASE[input.mode]}/v1/billing/subscriptions/${encodeURIComponent(subscriptionId)}`, {
+      method: 'GET',
+      headers: {
+        authorization: `Bearer ${token}`,
+        accept: 'application/json',
+      },
+    })
+    if (res.status < 200 || res.status >= 300) {
+      throw new DomainError('paypal_subscription_fetch_failed', 'paypal_subscription_fetch_failed', 502)
+    }
+    return {
+      status: res.data?.status != null ? String(res.data.status || '').trim() : null,
+      providerPlanId: res.data?.plan_id != null ? String(res.data.plan_id || '').trim() : null,
+    }
+  },
+
   async resumeSubscription(input): Promise<void> {
     const creds = parseCredentials(input.credentials || {})
     const token = await getAccessToken({

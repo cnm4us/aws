@@ -10526,6 +10526,8 @@ function renderSupportPage(opts: {
   selectedDonateAmountCents: number | null
   donateModes: Array<{ value: string; label: string }>
   subscribeModes: Array<{ value: string; label: string }>
+  currentSubscriptionId: number | null
+  currentSubscribeCatalogItemId: number | null
   error?: string | null
   context: ReturnType<typeof readSupportMessageContext>
 }): string {
@@ -10553,6 +10555,8 @@ function renderSupportPage(opts: {
     if (opts.context.ctaDefinitionId != null) out += `<input type="hidden" name="message_cta_definition_id" value="${opts.context.ctaDefinitionId}" />`
     if (opts.context.ctaIntentKey) out += `<input type="hidden" name="message_cta_intent_key" value="${escapeHtml(opts.context.ctaIntentKey)}" />`
     if (opts.context.ctaExecutorType) out += `<input type="hidden" name="message_cta_executor_type" value="${escapeHtml(opts.context.ctaExecutorType)}" />`
+    if (opts.currentSubscriptionId != null) out += `<input type="hidden" name="current_subscription_id" value="${opts.currentSubscriptionId}" />`
+    if (opts.currentSubscribeCatalogItemId != null) out += `<input type="hidden" name="current_subscription_catalog_item_id" value="${opts.currentSubscribeCatalogItemId}" />`
     return out
   }
 
@@ -10580,15 +10584,19 @@ function renderSupportPage(opts: {
   body += '</div>'
 
   body += '<div class="section"><div class="section-title">Subscription</div>'
+  if (opts.currentSubscribeCatalogItemId != null) {
+    body += '<div class="hint" style="margin:6px 0 10px 0">Current membership is highlighted below.</div>'
+  }
   if (!opts.subscribeItems.length) {
     body += '<p>No active subscription plans.</p>'
   } else {
     for (const item of opts.subscribeItems) {
       const amountText = item.amountCents == null ? item.label : `${item.label} — $${(Number(item.amountCents) / 100).toFixed(2)}/mo`
+      const isCurrent = opts.currentSubscribeCatalogItemId != null && Number(opts.currentSubscribeCatalogItemId) === Number(item.id)
       body += '<div class="row" style="display:flex; align-items:center; gap:10px; margin:8px 0">'
       body += `<form method="post" action="/support" style="margin:0">`
       body += renderSharedInputs('subscribe', Number(item.id), item.amountCents)
-      body += `<button type="submit"${hasSubscribeProvider ? '' : ' disabled'}>${escapeHtml(item.label)}</button>`
+      body += `<button type="submit"${hasSubscribeProvider ? '' : ' disabled'}>${escapeHtml(item.label)}${isCurrent ? ' (Current)' : ''}</button>`
       body += '</form>'
       body += `<div style="opacity:.9">${escapeHtml(amountText)}</div>`
       body += '</div>'
@@ -10610,6 +10618,8 @@ pagesRouter.get('/support', async (req: any, res: any) => {
     const selectedDonateItemId = parsePositiveIntOrNull(req.query?.donate_catalog_item_id) ?? parsePositiveIntOrNull(req.query?.catalog_item_id)
     const selectedSubscribeItemId = parsePositiveIntOrNull(req.query?.subscribe_catalog_item_id)
     const selectedDonateAmountCents = parseDonationCents(req.query?.amount_cents)
+    const currentSubscriptionId = parsePositiveIntOrNull(req.query?.current_subscription_id)
+    const currentSubscribeCatalogItemIdFromQuery = parsePositiveIntOrNull(req.query?.current_subscription_catalog_item_id)
     const error = req.query?.error ? String(req.query.error) : null
 
     const items = await paymentsSvc.listCatalogItemsForAdmin({ status: 'active', includeArchived: false, limit: 500 })
@@ -10622,6 +10632,18 @@ pagesRouter.get('/support', async (req: any, res: any) => {
     const donateModes = await listEnabledSupportModes('donate')
     const subscribeModes = await listEnabledSupportModes('subscribe')
 
+    let currentSubscribeCatalogItemId = currentSubscribeCatalogItemIdFromQuery
+    if (currentSubscribeCatalogItemId == null && req.user?.id) {
+      try {
+        const snapshot = await paymentsSvc.getMySupportSnapshot({ userId: Number(req.user.id), recentLimit: 5 })
+        const activeSub = (snapshot.subscriptions || []).find((row) => String(row.status || '').toLowerCase() === 'active')
+        if (activeSub?.catalog_item_id != null) {
+          const n = Number(activeSub.catalog_item_id)
+          if (Number.isFinite(n) && n > 0) currentSubscribeCatalogItemId = Math.round(n)
+        }
+      } catch {}
+    }
+
     const doc = renderSupportPage({
       csrfToken,
       returnPath,
@@ -10633,6 +10655,8 @@ pagesRouter.get('/support', async (req: any, res: any) => {
       selectedDonateItemId,
       selectedSubscribeItemId,
       selectedDonateAmountCents,
+      currentSubscriptionId,
+      currentSubscribeCatalogItemId,
       error,
       context,
     })
@@ -10667,6 +10691,8 @@ pagesRouter.post('/support', async (req: any, res: any) => {
     const providerModeRaw = req.body?.provider_mode ? String(req.body.provider_mode).trim().toLowerCase() : ''
     const modeParsed = providerModeRaw ? parseModeOption(providerModeRaw) : null
     const catalogItemId = parsePositiveIntOrNull(req.body?.catalog_item_id)
+    const currentSubscriptionId = parsePositiveIntOrNull(req.body?.current_subscription_id)
+    const currentSubscriptionCatalogItemId = parsePositiveIntOrNull(req.body?.current_subscription_catalog_item_id)
     const selectedItems = await paymentsSvc.listCatalogItemsForAdmin({ status: 'active', includeArchived: false, limit: 500 })
     const selectedItem = catalogItemId == null
       ? null
@@ -10716,6 +10742,32 @@ pagesRouter.post('/support', async (req: any, res: any) => {
       return res.redirect(`/support?${q.toString()}`)
     }
 
+    if (
+      intent === 'subscribe' &&
+      req.user?.id &&
+      currentSubscriptionId != null &&
+      currentSubscriptionCatalogItemId != null &&
+      catalogItemId != null &&
+      Number(currentSubscriptionCatalogItemId) !== Number(catalogItemId)
+    ) {
+      try {
+        await paymentsSvc.requestSubscriptionAction({
+          userId: Number(req.user.id),
+          subscriptionId: Number(currentSubscriptionId),
+          action: 'cancel',
+        })
+      } catch (err: any) {
+        const q = new URLSearchParams()
+        q.set('error', String(err?.message || 'subscription_cancel_failed'))
+        q.set('return', returnPath)
+        q.set('cancel', cancelPath)
+        q.set('current_subscription_id', String(currentSubscriptionId))
+        q.set('current_subscription_catalog_item_id', String(currentSubscriptionCatalogItemId))
+        appendSupportContext(q, context)
+        return res.redirect(`/support?${q.toString()}`)
+      }
+    }
+
     const query = new URLSearchParams()
     query.set('return', returnPath)
     query.set('cancel', cancelPath)
@@ -10752,12 +10804,29 @@ pagesRouter.get('/my/support', async (req: any, res: any) => {
     const csrfToken = cookies['csrf'] || ''
     const notice = req.query?.notice ? String(req.query.notice) : ''
     const error = req.query?.error ? String(req.query.error) : ''
+    const pollRaw = Number.parseInt(String(req.query?.poll ?? ''), 10)
+    const pollBudget = Number.isFinite(pollRaw) ? Math.max(0, Math.min(60, pollRaw)) : 0
 
     const snapshot = await paymentsSvc.getMySupportSnapshot({ userId, recentLimit: 30 })
+    let catalogNameById = new Map<number, string>()
+    try {
+      const catalog = await paymentsSvc.listCatalogItemsForAdmin({ includeArchived: true, limit: 1000 })
+      for (const item of catalog) {
+        const id = Number(item.id || 0)
+        if (!Number.isFinite(id) || id <= 0) continue
+        const name = String(item.label || item.item_key || '').trim()
+        if (name) catalogNameById.set(id, name)
+      }
+    } catch {}
     const dollars = (cents: number | null | undefined): string => {
       const n = Number(cents || 0)
       if (!Number.isFinite(n)) return '$0.00'
       return `$${(n / 100).toFixed(2)}`
+    }
+    const dateOnly = (v: any): string => {
+      const s = String(v == null ? '' : v).trim()
+      const m = s.match(/^(\d{4}-\d{2}-\d{2})/)
+      return m ? m[1] : s
     }
     const asText = (v: any): string => escapeHtml(String(v == null ? '' : v))
 
@@ -10766,12 +10835,12 @@ pagesRouter.get('/my/support', async (req: any, res: any) => {
     if (notice) body += `<div class="notice">${escapeHtml(notice)}</div>`
     if (error) body += `<div class="error">${escapeHtml(error)}</div>`
     body += '<div class="section">'
-    body += '<div class="section-title">Totals</div>'
+    body += '<div class="section-title" style="font-size:1.22rem; font-weight:800">Totals</div>'
     body += `<p><strong>Lifetime Donations:</strong> ${dollars(snapshot.lifetimeDonatedCents)}</p>`
     body += `<p><strong>Last 30 Days:</strong> ${dollars(snapshot.last30DaysDonatedCents)}</p>`
     body += '</div>'
 
-    body += '<div class="section"><div class="section-title">Recent Transactions</div>'
+    body += '<div class="section"><div class="section-title" style="font-size:1.22rem; font-weight:800">Recent Transactions</div>'
     if (!snapshot.recentTransactions.length) {
       body += '<p>No transactions yet.</p>'
     } else {
@@ -10790,49 +10859,79 @@ pagesRouter.get('/my/support', async (req: any, res: any) => {
     }
     body += '</div>'
 
-    body += '<div class="section"><div class="section-title">Subscriptions</div>'
+    const hasPendingSubscriptions = snapshot.subscriptions.some((row: any) => {
+      const status = String(row?.status || '').trim().toLowerCase()
+      return !!row?.pending_action || status === 'pending' || status === 'pending_approval'
+    })
+    const shouldAutoRefresh = hasPendingSubscriptions || pollBudget > 0
+    let nextPollBudget = 0
+    if (hasPendingSubscriptions) {
+      const currentBudget = pollBudget > 0 ? pollBudget : 12
+      nextPollBudget = Math.max(0, currentBudget - 1)
+    } else if (pollBudget > 0) {
+      nextPollBudget = pollBudget - 1
+    }
+    body += '<div class="section">'
+    body += '<div class="section-title" style="font-size:1.22rem; font-weight:800; margin:0 0 10px">Subscriptions</div>'
     if (!snapshot.subscriptions.length) {
       body += '<p>No subscription records yet.</p>'
     } else {
-      body += '<table><thead><tr><th>Status</th><th>Provider Sub ID</th><th>Amount</th><th>Last Event</th><th>Updated</th></tr></thead><tbody>'
-      for (const row of snapshot.subscriptions) {
+      for (const [idx, row] of snapshot.subscriptions.entries()) {
         const supportsActions = String(row.provider || '').toLowerCase() === 'paypal' && String(row.provider_subscription_id || '').trim().length > 0
         const status = String(row.status || '').trim().toLowerCase()
         const hasPending = !!row.pending_action
+        const isRowPending = hasPending || status === 'pending' || status === 'pending_approval'
         const canCancel = supportsActions && status === 'active' && !hasPending
-        const canChangePlan = supportsActions && status === 'active' && !hasPending
-        const canResume = supportsActions && (status === 'canceled' || status === 'suspended') && !hasPending
+        const planName = row.catalog_item_id != null
+          ? (catalogNameById.get(Number(row.catalog_item_id)) || '')
+          : ''
         const pendingText = hasPending
           ? `Pending ${asText(row.pending_action)}${row.pending_plan_key ? ` (${asText(row.pending_plan_key)})` : ''} requested ${asText(row.pending_requested_at || '')}. Waiting for provider confirmation.`
           : ''
-        body += `<tr>
-          <td>${asText(row.status)}</td>
-          <td>${asText(row.provider_subscription_id)}</td>
-          <td>${asText(dollars(row.amount_cents))} ${asText(row.currency || 'USD')}</td>
-          <td>${asText(row.last_event_type || '')}${pendingText ? `<div style="font-size:.85em; opacity:.8">${pendingText}</div>` : ''}</td>
-          <td>${asText(row.updated_at || '')}${supportsActions ? `<div class="row" style="margin-top:8px">
-            <form method="post" action="/api/payments/subscriptions/${Number(row.id)}/cancel" style="display:inline-flex; gap:6px; align-items:center">
-              <input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />
-              <input type="hidden" name="return" value="/my/support" />
-              <button type="submit"${canCancel ? '' : ' disabled'}>Cancel</button>
-            </form>
-            <form method="post" action="/api/payments/subscriptions/${Number(row.id)}/resume" style="display:inline-flex; gap:6px; align-items:center">
-              <input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />
-              <input type="hidden" name="return" value="/my/support" />
-              <button type="submit"${canResume ? '' : ' disabled'}>Resume</button>
-            </form>
-            <form method="post" action="/api/payments/subscriptions/${Number(row.id)}/change_plan" style="display:inline-flex; gap:6px; align-items:center">
-              <input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />
-              <input type="hidden" name="return" value="/my/support" />
-              <input type="text" name="target_plan_key" placeholder="target plan key" style="min-width:160px" ${canChangePlan ? '' : 'disabled'} />
-              <button type="submit"${canChangePlan ? '' : ' disabled'}>Change Plan</button>
-            </form>
-          </div>` : ''}</td>
-        </tr>`
+        body += '<div style="display:grid; grid-template-columns:minmax(120px,180px) 1fr; gap:8px 20px; align-items:start; margin-top:10px">'
+        body += `<div style="opacity:.85">Name</div><div>${asText(planName || 'Subscription')}</div>`
+        body += `<div style="opacity:.85">Started</div><div>${asText(dateOnly(row.created_at || ''))}</div>`
+        if (status === 'canceled') {
+          body += `<div style="opacity:.85">Canceled</div><div>${asText(dateOnly(row.updated_at || ''))}</div>`
+        }
+        body += `<div style="opacity:.85">Cost</div><div>${asText(dollars(row.amount_cents))} ${asText(String(row.currency || 'USD').toUpperCase())}/month</div>`
+        body += `<div style="opacity:.85">Status</div><div>${isRowPending ? '<span class="support-pending-indicator" style="letter-spacing:.04em; text-transform:lowercase; opacity:.85">pending ...</span>' : asText(row.status)}</div>`
+        if (pendingText) {
+          body += `<div style="opacity:.85">Pending</div><div style="font-size:.92em; opacity:.9">${pendingText}</div>`
+        }
+        if (supportsActions && status !== 'canceled') {
+          body += `<div style="opacity:.85">Cancel</div><div><form method="post" action="/api/payments/subscriptions/${Number(row.id)}/cancel" style="display:inline-flex; gap:6px; align-items:center"><input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" /><input type="hidden" name="return" value="/my/support" /><button type="submit"${canCancel ? '' : ' disabled'}>Cancel</button></form></div>`
+          body += `<div style="opacity:.85">Change Plan</div><div><form method="get" action="/support" style="display:inline-flex; gap:6px; align-items:center"><input type="hidden" name="intent" value="subscribe" /><input type="hidden" name="return" value="/my/support" /><input type="hidden" name="cancel" value="/my/support" /><input type="hidden" name="current_subscription_id" value="${Number(row.id)}" /><input type="hidden" name="current_subscription_catalog_item_id" value="${row.catalog_item_id != null ? Number(row.catalog_item_id) : ''}" /><button type="submit">Change Plan</button></form></div>`
+        }
+        body += '</div>'
+        if (idx < snapshot.subscriptions.length - 1) {
+          body += '<hr style="border:none; border-top:1px solid rgba(255,255,255,0.14); margin:14px 0" />'
+        }
       }
-      body += '</tbody></table>'
     }
     body += '</div>'
+
+    if (shouldAutoRefresh) {
+      body += `<script>(function(){
+        var timerMs = 5000;
+        var els = document.querySelectorAll('.support-pending-indicator');
+        if (els && els.length) {
+          var on = true;
+          window.setInterval(function(){
+            on = !on;
+            for (var i = 0; i < els.length; i++) {
+              var el = els[i];
+              if (el && el.style) el.style.opacity = on ? '0.85' : '0.25';
+            }
+          }, 500);
+        }
+        window.setTimeout(function(){
+          var u = new URL(window.location.href);
+          ${nextPollBudget > 0 ? `u.searchParams.set('poll', '${nextPollBudget}');` : `u.searchParams.delete('poll');`}
+          window.location.replace(u.toString());
+        }, timerMs);
+      })();</script>`
+    }
 
     const doc = renderPageDocument('My Support', body)
     ;(req.log || pagesLogger).info({

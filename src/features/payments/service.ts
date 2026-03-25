@@ -281,6 +281,17 @@ function mapPaypalSubscriptionStatusFromEvent(eventTypeRaw: string): 'pending' |
   return 'pending'
 }
 
+function mapPaypalSubscriptionStatusFromProviderStatus(statusRaw: string | null | undefined): 'pending' | 'active' | 'suspended' | 'canceled' | 'expired' | null {
+  const status = String(statusRaw || '').trim().toUpperCase()
+  if (!status) return null
+  if (status === 'ACTIVE') return 'active'
+  if (status === 'APPROVAL_PENDING' || status === 'APPROVED' || status === 'PENDING') return 'pending'
+  if (status === 'SUSPENDED') return 'suspended'
+  if (status === 'CANCELLED' || status === 'CANCELED') return 'canceled'
+  if (status === 'EXPIRED') return 'expired'
+  return 'pending'
+}
+
 function shouldClearPendingActionFromEvent(eventTypeRaw: string | null | undefined): boolean {
   const eventType = String(eventTypeRaw || '').trim().toUpperCase()
   if (!eventType.startsWith('BILLING.SUBSCRIPTION.')) return false
@@ -1047,13 +1058,75 @@ export async function completePaypalSubscriptionReturn(input: {
 
       const metadata = parseMetadata(session.metadata_json)
       const returnUrl = normalizeNullablePath(metadata.final_return_path || session.return_url, 'invalid_payment_return_url') || '/'
+      let resolvedSubscriptionStatus: 'pending' | 'active' | 'suspended' | 'canceled' | 'expired' | null = null
+      try {
+        const providerCfg = await repo.getProviderConfig({ provider: 'paypal', mode: session.mode })
+        if (providerCfg && providerCfg.status === 'enabled') {
+          const adapter = getPaymentProvider('paypal')
+          if (adapter.getSubscription) {
+            const providerCredentials = parseJsonObject(providerCfg.credentials_json)
+            const fetched = await adapter.getSubscription({
+              mode: session.mode,
+              credentials: providerCredentials,
+              subscriptionId: providerSubscriptionId,
+            })
+            resolvedSubscriptionStatus = mapPaypalSubscriptionStatusFromProviderStatus(fetched?.status)
+          }
+        }
+      } catch (err: any) {
+        paymentLogger.warn({
+          app_operation: 'payments.checkout.return',
+          app_operation_detail: 'payments.checkout.subscription_status_fetch',
+          app_outcome: 'provider_error',
+          payment_provider: 'paypal',
+          payment_mode: session.mode,
+          payment_checkout_id: session.checkout_id,
+          payment_provider_subscription_id: providerSubscriptionId,
+          payment_error_code: String(err?.code || ''),
+          payment_error_message: String(err?.message || ''),
+        }, 'payments.checkout.return')
+      }
+
+      if (resolvedSubscriptionStatus) {
+        const nowUtc = toDateTimeUtc(new Date())
+        await repo.upsertPaymentSubscription({
+          provider: session.provider,
+          mode: session.mode,
+          providerSubscriptionId,
+          status: resolvedSubscriptionStatus,
+          userId: session.user_id == null ? null : Number(session.user_id),
+          checkoutSessionId: Number(session.id),
+          checkoutId: session.checkout_id || null,
+          providerOrderId: session.provider_order_id || null,
+          catalogItemId: session.catalog_item_id == null ? null : Number(session.catalog_item_id),
+          amountCents: session.amount_cents == null ? null : Number(session.amount_cents),
+          currency: session.currency || 'USD',
+          messageId: session.message_id == null ? null : Number(session.message_id),
+          messageCampaignKey: session.message_campaign_key || null,
+          lastEventType: 'PAYPAL.RETURN.STATUS',
+          lastEventAtUtc: nowUtc,
+          clearPendingAction: resolvedSubscriptionStatus !== 'pending',
+        })
+        if (resolvedSubscriptionStatus === 'active' && session.status !== 'completed') {
+          await repo.updateCheckoutSessionStatus({
+            id: Number(session.id),
+            status: 'completed',
+            providerSessionId: providerSubscriptionId,
+            providerOrderId: session.provider_order_id || null,
+          })
+        }
+      }
+
+      const effectiveCheckoutStatus: 'completed' | 'pending' = (
+        session.status === 'completed' || resolvedSubscriptionStatus === 'active'
+      ) ? 'completed' : 'pending'
       span.setAttributes({
         'app.outcome': 'success',
         'app.payment_provider': 'paypal',
         'app.payment_mode': session.mode,
         'app.payment_checkout_id': session.checkout_id,
         'app.payment_provider_subscription_id': providerSubscriptionId,
-        'app.payment_status': session.status,
+        'app.payment_status': effectiveCheckoutStatus,
       })
       span.setStatus({ code: SpanStatusCode.OK })
 
@@ -1065,10 +1138,11 @@ export async function completePaypalSubscriptionReturn(input: {
         payment_mode: session.mode,
         payment_checkout_id: session.checkout_id,
         payment_provider_subscription_id: providerSubscriptionId,
-        payment_status: session.status,
+        payment_status: effectiveCheckoutStatus,
+        payment_subscription_status: resolvedSubscriptionStatus,
       }, 'payments.checkout.return')
 
-      const status: 'completed' | 'redirected' = session.status === 'completed' ? 'completed' : 'redirected'
+      const status: 'completed' | 'redirected' = effectiveCheckoutStatus === 'completed' ? 'completed' : 'redirected'
       return { returnUrl, checkoutId: session.checkout_id, status }
     } catch (err: any) {
       span.recordException(err)

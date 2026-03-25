@@ -590,11 +590,13 @@ feedMessagesRouter.get(checkoutPagePaths, async (req: any, res: any, next: any) 
     html += `<h1>${htmlEscape(intent === 'upgrade' ? 'Upgrade checkout' : `${intent[0].toUpperCase()}${intent.slice(1)} checkout`)}</h1>`
     html += '<p>Choose a payment provider to continue.</p>'
     if (selectedItemLabel || selectedItemAmountCents != null) {
+      const isRecurring = intent === 'subscribe'
       const amt = selectedItemAmountCents == null
         ? 'Flexible amount'
-        : `$${(selectedItemAmountCents / 100).toFixed(2)} ${htmlEscape(selectedItemCurrency)}`
+        : `$${(selectedItemAmountCents / 100).toFixed(2)} ${htmlEscape(selectedItemCurrency)}${isRecurring ? ' / month' : ''}`
+      const selectionText = selectedItemLabel || (intent === 'subscribe' ? 'Subscription' : 'Donation')
       html += '<div class="card summary">'
-      html += `<div><strong>Selection:</strong> ${htmlEscape(selectedItemLabel || (intent === 'subscribe' ? 'Subscription' : 'Donation'))}</div>`
+      html += `<div><strong>Selection:</strong> ${htmlEscape(isRecurring ? `${selectionText} - Monthly Subscription` : selectionText)}</div>`
       html += `<div class="hint"><strong>Amount:</strong> ${amt}</div>`
       html += '</div>'
     }
@@ -759,6 +761,15 @@ feedMessagesRouter.post(checkoutPagePaths, async (req: any, res: any, next: any)
 
 feedMessagesRouter.get(paypalReturnPaths, async (req: any, res: any, next: any) => {
   try {
+    const withSupportPoll = (target: string): string => {
+      const t = String(target || '').trim()
+      if (!t) return '/'
+      if (!t.startsWith('/my/support')) return t
+      const u = new URL(t, 'http://local.invalid')
+      u.searchParams.set('poll', '12')
+      return `${u.pathname}${u.search}${u.hash}`
+    }
+
     const subscriptionId = String(req.query?.subscription_id || req.query?.ba_token || '').trim()
     if (subscriptionId) {
       const completed = await paymentsSvc.completePaypalSubscriptionReturn({
@@ -774,7 +785,7 @@ feedMessagesRouter.get(paypalReturnPaths, async (req: any, res: any, next: any) 
         span.setAttribute('app.payment_status', completed.status)
         span.setAttribute('app.outcome', 'redirect')
       }
-      return res.redirect(completed.returnUrl || '/')
+      return res.redirect(withSupportPoll(completed.returnUrl || '/'))
     }
     const token = String(req.query?.token || '').trim()
     if (!token) return res.redirect('/')
@@ -791,7 +802,7 @@ feedMessagesRouter.get(paypalReturnPaths, async (req: any, res: any, next: any) 
       span.setAttribute('app.payment_status', completed.status)
       span.setAttribute('app.outcome', 'redirect')
     }
-    return res.redirect(completed.returnUrl || '/')
+    return res.redirect(withSupportPoll(completed.returnUrl || '/'))
   } catch (err: any) {
     const fallback = normalizeReturnPath(req.query?.return, '/')
     if (String(err?.code || '') === 'payment_checkout_not_found') return res.redirect(fallback)
@@ -883,7 +894,7 @@ feedMessagesRouter.post(subscriptionActionPaths, async (req: any, res: any, next
     }, 'payments.subscription.action')
     const returnPath = normalizeReturnPath(req.body?.return, '/my/support')
     const isHtml = String(req.headers?.accept || '').toLowerCase().includes('text/html')
-    if (isHtml) return res.redirect(`${returnPath}${returnPath.includes('?') ? '&' : '?'}notice=${encodeURIComponent('Subscription action queued.')}`)
+    if (isHtml) return res.redirect(`${returnPath}${returnPath.includes('?') ? '&' : '?'}notice=${encodeURIComponent('Subscription action queued.')}&poll=12`)
     return res.json({ ok: true, ...result })
   } catch (err: any) {
     const returnPath = normalizeReturnPath(req.body?.return, '/my/support')
