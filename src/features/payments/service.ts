@@ -594,6 +594,7 @@ export async function createCheckoutSession(input: CreateCheckoutSessionInput): 
       }
       if (catalogItem) {
         enrichedMetadata.catalog_item_key = String(catalogItem.item_key || '')
+        enrichedMetadata.catalog_item_label = String(catalogItem.label || catalogItem.item_key || '')
         enrichedMetadata.catalog_item_kind = String(catalogItem.kind || '')
         enrichedMetadata.catalog_item_provider_ref = catalogItem.provider_ref || null
       }

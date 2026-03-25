@@ -2634,19 +2634,21 @@ export default function Feed() {
       if (url.origin === window.location.origin) {
         const returnPath = `${url.pathname}${url.search}${url.hash || ''}`
         if ((flow === 'donate' || flow === 'subscribe' || flow === 'upgrade') && String(action.ctaExecutorType || '').toLowerCase() === 'provider_checkout') {
-          const checkout = new URL(`/checkout/${flow}`, window.location.origin)
-          checkout.searchParams.set('return', returnPath)
-          checkout.searchParams.set('message_id', String(message.id))
-          if (message.campaignKey) checkout.searchParams.set('message_campaign_key', message.campaignKey)
-          if (messageSessionId) checkout.searchParams.set('message_session_id', messageSessionId)
-          if (action.legacyKind) checkout.searchParams.set('message_cta_kind', action.legacyKind)
-          if (action.slot != null) checkout.searchParams.set('message_cta_slot', String(action.slot))
-          if (action.ctaDefinitionId != null) checkout.searchParams.set('message_cta_definition_id', String(action.ctaDefinitionId))
-          if (action.ctaIntentKey) checkout.searchParams.set('message_cta_intent_key', action.ctaIntentKey)
-          if (action.ctaExecutorType) checkout.searchParams.set('message_cta_executor_type', action.ctaExecutorType)
-          if (intentId) checkout.searchParams.set('message_intent_id', intentId)
-          if (activeSequence) checkout.searchParams.set('message_sequence_key', activeSequence)
-          window.location.href = `${checkout.pathname}${checkout.search}`
+          const support = new URL('/support', window.location.origin)
+          support.searchParams.set('intent', flow)
+          support.searchParams.set('return', returnPath)
+          support.searchParams.set('cancel', returnPath)
+          support.searchParams.set('message_id', String(message.id))
+          if (message.campaignKey) support.searchParams.set('message_campaign_key', message.campaignKey)
+          if (messageSessionId) support.searchParams.set('message_session_id', messageSessionId)
+          if (action.legacyKind) support.searchParams.set('message_cta_kind', action.legacyKind)
+          if (action.slot != null) support.searchParams.set('message_cta_slot', String(action.slot))
+          if (action.ctaDefinitionId != null) support.searchParams.set('message_cta_definition_id', String(action.ctaDefinitionId))
+          if (action.ctaIntentKey) support.searchParams.set('message_cta_intent_key', action.ctaIntentKey)
+          if (action.ctaExecutorType) support.searchParams.set('message_cta_executor_type', action.ctaExecutorType)
+          if (intentId) support.searchParams.set('message_intent_id', intentId)
+          if (activeSequence) support.searchParams.set('message_sequence_key', activeSequence)
+          window.location.href = `${support.pathname}${support.search}`
           return
         }
         url.searchParams.set('message_id', String(message.id))

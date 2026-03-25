@@ -561,6 +561,23 @@ feedMessagesRouter.get(checkoutPagePaths, async (req: any, res: any, next: any) 
     const preselectedProviderMode = req.query?.provider_mode ? String(req.query.provider_mode).trim().toLowerCase() : null
     const modes = await listEnabledCheckoutModes(intent)
     const error = req.query?.error ? String(req.query.error) : ''
+    let selectedItemLabel: string | null = null
+    let selectedItemAmountCents: number | null = amountCents
+    let selectedItemCurrency = 'USD'
+    if (catalogItemId != null) {
+      try {
+        const items = await paymentsSvc.listCatalogItemsForAdmin({ status: 'active', includeArchived: false, limit: 500 })
+        const selected = items.find((item) => Number(item.id) === Number(catalogItemId)) || null
+        if (selected) {
+          selectedItemLabel = String(selected.label || selected.item_key || '').trim() || null
+          if (selectedItemAmountCents == null && selected.amount_cents != null) {
+            const n = Number(selected.amount_cents)
+            if (Number.isFinite(n) && n >= 0) selectedItemAmountCents = Math.round(n)
+          }
+          selectedItemCurrency = String(selected.currency || 'USD').toUpperCase()
+        }
+      } catch {}
+    }
 
     const cookies = parseCookies(req.headers.cookie)
     const csrfToken = cookies['csrf'] || ''
@@ -568,10 +585,19 @@ feedMessagesRouter.get(checkoutPagePaths, async (req: any, res: any, next: any) 
     let html = '<!doctype html><html lang="en"><head><meta charset="utf-8" />'
     html += '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />'
     html += `<title>${htmlEscape(intent)} checkout</title>`
-    html += '<style>html,body{margin:0;padding:0;background:#05070a;color:#eef2ff;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}main{max-width:640px;margin:0 auto;padding:24px 16px 36px}h1{margin:0 0 10px}p{opacity:.9}label{display:block;margin:8px 0}.card{border:1px solid rgba(255,255,255,.16);border-radius:12px;padding:14px;background:rgba(255,255,255,.03)}.error{margin:12px 0;padding:10px;border-radius:8px;background:rgba(255,81,81,.12);border:1px solid rgba(255,81,81,.35)}button,a.btn{display:inline-flex;align-items:center;justify-content:center;padding:10px 14px;border-radius:9px;border:1px solid rgba(255,255,255,.18);background:#0b2f84;color:#fff;text-decoration:none;font-weight:600}a.btn{background:transparent}.row{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}.hint{font-size:.92rem;opacity:.82}</style>'
+    html += '<style>html,body{margin:0;padding:0;background:#05070a;color:#eef2ff;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}main{max-width:640px;margin:0 auto;padding:24px 16px 36px}h1{margin:0 0 10px}p{opacity:.9}label{display:block;margin:8px 0}.card{border:1px solid rgba(255,255,255,.16);border-radius:12px;padding:14px;background:rgba(255,255,255,.03)}.summary{margin:12px 0;border:1px solid rgba(125,180,255,.35);background:rgba(70,120,220,.14)}.error{margin:12px 0;padding:10px;border-radius:8px;background:rgba(255,81,81,.12);border:1px solid rgba(255,81,81,.35)}button,a.btn{display:inline-flex;align-items:center;justify-content:center;padding:10px 14px;border-radius:9px;border:1px solid rgba(255,255,255,.18);background:#0b2f84;color:#fff;text-decoration:none;font-weight:600}a.btn{background:transparent}.row{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}.hint{font-size:.92rem;opacity:.82}</style>'
     html += '</head><body><main>'
     html += `<h1>${htmlEscape(intent === 'upgrade' ? 'Upgrade checkout' : `${intent[0].toUpperCase()}${intent.slice(1)} checkout`)}</h1>`
     html += '<p>Choose a payment provider to continue.</p>'
+    if (selectedItemLabel || selectedItemAmountCents != null) {
+      const amt = selectedItemAmountCents == null
+        ? 'Flexible amount'
+        : `$${(selectedItemAmountCents / 100).toFixed(2)} ${htmlEscape(selectedItemCurrency)}`
+      html += '<div class="card summary">'
+      html += `<div><strong>Selection:</strong> ${htmlEscape(selectedItemLabel || (intent === 'subscribe' ? 'Subscription' : 'Donation'))}</div>`
+      html += `<div class="hint"><strong>Amount:</strong> ${amt}</div>`
+      html += '</div>'
+    }
     if (error) html += `<div class="error">${htmlEscape(error)}</div>`
     if (!modes.length) {
       html += '<div class="card"><p>No payment providers are enabled for this flow.</p>'

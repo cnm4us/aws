@@ -152,6 +152,13 @@ export const paypalProviderAdapter: PaymentProviderAdapter = {
     const returnUrl = normalizeReturnUrl(input.returnUrl) || normalizeReturnUrl('/') || 'https://aws.bawebtech.com/'
     const cancelUrl = normalizeReturnUrl(input.cancelUrl) || returnUrl
     const amount = normalizeAmount(input)
+    const itemLabelRaw = input?.metadata?.catalog_item_label != null
+      ? String(input.metadata.catalog_item_label || '').trim()
+      : ''
+    const itemLabel = itemLabelRaw || (input.intent === 'donate' ? 'Donation' : 'Support')
+    const itemDescription = input.intent === 'donate'
+      ? `${itemLabel} donation`
+      : itemLabel
 
     const payload: any = {
       intent: 'CAPTURE',
@@ -159,7 +166,27 @@ export const paypalProviderAdapter: PaymentProviderAdapter = {
       purchase_units: [
         {
           custom_id: input.checkoutId,
-          amount,
+          description: itemDescription.slice(0, 127),
+          amount: {
+            ...amount,
+            breakdown: {
+              item_total: {
+                currency_code: amount.currency_code,
+                value: amount.value,
+              },
+            },
+          },
+          items: [
+            {
+              name: itemLabel.slice(0, 127),
+              quantity: '1',
+              unit_amount: {
+                currency_code: amount.currency_code,
+                value: amount.value,
+              },
+              category: 'DIGITAL_GOODS',
+            },
+          ],
         },
       ],
       payment_source: {

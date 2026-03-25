@@ -10521,13 +10521,11 @@ function renderSupportPage(opts: {
   cancelPath: string
   donateItems: Array<{ id: number; label: string; amountCents: number | null; currency: string }>
   subscribeItems: Array<{ id: number; label: string; amountCents: number | null; currency: string }>
-  donateModes: Array<{ value: string; label: string }>
-  subscribeModes: Array<{ value: string; label: string }>
   selectedDonateItemId: number | null
   selectedSubscribeItemId: number | null
   selectedDonateAmountCents: number | null
-  selectedDonateMode: string | null
-  selectedSubscribeMode: string | null
+  donateModes: Array<{ value: string; label: string }>
+  subscribeModes: Array<{ value: string; label: string }>
   error?: string | null
   context: ReturnType<typeof readSupportMessageContext>
 }): string {
@@ -10535,93 +10533,68 @@ function renderSupportPage(opts: {
     if (cents == null || !Number.isFinite(Number(cents))) return 'Flexible amount'
     return `${(Number(cents) / 100).toFixed(2)} ${String(currency || 'USD').toUpperCase()}`
   }
-  const selectedDonateMode = opts.selectedDonateMode || (opts.donateModes[0]?.value || '')
-  const selectedSubscribeMode = opts.selectedSubscribeMode || (opts.subscribeModes[0]?.value || '')
+  const hasDonateProvider = opts.donateModes.length > 0
+  const hasSubscribeProvider = opts.subscribeModes.length > 0
+  const renderSharedInputs = (intent: SupportIntent, catalogItemId: number, amountCents?: number | null): string => {
+    let out = ''
+    out += `<input type="hidden" name="csrf" value="${escapeHtml(opts.csrfToken)}" />`
+    out += `<input type="hidden" name="intent" value="${intent}" />`
+    out += `<input type="hidden" name="return" value="${escapeHtml(opts.returnPath)}" />`
+    out += `<input type="hidden" name="cancel" value="${escapeHtml(opts.cancelPath)}" />`
+    out += `<input type="hidden" name="catalog_item_id" value="${catalogItemId}" />`
+    if (amountCents != null) out += `<input type="hidden" name="amount_cents" value="${Math.round(Number(amountCents) || 0)}" />`
+    if (opts.context.messageId != null) out += `<input type="hidden" name="message_id" value="${opts.context.messageId}" />`
+    if (opts.context.campaignKey) out += `<input type="hidden" name="message_campaign_key" value="${escapeHtml(opts.context.campaignKey)}" />`
+    if (opts.context.sessionId) out += `<input type="hidden" name="message_session_id" value="${escapeHtml(opts.context.sessionId)}" />`
+    if (opts.context.intentId) out += `<input type="hidden" name="message_intent_id" value="${escapeHtml(opts.context.intentId)}" />`
+    if (opts.context.sequenceKey) out += `<input type="hidden" name="message_sequence_key" value="${escapeHtml(opts.context.sequenceKey)}" />`
+    if (opts.context.ctaKind) out += `<input type="hidden" name="message_cta_kind" value="${escapeHtml(opts.context.ctaKind)}" />`
+    if (opts.context.ctaSlot != null) out += `<input type="hidden" name="message_cta_slot" value="${opts.context.ctaSlot}" />`
+    if (opts.context.ctaDefinitionId != null) out += `<input type="hidden" name="message_cta_definition_id" value="${opts.context.ctaDefinitionId}" />`
+    if (opts.context.ctaIntentKey) out += `<input type="hidden" name="message_cta_intent_key" value="${escapeHtml(opts.context.ctaIntentKey)}" />`
+    if (opts.context.ctaExecutorType) out += `<input type="hidden" name="message_cta_executor_type" value="${escapeHtml(opts.context.ctaExecutorType)}" />`
+    return out
+  }
 
   let body = '<h1>Support Us</h1>'
   body += '<p>Choose one-time donation or a subscription tier.</p>'
   if (opts.error) body += `<div class="error">${escapeHtml(opts.error)}</div>`
+  if (!hasDonateProvider && !hasSubscribeProvider) {
+    body += '<div class="error">No payment providers are enabled right now.</div>'
+  }
   body += '<div class="section"><div class="section-title">One-Time Donation</div>'
-  body += '<form method="post" action="/support">'
-  body += `<input type="hidden" name="csrf" value="${escapeHtml(opts.csrfToken)}" />`
-  body += `<input type="hidden" name="intent" value="donate" />`
-  body += `<input type="hidden" name="return" value="${escapeHtml(opts.returnPath)}" />`
-  body += `<input type="hidden" name="cancel" value="${escapeHtml(opts.cancelPath)}" />`
-  if (opts.context.messageId != null) body += `<input type="hidden" name="message_id" value="${opts.context.messageId}" />`
-  if (opts.context.campaignKey) body += `<input type="hidden" name="message_campaign_key" value="${escapeHtml(opts.context.campaignKey)}" />`
-  if (opts.context.sessionId) body += `<input type="hidden" name="message_session_id" value="${escapeHtml(opts.context.sessionId)}" />`
-  if (opts.context.intentId) body += `<input type="hidden" name="message_intent_id" value="${escapeHtml(opts.context.intentId)}" />`
-  if (opts.context.sequenceKey) body += `<input type="hidden" name="message_sequence_key" value="${escapeHtml(opts.context.sequenceKey)}" />`
-  if (opts.context.ctaKind) body += `<input type="hidden" name="message_cta_kind" value="${escapeHtml(opts.context.ctaKind)}" />`
-  if (opts.context.ctaSlot != null) body += `<input type="hidden" name="message_cta_slot" value="${opts.context.ctaSlot}" />`
-  if (opts.context.ctaDefinitionId != null) body += `<input type="hidden" name="message_cta_definition_id" value="${opts.context.ctaDefinitionId}" />`
-  if (opts.context.ctaIntentKey) body += `<input type="hidden" name="message_cta_intent_key" value="${escapeHtml(opts.context.ctaIntentKey)}" />`
-  if (opts.context.ctaExecutorType) body += `<input type="hidden" name="message_cta_executor_type" value="${escapeHtml(opts.context.ctaExecutorType)}" />`
-  body += '<label>Campaign<select name="catalog_item_id">'
   if (!opts.donateItems.length) {
-    body += '<option value="">No active donation campaign</option>'
+    body += '<p>No active donation options.</p>'
   } else {
     for (const item of opts.donateItems) {
-      const selected = opts.selectedDonateItemId != null
-        ? opts.selectedDonateItemId === Number(item.id)
-        : Number(item.id) === Number(opts.donateItems[0]?.id || 0)
-      body += `<option value="${item.id}"${selected ? ' selected' : ''}>${escapeHtml(item.label)} (${escapeHtml(fmt(item.amountCents, item.currency))})</option>`
+      const amountText = item.amountCents == null ? 'Donate' : `$${(Number(item.amountCents) / 100).toFixed(2)}`
+      body += '<div class="row" style="display:flex; align-items:center; gap:10px; margin:8px 0">'
+      body += `<form method="post" action="/support" style="margin:0">`
+      body += renderSharedInputs('donate', Number(item.id), item.amountCents)
+      body += `<button type="submit"${hasDonateProvider ? '' : ' disabled'}>${escapeHtml(amountText)}</button>`
+      body += '</form>'
+      body += `<div style="opacity:.9">${escapeHtml(item.label)}${item.amountCents == null ? '' : ` (${escapeHtml(fmt(item.amountCents, item.currency))})`}</div>`
+      body += '</div>'
     }
   }
-  body += '</select></label>'
-  const selectedDonateAmountValue = opts.selectedDonateAmountCents == null ? '' : String(opts.selectedDonateAmountCents)
-  body += `<label>Custom Amount (USD cents, optional)<input type="number" name="amount_cents" min="${SUPPORT_MIN_DONATION_CENTS}" max="${SUPPORT_MAX_DONATION_CENTS}" step="${SUPPORT_DONATION_STEP_CENTS}" value="${escapeHtml(selectedDonateAmountValue)}" placeholder="leave blank to use campaign amount" /></label>`
-  body += '<label>Provider<select name="provider_mode">'
-  if (!opts.donateModes.length) {
-    body += '<option value="">No enabled provider</option>'
-  } else {
-    for (const mode of opts.donateModes) {
-      body += `<option value="${escapeHtml(mode.value)}"${selectedDonateMode === mode.value ? ' selected' : ''}>${escapeHtml(mode.label)}</option>`
-    }
-  }
-  body += '</select></label>'
-  body += '<div class="row"><button type="submit">Continue to Donate</button></div>'
-  body += '</form></div>'
+  body += '</div>'
 
   body += '<div class="section"><div class="section-title">Subscription</div>'
-  body += '<form method="post" action="/support">'
-  body += `<input type="hidden" name="csrf" value="${escapeHtml(opts.csrfToken)}" />`
-  body += `<input type="hidden" name="intent" value="subscribe" />`
-  body += `<input type="hidden" name="return" value="${escapeHtml(opts.returnPath)}" />`
-  body += `<input type="hidden" name="cancel" value="${escapeHtml(opts.cancelPath)}" />`
-  if (opts.context.messageId != null) body += `<input type="hidden" name="message_id" value="${opts.context.messageId}" />`
-  if (opts.context.campaignKey) body += `<input type="hidden" name="message_campaign_key" value="${escapeHtml(opts.context.campaignKey)}" />`
-  if (opts.context.sessionId) body += `<input type="hidden" name="message_session_id" value="${escapeHtml(opts.context.sessionId)}" />`
-  if (opts.context.intentId) body += `<input type="hidden" name="message_intent_id" value="${escapeHtml(opts.context.intentId)}" />`
-  if (opts.context.sequenceKey) body += `<input type="hidden" name="message_sequence_key" value="${escapeHtml(opts.context.sequenceKey)}" />`
-  if (opts.context.ctaKind) body += `<input type="hidden" name="message_cta_kind" value="${escapeHtml(opts.context.ctaKind)}" />`
-  if (opts.context.ctaSlot != null) body += `<input type="hidden" name="message_cta_slot" value="${opts.context.ctaSlot}" />`
-  if (opts.context.ctaDefinitionId != null) body += `<input type="hidden" name="message_cta_definition_id" value="${opts.context.ctaDefinitionId}" />`
-  if (opts.context.ctaIntentKey) body += `<input type="hidden" name="message_cta_intent_key" value="${escapeHtml(opts.context.ctaIntentKey)}" />`
-  if (opts.context.ctaExecutorType) body += `<input type="hidden" name="message_cta_executor_type" value="${escapeHtml(opts.context.ctaExecutorType)}" />`
-  body += '<label>Plan<select name="catalog_item_id">'
   if (!opts.subscribeItems.length) {
-    body += '<option value="">No active subscription plans</option>'
+    body += '<p>No active subscription plans.</p>'
   } else {
     for (const item of opts.subscribeItems) {
-      const selected = opts.selectedSubscribeItemId != null
-        ? opts.selectedSubscribeItemId === Number(item.id)
-        : Number(item.id) === Number(opts.subscribeItems[0]?.id || 0)
-      body += `<option value="${item.id}"${selected ? ' selected' : ''}>${escapeHtml(item.label)} (${escapeHtml(fmt(item.amountCents, item.currency))})</option>`
+      const amountText = item.amountCents == null ? item.label : `${item.label} — $${(Number(item.amountCents) / 100).toFixed(2)}/mo`
+      body += '<div class="row" style="display:flex; align-items:center; gap:10px; margin:8px 0">'
+      body += `<form method="post" action="/support" style="margin:0">`
+      body += renderSharedInputs('subscribe', Number(item.id), item.amountCents)
+      body += `<button type="submit"${hasSubscribeProvider ? '' : ' disabled'}>${escapeHtml(item.label)}</button>`
+      body += '</form>'
+      body += `<div style="opacity:.9">${escapeHtml(amountText)}</div>`
+      body += '</div>'
     }
   }
-  body += '</select></label>'
-  body += '<label>Provider<select name="provider_mode">'
-  if (!opts.subscribeModes.length) {
-    body += '<option value="">No enabled provider</option>'
-  } else {
-    for (const mode of opts.subscribeModes) {
-      body += `<option value="${escapeHtml(mode.value)}"${selectedSubscribeMode === mode.value ? ' selected' : ''}>${escapeHtml(mode.label)}</option>`
-    }
-  }
-  body += '</select></label>'
-  body += '<div class="row"><button type="submit">Continue to Subscribe</button></div>'
-  body += '</form></div>'
+  body += '</div>'
 
   body += `<div class="row"><a class="btn" href="${escapeHtml(opts.cancelPath)}">Cancel</a></div>`
   return renderPageDocument('Support Us', body)
@@ -10637,8 +10610,6 @@ pagesRouter.get('/support', async (req: any, res: any) => {
     const selectedDonateItemId = parsePositiveIntOrNull(req.query?.donate_catalog_item_id) ?? parsePositiveIntOrNull(req.query?.catalog_item_id)
     const selectedSubscribeItemId = parsePositiveIntOrNull(req.query?.subscribe_catalog_item_id)
     const selectedDonateAmountCents = parseDonationCents(req.query?.amount_cents)
-    const selectedDonateMode = req.query?.donate_provider_mode ? String(req.query.donate_provider_mode).trim().toLowerCase() : null
-    const selectedSubscribeMode = req.query?.subscribe_provider_mode ? String(req.query.subscribe_provider_mode).trim().toLowerCase() : null
     const error = req.query?.error ? String(req.query.error) : null
 
     const items = await paymentsSvc.listCatalogItemsForAdmin({ status: 'active', includeArchived: false, limit: 500 })
@@ -10662,8 +10633,6 @@ pagesRouter.get('/support', async (req: any, res: any) => {
       selectedDonateItemId,
       selectedSubscribeItemId,
       selectedDonateAmountCents,
-      selectedDonateMode,
-      selectedSubscribeMode,
       error,
       context,
     })
@@ -10696,15 +10665,7 @@ pagesRouter.post('/support', async (req: any, res: any) => {
     const returnPath = normalizeReturnPathForSupport(req.body?.return, '/')
     const cancelPath = normalizeReturnPathForSupport(req.body?.cancel, returnPath)
     const providerModeRaw = req.body?.provider_mode ? String(req.body.provider_mode).trim().toLowerCase() : ''
-    if (!providerModeRaw) {
-      const q = new URLSearchParams()
-      q.set('error', 'provider_mode_required')
-      q.set('return', returnPath)
-      q.set('cancel', cancelPath)
-      appendSupportContext(q, context)
-      return res.redirect(`/support?${q.toString()}`)
-    }
-    const modeParsed = parseModeOption(providerModeRaw)
+    const modeParsed = providerModeRaw ? parseModeOption(providerModeRaw) : null
     const catalogItemId = parsePositiveIntOrNull(req.body?.catalog_item_id)
     const selectedItems = await paymentsSvc.listCatalogItemsForAdmin({ status: 'active', includeArchived: false, limit: 500 })
     const selectedItem = catalogItemId == null
@@ -10742,7 +10703,6 @@ pagesRouter.post('/support', async (req: any, res: any) => {
       q.set('cancel', cancelPath)
       if (catalogItemId != null) q.set('donate_catalog_item_id', String(catalogItemId))
       q.set('amount_cents', String(req.body?.amount_cents || ''))
-      q.set('donate_provider_mode', providerModeRaw)
       appendSupportContext(q, context)
       return res.redirect(`/support?${q.toString()}`)
     }
@@ -10752,7 +10712,6 @@ pagesRouter.post('/support', async (req: any, res: any) => {
       q.set('return', returnPath)
       q.set('cancel', cancelPath)
       if (catalogItemId != null) q.set('subscribe_catalog_item_id', String(catalogItemId))
-      q.set('subscribe_provider_mode', providerModeRaw)
       appendSupportContext(q, context)
       return res.redirect(`/support?${q.toString()}`)
     }
@@ -10760,7 +10719,7 @@ pagesRouter.post('/support', async (req: any, res: any) => {
     const query = new URLSearchParams()
     query.set('return', returnPath)
     query.set('cancel', cancelPath)
-    query.set('provider_mode', `${modeParsed.provider}:${modeParsed.mode}`)
+    if (modeParsed) query.set('provider_mode', `${modeParsed.provider}:${modeParsed.mode}`)
     query.set('support_source', 'support_page')
     if (catalogItemId != null) query.set('catalog_item_id', String(catalogItemId))
     if (amountCents != null) query.set('amount_cents', String(amountCents))
@@ -10771,7 +10730,7 @@ pagesRouter.post('/support', async (req: any, res: any) => {
       support_intent: intent,
       support_catalog_item_id: catalogItemId,
       support_amount_cents: amountCents,
-      support_provider_mode: `${modeParsed.provider}:${modeParsed.mode}`,
+      support_provider_mode: modeParsed ? `${modeParsed.provider}:${modeParsed.mode}` : null,
       message_id: context.messageId,
       message_campaign_key: context.campaignKey,
     }, 'support.page.start')

@@ -76,6 +76,25 @@ npm run payments:reset:local
 npm run payments:reset:test -- sandbox
 ```
 
+### PayPal REPL
+
+```bash
+npm run paypal:repl -- --mode sandbox
+```
+
+Common calls:
+
+```js
+help
+auth
+list_products
+list_plans
+list_plans PROD-XXXXXXXXXXXX
+get_order ORDER_ID
+get_subscription I-XXXXXXXXXXXX
+patch_product_desc PROD-XXX "New description"
+```
+
 ### Raw JSON artifacts
 
 Use `--out` to write response payloads for later review:
