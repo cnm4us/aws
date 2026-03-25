@@ -136,6 +136,7 @@ Add decision debug/telemetry fields:
 - CRUD service for rulesets
 - strict op/value validation
 - DTO + list filters (status)
+ - Status: Completed (2026-03-25)
 
 ### Phase C — Decision Engine Integration
 - load ruleset per candidate
