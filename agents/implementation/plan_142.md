@@ -143,6 +143,7 @@ Add decision debug/telemetry fields:
 - build support profile once
 - evaluate inclusion/exclusion
 - return deterministic drop reasons in debug
+ - Status: Completed (2026-03-25)
 
 ### Phase D — Admin Wiring
 - ruleset admin pages

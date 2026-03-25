@@ -9,7 +9,9 @@ import {
 } from '../../config'
 import * as messagesSvc from '../messages/service'
 import * as messageAttributionSvc from '../message-attribution/service'
+import * as messageEligibilityRulesetsSvc from '../message-eligibility-rulesets/service'
 import * as repo from './repo'
+import type { MessageEligibilityRule, MessageEligibilityRulesetDto } from '../message-eligibility-rulesets/types'
 import type {
   MessageAudienceSegment,
   MessageDecisionInput,
@@ -206,6 +208,124 @@ type EligibleMessageCandidate = {
   messageType: string
   priority: number
   tieBreakStrategy: 'first' | 'round_robin' | 'weighted_random'
+  eligibilityRulesetId: number | null
+}
+
+type SupportProfile = {
+  isAuthenticated: boolean
+  isSubscriber: boolean
+  activeSubscriptionTierKeys: string[]
+  completedIntents: Set<'donate' | 'subscribe' | 'upgrade'>
+  donationEvents: Array<{ occurredAtMs: number; amountCents: number }>
+}
+
+function toUtcDateTimeFromMs(ms: number): string {
+  const d = new Date(ms)
+  const y = d.getUTCFullYear()
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0')
+  const day = String(d.getUTCDate()).padStart(2, '0')
+  const hh = String(d.getUTCHours()).padStart(2, '0')
+  const mm = String(d.getUTCMinutes()).padStart(2, '0')
+  const ss = String(d.getUTCSeconds()).padStart(2, '0')
+  return `${y}-${m}-${day} ${hh}:${mm}:${ss}`
+}
+
+function collectDonationLookbackDays(
+  rulesets: Map<number, MessageEligibilityRulesetDto>,
+  candidates: EligibleMessageCandidate[]
+): number {
+  let maxDays = 0
+  for (const c of candidates) {
+    const id = c.eligibilityRulesetId
+    if (!id) continue
+    const ruleset = rulesets.get(id)
+    if (!ruleset) continue
+    const all = [...ruleset.criteria.inclusion, ...ruleset.criteria.exclusion]
+    for (const r of all) {
+      if (r.op === 'support.donated_within_days') maxDays = Math.max(maxDays, Number(r.value || 0))
+      if (r.op === 'support.donated_amount_last_days_gte') maxDays = Math.max(maxDays, Number(r.value?.days || 0))
+    }
+  }
+  return maxDays
+}
+
+async function buildSupportProfile(
+  userId: number | null,
+  rulesets: Map<number, MessageEligibilityRulesetDto>,
+  candidates: EligibleMessageCandidate[]
+): Promise<SupportProfile> {
+  if (userId == null || userId <= 0) {
+    return {
+      isAuthenticated: false,
+      isSubscriber: false,
+      activeSubscriptionTierKeys: [],
+      completedIntents: new Set(),
+      donationEvents: [],
+    }
+  }
+
+  const lookbackDays = collectDonationLookbackDays(rulesets, candidates)
+  const sinceUtc = lookbackDays > 0 ? toUtcDateTimeFromMs(nowMs() - lookbackDays * 24 * 60 * 60 * 1000) : null
+
+  const [tierKeys, completedIntents, donationRows] = await Promise.all([
+    repo.getUserActiveSubscriptionTierKeys(userId),
+    repo.getCompletedIntentSet(userId),
+    repo.listCompletedDonationTransactions(userId, sinceUtc),
+  ])
+
+  return {
+    isAuthenticated: true,
+    isSubscriber: tierKeys.length > 0,
+    activeSubscriptionTierKeys: tierKeys,
+    completedIntents,
+    donationEvents: donationRows
+      .map((r) => ({
+        occurredAtMs: Date.parse(String(r.occurredAt).replace(' ', 'T') + 'Z'),
+        amountCents: Number(r.amountCents || 0),
+      }))
+      .filter((r) => Number.isFinite(r.occurredAtMs) && Number.isFinite(r.amountCents)),
+  }
+}
+
+function evaluateRule(profile: SupportProfile, rule: MessageEligibilityRule): boolean {
+  if (rule.op === 'user.is_authenticated') return profile.isAuthenticated === rule.value
+  if (rule.op === 'support.is_subscriber') return profile.isSubscriber === rule.value
+  if (rule.op === 'support.subscription_tier_in') {
+    const wanted = new Set((rule.value || []).map((v) => String(v).trim().toLowerCase()).filter(Boolean))
+    return profile.activeSubscriptionTierKeys.some((k) => wanted.has(String(k).toLowerCase()))
+  }
+  if (rule.op === 'support.completed_intent_in') {
+    const wanted = (rule.value || []).map((v) => String(v).trim().toLowerCase()).filter(Boolean)
+    return wanted.some((intent) => profile.completedIntents.has(intent as any))
+  }
+  if (rule.op === 'support.donated_within_days') {
+    const cutoffMs = nowMs() - Number(rule.value || 0) * 24 * 60 * 60 * 1000
+    return profile.donationEvents.some((e) => e.occurredAtMs >= cutoffMs)
+  }
+  if (rule.op === 'support.donated_amount_last_days_gte') {
+    const cutoffMs = nowMs() - Number(rule.value.days || 0) * 24 * 60 * 60 * 1000
+    let total = 0
+    for (const e of profile.donationEvents) {
+      if (e.occurredAtMs >= cutoffMs) total += e.amountCents
+    }
+    return total >= Number(rule.value.cents || 0)
+  }
+  return false
+}
+
+function evaluateRuleset(
+  ruleset: MessageEligibilityRulesetDto | null,
+  profile: SupportProfile
+): { pass: boolean; reason: string | null } {
+  if (!ruleset) return { pass: true, reason: null }
+
+  for (const rule of ruleset.criteria.exclusion) {
+    if (evaluateRule(profile, rule)) return { pass: false, reason: `ruleset_exclusion:${rule.op}` }
+  }
+  for (const rule of ruleset.criteria.inclusion) {
+    if (!evaluateRule(profile, rule)) return { pass: false, reason: `ruleset_inclusion_miss:${rule.op}` }
+  }
+  return { pass: true, reason: null }
 }
 
 function selectMessageCandidate(
@@ -320,8 +440,11 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
   let messageId: number | null = null
   let selectionEngine: 'message_pool' = 'message_pool'
   let candidateCount = 0
+  let candidateCountBeforeRuleset = 0
   let userSuppressedCount = 0
+  let rulesetRejectedCount = 0
   let selectedPriority: number | null = null
+  const candidateDropReasons: Array<{ messageId: number; reason: string }> = []
 
   if (merged.messagesShownThisSession >= MESSAGE_MAX_MESSAGES_PER_SESSION) {
     reasonCode = 'cap_reached'
@@ -366,6 +489,8 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
             messageType: String(message.type || 'register_login'),
             priority: Number(message.priority || 0),
             tieBreakStrategy,
+            eligibilityRulesetId:
+              (message as any).eligibilityRulesetId == null ? null : Number((message as any).eligibilityRulesetId),
           })
         }
 
@@ -385,6 +510,39 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
             filtered.push(c)
           }
           eligible = filtered
+        }
+
+        candidateCountBeforeRuleset = eligible.length
+        if (eligible.length > 0) {
+          const rulesetIds = Array.from(
+            new Set(
+              eligible
+                .map((c) => (c.eligibilityRulesetId == null ? null : Number(c.eligibilityRulesetId)))
+                .filter((id): id is number => Number.isFinite(id as any) && Number(id) > 0)
+            )
+          )
+          const rulesetsById = await messageEligibilityRulesetsSvc.listActiveRulesetsById(rulesetIds)
+          const profile = await buildSupportProfile(input.userId, rulesetsById, eligible)
+          const rulesetFiltered: EligibleMessageCandidate[] = []
+          for (const c of eligible) {
+            const ruleset =
+              c.eligibilityRulesetId == null
+                ? null
+                : (rulesetsById.get(Number(c.eligibilityRulesetId)) || null)
+            const evalResult = evaluateRuleset(ruleset, profile)
+            if (!evalResult.pass) {
+              rulesetRejectedCount += 1
+              if (candidateDropReasons.length < 40) {
+                candidateDropReasons.push({
+                  messageId: c.messageId,
+                  reason: evalResult.reason || 'ruleset_rejected',
+                })
+              }
+              continue
+            }
+            rulesetFiltered.push(c)
+          }
+          eligible = rulesetFiltered
         }
 
         candidateCount = eligible.length
@@ -447,8 +605,11 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
       selection: {
         engine: selectionEngine,
         candidateCount,
+        candidateCountBeforeRuleset,
         userSuppressedCount,
+        rulesetRejectedCount,
         selectedPriority,
+        candidateDropReasons,
       },
       reasonCode,
     }

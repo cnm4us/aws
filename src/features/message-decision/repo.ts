@@ -102,3 +102,73 @@ export async function updateSession(id: number, patch: {
   if (!sets.length) return
   await db.query(`UPDATE message_decision_sessions SET ${sets.join(', ')} WHERE id = ?`, [...args, id])
 }
+
+export async function getUserActiveSubscriptionTierKeys(userId: number): Promise<string[]> {
+  const db = getPool()
+  const [rows] = await db.query(
+    `SELECT DISTINCT pci.item_key
+       FROM payment_subscriptions ps
+       LEFT JOIN payment_catalog_items pci ON pci.id = ps.catalog_item_id
+      WHERE ps.user_id = ?
+        AND ps.status = 'active'
+        AND pci.item_key IS NOT NULL
+        AND pci.item_key <> ''`,
+    [userId]
+  )
+  return (rows as any[])
+    .map((row) => String(row.item_key || '').trim().toLowerCase())
+    .filter((v) => v.length > 0)
+}
+
+export async function listCompletedDonationTransactions(userId: number, sinceUtc: string | null): Promise<Array<{ occurredAt: string; amountCents: number }>> {
+  const db = getPool()
+  const args: any[] = [userId]
+  let sql = `
+    SELECT occurred_at AS occurredAt, amount_cents AS amountCents
+      FROM payment_transactions
+     WHERE user_id = ?
+       AND status = 'completed'
+       AND intent = 'donate'
+       AND amount_cents IS NOT NULL
+  `
+  if (sinceUtc) {
+    sql += ` AND occurred_at >= ?`
+    args.push(sinceUtc)
+  }
+  sql += ` ORDER BY occurred_at DESC, id DESC`
+  const [rows] = await db.query(sql, args)
+  return (rows as any[]).map((row) => ({
+    occurredAt: String(row.occurredAt),
+    amountCents: Number(row.amountCents || 0),
+  }))
+}
+
+export async function getCompletedIntentSet(userId: number): Promise<Set<'donate' | 'subscribe' | 'upgrade'>> {
+  const db = getPool()
+  const out = new Set<'donate' | 'subscribe' | 'upgrade'>()
+
+  const [txRows] = await db.query(
+    `SELECT DISTINCT intent
+       FROM payment_transactions
+      WHERE user_id = ?
+        AND status = 'completed'
+        AND intent IN ('donate', 'subscribe')`,
+    [userId]
+  )
+  for (const row of txRows as any[]) {
+    const v = String(row.intent || '').trim().toLowerCase()
+    if (v === 'donate' || v === 'subscribe') out.add(v)
+  }
+
+  const [evtRows] = await db.query(
+    `SELECT 1 AS has_upgrade
+       FROM feed_message_events
+      WHERE user_id = ?
+        AND event_type = 'upgrade_complete_from_message'
+      LIMIT 1`,
+    [userId]
+  )
+  if ((evtRows as any[]).length > 0) out.add('upgrade')
+
+  return out
+}
