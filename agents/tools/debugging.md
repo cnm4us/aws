@@ -90,6 +90,8 @@ auth
 list_products
 list_plans
 list_plans PROD-XXXXXXXXXXXX
+list_transactions 2026-03-01 2026-03-31
+clear
 get_order ORDER_ID
 get_subscription I-XXXXXXXXXXXX
 patch_product_desc PROD-XXX "New description"

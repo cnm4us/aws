@@ -1,5 +1,6 @@
 import 'dotenv/config'
 import repl from 'node:repl'
+import util from 'node:util'
 import { getPool } from '../src/db'
 
 type Mode = 'sandbox' | 'live'
@@ -27,6 +28,15 @@ function parseArgs(argv: string[]): { mode: Mode } {
 
 function paypalBase(mode: Mode): string {
   return mode === 'live' ? 'https://api-m.paypal.com' : 'https://api-m.sandbox.paypal.com'
+}
+
+function normalizeDateArg(raw: string, kind: 'start' | 'end'): string {
+  const value = String(raw || '').trim()
+  if (!value) return value
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return kind === 'start' ? `${value}T00:00:00Z` : `${value}T23:59:59Z`
+  }
+  return value
 }
 
 async function loadCredentials(mode: Mode): Promise<{ clientId: string; clientSecret: string }> {
@@ -137,6 +147,18 @@ async function main() {
       if (productId) q.product_id = productId
       return request('GET', '/v1/billing/plans', undefined, q)
     },
+    async listTransactions(input: { start_date: string; end_date: string; page_size?: number; page?: number; fields?: 'all' | 'transaction_info' }) {
+      const start = String(input.start_date || '').trim()
+      const end = String(input.end_date || '').trim()
+      if (!start || !end) throw new Error('start_date and end_date are required')
+      return request('GET', '/v1/reporting/transactions', undefined, {
+        start_date: start,
+        end_date: end,
+        page_size: input.page_size ?? 20,
+        page: input.page ?? 1,
+        fields: input.fields ?? 'all',
+      })
+    },
     async getOrder(id: string) {
       return request('GET', `/v2/checkout/orders/${encodeURIComponent(String(id || '').trim())}`)
     },
@@ -210,6 +232,7 @@ async function main() {
           "await paypal.createProduct({ name: 'My Product', description: 'Demo' })",
           "await paypal.patchProduct('PROD-XXX', [{ op:'replace', path:'/description', value:'New desc' }])",
           "await paypal.createPlan({ product_id:'PROD-XXX', name:'Gold', value:'20.00' })",
+          "await paypal.listTransactions({ start_date:'2026-03-01T00:00:00Z', end_date:'2026-03-31T23:59:59Z' })",
           "await paypal.raw('GET','/v1/notifications/webhooks-events')",
         ],
       }
@@ -239,6 +262,7 @@ async function main() {
         return {
           commands: [
             'help',
+            'clear',
             'auth [force]',
             'list_products [page_size] [page]',
             'list_plans [product_id] [page_size] [page]',
@@ -247,11 +271,15 @@ async function main() {
             'create_product <name> [description]',
             'patch_product_desc <PROD_ID> <description...>',
             'create_plan <PROD_ID> <name> <value> [currency] [interval_unit] [interval_count]',
+            'list_transactions <start_iso> <end_iso> [page_size] [page]',
             'raw_get <path>',
             'raw_post <path> <json_body>',
           ],
-          note: 'Use quoted strings for args with spaces, e.g. create_product "My Product" "Desc here".',
+          note: 'Use quoted strings for args with spaces, e.g. create_product "My Product" "Desc here". Dates accept YYYY-MM-DD or full ISO.',
         }
+      case 'clear':
+        process.stdout.write('\x1Bc')
+        return null
       case 'auth': {
         const force = String(args[0] || '').toLowerCase() === 'force'
         return api.auth(force)
@@ -316,6 +344,28 @@ async function main() {
           interval_count: Number.isFinite(intervalCount) ? Math.max(1, Math.trunc(intervalCount)) : 1,
         })
       }
+      case 'list_transactions': {
+        const startIso = normalizeDateArg(String(args[0] || '').trim(), 'start')
+        const endIso = normalizeDateArg(String(args[1] || '').trim(), 'end')
+        if (!startIso || !endIso) {
+          return {
+            usage: 'list_transactions <start_iso|YYYY-MM-DD> <end_iso|YYYY-MM-DD> [page_size] [page]',
+            examples: [
+              'list_transactions 2026-03-01 2026-03-31',
+              'list_transactions 2026-03-01T00:00:00Z 2026-03-31T23:59:59Z 50 1',
+            ],
+          }
+        }
+        const pageSize = Number(args[2] || 20)
+        const page = Number(args[3] || 1)
+        return api.listTransactions({
+          start_date: startIso,
+          end_date: endIso,
+          page_size: Number.isFinite(pageSize) ? Math.max(1, Math.min(100, Math.trunc(pageSize))) : 20,
+          page: Number.isFinite(page) ? Math.max(1, Math.trunc(page)) : 1,
+          fields: 'all',
+        })
+      }
       case 'raw_get': {
         const p = String(args[0] || '').trim()
         if (!p) throw new Error('usage: raw_get <path>')
@@ -346,6 +396,13 @@ async function main() {
   const r = repl.start({
     prompt: 'paypal> ',
     useGlobal: true,
+    writer: (output: any) => util.inspect(output, {
+      depth: null,
+      maxArrayLength: null,
+      breakLength: 120,
+      compact: false,
+      colors: true,
+    }),
     eval: (cmd, _ctx, _file, cb) => {
       const input = String(cmd || '').trim()
       if (!input) return cb(null, null)
