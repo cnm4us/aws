@@ -10846,15 +10846,15 @@ pagesRouter.get('/my/support', async (req: any, res: any) => {
     if (!snapshot.recentTransactions.length) {
       body += '<p>No transactions yet.</p>'
     } else {
-      body += '<table><thead><tr><th>Date</th><th>Intent</th><th>Status</th><th>Amount</th><th>Provider</th><th>Source</th></tr></thead><tbody>'
+      body += '<table style="border-collapse:separate; border-spacing:0; width:100%"><thead><tr><th style="text-align:left; padding:0 20px 8px 0">Date</th><th style="text-align:left; padding:0 20px 8px 0">Type</th><th style="text-align:left; padding:0 20px 8px 0">Amount</th><th style="text-align:left; padding:0 0 8px 0">Provider</th></tr></thead><tbody>'
       for (const row of snapshot.recentTransactions) {
+        const typeLabel = String(row.intent || '').toLowerCase() === 'subscribe' ? 'Subscription' : 'Donation'
+        const providerLabel = String(row.provider || '').toLowerCase() === 'paypal' ? 'Paypal' : asText(row.provider || '')
         body += `<tr>
-          <td>${asText(row.occurred_at || row.created_at || '')}</td>
-          <td>${asText(row.intent)}</td>
-          <td>${asText(row.status)}</td>
-          <td>${asText(dollars(row.amount_cents))} ${asText(row.currency || 'USD')}</td>
-          <td>${asText(row.provider)} (${asText(row.mode)})</td>
-          <td>${asText(row.source)}</td>
+          <td style="text-align:left; padding:2px 20px 2px 0">${asText(dateOnly(row.occurred_at || row.created_at || ''))}</td>
+          <td style="text-align:left; padding:2px 20px 2px 0">${typeLabel}</td>
+          <td style="text-align:left; padding:2px 20px 2px 0">${asText(dollars(row.amount_cents))}</td>
+          <td style="text-align:left; padding:2px 0 2px 0">${providerLabel}</td>
         </tr>`
       }
       body += '</tbody></table>'

@@ -1123,6 +1123,27 @@ export async function completePaypalSubscriptionReturn(input: {
             providerOrderId: session.provider_order_id || null,
           })
         }
+        if (resolvedSubscriptionStatus === 'active') {
+          const refreshed = await repo.getCheckoutSessionById(Number(session.id))
+          const latest = (refreshed || {
+            ...session,
+            status: 'completed' as const,
+            provider_session_id: providerSubscriptionId,
+          }) as PaymentCheckoutSessionRow
+          await persistDurablePaymentState({
+            session: latest,
+            parsed: {
+              checkoutStatus: 'completed',
+              providerSessionId: providerSubscriptionId,
+              providerOrderId: session.provider_order_id || null,
+              providerSubscriptionId,
+              outcomeReason: 'subscription_active_from_return',
+            },
+            source: 'return',
+            eventType: 'BILLING.SUBSCRIPTION.ACTIVATED',
+            providerEventId: null,
+          })
+        }
       }
 
       const effectiveCheckoutStatus: 'completed' | 'pending' = (
