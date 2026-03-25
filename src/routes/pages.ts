@@ -10837,7 +10837,9 @@ pagesRouter.get('/my/support', async (req: any, res: any) => {
     body += '<div class="section">'
     body += '<div class="section-title" style="font-size:1.22rem; font-weight:800">Totals</div>'
     body += `<p><strong>Lifetime Donations:</strong> ${dollars(snapshot.lifetimeDonatedCents)}</p>`
-    body += `<p><strong>Last 30 Days:</strong> ${dollars(snapshot.last30DaysDonatedCents)}</p>`
+    body += `<p><strong>Lifetime Subscriptions:</strong> ${dollars(snapshot.lifetimeSubscribedCents)}</p>`
+    body += `<p><strong>Total:</strong> ${dollars(snapshot.lifetimeTotalCents)}</p>`
+    body += `<p><strong>Last 30 Days:</strong> ${dollars(snapshot.last30DaysTotalCents)}</p>`
     body += '</div>'
 
     body += '<div class="section"><div class="section-title" style="font-size:1.22rem; font-weight:800">Recent Transactions</div>'
@@ -10941,7 +10943,9 @@ pagesRouter.get('/my/support', async (req: any, res: any) => {
       payment_tx_count: snapshot.recentTransactions.length,
       payment_sub_count: snapshot.subscriptions.length,
       payment_lifetime_donated_cents: snapshot.lifetimeDonatedCents,
-      payment_last_30d_donated_cents: snapshot.last30DaysDonatedCents,
+      payment_lifetime_subscribed_cents: snapshot.lifetimeSubscribedCents,
+      payment_lifetime_total_cents: snapshot.lifetimeTotalCents,
+      payment_last_30d_total_cents: snapshot.last30DaysTotalCents,
     }, 'my.support.view')
     res.set('Content-Type', 'text/html; charset=utf-8')
     return res.send(doc)

@@ -330,12 +330,32 @@ export const paypalProviderAdapter: PaymentProviderAdapter = {
     const orderIdFromRelated = resource?.supplementary_data?.related_ids?.order_id != null
       ? String(resource.supplementary_data.related_ids.order_id || '').trim()
       : null
+    const subscriptionIdFromRelated = resource?.supplementary_data?.related_ids?.subscription_id != null
+      ? String(resource.supplementary_data.related_ids.subscription_id || '').trim()
+      : null
+    const subscriptionIdFromAgreement = resource?.billing_agreement_id != null
+      ? String(resource.billing_agreement_id || '').trim()
+      : null
+    const subscriptionIdFromResource = resource?.subscription_id != null
+      ? String(resource.subscription_id || '').trim()
+      : null
     const isSubscriptionEvent = eventType.startsWith('BILLING.SUBSCRIPTION.')
-    const providerSubscriptionId = isSubscriptionEvent && resourceId ? resourceId : null
+    const providerSubscriptionId = (
+      (isSubscriptionEvent && resourceId ? resourceId : null) ||
+      subscriptionIdFromRelated ||
+      subscriptionIdFromAgreement ||
+      subscriptionIdFromResource ||
+      null
+    )
     const providerOrderId = orderIdFromRelated || (!isSubscriptionEvent ? resourceId : null)
     const providerSessionId = providerSubscriptionId || providerOrderId
 
-    if (eventType === 'CHECKOUT.ORDER.COMPLETED' || eventType === 'PAYMENT.CAPTURE.COMPLETED' || eventType === 'BILLING.SUBSCRIPTION.ACTIVATED') {
+    if (
+      eventType === 'CHECKOUT.ORDER.COMPLETED' ||
+      eventType === 'PAYMENT.CAPTURE.COMPLETED' ||
+      eventType === 'PAYMENT.SALE.COMPLETED' ||
+      eventType === 'BILLING.SUBSCRIPTION.ACTIVATED'
+    ) {
       return {
         checkoutStatus: 'completed',
         providerSessionId,
@@ -353,7 +373,14 @@ export const paypalProviderAdapter: PaymentProviderAdapter = {
         outcomeReason: 'canceled',
       }
     }
-    if (eventType === 'PAYMENT.CAPTURE.DENIED' || eventType === 'PAYMENT.CAPTURE.REVERSED' || eventType === 'PAYMENT.CAPTURE.REFUNDED') {
+    if (
+      eventType === 'PAYMENT.CAPTURE.DENIED' ||
+      eventType === 'PAYMENT.CAPTURE.REVERSED' ||
+      eventType === 'PAYMENT.CAPTURE.REFUNDED' ||
+      eventType === 'PAYMENT.SALE.DENIED' ||
+      eventType === 'PAYMENT.SALE.REVERSED' ||
+      eventType === 'PAYMENT.SALE.REFUNDED'
+    ) {
       return {
         checkoutStatus: 'failed',
         providerSessionId,

@@ -272,6 +272,10 @@ function mapCheckoutToTransactionStatus(status: PaymentCheckoutSessionRow['statu
 
 function mapPaypalSubscriptionStatusFromEvent(eventTypeRaw: string): 'pending' | 'active' | 'suspended' | 'canceled' | 'expired' | null {
   const eventType = String(eventTypeRaw || '').trim().toUpperCase()
+  if (eventType.startsWith('PAYMENT.CAPTURE.') || eventType.startsWith('PAYMENT.SALE.')) {
+    if (eventType.endsWith('.COMPLETED')) return 'active'
+    return null
+  }
   if (!eventType.startsWith('BILLING.SUBSCRIPTION.')) return null
   if (eventType.endsWith('.ACTIVATED') || eventType.endsWith('.RE-ACTIVATED')) return 'active'
   if (eventType.endsWith('.SUSPENDED')) return 'suspended'
@@ -809,12 +813,16 @@ export async function ingestWebhook(input: {
           const providerSubscriptionId = parsed.providerSubscriptionId ? String(parsed.providerSubscriptionId).trim() : ''
           if (session) {
             if (parsed.checkoutStatus) {
+              const shouldDowngradeCompleted =
+                session.status === 'completed' && parsed.checkoutStatus !== 'completed'
+              if (!shouldDowngradeCompleted) {
               await repo.updateCheckoutSessionStatus({
                 id: session.id,
                 status: parsed.checkoutStatus,
                 providerSessionId: parsed.providerSessionId || null,
                 providerOrderId: parsed.providerOrderId || null,
               })
+              }
             }
             const refreshed = await repo.getCheckoutSessionById(Number(session.id))
             const latest = refreshed || {
@@ -1160,7 +1168,9 @@ export async function getMySupportSnapshot(input: {
   recentLimit?: number
 }): Promise<{
   lifetimeDonatedCents: number
-  last30DaysDonatedCents: number
+  lifetimeSubscribedCents: number
+  lifetimeTotalCents: number
+  last30DaysTotalCents: number
   recentTransactions: PaymentTransactionRow[]
   subscriptions: PaymentSubscriptionRow[]
 }> {
@@ -1172,16 +1182,20 @@ export async function getMySupportSnapshot(input: {
   const p2 = (n: number) => String(n).padStart(2, '0')
   const since30Utc = `${since30.getUTCFullYear()}-${p2(since30.getUTCMonth() + 1)}-${p2(since30.getUTCDate())} ${p2(since30.getUTCHours())}:${p2(since30.getUTCMinutes())}:${p2(since30.getUTCSeconds())}`
 
-  const [lifetimeDonatedCents, last30DaysDonatedCents, recentTransactions, subscriptions] = await Promise.all([
-    repo.sumCompletedTransactionsForUser({ userId }),
-    repo.sumCompletedTransactionsForUser({ userId, sinceUtc: since30Utc }),
+  const [lifetimeDonatedCents, lifetimeSubscribedCents, last30DaysTotalCents, recentTransactions, subscriptions] = await Promise.all([
+    repo.sumCompletedCheckoutSessionsForUser({ userId, intent: 'donate' }),
+    repo.sumCompletedCheckoutSessionsForUser({ userId, intent: 'subscribe' }),
+    repo.sumCompletedCheckoutSessionsForUser({ userId, sinceUtc: since30Utc }),
     repo.listRecentTransactionsForUser({ userId, limit: recentLimit }),
     repo.listSubscriptionsForUser({ userId, limit: 20 }),
   ])
+  const lifetimeTotalCents = lifetimeDonatedCents + lifetimeSubscribedCents
 
   return {
     lifetimeDonatedCents,
-    last30DaysDonatedCents,
+    lifetimeSubscribedCents,
+    lifetimeTotalCents,
+    last30DaysTotalCents,
     recentTransactions,
     subscriptions,
   }

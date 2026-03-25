@@ -6,6 +6,7 @@ import type {
   PaymentCheckoutSessionRow,
   PaymentCheckoutStatus,
   PaymentMode,
+  PaymentIntent,
   PaymentProvider,
   PaymentProviderConfigRow,
   PaymentSubscriptionAction,
@@ -569,6 +570,30 @@ export async function sumCompletedTransactionsForUser(input: {
   const args: any[] = [input.userId]
   if (input.sinceUtc) {
     sql += ` AND occurred_at >= ?`
+    args.push(input.sinceUtc)
+  }
+  const [rows] = await db.query(sql, args)
+  const n = Number((rows as any[])[0]?.total || 0)
+  return Number.isFinite(n) ? Math.round(n) : 0
+}
+
+export async function sumCompletedCheckoutSessionsForUser(input: {
+  userId: number
+  sinceUtc?: string | null
+  intent?: PaymentIntent | null
+}): Promise<number> {
+  const db = getPool()
+  let sql = `SELECT COALESCE(SUM(amount_cents), 0) AS total
+             FROM payment_checkout_sessions
+             WHERE user_id = ?
+               AND status = 'completed'`
+  const args: any[] = [input.userId]
+  if (input.intent) {
+    sql += ` AND intent = ?`
+    args.push(input.intent)
+  }
+  if (input.sinceUtc) {
+    sql += ` AND COALESCE(completed_at, updated_at, created_at) >= ?`
     args.push(input.sinceUtc)
   }
   const [rows] = await db.query(sql, args)
