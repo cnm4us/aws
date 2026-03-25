@@ -63,6 +63,19 @@ npm run jaeger:query -- preset feed_message_pipeline --service aws-mediaconvert-
 npm run jaeger:query -- traces --service aws-mediaconvert-service --operation "POST /api/feed/message-decision" --tag app.operation=feed.message.decide --lookback 15m --summary
 ```
 
+### Payment Reset Helpers (Sandbox Testing)
+
+```bash
+# Cancel known local PayPal subscriptions at provider side (sandbox by default)
+npm run payments:paypal:cleanup-subscriptions -- --mode sandbox
+
+# Clear local payment state tables only
+npm run payments:reset:local
+
+# Combined: provider cleanup first, then local reset
+npm run payments:reset:test -- sandbox
+```
+
 ### Raw JSON artifacts
 
 Use `--out` to write response payloads for later review:

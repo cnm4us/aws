@@ -63,7 +63,10 @@
     "payments:paypal:create-plans": "ts-node scripts/payments-paypal-create-plans.ts",
     "payments:paypal:list-catalog": "ts-node scripts/payments-paypal-list-catalog.ts",
     "payments:paypal:verify-catalog": "ts-node scripts/payments-paypal-verify-catalog.ts",
-    "payments:report:legacy-subscribe": "ts-node scripts/payments-report-legacy-subscribe.ts"
+    "payments:report:legacy-subscribe": "ts-node scripts/payments-report-legacy-subscribe.ts",
+    "payments:reset:local": "ts-node scripts/payments-reset-local.ts",
+    "payments:paypal:cleanup-subscriptions": "ts-node scripts/payments-paypal-cleanup-subscriptions.ts",
+    "payments:reset:test": "bash scripts/payments-reset-test.sh"
   },
   "dependencies": {
     "@aws-sdk/client-mediaconvert": "^3.645.0",
