@@ -113,6 +113,7 @@ export type MessageRow = {
   audience_segment: MessageAudienceSegment
   tie_break_strategy: MessageTieBreakStrategy
   campaign_key: string | null
+  eligibility_ruleset_id: number | null
   priority: number
   status: MessageStatus
   starts_at: string | null
@@ -139,6 +140,7 @@ export type MessageDto = {
   audienceSegment: MessageAudienceSegment
   tieBreakStrategy: MessageTieBreakStrategy
   campaignKey: string | null
+  eligibilityRulesetId: number | null
   priority: number
   status: MessageStatus
   startsAt: string | null

@@ -18,6 +18,7 @@ const MESSAGE_SELECT_SQL = `
     audience_segment,
     tie_break_strategy,
     campaign_key,
+    eligibility_ruleset_id,
     priority,
     status,
     starts_at,
@@ -44,6 +45,7 @@ type MessageCreateInput = {
   audienceSegment: string
   tieBreakStrategy: string
   campaignKey: string | null
+  eligibilityRulesetId: number | null
   priority: number
   status: string
   startsAt: string | null
@@ -117,9 +119,10 @@ export async function create(input: MessageCreateInput): Promise<MessageRow> {
         cta_primary_label, cta_primary_href,
         cta_secondary_label, cta_secondary_href,
         media_upload_id, creative_json, type, applies_to_surface, audience_segment, tie_break_strategy, campaign_key, priority, status,
+        eligibility_ruleset_id,
         starts_at, ends_at, created_by, updated_by
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.name,
       input.headline,
@@ -137,6 +140,7 @@ export async function create(input: MessageCreateInput): Promise<MessageRow> {
       input.campaignKey,
       input.priority,
       input.status,
+      input.eligibilityRulesetId,
       input.startsAt,
       input.endsAt,
       input.createdBy,
@@ -169,6 +173,7 @@ export async function update(id: number, patch: MessageUpdateInput): Promise<Mes
   if (patch.audienceSegment !== undefined) { sets.push('audience_segment = ?'); args.push(patch.audienceSegment) }
   if (patch.tieBreakStrategy !== undefined) { sets.push('tie_break_strategy = ?'); args.push(patch.tieBreakStrategy) }
   if (patch.campaignKey !== undefined) { sets.push('campaign_key = ?'); args.push(patch.campaignKey) }
+  if (patch.eligibilityRulesetId !== undefined) { sets.push('eligibility_ruleset_id = ?'); args.push(patch.eligibilityRulesetId) }
   if (patch.priority !== undefined) { sets.push('priority = ?'); args.push(patch.priority) }
   if (patch.status !== undefined) { sets.push('status = ?'); args.push(patch.status) }
   if (patch.startsAt !== undefined) { sets.push('starts_at = ?'); args.push(patch.startsAt) }

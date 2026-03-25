@@ -883,6 +883,7 @@ export async function ensureSchema(db: DB) {
           await db.query(`ALTER TABLE feed_messages ADD COLUMN IF NOT EXISTS audience_segment ENUM('anonymous','authenticated_non_subscriber','authenticated_subscriber') NOT NULL DEFAULT 'anonymous'`)
           await db.query(`ALTER TABLE feed_messages ADD COLUMN IF NOT EXISTS tie_break_strategy ENUM('first','round_robin','weighted_random') NOT NULL DEFAULT 'round_robin'`)
           await db.query(`ALTER TABLE feed_messages ADD COLUMN IF NOT EXISTS campaign_key VARCHAR(64) NULL`)
+          await db.query(`ALTER TABLE feed_messages ADD COLUMN IF NOT EXISTS eligibility_ruleset_id BIGINT UNSIGNED NULL`)
           await db.query(`ALTER TABLE feed_messages ADD COLUMN IF NOT EXISTS priority INT NOT NULL DEFAULT 100`)
           await db.query(`ALTER TABLE feed_messages ADD COLUMN IF NOT EXISTS status ENUM('draft','active','paused','archived') NOT NULL DEFAULT 'draft'`)
           await db.query(`ALTER TABLE feed_messages ADD COLUMN IF NOT EXISTS starts_at DATETIME NULL`)
@@ -922,6 +923,34 @@ export async function ensureSchema(db: DB) {
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_messages_active_window ON feed_messages (status, starts_at, ends_at, priority, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_messages_active_type ON feed_messages (status, type, starts_at, ends_at, priority, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_messages_surface_audience_type_active ON feed_messages (applies_to_surface, audience_segment, status, type, starts_at, ends_at, priority, id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_messages_ruleset_id ON feed_messages (eligibility_ruleset_id, id)`); } catch {}
+
+          // --- Eligibility rulesets for feed messages (plan_142A) ---
+          await db.query(`
+            CREATE TABLE IF NOT EXISTS feed_message_eligibility_rulesets (
+              id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+              name VARCHAR(120) NOT NULL,
+              status ENUM('draft','active','archived') NOT NULL DEFAULT 'draft',
+              description VARCHAR(500) NULL,
+              criteria_json JSON NOT NULL,
+              created_by BIGINT UNSIGNED NOT NULL DEFAULT 0,
+              updated_by BIGINT UNSIGNED NOT NULL DEFAULT 0,
+              created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              KEY idx_feed_message_rulesets_status (status, id),
+              KEY idx_feed_message_rulesets_name (name, id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+          `)
+          await db.query(`ALTER TABLE feed_message_eligibility_rulesets ADD COLUMN IF NOT EXISTS name VARCHAR(120) NOT NULL`)
+          await db.query(`ALTER TABLE feed_message_eligibility_rulesets ADD COLUMN IF NOT EXISTS status ENUM('draft','active','archived') NOT NULL DEFAULT 'draft'`)
+          await db.query(`ALTER TABLE feed_message_eligibility_rulesets ADD COLUMN IF NOT EXISTS description VARCHAR(500) NULL`)
+          await db.query(`ALTER TABLE feed_message_eligibility_rulesets ADD COLUMN IF NOT EXISTS criteria_json JSON NULL`)
+          try { await db.query(`UPDATE feed_message_eligibility_rulesets SET criteria_json = JSON_OBJECT('version', 1, 'inclusion', JSON_ARRAY(), 'exclusion', JSON_ARRAY()) WHERE criteria_json IS NULL`) } catch {}
+          try { await db.query(`ALTER TABLE feed_message_eligibility_rulesets MODIFY COLUMN criteria_json JSON NOT NULL`) } catch {}
+          await db.query(`ALTER TABLE feed_message_eligibility_rulesets ADD COLUMN IF NOT EXISTS created_by BIGINT UNSIGNED NOT NULL DEFAULT 0`)
+          await db.query(`ALTER TABLE feed_message_eligibility_rulesets ADD COLUMN IF NOT EXISTS updated_by BIGINT UNSIGNED NOT NULL DEFAULT 0`)
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_rulesets_status ON feed_message_eligibility_rulesets (status, id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_rulesets_name ON feed_message_eligibility_rulesets (name, id)`); } catch {}
 
           // --- Reusable CTA definitions for feed messages (plan_138A) ---
           await db.query(`

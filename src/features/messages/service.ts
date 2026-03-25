@@ -180,6 +180,13 @@ function normalizePriority(raw: any, fallback = 100): number {
   return Math.round(Math.min(Math.max(value, -100000), 100000))
 }
 
+function normalizeOptionalPositiveId(raw: any, key: string): number | null {
+  if (raw == null || raw === '') return null
+  const value = Number(raw)
+  if (!Number.isFinite(value) || value <= 0) throw new DomainError(`invalid_${key}`, `invalid_${key}`, 400)
+  return Math.round(value)
+}
+
 function normalizeStatus(raw: any, fallback: MessageStatus = 'draft'): MessageStatus {
   const value = String(raw ?? '').trim().toLowerCase()
   if (!value) return fallback
@@ -620,6 +627,7 @@ function mapRow(row: MessageRow): MessageDto {
     audienceSegment: normalizeAudienceSegment((row as any).audience_segment, 'anonymous'),
     tieBreakStrategy: normalizeTieBreakStrategy((row as any).tie_break_strategy, 'round_robin'),
     campaignKey: row.campaign_key == null || String(row.campaign_key).trim() === '' ? null : String(row.campaign_key),
+    eligibilityRulesetId: row.eligibility_ruleset_id == null ? null : Number(row.eligibility_ruleset_id),
     priority: Number(row.priority || 0),
     status: row.status,
     startsAt: row.starts_at == null ? null : String(row.starts_at),
@@ -695,6 +703,10 @@ export async function createForAdmin(input: any, actorUserId: number): Promise<M
   })
   await assertCreativeCtaSlotsResolvable(creative, actorUserId)
   const campaignKey = normalizeCampaignKey(input?.campaignKey ?? input?.campaign_key)
+  const eligibilityRulesetId = normalizeOptionalPositiveId(
+    input?.eligibilityRulesetId ?? input?.eligibility_ruleset_id,
+    'eligibility_ruleset_id'
+  )
   const priority = normalizePriority(input?.priority, 100)
   const status = normalizeStatus(input?.status, 'draft')
   const { startsAt, endsAt } = normalizeDateWindow(input?.startsAt ?? input?.starts_at, input?.endsAt ?? input?.ends_at)
@@ -714,6 +726,7 @@ export async function createForAdmin(input: any, actorUserId: number): Promise<M
     audienceSegment,
     tieBreakStrategy,
     campaignKey,
+    eligibilityRulesetId,
     priority,
     status,
     startsAt,
@@ -813,6 +826,13 @@ export async function updateForAdmin(id: number, patch: any, actorUserId: number
     patch?.campaignKey !== undefined || patch?.campaign_key !== undefined
       ? normalizeCampaignKey(patch?.campaignKey ?? patch?.campaign_key)
       : (existing.campaign_key == null || String(existing.campaign_key).trim() === '' ? null : String(existing.campaign_key))
+  const nextEligibilityRulesetId =
+    patch?.eligibilityRulesetId !== undefined || patch?.eligibility_ruleset_id !== undefined
+      ? normalizeOptionalPositiveId(
+          patch?.eligibilityRulesetId ?? patch?.eligibility_ruleset_id,
+          'eligibility_ruleset_id'
+        )
+      : (existing.eligibility_ruleset_id == null ? null : Number(existing.eligibility_ruleset_id))
   const nextPriority = patch?.priority !== undefined ? normalizePriority(patch.priority, Number(existing.priority)) : Number(existing.priority)
   const nextStatus = patch?.status !== undefined ? normalizeStatus(patch.status, existing.status) : existing.status
 
@@ -845,6 +865,7 @@ export async function updateForAdmin(id: number, patch: any, actorUserId: number
     audienceSegment: nextAudienceSegment,
     tieBreakStrategy: nextTieBreakStrategy,
     campaignKey: nextCampaignKey,
+    eligibilityRulesetId: nextEligibilityRulesetId,
     priority: nextPriority,
     status: nextStatus,
     startsAt: nextStartsAt,
@@ -876,6 +897,7 @@ export async function cloneForAdmin(id: number, actorUserId: number): Promise<Me
     audienceSegment: normalizeAudienceSegment((existing as any).audience_segment, 'anonymous'),
     tieBreakStrategy: normalizeTieBreakStrategy((existing as any).tie_break_strategy, 'round_robin'),
     campaignKey: existing.campaign_key == null || String(existing.campaign_key).trim() === '' ? null : String(existing.campaign_key),
+    eligibilityRulesetId: existing.eligibility_ruleset_id == null ? null : Number(existing.eligibility_ruleset_id),
     priority: Number(existing.priority || 100),
     status: 'draft',
     startsAt: existing.starts_at == null ? null : String(existing.starts_at),
