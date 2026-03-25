@@ -79,7 +79,7 @@ npm run payments:reset:test -- sandbox
 ### PayPal REPL
 
 ```bash
-npm run paypal:repl -- --mode sandbox
+npm run paypal:sandbox
 ```
 
 Common calls:

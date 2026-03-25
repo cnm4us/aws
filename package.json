@@ -67,7 +67,7 @@
     "payments:reset:local": "ts-node scripts/payments-reset-local.ts",
     "payments:paypal:cleanup-subscriptions": "ts-node scripts/payments-paypal-cleanup-subscriptions.ts",
     "payments:reset:test": "bash scripts/payments-reset-test.sh",
-    "paypal:repl": "ts-node scripts/paypal-repl.ts"
+    "paypal:sandbox": "ts-node scripts/paypal-repl.ts"
   },
   "dependencies": {
     "@aws-sdk/client-mediaconvert": "^3.645.0",

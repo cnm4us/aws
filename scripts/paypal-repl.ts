@@ -5,25 +5,9 @@ import { getPool } from '../src/db'
 
 type Mode = 'sandbox' | 'live'
 
-function parseArgs(argv: string[]): { mode: Mode } {
-  let mode: Mode = 'sandbox'
-  for (let i = 0; i < argv.length; i += 1) {
-    const a = String(argv[i] || '').trim()
-    if (a === '--sandbox') {
-      mode = 'sandbox'
-      continue
-    }
-    if (a === '--live') {
-      mode = 'live'
-      continue
-    }
-    if (a === '--mode') {
-      const v = String(argv[i + 1] || '').trim().toLowerCase()
-      if (v === 'sandbox' || v === 'live') mode = v
-      i += 1
-    }
-  }
-  return { mode }
+function parseArgs(_argv: string[]): { mode: Mode } {
+  // This REPL is intentionally sandbox-only.
+  return { mode: 'sandbox' }
 }
 
 function paypalBase(mode: Mode): string {
@@ -416,6 +400,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error('paypal:repl failed', err)
+  console.error('paypal:sandbox failed', err)
   process.exit(1)
 })
