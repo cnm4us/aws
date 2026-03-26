@@ -13,6 +13,7 @@ import {
 import type { MessageDecisionSurface, MessageViewerState } from '../features/message-decision/types'
 import * as messagesSvc from '../features/messages/service'
 import * as messageCtasSvc from '../features/message-cta-definitions/service'
+import * as messageCtaOutcomesSvc from '../features/message-cta-outcomes/service'
 import * as uploadsSvc from '../features/uploads/service'
 import * as messageAnalyticsSvc from '../features/message-analytics/service'
 import * as messageAttributionSvc from '../features/message-attribution/service'
@@ -500,6 +501,8 @@ feedMessagesRouter.post(feedMessageEventPaths, async (req: any, res: any, next: 
     const messageCtaDefinitionId = body.message_cta_definition_id != null && body.message_cta_definition_id !== '' ? Number(body.message_cta_definition_id) : null
     const messageCtaIntentKey = body.message_cta_intent_key ? String(body.message_cta_intent_key).trim().toLowerCase() : null
     const messageCtaExecutorType = body.message_cta_executor_type ? String(body.message_cta_executor_type).trim().toLowerCase() : null
+    const messageJourneyId = body.message_journey_id != null && body.message_journey_id !== '' ? Number(body.message_journey_id) : null
+    const messageJourneyStepId = body.message_journey_step_id != null && body.message_journey_step_id !== '' ? Number(body.message_journey_step_id) : null
     const intentId = body.message_intent_id
       ? String(body.message_intent_id).trim().toLowerCase()
       : (body.intent_id ? String(body.intent_id).trim().toLowerCase() : null)
@@ -528,6 +531,43 @@ feedMessagesRouter.post(feedMessageEventPaths, async (req: any, res: any, next: 
       } catch {}
     }
     const normalizedEvent = String(body.event || '').trim().toLowerCase()
+    try {
+      const mapOutcome = (): { type: 'click' | 'verified_complete'; status: 'success' } | null => {
+        if (normalizedEvent === 'click') return { type: 'click', status: 'success' }
+        if (
+          normalizedEvent === 'auth_complete' ||
+          normalizedEvent === 'donation_complete' ||
+          normalizedEvent === 'subscription_complete' ||
+          normalizedEvent === 'upgrade_complete'
+        ) return { type: 'verified_complete', status: 'success' }
+        return null
+      }
+      const mapped = mapOutcome()
+      if (mapped) {
+        await messageCtaOutcomesSvc.recordCtaOutcome({
+          outcomeId: intentId ? `intent:${intentId}:${normalizedEvent}` : null,
+          sourceEventType: 'feed.message.event',
+          outcomeType: mapped.type,
+          outcomeStatus: mapped.status,
+          sessionId,
+          userId: req.user?.id ? Number(req.user.id) : null,
+          messageId,
+          messageCampaignKey,
+          deliveryContext: messageJourneyId && messageJourneyStepId ? 'journey' : 'standalone',
+          journeyId: Number.isFinite(Number(messageJourneyId)) && Number(messageJourneyId) > 0 ? Number(messageJourneyId) : null,
+          journeyStepId: Number.isFinite(Number(messageJourneyStepId)) && Number(messageJourneyStepId) > 0 ? Number(messageJourneyStepId) : null,
+          ctaSlot: messageCtaSlot,
+          ctaDefinitionId: messageCtaDefinitionId,
+          ctaIntentKey: messageCtaIntentKey,
+          ctaExecutorType: messageCtaExecutorType,
+          payload: {
+            input_event: normalizedEvent,
+            flow,
+            message_sequence_key: messageSequenceKey || null,
+          },
+        })
+      }
+    } catch {}
     if (
       req.user?.id &&
       (normalizedEvent === 'auth_complete' || normalizedEvent === 'donation_complete' || normalizedEvent === 'subscription_complete' || normalizedEvent === 'upgrade_complete')
@@ -1047,6 +1087,8 @@ feedMessagesRouter.get(feedMessageMockCompletionPaths, async (req: any, res: any
     const messageCtaDefinitionId = q.message_cta_definition_id != null && q.message_cta_definition_id !== '' ? Number(q.message_cta_definition_id) : null
     const messageCtaIntentKey = q.message_cta_intent_key ? String(q.message_cta_intent_key).trim().toLowerCase() : null
     const messageCtaExecutorType = q.message_cta_executor_type ? String(q.message_cta_executor_type).trim().toLowerCase() : null
+    const messageJourneyId = q.message_journey_id != null && q.message_journey_id !== '' ? Number(q.message_journey_id) : null
+    const messageJourneyStepId = q.message_journey_step_id != null && q.message_journey_step_id !== '' ? Number(q.message_journey_step_id) : null
     const sessionId = q.message_session_id ? String(q.message_session_id).trim() : (q.session_id ? String(q.session_id).trim() : null)
     const intentId = q.message_intent_id ? String(q.message_intent_id).trim().toLowerCase() : (q.intent_id ? String(q.intent_id).trim().toLowerCase() : null)
     const messageSequenceKey = q.message_sequence_key ? String(q.message_sequence_key).trim() : null
@@ -1068,6 +1110,30 @@ feedMessagesRouter.get(feedMessageMockCompletionPaths, async (req: any, res: any
       viewerState: req.user?.id ? 'authenticated' : 'anonymous',
       userId: req.user?.id ? Number(req.user.id) : null,
     })
+    try {
+      await messageCtaOutcomesSvc.recordCtaOutcome({
+        outcomeId: intentId ? `intent:${intentId}:${event}` : null,
+        sourceEventType: 'feed.message.mock_complete',
+        outcomeType: 'verified_complete',
+        outcomeStatus: 'success',
+        sessionId,
+        userId: req.user?.id ? Number(req.user.id) : null,
+        messageId: Number(messageId || 0),
+        messageCampaignKey,
+        deliveryContext: messageJourneyId && messageJourneyStepId ? 'journey' : 'standalone',
+        journeyId: Number.isFinite(Number(messageJourneyId)) && Number(messageJourneyId) > 0 ? Number(messageJourneyId) : null,
+        journeyStepId: Number.isFinite(Number(messageJourneyStepId)) && Number(messageJourneyStepId) > 0 ? Number(messageJourneyStepId) : null,
+        ctaSlot: messageCtaSlot,
+        ctaDefinitionId: messageCtaDefinitionId,
+        ctaIntentKey: messageCtaIntentKey,
+        ctaExecutorType: messageCtaExecutorType,
+        payload: {
+          flow: rawFlow,
+          message_sequence_key: messageSequenceKey || null,
+          mock: true,
+        },
+      })
+    } catch {}
     if (req.user?.id) {
       try {
         await messageAttributionSvc.upsertUserSuppressionFromCompletion({

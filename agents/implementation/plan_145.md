@@ -37,7 +37,7 @@ Status: Active
 
 ## Phase Status
 - A: Completed
-- B: Pending
+- B: Completed
 - C: Pending
 - D: Pending
 - E: Pending
@@ -165,6 +165,14 @@ Status: Active
   - CTA definition `completion_contract`
   - journey progress `completed_by_outcome_id`
   - CTA/domain type contracts updated
+- (uncommitted) — Phase B ingestion/evaluator:
+  - Added central `recordCtaOutcome(...)` service + repo.
+  - Added completion evaluator by contract (`on_click|on_return|on_verified|none`).
+  - Wired ingestion from:
+    - `/api/feed/message-events` click/complete events
+    - `/api/cta/mock/complete`
+    - PayPal return + webhook completion path
+  - Added idempotent outcome key usage for intent/checkout completion paths.
 
 ## Validation
 - Environment:
@@ -188,6 +196,6 @@ Status: Active
 
 ## Resume Here
 - Next action:
-  - Start Phase B (central CTA outcome ingestion service + evaluator).
+  - Start Phase C (policy-driven progression from canonical outcomes).
 - Blocking question (if any):
   - None.

@@ -4,6 +4,7 @@ import { DomainError } from '../../core/errors'
 import { getLogger } from '../../lib/logger'
 import * as messageAnalyticsSvc from '../message-analytics/service'
 import * as messageAttributionSvc from '../message-attribution/service'
+import * as messageCtaOutcomesSvc from '../message-cta-outcomes/service'
 import { getPaymentProvider, registerPaymentProvider } from './provider'
 import * as repo from './repo'
 import type {
@@ -178,6 +179,7 @@ function normalizeNullablePositiveInt(raw: any): number | null {
 async function emitMessageCompletionFromCheckout(input: {
   session: PaymentCheckoutSessionRow
   parsed: PaymentWebhookParsedCompletion
+  source: 'webhook' | 'return'
 }): Promise<void> {
   const session = input.session
   if (!session.message_id || Number(session.message_id) <= 0) return
@@ -199,6 +201,8 @@ async function emitMessageCompletionFromCheckout(input: {
   const messageCtaSlot = normalizeNullablePositiveInt(metadata.message_cta_slot)
   const messageCtaIntentKey = normalizeNullableString(metadata.message_cta_intent_key)?.toLowerCase() || null
   const messageCtaExecutorType = normalizeNullableString(metadata.message_cta_executor_type)?.toLowerCase() || null
+  const messageJourneyId = normalizeNullablePositiveInt(metadata.message_journey_id)
+  const messageJourneyStepId = normalizeNullablePositiveInt(metadata.message_journey_step_id)
 
   await messageAnalyticsSvc.recordMessageEvent({
     event,
@@ -217,6 +221,36 @@ async function emitMessageCompletionFromCheckout(input: {
     viewerState: session.user_id ? 'authenticated' : 'anonymous',
     userId: session.user_id == null ? null : Number(session.user_id),
   })
+
+  try {
+    await messageCtaOutcomesSvc.recordCtaOutcome({
+      outcomeId: session.message_intent_id
+        ? `intent:${String(session.message_intent_id).trim().toLowerCase()}:complete`
+        : `checkout:${String(session.checkout_id || '').trim().toLowerCase()}:complete`,
+      sourceEventType: input.source === 'webhook' ? 'payments.webhook' : 'payments.return',
+      outcomeType: input.source === 'webhook' ? 'webhook_complete' : 'verified_complete',
+      outcomeStatus: 'success',
+      sessionId: messageSessionId,
+      userId: session.user_id == null ? null : Number(session.user_id),
+      messageId: Number(session.message_id),
+      messageCampaignKey: session.message_campaign_key || null,
+      deliveryContext: messageJourneyId && messageJourneyStepId ? 'journey' : 'standalone',
+      journeyId: messageJourneyId,
+      journeyStepId: messageJourneyStepId,
+      ctaSlot: messageCtaSlot,
+      ctaDefinitionId: session.message_cta_definition_id == null ? null : Number(session.message_cta_definition_id),
+      ctaIntentKey: messageCtaIntentKey,
+      ctaExecutorType: messageCtaExecutorType,
+      payload: {
+        flow,
+        message_sequence_key: messageSequenceKey || null,
+        payment_provider: session.provider,
+        payment_mode: session.mode,
+        payment_provider_order_id: session.provider_order_id || input.parsed.providerOrderId || null,
+        payment_provider_session_id: session.provider_session_id || input.parsed.providerSessionId || null,
+      },
+    })
+  } catch {}
 
   if (session.user_id && Number(session.user_id) > 0) {
     await messageAttributionSvc.upsertUserSuppressionFromCompletion({
@@ -840,7 +874,7 @@ export async function ingestWebhook(input: {
             })
             if (parsed.checkoutStatus === 'completed') {
               const forEmit = refreshed || { ...session, status: 'completed' as const }
-              await emitMessageCompletionFromCheckout({ session: forEmit, parsed })
+              await emitMessageCompletionFromCheckout({ session: forEmit, parsed, source: 'webhook' })
             }
             if (providerSubscriptionId && subscriptionStatus && !parsed.providerSessionId) {
               await repo.upsertPaymentSubscription({
@@ -1017,6 +1051,7 @@ export async function completePaypalOrderFromReturn(input: {
           providerSubscriptionId: null,
           outcomeReason: 'capture_from_return',
         },
+        source: 'return',
       })
 
       span.setAttributes({
@@ -1142,6 +1177,17 @@ export async function completePaypalSubscriptionReturn(input: {
             source: 'return',
             eventType: 'BILLING.SUBSCRIPTION.ACTIVATED',
             providerEventId: null,
+          })
+          await emitMessageCompletionFromCheckout({
+            session: latest,
+            parsed: {
+              checkoutStatus: 'completed',
+              providerSessionId: providerSubscriptionId,
+              providerOrderId: session.provider_order_id || null,
+              providerSubscriptionId,
+              outcomeReason: 'subscription_active_from_return',
+            },
+            source: 'return',
           })
         }
       }
