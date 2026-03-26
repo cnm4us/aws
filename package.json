@@ -67,6 +67,7 @@
     "payments:reset:local": "ts-node scripts/payments-reset-local.ts",
     "payments:paypal:cleanup-subscriptions": "ts-node scripts/payments-paypal-cleanup-subscriptions.ts",
     "payments:reset:test": "bash scripts/payments-reset-test.sh",
+    "message-ctas:migrate-executors": "ts-node scripts/message-cta-migrate-executors.ts",
     "paypal:sandbox": "ts-node scripts/paypal-repl.ts"
   },
   "dependencies": {
