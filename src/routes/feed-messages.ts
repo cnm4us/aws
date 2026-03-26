@@ -51,7 +51,7 @@ async function getGlobalSubscriptionSpaceId(): Promise<number | null> {
   return globalSubscriptionSpaceCache.spaceId
 }
 
-async function resolveAudienceSegment(userIdRaw: any): Promise<MessageViewerState> {
+async function resolveViewerState(userIdRaw: any): Promise<MessageViewerState> {
   const userId = Number(userIdRaw || 0)
   if (!Number.isFinite(userId) || userId <= 0) return 'anonymous'
   const globalSpaceId = await getGlobalSubscriptionSpaceId()
@@ -154,7 +154,7 @@ async function handleDecision(req: any, res: any, next: any) {
 
     const cookies = parseCookies(req.headers.cookie)
     const cookieSessionId = cookies[ANON_SESSION_COOKIE] ? String(cookies[ANON_SESSION_COOKIE]).trim() : null
-    const viewerState = await resolveAudienceSegment(req.user?.id)
+    const viewerState = await resolveViewerState(req.user?.id)
 
     const { input, createdSessionId } = buildDecisionInput({
       body,

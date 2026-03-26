@@ -1,6 +1,6 @@
 # Plan 144: Stateful Message Journeys + UX Pattern Catalog
 
-Status: Draft
+Status: Active
 
 ## Context
 - Message targeting now supports eligibility rulesets and ruleset-based suppression.
@@ -140,6 +140,7 @@ Each pattern includes:
 - Ensure plan_143 final sweep complete.
 - Confirm ruleset-only targeting baseline.
 - Acceptance: clean baseline and telemetry naming consistency.
+- Status: Completed (2026-03-26)
 
 ### Phase B — Journey Data Model
 - Add new journey/progress tables + indexes.
@@ -193,4 +194,4 @@ Each pattern includes:
   - B) no state update until explicit action
 
 ## Resume Here
-- Start Phase A only after plan_143 Phase F is complete.
+- Start Phase B — Journey Data Model.
