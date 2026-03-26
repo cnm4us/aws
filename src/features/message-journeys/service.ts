@@ -333,6 +333,45 @@ function toUtcDateTimeString(date: Date): string {
   return `${y}-${m}-${d} ${hh}:${mm}:${ss}`
 }
 
+type StepProgressionPolicy =
+  | { kind: 'on_any_click' }
+  | { kind: 'on_any_completion' }
+  | { kind: 'on_cta_slot_completion'; slot: number }
+  | { kind: 'on_intent_completion'; intentKey: string }
+
+function parseStepConfig(raw: any): Record<string, any> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  return raw as Record<string, any>
+}
+
+function normalizeStepProgressionPolicy(config: Record<string, any>): StepProgressionPolicy {
+  const key = String(config.progression_policy || config.progressionPolicy || '').trim().toLowerCase()
+  if (key === 'on_any_click') return { kind: 'on_any_click' }
+  if (key === 'on_cta_slot_completion') {
+    const slot = Number(config.progression_slot ?? config.progressionSlot ?? 0)
+    if (Number.isFinite(slot) && slot > 0) return { kind: 'on_cta_slot_completion', slot: Math.round(slot) }
+  }
+  if (key === 'on_intent_completion') {
+    const intent = String(config.progression_intent_key ?? config.progressionIntentKey ?? '').trim().toLowerCase()
+    if (intent) return { kind: 'on_intent_completion', intentKey: intent }
+  }
+  return { kind: 'on_any_completion' }
+}
+
+function policyQualifiesCompletion(policy: StepProgressionPolicy, input: {
+  ctaSlot: number | null
+  ctaIntentKey: string | null
+  outcomeType: string
+  outcomeStatus: string
+  completed: boolean
+}): boolean {
+  if (policy.kind === 'on_any_click') return input.outcomeType === 'click' && input.outcomeStatus === 'success'
+  if (policy.kind === 'on_any_completion') return input.completed
+  if (policy.kind === 'on_cta_slot_completion') return input.completed && input.ctaSlot != null && Number(input.ctaSlot) === Number(policy.slot)
+  if (policy.kind === 'on_intent_completion') return input.completed && input.ctaIntentKey != null && String(input.ctaIntentKey).toLowerCase() === String(policy.intentKey).toLowerCase()
+  return false
+}
+
 export async function recordJourneySignalFromMessageEvent(input: {
   userId: number | null
   messageId: number
@@ -412,4 +451,114 @@ export async function recordJourneySignalFromMessageEvent(input: {
     progressed,
     ignored,
   }
+}
+
+export async function recordJourneySignalFromCtaOutcome(input: {
+  outcomeRowId: number
+  userId: number | null
+  messageId: number
+  sessionId?: string | null
+  ctaSlot?: number | null
+  ctaIntentKey?: string | null
+  outcomeType: 'click' | 'return' | 'verified_complete' | 'webhook_complete' | 'failed' | 'abandoned'
+  outcomeStatus: 'pending' | 'success' | 'failure'
+  completed: boolean
+  occurredAt?: Date
+}): Promise<{ stepsMatched: number; progressed: number; ignored: number }> {
+  const userId = Number(input.userId || 0)
+  const messageId = Number(input.messageId || 0)
+  if (!Number.isFinite(userId) || userId <= 0) return { stepsMatched: 0, progressed: 0, ignored: 0 }
+  if (!Number.isFinite(messageId) || messageId <= 0) return { stepsMatched: 0, progressed: 0, ignored: 0 }
+
+  const steps = await repo.listActiveStepsByMessageId(messageId)
+  if (!steps.length) return { stepsMatched: 0, progressed: 0, ignored: 0 }
+
+  const ts = toUtcDateTimeString(input.occurredAt instanceof Date && Number.isFinite(input.occurredAt.getTime()) ? input.occurredAt : new Date())
+  let progressed = 0
+  let ignored = 0
+
+  for (const step of steps) {
+    const config = parseStepConfig((() => {
+      try { return JSON.parse(String((step as any).config_json || '{}')) } catch { return {} }
+    })())
+    const policy = normalizeStepProgressionPolicy(config)
+    const qualifiesCompletion = policyQualifiesCompletion(policy, {
+      ctaSlot: input.ctaSlot == null ? null : Number(input.ctaSlot),
+      ctaIntentKey: input.ctaIntentKey ? String(input.ctaIntentKey).toLowerCase() : null,
+      outcomeType: input.outcomeType,
+      outcomeStatus: input.outcomeStatus,
+      completed: input.completed,
+    })
+
+    const nextState: MessageJourneyProgressState | null =
+      qualifiesCompletion
+        ? 'completed'
+        : (input.outcomeType === 'click' && input.outcomeStatus === 'success' ? 'clicked' : null)
+
+    if (!nextState) {
+      ignored += 1
+      continue
+    }
+
+    const existing = await repo.getProgressByUserStep(userId, Number(step.id))
+    if (!existing) {
+      await repo.upsertProgress({
+        userId,
+        journeyId: Number(step.journey_id),
+        stepId: Number(step.id),
+        state: nextState,
+        firstSeenAt: null,
+        lastSeenAt: ts,
+        completedAt: nextState === 'completed' ? ts : null,
+        completedByOutcomeId: nextState === 'completed' ? Number(input.outcomeRowId) : null,
+        sessionId: input.sessionId ?? null,
+        metadataJson: JSON.stringify({
+          source: 'cta_outcome',
+          source_message_id: messageId,
+          cta_slot: input.ctaSlot ?? null,
+          cta_intent_key: input.ctaIntentKey || null,
+          outcome_type: input.outcomeType,
+          outcome_status: input.outcomeStatus,
+          completion_contract_matched: qualifiesCompletion,
+          policy: policy.kind,
+          policy_slot: policy.kind === 'on_cta_slot_completion' ? policy.slot : null,
+          policy_intent_key: policy.kind === 'on_intent_completion' ? policy.intentKey : null,
+          last_event_at: ts,
+        }),
+      })
+      progressed += 1
+      continue
+    }
+
+    if (!canTransition(existing.state, nextState)) {
+      ignored += 1
+      continue
+    }
+
+    const metadataJson = mergeMetadata(existing.metadata_json, {
+      source: 'cta_outcome',
+      source_message_id: messageId,
+      cta_slot: input.ctaSlot ?? null,
+      cta_intent_key: input.ctaIntentKey || null,
+      outcome_type: input.outcomeType,
+      outcome_status: input.outcomeStatus,
+      completion_contract_matched: qualifiesCompletion,
+      policy: policy.kind,
+      policy_slot: policy.kind === 'on_cta_slot_completion' ? policy.slot : null,
+      policy_intent_key: policy.kind === 'on_intent_completion' ? policy.intentKey : null,
+      last_event_at: ts,
+    })
+    await repo.updateProgressById(Number(existing.id), {
+      state: nextState,
+      firstSeenAt: existing.first_seen_at || null,
+      lastSeenAt: ts,
+      completedAt: nextState === 'completed' ? (existing.completed_at || ts) : existing.completed_at,
+      completedByOutcomeId: nextState === 'completed' ? (existing.completed_by_outcome_id || Number(input.outcomeRowId)) : existing.completed_by_outcome_id,
+      sessionId: input.sessionId ?? existing.session_id,
+      metadataJson,
+    })
+    progressed += 1
+  }
+
+  return { stepsMatched: steps.length, progressed, ignored }
 }

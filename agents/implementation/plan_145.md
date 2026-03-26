@@ -38,7 +38,7 @@ Status: Active
 ## Phase Status
 - A: Completed
 - B: Completed
-- C: Pending
+- C: Completed
 - D: Pending
 - E: Pending
 - F: Pending
@@ -173,6 +173,15 @@ Status: Active
     - `/api/cta/mock/complete`
     - PayPal return + webhook completion path
   - Added idempotent outcome key usage for intent/checkout completion paths.
+- (uncommitted) — Phase C policy-driven progression:
+  - Added journey progression evaluator from canonical CTA outcomes.
+  - Added step policy support via step config:
+    - `on_any_click`
+    - `on_any_completion` (default)
+    - `on_cta_slot_completion`
+    - `on_intent_completion`
+  - Wired progression updates through CTA outcome ingestion flow.
+  - Reduced duplicate journey progression by restricting legacy message-event progression to non-CTA events.
 
 ## Validation
 - Environment:
@@ -196,6 +205,6 @@ Status: Active
 
 ## Resume Here
 - Next action:
-  - Start Phase C (policy-driven progression from canonical outcomes).
+  - Start Phase D (admin UX for completion/progression policies).
 - Blocking question (if any):
   - None.

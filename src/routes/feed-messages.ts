@@ -531,6 +531,7 @@ feedMessagesRouter.post(feedMessageEventPaths, async (req: any, res: any, next: 
       } catch {}
     }
     const normalizedEvent = String(body.event || '').trim().toLowerCase()
+    let journeySignalResult: { stepsMatched: number; progressed: number; ignored: number } | null = null
     try {
       const mapOutcome = (): { type: 'click' | 'verified_complete'; status: 'success' } | null => {
         if (normalizedEvent === 'click') return { type: 'click', status: 'success' }
@@ -544,7 +545,7 @@ feedMessagesRouter.post(feedMessageEventPaths, async (req: any, res: any, next: 
       }
       const mapped = mapOutcome()
       if (mapped) {
-        await messageCtaOutcomesSvc.recordCtaOutcome({
+        const ctaOutcome = await messageCtaOutcomesSvc.recordCtaOutcome({
           outcomeId: intentId ? `intent:${intentId}:${normalizedEvent}` : null,
           sourceEventType: 'feed.message.event',
           outcomeType: mapped.type,
@@ -566,6 +567,7 @@ feedMessagesRouter.post(feedMessageEventPaths, async (req: any, res: any, next: 
             message_sequence_key: messageSequenceKey || null,
           },
         })
+        if (ctaOutcome.journeySignal) journeySignalResult = ctaOutcome.journeySignal
       }
     } catch {}
     if (
@@ -589,16 +591,10 @@ feedMessagesRouter.post(feedMessageEventPaths, async (req: any, res: any, next: 
       messageId,
       event: body.event,
     })
-    let journeySignalResult: { stepsMatched: number; progressed: number; ignored: number } | null = null
     if (
       normalizedEvent === 'impression' ||
-      normalizedEvent === 'click' ||
       normalizedEvent === 'pass_through' ||
-      normalizedEvent === 'dismiss' ||
-      normalizedEvent === 'auth_complete' ||
-      normalizedEvent === 'donation_complete' ||
-      normalizedEvent === 'subscription_complete' ||
-      normalizedEvent === 'upgrade_complete'
+      normalizedEvent === 'dismiss'
     ) {
       try {
         journeySignalResult = await messageJourneysSvc.recordJourneySignalFromMessageEvent({
@@ -1110,8 +1106,9 @@ feedMessagesRouter.get(feedMessageMockCompletionPaths, async (req: any, res: any
       viewerState: req.user?.id ? 'authenticated' : 'anonymous',
       userId: req.user?.id ? Number(req.user.id) : null,
     })
+    let journeySignalResult: { stepsMatched: number; progressed: number; ignored: number } | null = null
     try {
-      await messageCtaOutcomesSvc.recordCtaOutcome({
+      const ctaOutcome = await messageCtaOutcomesSvc.recordCtaOutcome({
         outcomeId: intentId ? `intent:${intentId}:${event}` : null,
         sourceEventType: 'feed.message.mock_complete',
         outcomeType: 'verified_complete',
@@ -1133,6 +1130,7 @@ feedMessagesRouter.get(feedMessageMockCompletionPaths, async (req: any, res: any
           mock: true,
         },
       })
+      if (ctaOutcome.journeySignal) journeySignalResult = ctaOutcome.journeySignal
     } catch {}
     if (req.user?.id) {
       try {
@@ -1152,18 +1150,6 @@ feedMessagesRouter.get(feedMessageMockCompletionPaths, async (req: any, res: any
       messageId,
       event,
     })
-    let journeySignalResult: { stepsMatched: number; progressed: number; ignored: number } | null = null
-    if (event === 'donation_complete' || event === 'subscription_complete' || event === 'upgrade_complete') {
-      try {
-        journeySignalResult = await messageJourneysSvc.recordJourneySignalFromMessageEvent({
-          userId: req.user?.id ? Number(req.user.id) : null,
-          messageId: Number(messageId || 0),
-          event,
-          sessionId,
-        })
-      } catch {}
-    }
-
     const span = trace.getSpan(context.active())
     if (span) {
       span.setAttribute('app.surface', String(q.surface || 'global_feed').trim().toLowerCase())

@@ -3,6 +3,7 @@ import { context, trace } from '@opentelemetry/api'
 import { DomainError } from '../../core/errors'
 import { getLogger } from '../../lib/logger'
 import * as messageCtasSvc from '../message-cta-definitions/service'
+import * as messageJourneysSvc from '../message-journeys/service'
 import type { MessageCtaCompletionContract } from '../message-cta-definitions/types'
 import * as repo from './repo'
 import type {
@@ -127,6 +128,7 @@ export async function recordCtaOutcome(input: {
   inserted: boolean
   completionContract: MessageCtaCompletionContract
   completed: boolean
+  journeySignal: { stepsMatched: number; progressed: number; ignored: number } | null
 }> {
   const messageId = normalizeNullablePositiveInt(input.messageId, 'invalid_message_id')
   if (messageId == null) throw new DomainError('invalid_message_id', 'invalid_message_id', 400)
@@ -197,6 +199,22 @@ export async function recordCtaOutcome(input: {
     payloadJson,
   })
 
+  let journeySignal: { stepsMatched: number; progressed: number; ignored: number } | null = null
+  try {
+    journeySignal = await messageJourneysSvc.recordJourneySignalFromCtaOutcome({
+      outcomeRowId: Number(saved.row.id),
+      userId,
+      messageId,
+      sessionId,
+      ctaSlot,
+      ctaIntentKey,
+      outcomeType,
+      outcomeStatus,
+      completed,
+      occurredAt: occurred,
+    })
+  } catch {}
+
   const span = trace.getSpan(context.active())
   if (span) {
     span.setAttribute('app.cta_outcome_id', outcomeId)
@@ -216,6 +234,9 @@ export async function recordCtaOutcome(input: {
     cta_outcome_status: outcomeStatus,
     cta_completion_contract: completionContract,
     cta_completed: completed,
+    journey_steps_matched: journeySignal ? Number(journeySignal.stepsMatched || 0) : 0,
+    journey_progressed: journeySignal ? Number(journeySignal.progressed || 0) : 0,
+    journey_ignored: journeySignal ? Number(journeySignal.ignored || 0) : 0,
     message_cta_definition_id: ctaDefinitionId,
     message_cta_slot: ctaSlot,
     message_cta_intent_key: ctaIntentKey,
@@ -231,6 +252,6 @@ export async function recordCtaOutcome(input: {
     inserted: saved.inserted,
     completionContract,
     completed,
+    journeySignal,
   }
 }
-
