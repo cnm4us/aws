@@ -10,6 +10,7 @@ import {
 import * as messagesSvc from '../messages/service'
 import * as messageAttributionSvc from '../message-attribution/service'
 import * as messageEligibilityRulesetsSvc from '../message-eligibility-rulesets/service'
+import * as messageJourneysRepo from '../message-journeys/repo'
 import * as repo from './repo'
 import type { MessageEligibilityRule, MessageEligibilityRulesetDto } from '../message-eligibility-rulesets/types'
 import type {
@@ -209,6 +210,10 @@ type EligibleMessageCandidate = {
   priority: number
   tieBreakStrategy: 'first' | 'round_robin' | 'weighted_random'
   eligibilityRulesetId: number | null
+  journeyId?: number | null
+  journeyStepId?: number | null
+  journeyStepOrder?: number | null
+  journeyStepKey?: string | null
 }
 
 type SupportProfile = {
@@ -369,6 +374,103 @@ function dateToMs(raw: string | null): number | null {
   return date.getTime()
 }
 
+async function applyJourneyGating(params: {
+  userId: number | null
+  candidates: EligibleMessageCandidate[]
+}): Promise<{
+  eligible: EligibleMessageCandidate[]
+  rejectedCount: number
+  dropReasons: Array<{ messageId: number; reason: string }>
+}> {
+  const inputCandidates = params.candidates
+  if (!inputCandidates.length) {
+    return { eligible: [], rejectedCount: 0, dropReasons: [] }
+  }
+
+  const steps = await messageJourneysRepo.listActiveStepsByMessageIds(inputCandidates.map((c) => c.messageId))
+  if (!steps.length) {
+    return { eligible: inputCandidates, rejectedCount: 0, dropReasons: [] }
+  }
+
+  const stepsByMessage = new Map<number, typeof steps>()
+  const stepsByJourney = new Map<number, typeof steps>()
+  for (const step of steps) {
+    const messageId = Number(step.message_id)
+    const journeyId = Number(step.journey_id)
+    if (!stepsByMessage.has(messageId)) stepsByMessage.set(messageId, [])
+    stepsByMessage.get(messageId)!.push(step)
+    if (!stepsByJourney.has(journeyId)) stepsByJourney.set(journeyId, [])
+    stepsByJourney.get(journeyId)!.push(step)
+  }
+
+  const dropReasons: Array<{ messageId: number; reason: string }> = []
+  const eligible: EligibleMessageCandidate[] = []
+  let rejectedCount = 0
+
+  const userId = params.userId != null && Number.isFinite(Number(params.userId)) && Number(params.userId) > 0
+    ? Math.round(Number(params.userId))
+    : null
+  if (userId == null) {
+    for (const c of inputCandidates) {
+      const attached = stepsByMessage.get(Number(c.messageId)) || []
+      if (!attached.length) {
+        eligible.push(c)
+        continue
+      }
+      rejectedCount += 1
+      if (dropReasons.length < 40) dropReasons.push({ messageId: c.messageId, reason: 'journey_requires_user' })
+    }
+    return { eligible, rejectedCount, dropReasons }
+  }
+
+  const progressRows = await messageJourneysRepo.listProgressByUserJourneyIds(userId, Array.from(stepsByJourney.keys()))
+  const completedByJourneyStep = new Set<string>()
+  for (const row of progressRows) {
+    if (String(row.state) !== 'completed') continue
+    completedByJourneyStep.add(`${Number(row.journey_id)}:${Number(row.step_id)}`)
+  }
+
+  const activeStepByJourney = new Map<number, (typeof steps)[number]>()
+  for (const [journeyId, journeySteps] of stepsByJourney.entries()) {
+    const sorted = journeySteps
+      .slice()
+      .sort((a, b) => Number(a.step_order) - Number(b.step_order) || Number(a.id) - Number(b.id))
+    const next = sorted.find((step) => !completedByJourneyStep.has(`${journeyId}:${Number(step.id)}`))
+    if (next) activeStepByJourney.set(journeyId, next)
+  }
+
+  for (const c of inputCandidates) {
+    const attached = stepsByMessage.get(Number(c.messageId)) || []
+    if (!attached.length) {
+      eligible.push(c)
+      continue
+    }
+    const matches = attached
+      .filter((step) => {
+        const active = activeStepByJourney.get(Number(step.journey_id))
+        return !!active && Number(active.id) === Number(step.id)
+      })
+      .sort((a, b) => Number(a.step_order) - Number(b.step_order) || Number(a.journey_id) - Number(b.journey_id) || Number(a.id) - Number(b.id))
+
+    if (!matches.length) {
+      rejectedCount += 1
+      if (dropReasons.length < 40) dropReasons.push({ messageId: c.messageId, reason: 'journey_step_not_current' })
+      continue
+    }
+
+    const step = matches[0]
+    eligible.push({
+      ...c,
+      journeyId: Number(step.journey_id),
+      journeyStepId: Number(step.id),
+      journeyStepOrder: Number(step.step_order),
+      journeyStepKey: String(step.step_key || ''),
+    })
+  }
+
+  return { eligible, rejectedCount, dropReasons }
+}
+
 export function buildDecisionInput(params: {
   body: any
   cookieSessionId: string | null
@@ -443,8 +545,14 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
   let candidateCountBeforeRuleset = 0
   let userSuppressedCount = 0
   let rulesetRejectedCount = 0
+  let journeyRejectedCount = 0
+  let candidateCountBeforeJourney = 0
   let selectedPriority: number | null = null
   let selectedRulesetId: number | null = null
+  let selectedJourneyId: number | null = null
+  let selectedJourneyStepId: number | null = null
+  let selectedJourneyStepOrder: number | null = null
+  let selectedJourneyStepKey: string | null = null
   let rejectedRulesetId: number | null = null
   let rulesetResult: 'none' | 'pass' | 'reject' = 'none'
   let rulesetReason: string | null = null
@@ -559,6 +667,22 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
           }
         }
 
+        candidateCountBeforeJourney = eligible.length
+        if (eligible.length > 0) {
+          const gated = await applyJourneyGating({
+            userId: input.userId,
+            candidates: eligible,
+          })
+          journeyRejectedCount = gated.rejectedCount
+          if (gated.dropReasons.length) {
+            for (const reason of gated.dropReasons) {
+              if (candidateDropReasons.length >= 40) break
+              candidateDropReasons.push(reason)
+            }
+          }
+          eligible = gated.eligible
+        }
+
         candidateCount = eligible.length
         if (!candidateCount) {
           reasonCode = 'no_candidate'
@@ -571,6 +695,10 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
             messageId = selected.messageId
             selectedPriority = selected.priority
             selectedRulesetId = selected.eligibilityRulesetId == null ? null : Number(selected.eligibilityRulesetId)
+            selectedJourneyId = selected.journeyId == null ? null : Number(selected.journeyId)
+            selectedJourneyStepId = selected.journeyStepId == null ? null : Number(selected.journeyStepId)
+            selectedJourneyStepOrder = selected.journeyStepOrder == null ? null : Number(selected.journeyStepOrder)
+            selectedJourneyStepKey = selected.journeyStepKey == null ? null : String(selected.journeyStepKey)
           }
         }
       }
@@ -621,11 +749,17 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
         engine: selectionEngine,
         candidateCount,
         candidateCountBeforeRuleset,
+        candidateCountBeforeJourney,
         userSuppressedCount,
         rulesetRejectedCount,
+        journeyRejectedCount,
         rulesetResult,
         rulesetReason,
         selectedRulesetId,
+        selectedJourneyId,
+        selectedJourneyStepId,
+        selectedJourneyStepOrder,
+        selectedJourneyStepKey,
         rejectedRulesetId,
         selectedPriority,
         candidateDropReasons,

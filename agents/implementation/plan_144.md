@@ -160,6 +160,7 @@ Each pattern includes:
 - Enforce ordered step progression.
 - Keep non-journey messages unaffected.
 - Acceptance: deterministic selection for attached journeys.
+- Status: Completed (2026-03-26)
 
 ### Phase E — Admin Pages (v1)
 - Add journey list/detail pages and step management.
@@ -196,4 +197,4 @@ Each pattern includes:
   - B) no state update until explicit action
 
 ## Resume Here
-- Start Phase D — Decision Integration.
+- Start Phase E — Admin Pages (v1).

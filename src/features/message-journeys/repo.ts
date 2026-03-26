@@ -246,6 +246,36 @@ export async function listActiveStepsByMessageId(messageId: number): Promise<Arr
   return rows as Array<MessageJourneyStepRow & { journey_status: MessageJourneyStatus }>
 }
 
+export async function listActiveStepsByMessageIds(messageIds: number[]): Promise<Array<MessageJourneyStepRow & { journey_status: MessageJourneyStatus }>> {
+  const uniq = Array.from(new Set(messageIds.filter((id) => Number.isFinite(id) && id > 0).map((id) => Math.round(id))))
+  if (!uniq.length) return []
+  const placeholders = uniq.map(() => '?').join(',')
+  const db = getPool()
+  const [rows] = await db.query(
+    `SELECT
+       s.id,
+       s.journey_id,
+       s.step_key,
+       s.step_order,
+       s.message_id,
+       s.ruleset_id,
+       s.status,
+       s.config_json,
+       s.created_at,
+       s.updated_at,
+       j.status AS journey_status
+     FROM feed_message_journey_steps s
+     JOIN feed_message_journeys j
+       ON j.id = s.journey_id
+    WHERE s.message_id IN (${placeholders})
+      AND s.status = 'active'
+      AND j.status = 'active'
+    ORDER BY s.journey_id ASC, s.step_order ASC, s.id ASC`,
+    uniq
+  )
+  return rows as Array<MessageJourneyStepRow & { journey_status: MessageJourneyStatus }>
+}
+
 export async function getStepById(id: number): Promise<MessageJourneyStepRow | null> {
   const db = getPool()
   const [rows] = await db.query(`${STEP_SELECT_SQL} WHERE id = ? LIMIT 1`, [id])
@@ -338,6 +368,21 @@ export async function listProgressByUserJourney(userId: number, journeyId: numbe
         AND journey_id = ?
       ORDER BY updated_at DESC, id DESC`,
     [userId, journeyId]
+  )
+  return rows as MessageJourneyProgressRow[]
+}
+
+export async function listProgressByUserJourneyIds(userId: number, journeyIds: number[]): Promise<MessageJourneyProgressRow[]> {
+  const uniq = Array.from(new Set(journeyIds.filter((id) => Number.isFinite(id) && id > 0).map((id) => Math.round(id))))
+  if (!uniq.length) return []
+  const placeholders = uniq.map(() => '?').join(',')
+  const db = getPool()
+  const [rows] = await db.query(
+    `${PROGRESS_SELECT_SQL}
+      WHERE user_id = ?
+        AND journey_id IN (${placeholders})
+      ORDER BY updated_at DESC, id DESC`,
+    [userId, ...uniq]
   )
   return rows as MessageJourneyProgressRow[]
 }
