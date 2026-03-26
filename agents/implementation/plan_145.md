@@ -1,0 +1,171 @@
+# Plan 145: CTA Outcome Canonicalization + Completion Architecture
+
+Status: Active
+
+## Feature Reference
+- Feature doc: `none`
+
+## Context
+- Problem statement:
+  - Completion semantics are currently mixed across message/journey logic.
+  - We need a scalable model where CTA execution outcomes are canonical, and message/journey completion is derived.
+- In scope:
+  - Canonical CTA outcome event model.
+  - Message and journey progression derived from CTA outcomes via explicit policy.
+  - Observability and analytics slices for standalone vs journey delivery.
+- Out of scope:
+  - New payment provider integrations beyond current executors.
+  - AI authoring or advanced optimization logic.
+- Constraints:
+  - Dev-only environment (no backward-compat requirement).
+  - Keep decision latency bounded and behavior explainable in Jaeger/Pino.
+
+## Locked Decisions
+- Completion source of truth is CTA outcome events (not message render events).
+- Keep standalone and journey delivery paths; do not force all messages into journeys.
+- Journey-selected messages use journey-step policy/ruleset; standalone uses message policy/ruleset.
+- Persist three layers:
+  - CTA outcomes (immutable fact stream)
+  - Message progress (derived state)
+  - Journey step progress (derived state)
+
+## Phase Status
+- A: Pending
+- B: Pending
+- C: Pending
+- D: Pending
+- E: Pending
+- F: Pending
+
+## Phase A — Data Model + Contracts
+- Goal:
+  - Define durable schema/contracts for canonical CTA outcomes and derived progress state linkage.
+- Steps:
+  - [ ] Add `feed_message_cta_outcomes` (append-only fact table).
+  - [ ] Add source pointers on progress rows (e.g., `completed_by_outcome_id`).
+  - [ ] Define normalized outcome taxonomy:
+    - `outcome_type`: `click`, `return`, `verified_complete`, `webhook_complete`, `failed`, `abandoned`
+    - `outcome_status`: `pending`, `success`, `failure`
+  - [ ] Capture context fields:
+    - `delivery_context` (`standalone|journey`)
+    - `journey_id`, `journey_step_id`
+    - `cta_slot`, `cta_definition_id`, `intent`, `executor`
+    - `message_campaign_key` (+ optional CTA campaign key if present)
+- Test gate:
+  - Run migration + verify table/index creation.
+  - Insert synthetic outcome and verify referential joins.
+- Acceptance:
+  - Canonical outcome row can represent all current CTA flows (auth/support/link).
+
+## Phase B — Outcome Ingestion Service
+- Goal:
+  - Centralize CTA outcome writes behind one service API.
+- Steps:
+  - [ ] Add `recordCtaOutcome(...)` service used by all CTA execution paths.
+  - [ ] Map current flows:
+    - message click endpoints
+    - internal_link return handling
+    - provider checkout return/webhook completion
+  - [ ] Ensure idempotency keys for webhook retries and return races.
+- Test gate:
+  - Simulate duplicate webhook + return sequence and confirm single canonical completion outcome.
+- Acceptance:
+  - All completion-capable flows produce consistent canonical outcome records.
+
+## Phase C — Policy-Driven Progression
+- Goal:
+  - Derive message/journey state transitions from CTA outcomes using explicit policy.
+- Steps:
+  - [ ] Add message completion policy (default: any completion-eligible CTA success).
+  - [ ] Add journey step progression policy:
+    - `on_any_click`
+    - `on_any_completion`
+    - `on_cta_slot_completion`
+    - `on_intent_completion`
+  - [ ] Evaluate policy in one reducer service that updates progress tables.
+- Test gate:
+  - Multi-CTA message scenario:
+    - slot 1 (`subscribe`) completes via webhook
+    - slot 2 (`read_more`) click-only
+  - Verify configured policy advances/doesn’t advance as expected.
+- Acceptance:
+  - No hardcoded “click means completed” behavior outside policy.
+
+## Phase D — Admin UX for Policies
+- Goal:
+  - Expose completion/progression policy cleanly in admin.
+- Steps:
+  - [ ] Message editor: completion policy controls (with defaults).
+  - [ ] Journey step editor: progression policy controls + validation.
+  - [ ] Guardrails/help text for conflicting configs.
+- Test gate:
+  - Save/edit policy configs and verify persisted JSON + runtime behavior.
+- Acceptance:
+  - Admin can configure click-based or completion-based progression without code changes.
+
+## Phase E — Observability + Analytics Wiring
+- Goal:
+  - Make cause/effect traceable from CTA outcome -> message/journey progression.
+- Steps:
+  - [ ] Jaeger tags:
+    - `app.delivery_context`
+    - `app.cta_outcome_type`, `app.cta_outcome_status`
+    - `app.progression_policy`
+    - `app.progressed_by_outcome_id`
+  - [ ] Pino structured logs for outcome ingest + reducer decisions.
+  - [ ] Analytics rollup path from canonical outcomes (not inferred totals).
+- Test gate:
+  - Debug bundle should show correlated timeline across:
+    - browser emit
+    - terminal logs
+    - Jaeger traces
+- Acceptance:
+  - Any “why did step advance?” question is answerable from one trace chain.
+
+## Phase F — Backfill + Smoke Matrix
+- Goal:
+  - Validate behavior across key real flows and clean test reset ergonomics.
+- Steps:
+  - [ ] Add reset helpers:
+    - clear suppression
+    - clear journeys/progress
+    - clear payment/support test rows (local + optional provider cleanup)
+  - [ ] Run matrix:
+    - standalone click-only CTA
+    - standalone completion CTA
+    - journey step with click policy
+    - journey step with completion policy
+    - multi-CTA mixed semantics
+- Test gate:
+  - Record matrix artifacts under `tests/runs/api-curl/...`.
+- Acceptance:
+  - Deterministic outcomes match configured policy in all matrix cases.
+
+## Change Log
+- (none yet)
+
+## Validation
+- Environment:
+  - Local dev (`serve:jaeger:log`, otelcol + Jaeger enabled)
+- Commands run:
+  - (planning only)
+- Evidence files:
+  - (planning only)
+- Known gaps:
+  - Existing logic still partially event-hardcoded pending Phase C.
+
+## Open Risks / Deferred
+- Risk:
+  - Policy flexibility can introduce authoring confusion.
+  - Mitigation: constrained policy set + validation + defaults.
+- Risk:
+  - Webhook/return race conditions causing double progression.
+  - Mitigation: idempotency on outcome ingest + reducer dedupe.
+- Deferred item:
+  - Advanced cohort analytics UI beyond current admin reporting.
+
+## Resume Here
+- Next action:
+  - Start Phase A (schema + canonical outcome contract).
+- Blocking question (if any):
+  - None.

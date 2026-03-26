@@ -29,6 +29,8 @@ This file is a lightweight index for ongoing implementation work.
 - `agents/implementation/plan_141.md` — PayPal subscription lifecycle integration
 - `agents/implementation/plan_142.md` — Message eligibility rulesets (inclusion/exclusion)
 - `agents/implementation/plan_143.md` — Remove audience segment and move to rulesets-only targeting
+- `agents/implementation/plan_144.md` — Stateful message journeys (progression, admin, observability)
+- `agents/implementation/plan_145.md` — CTA outcome canonicalization + policy-driven completion architecture
 
 ## Active / Next
 - Check latest `plan_NN.md` with `Status: Active`.
