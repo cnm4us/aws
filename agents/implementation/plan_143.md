@@ -63,6 +63,7 @@ Status: Draft
   - etc.
 - Acceptance:
   - Candidate pool no longer changes by `audienceSegment`; changes only by ruleset + existing gates.
+ - Status: Completed (2026-03-26)
 
 ### Phase D — Observability and Debug Contract Update
 - Remove stale audience-targeting semantics from logs/tags where misleading.

@@ -471,7 +471,6 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
       const messages = await messagesSvc.listActiveForFeed({
         limit: 300,
         appliesToSurface: input.surface,
-        audienceSegment: merged.audienceSegment,
       })
 
       if (!messages.length) {
