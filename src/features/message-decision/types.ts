@@ -1,5 +1,5 @@
 export type MessageDecisionSurface = 'global_feed'
-export type MessageAudienceSegment = 'anonymous' | 'authenticated_non_subscriber' | 'authenticated_subscriber'
+export type MessageViewerState = 'anonymous' | 'authenticated_non_subscriber' | 'authenticated_subscriber'
 
 export type MessageDecisionReasonCode =
   | 'eligible'
@@ -14,7 +14,7 @@ export type MessageDecisionSessionRow = {
   id: number
   session_id: string
   surface: MessageDecisionSurface
-  viewer_state: MessageAudienceSegment
+  viewer_state: MessageViewerState
   slides_viewed: number
   watch_seconds: number
   messages_shown_this_session: number
@@ -31,7 +31,7 @@ export type MessageDecisionInput = {
   surface: MessageDecisionSurface
   sessionId: string
   userId: number | null
-  audienceSegment: MessageAudienceSegment
+  viewerState: MessageViewerState
   counters: {
     slidesViewed: number
     watchSeconds: number

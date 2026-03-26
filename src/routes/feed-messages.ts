@@ -10,7 +10,7 @@ import {
   decideMessage,
   recordMessageSessionEvent,
 } from '../features/message-decision/service'
-import type { MessageAudienceSegment, MessageDecisionSurface } from '../features/message-decision/types'
+import type { MessageDecisionSurface, MessageViewerState } from '../features/message-decision/types'
 import * as messagesSvc from '../features/messages/service'
 import * as messageCtasSvc from '../features/message-cta-definitions/service'
 import * as uploadsSvc from '../features/uploads/service'
@@ -51,7 +51,7 @@ async function getGlobalSubscriptionSpaceId(): Promise<number | null> {
   return globalSubscriptionSpaceCache.spaceId
 }
 
-async function resolveAudienceSegment(userIdRaw: any): Promise<MessageAudienceSegment> {
+async function resolveAudienceSegment(userIdRaw: any): Promise<MessageViewerState> {
   const userId = Number(userIdRaw || 0)
   if (!Number.isFinite(userId) || userId <= 0) return 'anonymous'
   const globalSpaceId = await getGlobalSubscriptionSpaceId()
@@ -159,7 +159,7 @@ async function handleDecision(req: any, res: any, next: any) {
     const { input, createdSessionId } = buildDecisionInput({
       body,
       cookieSessionId,
-      audienceSegment: viewerState,
+      viewerState,
       userId: req.user?.id ? Number(req.user.id) : null,
     })
 

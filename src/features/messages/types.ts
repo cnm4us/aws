@@ -3,7 +3,6 @@ export type MessageWidgetPosition = 'top' | 'middle' | 'bottom'
 export type MessageBackgroundMode = 'none' | 'image' | 'video'
 export type MessageVideoPlaybackMode = 'muted_autoplay' | 'tap_to_play_sound'
 export type MessageSurface = 'global_feed'
-export type MessageAudienceSegment = 'anonymous' | 'authenticated_non_subscriber' | 'authenticated_subscriber'
 export type MessageTieBreakStrategy = 'first' | 'round_robin' | 'weighted_random'
 export type MessageType =
   | 'register_login'
@@ -136,8 +135,6 @@ export type MessageDto = {
   creative: MessageCreative
   type: MessageType
   appliesToSurface: MessageSurface
-  // Deprecated in plan_143 (rulesets-only targeting). Kept temporarily for UI compatibility.
-  audienceSegment?: MessageAudienceSegment
   tieBreakStrategy: MessageTieBreakStrategy
   campaignKey: string | null
   eligibilityRulesetId: number | null

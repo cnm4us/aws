@@ -13,7 +13,7 @@ import * as messageEligibilityRulesetsSvc from '../message-eligibility-rulesets/
 import * as repo from './repo'
 import type { MessageEligibilityRule, MessageEligibilityRulesetDto } from '../message-eligibility-rulesets/types'
 import type {
-  MessageAudienceSegment,
+  MessageViewerState,
   MessageDecisionInput,
   MessageDecisionReasonCode,
   MessageDecisionResult,
@@ -159,7 +159,7 @@ function isMessageSuppressed(messageId: number, state: SessionSuppressionState):
 }
 
 function mergeSessionState(existing: MessageDecisionSessionRow | null, input: MessageDecisionInput): {
-  audienceSegment: MessageAudienceSegment
+  viewerState: MessageViewerState
   slidesViewed: number
   watchSeconds: number
   messagesShownThisSession: number
@@ -170,7 +170,7 @@ function mergeSessionState(existing: MessageDecisionSessionRow | null, input: Me
 } {
   if (!existing) {
     return {
-      audienceSegment: input.audienceSegment,
+      viewerState: input.viewerState,
       slidesViewed: input.counters.slidesViewed,
       watchSeconds: input.counters.watchSeconds,
       messagesShownThisSession: input.counters.messagesShownThisSession,
@@ -182,7 +182,7 @@ function mergeSessionState(existing: MessageDecisionSessionRow | null, input: Me
   }
 
   return {
-    audienceSegment: input.audienceSegment,
+    viewerState: input.viewerState,
     slidesViewed: Math.max(Number(existing.slides_viewed || 0), input.counters.slidesViewed),
     watchSeconds: Math.max(Number(existing.watch_seconds || 0), input.counters.watchSeconds),
     // Server-authoritative counter; incremented when a message is actually selected.
@@ -372,7 +372,7 @@ function dateToMs(raw: string | null): number | null {
 export function buildDecisionInput(params: {
   body: any
   cookieSessionId: string | null
-  audienceSegment: MessageAudienceSegment
+  viewerState: MessageViewerState
   userId?: number | null
 }): { input: MessageDecisionInput; createdSessionId: string | null } {
   const surface = normalizeSurface(params.body?.surface)
@@ -397,7 +397,7 @@ export function buildDecisionInput(params: {
       surface,
       sessionId,
       userId: params.userId != null && Number.isFinite(Number(params.userId)) && Number(params.userId) > 0 ? Number(params.userId) : null,
-      audienceSegment: params.audienceSegment,
+      viewerState: params.viewerState,
       counters,
     },
     createdSessionId,
@@ -413,7 +413,7 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
     await repo.createSession({
       sessionId: input.sessionId,
       surface: input.surface,
-      audienceSegment: merged.audienceSegment,
+      viewerState: merged.viewerState,
       slidesViewed: merged.slidesViewed,
       watchSeconds: merged.watchSeconds,
       messagesShownThisSession: merged.messagesShownThisSession,
@@ -425,7 +425,7 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
     })
   } else {
     await repo.updateSession(existing.id, {
-      audienceSegment: merged.audienceSegment,
+      viewerState: merged.viewerState,
       slidesViewed: merged.slidesViewed,
       watchSeconds: merged.watchSeconds,
       messagesShownThisSession: merged.messagesShownThisSession,
@@ -604,11 +604,11 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
     result.debug = {
       input: {
         surface: input.surface,
-        viewerState: input.audienceSegment,
+        viewerState: input.viewerState,
         counters: input.counters,
       },
       mergedSession: {
-        viewerState: merged.audienceSegment,
+        viewerState: merged.viewerState,
         slidesViewed: merged.slidesViewed,
         watchSeconds: merged.watchSeconds,
         messagesShownThisSession: merged.messagesShownThisSession,

@@ -1,6 +1,6 @@
 # Plan 143: Remove `audience_segment` and Use Rulesets-Only Targeting
 
-Status: Draft
+Status: Complete
 
 ## Context
 - Message decision currently applies baseline filter using `audience_segment` and then applies eligibility rulesets.
@@ -91,6 +91,7 @@ Status: Draft
 - Update plan index/docs to note rulesets are now the single targeting model.
 - Acceptance:
   - No active code path depends on `audience_segment` for message targeting.
+ - Status: Completed (2026-03-26)
 
 ## Risks
 - Risk: over-targeting if message has no ruleset.
@@ -106,4 +107,4 @@ Status: Draft
 - Decision: Option 1 selected (2026-03-26).
 
 ## Resume Here
-- Start Phase A and remove `audience_segment` from message repo/service/types first; then run build.
+- Plan complete.

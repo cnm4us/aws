@@ -1,5 +1,5 @@
 import { getPool } from '../../db'
-import type { MessageAudienceSegment, MessageDecisionSessionRow, MessageDecisionSurface } from './types'
+import type { MessageDecisionSessionRow, MessageDecisionSurface, MessageViewerState } from './types'
 
 const MESSAGE_DECISION_SESSION_SELECT_SQL = `
   SELECT
@@ -34,7 +34,7 @@ export async function getSessionByKey(sessionId: string, surface: MessageDecisio
 export async function createSession(input: {
   sessionId: string
   surface: MessageDecisionSurface
-  audienceSegment: MessageAudienceSegment
+  viewerState: MessageViewerState
   slidesViewed: number
   watchSeconds: number
   messagesShownThisSession: number
@@ -58,7 +58,7 @@ export async function createSession(input: {
     [
       input.sessionId,
       input.surface,
-      input.audienceSegment,
+      input.viewerState,
       input.slidesViewed,
       input.watchSeconds,
       input.messagesShownThisSession,
@@ -75,7 +75,7 @@ export async function createSession(input: {
 }
 
 export async function updateSession(id: number, patch: {
-  audienceSegment?: MessageAudienceSegment
+  viewerState?: MessageViewerState
   slidesViewed?: number
   watchSeconds?: number
   messagesShownThisSession?: number
@@ -89,7 +89,7 @@ export async function updateSession(id: number, patch: {
   const sets: string[] = []
   const args: any[] = []
 
-  if (patch.audienceSegment !== undefined) { sets.push('viewer_state = ?'); args.push(patch.audienceSegment) }
+  if (patch.viewerState !== undefined) { sets.push('viewer_state = ?'); args.push(patch.viewerState) }
   if (patch.slidesViewed !== undefined) { sets.push('slides_viewed = ?'); args.push(patch.slidesViewed) }
   if (patch.watchSeconds !== undefined) { sets.push('watch_seconds = ?'); args.push(patch.watchSeconds) }
   if (patch.messagesShownThisSession !== undefined) { sets.push('messages_shown_this_session = ?'); args.push(patch.messagesShownThisSession) }

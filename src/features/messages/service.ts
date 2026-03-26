@@ -612,7 +612,6 @@ function mapRow(row: MessageRow): MessageDto {
     creative: resolveCreativeFromRow(row),
     type: normalizeMessageType((row as any).type, 'register_login'),
     appliesToSurface: normalizeSurface((row as any).applies_to_surface, 'global_feed'),
-    audienceSegment: 'anonymous',
     tieBreakStrategy: normalizeTieBreakStrategy((row as any).tie_break_strategy, 'round_robin'),
     campaignKey: row.campaign_key == null || String(row.campaign_key).trim() === '' ? null : String(row.campaign_key),
     eligibilityRulesetId: row.eligibility_ruleset_id == null ? null : Number(row.eligibility_ruleset_id),
@@ -633,8 +632,6 @@ export async function listForAdmin(params: {
   status?: any
   messageType?: any
   appliesToSurface?: any
-  // Deprecated: ignored in plan_143 (rulesets-only targeting).
-  audienceSegment?: any
   campaignKey?: any
 }): Promise<MessageDto[]> {
   const status = params.status == null || params.status === '' ? null : normalizeStatus(params.status)
@@ -913,8 +910,6 @@ export async function deleteForAdmin(id: number, actorUserId: number): Promise<v
 export async function listActiveForFeed(params?: {
   messageType?: any
   appliesToSurface?: any
-  // Deprecated: ignored in plan_143 (rulesets-only targeting).
-  audienceSegment?: any
   campaignKey?: any
   limit?: number
 }): Promise<MessageDto[]> {
