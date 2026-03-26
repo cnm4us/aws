@@ -110,7 +110,6 @@ export type MessageRow = {
   creative_json: string | null
   type: MessageType
   applies_to_surface: MessageSurface
-  audience_segment: MessageAudienceSegment
   tie_break_strategy: MessageTieBreakStrategy
   campaign_key: string | null
   eligibility_ruleset_id: number | null
@@ -137,7 +136,8 @@ export type MessageDto = {
   creative: MessageCreative
   type: MessageType
   appliesToSurface: MessageSurface
-  audienceSegment: MessageAudienceSegment
+  // Deprecated in plan_143 (rulesets-only targeting). Kept temporarily for UI compatibility.
+  audienceSegment?: MessageAudienceSegment
   tieBreakStrategy: MessageTieBreakStrategy
   campaignKey: string | null
   eligibilityRulesetId: number | null

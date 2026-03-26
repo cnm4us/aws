@@ -4634,7 +4634,7 @@ pagesRouter.get('/admin/messages', async (req: any, res: any) => {
           <td>${item.id}</td>
           <td><a href="/admin/messages/${item.id}">${escapeHtml(item.name)}</a></td>
           <td>${escapeHtml(item.type)}</td>
-          <td>${escapeHtml(item.audienceSegment)}</td>
+          <td>${escapeHtml(item.audienceSegment || '—')}</td>
           <td>${escapeHtml(item.appliesToSurface)}</td>
           <td>${escapeHtml(item.campaignKey || '—')}</td>
           <td>${item.eligibilityRulesetId == null ? '—' : String(item.eligibilityRulesetId)}</td>

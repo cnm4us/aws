@@ -15,7 +15,6 @@ const MESSAGE_SELECT_SQL = `
     creative_json,
     type,
     applies_to_surface,
-    audience_segment,
     tie_break_strategy,
     campaign_key,
     eligibility_ruleset_id,
@@ -42,7 +41,6 @@ type MessageCreateInput = {
   creativeJson: string | null
   messageType: string
   appliesToSurface: string
-  audienceSegment: string
   tieBreakStrategy: string
   campaignKey: string | null
   eligibilityRulesetId: number | null
@@ -62,7 +60,6 @@ export async function list(params?: {
   status?: string | null
   messageType?: string | null
   appliesToSurface?: string | null
-  audienceSegment?: string | null
   campaignKey?: string | null
 }): Promise<MessageRow[]> {
   const db = getPool()
@@ -84,10 +81,6 @@ export async function list(params?: {
   if (params?.appliesToSurface) {
     where.push('applies_to_surface = ?')
     args.push(params.appliesToSurface)
-  }
-  if (params?.audienceSegment) {
-    where.push('audience_segment = ?')
-    args.push(params.audienceSegment)
   }
   if (params?.campaignKey) {
     where.push('campaign_key = ?')
@@ -118,11 +111,11 @@ export async function create(input: MessageCreateInput): Promise<MessageRow> {
         name, headline, body,
         cta_primary_label, cta_primary_href,
         cta_secondary_label, cta_secondary_href,
-        media_upload_id, creative_json, type, applies_to_surface, audience_segment, tie_break_strategy, campaign_key, priority, status,
+        media_upload_id, creative_json, type, applies_to_surface, tie_break_strategy, campaign_key, priority, status,
         eligibility_ruleset_id,
         starts_at, ends_at, created_by, updated_by
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.name,
       input.headline,
@@ -135,7 +128,6 @@ export async function create(input: MessageCreateInput): Promise<MessageRow> {
       input.creativeJson,
       input.messageType,
       input.appliesToSurface,
-      input.audienceSegment,
       input.tieBreakStrategy,
       input.campaignKey,
       input.priority,
@@ -170,7 +162,6 @@ export async function update(id: number, patch: MessageUpdateInput): Promise<Mes
   if (patch.creativeJson !== undefined) { sets.push('creative_json = ?'); args.push(patch.creativeJson) }
   if (patch.messageType !== undefined) { sets.push('type = ?'); args.push(patch.messageType) }
   if (patch.appliesToSurface !== undefined) { sets.push('applies_to_surface = ?'); args.push(patch.appliesToSurface) }
-  if (patch.audienceSegment !== undefined) { sets.push('audience_segment = ?'); args.push(patch.audienceSegment) }
   if (patch.tieBreakStrategy !== undefined) { sets.push('tie_break_strategy = ?'); args.push(patch.tieBreakStrategy) }
   if (patch.campaignKey !== undefined) { sets.push('campaign_key = ?'); args.push(patch.campaignKey) }
   if (patch.eligibilityRulesetId !== undefined) { sets.push('eligibility_ruleset_id = ?'); args.push(patch.eligibilityRulesetId) }
@@ -201,7 +192,6 @@ export async function remove(id: number): Promise<boolean> {
 export async function listActiveForFeed(params?: {
   messageType?: string | null
   appliesToSurface?: string | null
-  audienceSegment?: string | null
   campaignKey?: string | null
   limit?: number
 }): Promise<MessageRow[]> {
@@ -225,10 +215,6 @@ export async function listActiveForFeed(params?: {
   if (params?.appliesToSurface) {
     where.push('applies_to_surface = ?')
     args.push(params.appliesToSurface)
-  }
-  if (params?.audienceSegment) {
-    where.push('audience_segment = ?')
-    args.push(params.audienceSegment)
   }
   const [rows] = await db.query(
     `${MESSAGE_SELECT_SQL}

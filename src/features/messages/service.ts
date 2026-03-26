@@ -4,7 +4,6 @@ import { getLogger } from '../../lib/logger'
 import * as repo from './repo'
 import * as messageCtasSvc from '../message-cta-definitions/service'
 import type {
-  MessageAudienceSegment,
   MessageBackgroundMode,
   MessageCreative,
   MessageCtaLayout,
@@ -30,7 +29,6 @@ const WIDGET_POSITIONS: readonly MessageWidgetPosition[] = ['top', 'middle', 'bo
 const CTA_TYPES: readonly MessageCtaType[] = ['auth', 'donate', 'subscribe', 'upgrade']
 const CTA_LAYOUTS: readonly MessageCtaLayout[] = ['inline', 'stacked']
 const SURFACES: readonly MessageSurface[] = ['global_feed']
-const AUDIENCE_SEGMENTS: readonly MessageAudienceSegment[] = ['anonymous', 'authenticated_non_subscriber', 'authenticated_subscriber']
 const TIE_BREAK_STRATEGIES: readonly MessageTieBreakStrategy[] = ['first', 'round_robin', 'weighted_random']
 const MESSAGE_TYPES: readonly MessageType[] = [
   'register_login',
@@ -44,7 +42,6 @@ function annotateAdminMessageWrite(row: MessageRow, detail: 'admin.messages.crea
   const messageId = Number(row.id || 0)
   const messageType = normalizeMessageType((row as any).type, 'register_login')
   const appliesToSurface = normalizeSurface((row as any).applies_to_surface, 'global_feed')
-  const audienceSegment = normalizeAudienceSegment((row as any).audience_segment, 'anonymous')
   const status = normalizeStatus((row as any).status, 'draft')
   const campaignKey = row.campaign_key == null || String(row.campaign_key).trim() === '' ? null : String(row.campaign_key)
   const priority = Number(row.priority || 0)
@@ -57,7 +54,6 @@ function annotateAdminMessageWrite(row: MessageRow, detail: 'admin.messages.crea
     span.setAttribute('app.message_id', String(messageId))
     span.setAttribute('app.message_type', messageType)
     span.setAttribute('app.applies_to_surface', appliesToSurface)
-    span.setAttribute('app.audience_segment', audienceSegment)
     span.setAttribute('app.message_status', status)
     span.setAttribute('app.message_priority', String(priority))
     span.setAttribute('app.outcome', 'success')
@@ -73,7 +69,6 @@ function annotateAdminMessageWrite(row: MessageRow, detail: 'admin.messages.crea
       app_operation_detail: detail,
       app_message_type: messageType,
       app_applies_to_surface: appliesToSurface,
-      app_audience_segment: audienceSegment,
       app_message_status: status,
       app_message_priority: priority,
       app_message_campaign_key: campaignKey,
@@ -157,13 +152,6 @@ function normalizeSurface(raw: any, fallback: MessageSurface = 'global_feed'): M
   const value = String(raw ?? '').trim().toLowerCase()
   if (!value) return fallback
   if (!isEnumValue(value, SURFACES)) throw new DomainError('invalid_applies_to_surface', 'invalid_applies_to_surface', 400)
-  return value
-}
-
-function normalizeAudienceSegment(raw: any, fallback: MessageAudienceSegment = 'anonymous'): MessageAudienceSegment {
-  const value = String(raw ?? '').trim().toLowerCase()
-  if (!value) return fallback
-  if (!isEnumValue(value, AUDIENCE_SEGMENTS)) throw new DomainError('invalid_audience_segment', 'invalid_audience_segment', 400)
   return value
 }
 
@@ -624,7 +612,7 @@ function mapRow(row: MessageRow): MessageDto {
     creative: resolveCreativeFromRow(row),
     type: normalizeMessageType((row as any).type, 'register_login'),
     appliesToSurface: normalizeSurface((row as any).applies_to_surface, 'global_feed'),
-    audienceSegment: normalizeAudienceSegment((row as any).audience_segment, 'anonymous'),
+    audienceSegment: 'anonymous',
     tieBreakStrategy: normalizeTieBreakStrategy((row as any).tie_break_strategy, 'round_robin'),
     campaignKey: row.campaign_key == null || String(row.campaign_key).trim() === '' ? null : String(row.campaign_key),
     eligibilityRulesetId: row.eligibility_ruleset_id == null ? null : Number(row.eligibility_ruleset_id),
@@ -645,13 +633,13 @@ export async function listForAdmin(params: {
   status?: any
   messageType?: any
   appliesToSurface?: any
+  // Deprecated: ignored in plan_143 (rulesets-only targeting).
   audienceSegment?: any
   campaignKey?: any
 }): Promise<MessageDto[]> {
   const status = params.status == null || params.status === '' ? null : normalizeStatus(params.status)
   const messageType = params.messageType == null || params.messageType === '' ? null : normalizeMessageType(params.messageType)
   const appliesToSurface = params.appliesToSurface == null || params.appliesToSurface === '' ? null : normalizeSurface(params.appliesToSurface)
-  const audienceSegment = params.audienceSegment == null || params.audienceSegment === '' ? null : normalizeAudienceSegment(params.audienceSegment)
   const campaignKey = params.campaignKey == null || params.campaignKey === '' ? null : normalizeCampaignKey(params.campaignKey)
 
   const rows = await repo.list({
@@ -660,7 +648,6 @@ export async function listForAdmin(params: {
     status,
     messageType,
     appliesToSurface,
-    audienceSegment,
     campaignKey,
   })
   return rows.map(mapRow)
@@ -690,7 +677,6 @@ export async function createForAdmin(input: any, actorUserId: number): Promise<M
   const mediaUploadId = normalizeMediaUploadId(input?.mediaUploadId ?? input?.media_upload_id)
   const messageType = normalizeMessageType(input?.type ?? input?.messageType, 'register_login')
   const appliesToSurface = normalizeSurface(input?.appliesToSurface ?? input?.applies_to_surface, 'global_feed')
-  const audienceSegment = normalizeAudienceSegment(input?.audienceSegment ?? input?.audience_segment, 'anonymous')
   const tieBreakStrategy = normalizeTieBreakStrategy(input?.tieBreakStrategy ?? input?.tie_break_strategy, 'round_robin')
   const creative = normalizeCreative(input?.creative ?? input?.creative_json, {
     headline,
@@ -723,7 +709,6 @@ export async function createForAdmin(input: any, actorUserId: number): Promise<M
     creativeJson: JSON.stringify(creative),
     messageType,
     appliesToSurface,
-    audienceSegment,
     tieBreakStrategy,
     campaignKey,
     eligibilityRulesetId,
@@ -807,13 +792,6 @@ export async function updateForAdmin(id: number, patch: any, actorUserId: number
     patch?.appliesToSurface !== undefined || patch?.applies_to_surface !== undefined
       ? normalizeSurface(patch?.appliesToSurface ?? patch?.applies_to_surface, normalizeSurface((existing as any).applies_to_surface, 'global_feed'))
       : normalizeSurface((existing as any).applies_to_surface, 'global_feed')
-  const nextAudienceSegment =
-    patch?.audienceSegment !== undefined || patch?.audience_segment !== undefined
-      ? normalizeAudienceSegment(
-        patch?.audienceSegment ?? patch?.audience_segment,
-        normalizeAudienceSegment((existing as any).audience_segment, 'anonymous')
-      )
-      : normalizeAudienceSegment((existing as any).audience_segment, 'anonymous')
   const nextTieBreakStrategy =
     patch?.tieBreakStrategy !== undefined || patch?.tie_break_strategy !== undefined
       ? normalizeTieBreakStrategy(
@@ -862,7 +840,6 @@ export async function updateForAdmin(id: number, patch: any, actorUserId: number
     creativeJson: nextCreativeJson,
     messageType: nextMessageType,
     appliesToSurface: nextAppliesToSurface,
-    audienceSegment: nextAudienceSegment,
     tieBreakStrategy: nextTieBreakStrategy,
     campaignKey: nextCampaignKey,
     eligibilityRulesetId: nextEligibilityRulesetId,
@@ -894,7 +871,6 @@ export async function cloneForAdmin(id: number, actorUserId: number): Promise<Me
     creativeJson: (existing as any).creative_json == null ? null : String((existing as any).creative_json),
     messageType: normalizeMessageType((existing as any).type, 'register_login'),
     appliesToSurface: normalizeSurface((existing as any).applies_to_surface, 'global_feed'),
-    audienceSegment: normalizeAudienceSegment((existing as any).audience_segment, 'anonymous'),
     tieBreakStrategy: normalizeTieBreakStrategy((existing as any).tie_break_strategy, 'round_robin'),
     campaignKey: existing.campaign_key == null || String(existing.campaign_key).trim() === '' ? null : String(existing.campaign_key),
     eligibilityRulesetId: existing.eligibility_ruleset_id == null ? null : Number(existing.eligibility_ruleset_id),
@@ -937,15 +913,15 @@ export async function deleteForAdmin(id: number, actorUserId: number): Promise<v
 export async function listActiveForFeed(params?: {
   messageType?: any
   appliesToSurface?: any
+  // Deprecated: ignored in plan_143 (rulesets-only targeting).
   audienceSegment?: any
   campaignKey?: any
   limit?: number
 }): Promise<MessageDto[]> {
   const messageType = params?.messageType == null || params?.messageType === '' ? null : normalizeMessageType(params.messageType)
   const appliesToSurface = params?.appliesToSurface == null || params?.appliesToSurface === '' ? null : normalizeSurface(params.appliesToSurface)
-  const audienceSegment = params?.audienceSegment == null || params?.audienceSegment === '' ? null : normalizeAudienceSegment(params.audienceSegment)
   const campaignKey = params?.campaignKey == null || params?.campaignKey === '' ? null : normalizeCampaignKey(params.campaignKey)
-  const rows = await repo.listActiveForFeed({ messageType, appliesToSurface, audienceSegment, campaignKey, limit: params?.limit })
+  const rows = await repo.listActiveForFeed({ messageType, appliesToSurface, campaignKey, limit: params?.limit })
   return rows.map(mapRow)
 }
 

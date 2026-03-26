@@ -103,7 +103,6 @@ async function reconcileLegacyPromptNamedTables(db: DB): Promise<void> {
           creative_json,
           type,
           applies_to_surface,
-          audience_segment,
           tie_break_strategy,
           campaign_key,
           priority,
@@ -128,7 +127,6 @@ async function reconcileLegacyPromptNamedTables(db: DB): Promise<void> {
         creative_json,
         prompt_type,
         applies_to_surface,
-        audience_segment,
         tie_break_strategy,
         campaign_key,
         priority,
@@ -847,7 +845,6 @@ export async function ensureSchema(db: DB) {
               creative_json JSON NULL,
               type ENUM('register_login','fund_drive','subscription_upgrade','sponsor_message','feature_announcement') NOT NULL DEFAULT 'register_login',
               applies_to_surface ENUM('global_feed') NOT NULL DEFAULT 'global_feed',
-              audience_segment ENUM('anonymous','authenticated_non_subscriber','authenticated_subscriber') NOT NULL DEFAULT 'anonymous',
               tie_break_strategy ENUM('first','round_robin','weighted_random') NOT NULL DEFAULT 'round_robin',
               campaign_key VARCHAR(64) NULL,
               priority INT NOT NULL DEFAULT 100,
@@ -880,7 +877,6 @@ export async function ensureSchema(db: DB) {
           )
           await db.query(`ALTER TABLE feed_messages ADD COLUMN IF NOT EXISTS type ENUM('register_login','fund_drive','subscription_upgrade','sponsor_message','feature_announcement') NOT NULL DEFAULT 'register_login'`)
           await db.query(`ALTER TABLE feed_messages ADD COLUMN IF NOT EXISTS applies_to_surface ENUM('global_feed') NOT NULL DEFAULT 'global_feed'`)
-          await db.query(`ALTER TABLE feed_messages ADD COLUMN IF NOT EXISTS audience_segment ENUM('anonymous','authenticated_non_subscriber','authenticated_subscriber') NOT NULL DEFAULT 'anonymous'`)
           await db.query(`ALTER TABLE feed_messages ADD COLUMN IF NOT EXISTS tie_break_strategy ENUM('first','round_robin','weighted_random') NOT NULL DEFAULT 'round_robin'`)
           await db.query(`ALTER TABLE feed_messages ADD COLUMN IF NOT EXISTS campaign_key VARCHAR(64) NULL`)
           await db.query(`ALTER TABLE feed_messages ADD COLUMN IF NOT EXISTS eligibility_ruleset_id BIGINT UNSIGNED NULL`)
@@ -919,10 +915,12 @@ export async function ensureSchema(db: DB) {
           try { await db.query(`DROP INDEX idx_feed_prompts_active_window ON feed_messages`) } catch {}
           try { await db.query(`DROP INDEX idx_feed_prompts_active_type ON feed_messages`) } catch {}
           try { await db.query(`DROP INDEX idx_feed_prompts_surface_audience_type_active ON feed_messages`) } catch {}
+          try { await db.query(`DROP INDEX idx_feed_messages_surface_audience_type_active ON feed_messages`) } catch {}
+          try { await db.query(`ALTER TABLE feed_messages DROP COLUMN audience_segment`) } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_messages_status_campaign_key ON feed_messages (status, campaign_key, priority, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_messages_active_window ON feed_messages (status, starts_at, ends_at, priority, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_messages_active_type ON feed_messages (status, type, starts_at, ends_at, priority, id)`); } catch {}
-          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_messages_surface_audience_type_active ON feed_messages (applies_to_surface, audience_segment, status, type, starts_at, ends_at, priority, id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_messages_surface_type_active ON feed_messages (applies_to_surface, status, type, starts_at, ends_at, priority, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_messages_ruleset_id ON feed_messages (eligibility_ruleset_id, id)`); } catch {}
 
           // --- Eligibility rulesets for feed messages (plan_142A) ---
