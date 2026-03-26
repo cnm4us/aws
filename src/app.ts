@@ -21,6 +21,7 @@ import { visualizerPresetsRouter } from './routes/visualizer-presets';
 import { adminMessagesRouter } from './routes/admin-messages';
 import { adminMessageCtasRouter } from './routes/admin-message-ctas';
 import { adminMessageRulesetsRouter } from './routes/admin-message-rulesets';
+import { adminMessageJourneysRouter } from './routes/admin-message-journeys';
 import { adminMessageAnalyticsRouter } from './routes/admin-message-analytics';
 import { feedMessagesRouter } from './routes/feed-messages';
 import { feedActivityRouter } from './routes/feed-activity';
@@ -93,6 +94,7 @@ export function buildServer(): express.Application {
   app.use(adminMessagesRouter);
   app.use(adminMessageCtasRouter);
   app.use(adminMessageRulesetsRouter);
+  app.use(adminMessageJourneysRouter);
   app.use(adminMessageAnalyticsRouter);
   app.use(adminFeedAnalyticsRouter);
   app.use(adminAnalyticsSinkRouter);

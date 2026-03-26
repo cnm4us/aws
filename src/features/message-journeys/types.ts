@@ -43,3 +43,28 @@ export type MessageJourneyProgressRow = {
   created_at: string
   updated_at: string
 }
+
+export type MessageJourneyDto = {
+  id: number
+  journeyKey: string
+  name: string
+  status: MessageJourneyStatus
+  description: string | null
+  createdBy: number
+  updatedBy: number
+  createdAt: string
+  updatedAt: string
+}
+
+export type MessageJourneyStepDto = {
+  id: number
+  journeyId: number
+  stepKey: string
+  stepOrder: number
+  messageId: number
+  rulesetId: number | null
+  status: MessageJourneyStepStatus
+  config: Record<string, any>
+  createdAt: string
+  updatedAt: string
+}

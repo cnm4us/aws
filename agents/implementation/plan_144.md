@@ -166,6 +166,7 @@ Each pattern includes:
 - Add journey list/detail pages and step management.
 - Link steps to messages + rulesets.
 - Acceptance: admin can define and activate simple journeys.
+- Status: Completed (2026-03-26)
 
 ### Phase F — Observability + Smoke
 - Add journey telemetry tags and debug fields.
@@ -197,4 +198,4 @@ Each pattern includes:
   - B) no state update until explicit action
 
 ## Resume Here
-- Start Phase E — Admin Pages (v1).
+- Start Phase F — Observability + Smoke.
