@@ -199,6 +199,51 @@ def build_message_id_counts(art_dir: Path, start_us: Optional[int], end_us: Opti
     return rows
 
 
+def to_int(v: Any, default: int = 0) -> int:
+    try:
+        return int(str(v))
+    except Exception:
+        return default
+
+
+def build_journey_decision_counts(art_dir: Path, start_us: Optional[int], end_us: Optional[int]) -> List[List[str]]:
+    rows: List[List[str]] = [["metric", "value"]]
+    p = art_dir / "jaeger-message_decide.json"
+    payload = load_json(p)
+    if not payload:
+        rows.extend([
+            ["journey_selected", "0"],
+            ["journey_rejected", "0"],
+            ["journey_drop_reason_present", "0"],
+        ])
+        return rows
+
+    selected = 0
+    rejected = 0
+    drop_reason_present = 0
+
+    for tr in payload.get("data", []) or []:
+        for span in tr.get("spans", []) or []:
+            if not jaeger_span_in_window(span, start_us, end_us):
+                continue
+            if str(span.get("operationName", "")) != HTTP_OPERATION_BY_PRESET["message_decide"]:
+                continue
+            tags = span_tags_map(span)
+            if str(tags.get("app.operation", "")) != "feed.message.decide":
+                continue
+            if tags.get("app.journey_id") not in (None, ""):
+                selected += 1
+            if to_int(tags.get("app.journey_rejected_count"), 0) > 0:
+                rejected += 1
+            if tags.get("app.journey_drop_reason") not in (None, ""):
+                drop_reason_present += 1
+
+    rows.append(["journey_selected", str(selected)])
+    rows.append(["journey_rejected", str(rejected)])
+    rows.append(["journey_drop_reason_present", str(drop_reason_present)])
+    return rows
+
+
 def build_expectation_checks(preset_rows: List[List[str]]) -> List[str]:
     counts: Dict[str, int] = {}
     for r in preset_rows[1:]:
@@ -441,10 +486,12 @@ def main() -> None:
     preset_rows = build_preset_counts(art_dir, start_us, end_us)
     op_rows = build_http_operation_counts(art_dir, start_us, end_us)
     message_rows = build_message_id_counts(art_dir, start_us, end_us)
+    journey_rows = build_journey_decision_counts(art_dir, start_us, end_us)
     checks = build_expectation_checks(preset_rows)
     write_tsv(art_dir / "jaeger-counts.tsv", preset_rows)
     write_tsv(art_dir / "jaeger-http-operation-counts.tsv", op_rows)
     write_tsv(art_dir / "jaeger-message-id-counts.tsv", message_rows)
+    write_tsv(art_dir / "jaeger-journey-counts.tsv", journey_rows)
     (art_dir / "expectation-checks.txt").write_text("\n".join(checks) + "\n", encoding="utf-8")
 
     console_events = parse_console_events(art_dir / "console-latest.ndjson", args.window_start_iso, args.window_end_iso)

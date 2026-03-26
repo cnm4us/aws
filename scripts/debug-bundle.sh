@@ -271,6 +271,7 @@ now_iso="$window_end_iso"
   echo "- \`artifacts/jaeger-counts.tsv\`"
   echo "- \`artifacts/jaeger-http-operation-counts.tsv\`"
   echo "- \`artifacts/jaeger-message-id-counts.tsv\`"
+  echo "- \`artifacts/jaeger-journey-counts.tsv\`"
   echo "- \`artifacts/expectation-checks.txt\`"
   echo "- \`artifacts/jaeger-message_decide.json\`"
   echo "- \`artifacts/jaeger-message_fetch.json\`"
@@ -322,6 +323,14 @@ now_iso="$window_end_iso"
     echo
     echo '```text'
     cat "$ART_DIR/jaeger-message-id-counts.tsv"
+    echo '```'
+  fi
+  if [[ -f "$ART_DIR/jaeger-journey-counts.tsv" ]]; then
+    echo
+    echo "### Journey Decision Counts"
+    echo
+    echo '```text'
+    cat "$ART_DIR/jaeger-journey-counts.tsv"
     echo '```'
   fi
   if [[ -f "$ART_DIR/expectation-checks.txt" ]]; then

@@ -175,6 +175,7 @@ Each pattern includes:
   - completion-based suppression interaction
   - fallback behavior for non-journey messages
 - Acceptance: Jaeger/Pino/debug bundle clearly explain journey decisions.
+- Status: Completed (2026-03-26)
 
 ### Phase G — UX Pattern Catalog Bootstrap
 - Document and seed 2-4 starter patterns.
@@ -198,4 +199,4 @@ Each pattern includes:
   - B) no state update until explicit action
 
 ## Resume Here
-- Start Phase F — Observability + Smoke.
+- Start Phase G — UX Pattern Catalog Bootstrap.

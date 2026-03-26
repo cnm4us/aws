@@ -220,13 +220,32 @@ async function handleDecision(req: any, res: any, next: any) {
         reason_code: decision.reasonCode,
         candidate_count: Number(selectionDebug.candidateCount || 0),
         candidate_count_before_ruleset: Number(selectionDebug.candidateCountBeforeRuleset || 0),
+        candidate_count_before_journey: Number(selectionDebug.candidateCountBeforeJourney || 0),
         ruleset_rejected_count: Number(selectionDebug.rulesetRejectedCount || 0),
+        journey_rejected_count: Number(selectionDebug.journeyRejectedCount || 0),
         message_ruleset_result: selectionDebug.rulesetResult || 'none',
         message_ruleset_reason: selectionDebug.rulesetReason || null,
         message_ruleset_id:
           selectionDebug.selectedRulesetId != null
             ? Number(selectionDebug.selectedRulesetId)
             : (selectionDebug.rejectedRulesetId != null ? Number(selectionDebug.rejectedRulesetId) : null),
+        message_journey_id:
+          selectionDebug.selectedJourneyId != null && Number.isFinite(Number(selectionDebug.selectedJourneyId))
+            ? Number(selectionDebug.selectedJourneyId)
+            : null,
+        message_journey_step_id:
+          selectionDebug.selectedJourneyStepId != null && Number.isFinite(Number(selectionDebug.selectedJourneyStepId))
+            ? Number(selectionDebug.selectedJourneyStepId)
+            : null,
+        message_journey_step_order:
+          selectionDebug.selectedJourneyStepOrder != null && Number.isFinite(Number(selectionDebug.selectedJourneyStepOrder))
+            ? Number(selectionDebug.selectedJourneyStepOrder)
+            : null,
+        message_journey_step_key: selectionDebug.selectedJourneyStepKey || null,
+        journey_drop_reason:
+          Array.isArray(selectionDebug.candidateDropReasons)
+            ? ((selectionDebug.candidateDropReasons.find((r: any) => String(r?.reason || '').startsWith('journey_'))?.reason) || null)
+            : null,
       },
       'feed.message.decide'
     )
@@ -246,6 +265,31 @@ async function handleDecision(req: any, res: any, next: any) {
         span.setAttribute('app.suppressed_candidates', String(userSuppressedCount))
       }
       if (decision.messageId != null) span.setAttribute('app.message_id', String(decision.messageId))
+      const journeyIdRaw = (decision.debug as any)?.selection?.selectedJourneyId
+      const journeyStepIdRaw = (decision.debug as any)?.selection?.selectedJourneyStepId
+      const journeyStepOrderRaw = (decision.debug as any)?.selection?.selectedJourneyStepOrder
+      const journeyStepKeyRaw = (decision.debug as any)?.selection?.selectedJourneyStepKey
+      const journeyRejectedCount = Number((decision.debug as any)?.selection?.journeyRejectedCount || 0)
+      const candidateCountBeforeJourney = Number((decision.debug as any)?.selection?.candidateCountBeforeJourney || 0)
+      span.setAttribute('app.journey_rejected_count', String(journeyRejectedCount))
+      span.setAttribute('app.journey_candidate_count_before', String(candidateCountBeforeJourney))
+      if (journeyIdRaw != null && Number.isFinite(Number(journeyIdRaw)) && Number(journeyIdRaw) > 0) {
+        span.setAttribute('app.journey_id', String(Math.round(Number(journeyIdRaw))))
+      }
+      if (journeyStepIdRaw != null && Number.isFinite(Number(journeyStepIdRaw)) && Number(journeyStepIdRaw) > 0) {
+        span.setAttribute('app.journey_step_id', String(Math.round(Number(journeyStepIdRaw))))
+      }
+      if (journeyStepOrderRaw != null && Number.isFinite(Number(journeyStepOrderRaw)) && Number(journeyStepOrderRaw) > 0) {
+        span.setAttribute('app.journey_step_order', String(Math.round(Number(journeyStepOrderRaw))))
+      }
+      if (journeyStepKeyRaw != null && String(journeyStepKeyRaw).trim() !== '') {
+        span.setAttribute('app.journey_step_key', String(journeyStepKeyRaw).trim())
+      }
+      const journeyDropReason =
+        Array.isArray((decision.debug as any)?.selection?.candidateDropReasons)
+          ? (((decision.debug as any).selection.candidateDropReasons.find((r: any) => String(r?.reason || '').startsWith('journey_'))?.reason) || '')
+          : ''
+      if (journeyDropReason) span.setAttribute('app.journey_drop_reason', journeyDropReason)
       const rulesetResult = String((decision.debug as any)?.selection?.rulesetResult || 'none')
       const rulesetReason = String((decision.debug as any)?.selection?.rulesetReason || '')
       const rulesetIdRaw = (decision.debug as any)?.selection?.selectedRulesetId ?? (decision.debug as any)?.selection?.rejectedRulesetId
@@ -497,6 +541,7 @@ feedMessagesRouter.post(feedMessageEventPaths, async (req: any, res: any, next: 
       messageId,
       event: body.event,
     })
+    let journeySignalResult: { stepsMatched: number; progressed: number; ignored: number } | null = null
     if (
       normalizedEvent === 'impression' ||
       normalizedEvent === 'click' ||
@@ -508,7 +553,7 @@ feedMessagesRouter.post(feedMessageEventPaths, async (req: any, res: any, next: 
       normalizedEvent === 'upgrade_complete'
     ) {
       try {
-        await messageJourneysSvc.recordJourneySignalFromMessageEvent({
+        journeySignalResult = await messageJourneysSvc.recordJourneySignalFromMessageEvent({
           userId: req.user?.id ? Number(req.user.id) : null,
           messageId: Number(messageId || 0),
           event: normalizedEvent,
@@ -556,6 +601,11 @@ feedMessagesRouter.post(feedMessageEventPaths, async (req: any, res: any, next: 
       if (messageCtaDefinitionId != null && Number.isFinite(messageCtaDefinitionId)) span.setAttribute('app.message_cta_definition_id', String(Math.round(messageCtaDefinitionId)))
       if (messageCtaIntentKey) span.setAttribute('app.message_cta_intent_key', messageCtaIntentKey)
       if (messageCtaExecutorType) span.setAttribute('app.message_cta_executor_type', messageCtaExecutorType)
+      if (journeySignalResult) {
+        span.setAttribute('app.journey_steps_matched', String(Math.round(Number(journeySignalResult.stepsMatched || 0))))
+        span.setAttribute('app.journey_progressed', String(Math.round(Number(journeySignalResult.progressed || 0))))
+        span.setAttribute('app.journey_ignored', String(Math.round(Number(journeySignalResult.ignored || 0))))
+      }
     }
 
     ;(req.log || feedMessagesLogger).info(
@@ -578,6 +628,9 @@ feedMessagesRouter.post(feedMessageEventPaths, async (req: any, res: any, next: 
         message_event_type: tracked.eventType,
         message_event_deduped: !tracked.inserted,
         message_event_attributed: tracked.attributed,
+        journey_steps_matched: journeySignalResult ? Number(journeySignalResult.stepsMatched || 0) : 0,
+        journey_progressed: journeySignalResult ? Number(journeySignalResult.progressed || 0) : 0,
+        journey_ignored: journeySignalResult ? Number(journeySignalResult.ignored || 0) : 0,
         viewer_user_id: req.user?.id ? Number(req.user.id) : null,
       },
       'feed.message.event'
@@ -1025,9 +1078,10 @@ feedMessagesRouter.get(feedMessageMockCompletionPaths, async (req: any, res: any
       messageId,
       event,
     })
+    let journeySignalResult: { stepsMatched: number; progressed: number; ignored: number } | null = null
     if (event === 'donation_complete' || event === 'subscription_complete' || event === 'upgrade_complete') {
       try {
-        await messageJourneysSvc.recordJourneySignalFromMessageEvent({
+        journeySignalResult = await messageJourneysSvc.recordJourneySignalFromMessageEvent({
           userId: req.user?.id ? Number(req.user.id) : null,
           messageId: Number(messageId || 0),
           event,
@@ -1051,6 +1105,11 @@ feedMessagesRouter.get(feedMessageMockCompletionPaths, async (req: any, res: any
       if (messageCtaDefinitionId != null && Number.isFinite(messageCtaDefinitionId)) span.setAttribute('app.message_cta_definition_id', String(Math.round(messageCtaDefinitionId)))
       if (messageCtaIntentKey) span.setAttribute('app.message_cta_intent_key', messageCtaIntentKey)
       if (messageCtaExecutorType) span.setAttribute('app.message_cta_executor_type', messageCtaExecutorType)
+      if (journeySignalResult) {
+        span.setAttribute('app.journey_steps_matched', String(Math.round(Number(journeySignalResult.stepsMatched || 0))))
+        span.setAttribute('app.journey_progressed', String(Math.round(Number(journeySignalResult.progressed || 0))))
+        span.setAttribute('app.journey_ignored', String(Math.round(Number(journeySignalResult.ignored || 0))))
+      }
     }
 
     ;(req.log || feedMessagesLogger).info({
@@ -1069,6 +1128,9 @@ feedMessagesRouter.get(feedMessageMockCompletionPaths, async (req: any, res: any
       message_intent_id: intentId,
       message_sequence_key: messageSequenceKey,
       message_session_id: sessionId,
+      journey_steps_matched: journeySignalResult ? Number(journeySignalResult.stepsMatched || 0) : 0,
+      journey_progressed: journeySignalResult ? Number(journeySignalResult.progressed || 0) : 0,
+      journey_ignored: journeySignalResult ? Number(journeySignalResult.ignored || 0) : 0,
     }, 'feed.message.mock_complete')
 
     let returnTo = String(q.return || '/').trim()
