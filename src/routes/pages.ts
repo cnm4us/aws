@@ -3089,6 +3089,12 @@ const MESSAGE_TIE_BREAK_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'first', label: 'First' },
 ]
 
+const MESSAGE_DELIVERY_SCOPE_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'both', label: 'Both (Standalone + Journey)' },
+  { value: 'journey_only', label: 'Journey Only' },
+  { value: 'standalone_only', label: 'Standalone Only' },
+]
+
 const MESSAGE_CTA_STATUS_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'draft', label: 'Draft' },
   { value: 'active', label: 'Active' },
@@ -3376,6 +3382,7 @@ function buildMessageCreateOrUpdatePayload(body: any): any {
   const messageType = String(body?.type ?? body?.messageType ?? 'register_login').trim().toLowerCase() || 'register_login'
   const appliesToSurface = String(body?.appliesToSurface ?? body?.applies_to_surface ?? 'global_feed').trim().toLowerCase() || 'global_feed'
   const tieBreakStrategy = String(body?.tieBreakStrategy ?? body?.tie_break_strategy ?? 'round_robin').trim().toLowerCase() || 'round_robin'
+  const deliveryScope = String(body?.deliveryScope ?? body?.delivery_scope ?? 'both').trim().toLowerCase() || 'both'
   const campaignKey = String(body?.campaignKey ?? body?.campaign_key ?? '').trim().toLowerCase()
   const eligibilityRulesetIdRaw = String(body?.eligibilityRulesetId ?? body?.eligibility_ruleset_id ?? '').trim()
   const eligibilityRulesetId = /^\d+$/.test(eligibilityRulesetIdRaw) ? Number(eligibilityRulesetIdRaw) : null
@@ -3415,6 +3422,7 @@ function buildMessageCreateOrUpdatePayload(body: any): any {
     type: messageType,
     appliesToSurface,
     tieBreakStrategy,
+    deliveryScope,
     campaignKey: campaignKey || null,
     eligibilityRulesetId,
     mediaUploadId: mediaUploadId || null,
@@ -3511,6 +3519,14 @@ function renderAdminMessageForm(opts: {
     name: string
     status: string
   }>
+  journeyStepRefs?: Array<{
+    journeyId: number
+    journeyKey: string
+    journeyStatus: string
+    stepId: number
+    stepKey: string
+    stepOrder: number
+  }>
   error?: string | null
   notice?: string | null
   showClone?: boolean
@@ -3519,6 +3535,7 @@ function renderAdminMessageForm(opts: {
   const values = opts.values || {}
   const ctaDefinitionOptions = Array.isArray(opts.ctaDefinitionOptions) ? opts.ctaDefinitionOptions : []
   const eligibilityRulesetOptions = Array.isArray(opts.eligibilityRulesetOptions) ? opts.eligibilityRulesetOptions : []
+  const journeyStepRefs = Array.isArray(opts.journeyStepRefs) ? opts.journeyStepRefs : []
   const id = values.id ? Number(values.id) : null
   const draftKey = id ? `admin_message_editor_draft_${id}` : 'admin_message_editor_draft_new'
   const creativeForm = extractMessageCreativeForm(values)
@@ -3722,6 +3739,11 @@ function renderAdminMessageForm(opts: {
   if (!tieBreakOptions.some((opt) => opt.value === tieBreakValue)) {
     tieBreakOptions.unshift({ value: tieBreakValue, label: `Custom (${tieBreakValue})` })
   }
+  const deliveryScopeValue = String(values.deliveryScope || values.delivery_scope || 'both').trim().toLowerCase() || 'both'
+  const deliveryScopeOptions = MESSAGE_DELIVERY_SCOPE_OPTIONS.slice()
+  if (!deliveryScopeOptions.some((opt) => opt.value === deliveryScopeValue)) {
+    deliveryScopeOptions.unshift({ value: deliveryScopeValue, label: `Custom (${deliveryScopeValue})` })
+  }
   const campaignKeyValue = String(values.campaignKey || values.campaign_key || '').trim().toLowerCase()
   const eligibilityRulesetIdValue = String(values.eligibilityRulesetId ?? values.eligibility_ruleset_id ?? '').trim()
 
@@ -3744,6 +3766,11 @@ function renderAdminMessageForm(opts: {
     body += `<option value="${escapeHtml(opt.value)}"${opt.value === tieBreakValue ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
   }
   body += `</select></div>`
+  body += `<div class="mini-field"><div class="mini-field-label">Delivery Scope</div><select name="deliveryScope">`
+  for (const opt of deliveryScopeOptions) {
+    body += `<option value="${escapeHtml(opt.value)}"${opt.value === deliveryScopeValue ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+  }
+  body += `</select></div>`
   body += `<div class="mini-field"><div class="mini-field-label">Campaign Key</div><input type="text" name="campaignKey" value="${escapeHtml(campaignKeyValue)}" maxlength="64" placeholder="spring_2026_drive" /></div>`
   body += `<div class="mini-field"><div class="mini-field-label">Eligibility Ruleset</div><select name="eligibilityRulesetId">`
   body += `<option value="">(none)</option>`
@@ -3753,6 +3780,7 @@ function renderAdminMessageForm(opts: {
     body += `<option value="${escapeHtml(idValue)}"${eligibilityRulesetIdValue === idValue ? ' selected' : ''}>${escapeHtml(label)}</option>`
   }
   body += `</select></div>`
+  body += `<div class="field-hint" style="grid-column:1 / -1">For journey messages, set ruleset on the journey step; message-level ruleset is ignored when selected via journey.</div>`
   body += `<div class="mini-field"><div class="mini-field-label">Priority</div><input type="number" name="priority" value="${escapeHtml(String(values.priority ?? 100))}" /></div>`
   body += `<div class="mini-field"><div class="mini-field-label">Status</div><select name="status">
     <option value="draft"${String(values.status || '') === 'draft' ? ' selected' : ''}>Draft</option>
@@ -3762,6 +3790,17 @@ function renderAdminMessageForm(opts: {
   </select></div>`
   body += `</div>`
   body += `</div>`
+  if (journeyStepRefs.length > 0) {
+    body += `<div class="section-title" style="margin:10px 0 6px">Journey Usage</div>`
+    body += `<div class="section">`
+    body += `<div class="field-hint">This message is currently referenced by the following journey steps.</div>`
+    body += `<ul style="margin:10px 0 0 18px; padding:0">`
+    for (const ref of journeyStepRefs) {
+      body += `<li><a href="/admin/message-journeys/${ref.journeyId}">${escapeHtml(ref.journeyKey)}</a> [${escapeHtml(ref.journeyStatus)}] — step ${ref.stepOrder} (${escapeHtml(ref.stepKey)})</li>`
+    }
+    body += `</ul>`
+    body += `</div>`
+  }
 
   body += `<div class="section-title" style="margin:10px 0 6px">Background Media</div>`
   body += `<div class="section">`
@@ -4569,6 +4608,25 @@ async function loadMessageEligibilityRulesetOptionsForEditor(): Promise<Array<{
     .sort((a, b) => a.id - b.id)
 }
 
+async function loadJourneyStepRefsForMessageEditor(messageId: number): Promise<Array<{
+  journeyId: number
+  journeyKey: string
+  journeyStatus: string
+  stepId: number
+  stepKey: string
+  stepOrder: number
+}>> {
+  const refs = await messageJourneysSvc.listJourneyStepRefsForMessage(messageId)
+  return refs.map((ref) => ({
+    journeyId: Number(ref.journeyId),
+    journeyKey: String(ref.journeyKey || ''),
+    journeyStatus: String(ref.journeyStatus || ''),
+    stepId: Number(ref.stepId),
+    stepKey: String(ref.stepKey || ''),
+    stepOrder: Number(ref.stepOrder || 0),
+  }))
+}
+
 pagesRouter.get('/admin/messages', async (req: any, res: any) => {
   try {
     const includeArchived = String(req.query?.include_archived || '0') === '1'
@@ -4618,7 +4676,7 @@ pagesRouter.get('/admin/messages', async (req: any, res: any) => {
     if (!items.length) {
       body += '<p>No messages found for current filters.</p>'
     } else {
-      body += '<table><thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Surface</th><th>Campaign Key</th><th>Ruleset</th><th>Priority</th><th>Status</th><th>Window</th><th>Updated</th></tr></thead><tbody>'
+      body += '<table><thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Surface</th><th>Delivery</th><th>Campaign Key</th><th>Ruleset</th><th>Priority</th><th>Status</th><th>Window</th><th>Updated</th></tr></thead><tbody>'
       for (const item of items) {
         const windowLabel = item.startsAt || item.endsAt ? `${item.startsAt || '—'} → ${item.endsAt || '—'}` : 'Always'
         body += `<tr>
@@ -4626,6 +4684,7 @@ pagesRouter.get('/admin/messages', async (req: any, res: any) => {
           <td><a href="/admin/messages/${item.id}">${escapeHtml(item.name)}</a></td>
           <td>${escapeHtml(item.type)}</td>
           <td>${escapeHtml(item.appliesToSurface)}</td>
+          <td>${escapeHtml(String((item as any).deliveryScope || 'both'))}</td>
           <td>${escapeHtml(item.campaignKey || '—')}</td>
           <td>${item.eligibilityRulesetId == null ? '—' : String(item.eligibilityRulesetId)}</td>
           <td>${item.priority}</td>
@@ -4686,6 +4745,7 @@ pagesRouter.get('/admin/messages/new', async (req: any, res: any) => {
         type: 'register_login',
         appliesToSurface: 'global_feed',
         tieBreakStrategy: 'round_robin',
+        deliveryScope: 'both',
         campaignKey: '',
         eligibilityRulesetId: '',
         priority: 100,
@@ -4733,7 +4793,10 @@ pagesRouter.get('/admin/messages/:id', async (req: any, res: any) => {
   const id = Number(req.params.id)
   if (!Number.isFinite(id) || id <= 0) return res.status(400).send('Bad message id')
   try {
-    const message = await messagesSvc.getMessageForAdmin(id)
+    const [message, journeyStepRefs] = await Promise.all([
+      messagesSvc.getMessageForAdmin(id),
+      loadJourneyStepRefsForMessageEditor(id),
+    ])
     const cookies = parseCookies(req.headers.cookie)
     const csrfToken = cookies['csrf'] || ''
     const ctaDefinitionOptions = await loadMessageCtaOptionsForEditor(Number(req.user?.id || 0))
@@ -4745,6 +4808,7 @@ pagesRouter.get('/admin/messages/:id', async (req: any, res: any) => {
       backHref: '/admin/messages',
       ctaDefinitionOptions,
       eligibilityRulesetOptions,
+      journeyStepRefs,
       values: message,
       notice: req.query?.notice ? String(req.query.notice) : '',
       error: req.query?.error ? String(req.query.error) : '',

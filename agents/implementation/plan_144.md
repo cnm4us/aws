@@ -177,10 +177,25 @@ Each pattern includes:
 - Acceptance: Jaeger/Pino/debug bundle clearly explain journey decisions.
 - Status: Completed (2026-03-26)
 
-### Phase G — UX Pattern Catalog Bootstrap
-- Document and seed 2-4 starter patterns.
-- Provide copy and measurement checklist per pattern.
-- Acceptance: reusable templates available in docs/admin seed tooling.
+### Phase G — Journey Delivery Scope + Ruleset Ownership
+- Add `delivery_scope` to messages:
+  - `standalone_only`
+  - `journey_only`
+  - `both`
+- Decision engine behavior:
+  - journey-selected messages use **journey-step ruleset**.
+  - message-level ruleset is ignored for journey-selected messages.
+  - standalone messages use message-level ruleset.
+- Admin UX:
+  - message editor exposes Delivery Scope.
+  - show read-only "Journey Usage" references in message editor.
+  - guidance text clarifies ruleset ownership.
+- Observability:
+  - emit delivery context (`standalone` vs `journey`) in decision telemetry.
+- Acceptance:
+  - journey-only messages do not leak as standalone.
+  - standalone-only messages are excluded from journey delivery.
+  - Jaeger shows delivery context and expected journey/ruleset tags.
 
 ## Risks
 - Journey logic complexity grows quickly.
@@ -199,4 +214,4 @@ Each pattern includes:
   - B) no state update until explicit action
 
 ## Resume Here
-- Start Phase G — UX Pattern Catalog Bootstrap.
+- Run Phase G smoke and verify Jaeger tags for delivery context + journey/ruleset ownership.

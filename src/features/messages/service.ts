@@ -11,6 +11,7 @@ import type {
   MessageCtaSlotIndex,
   MessageCtaType,
   MessageDto,
+  MessageDeliveryScope,
   MessageSurface,
   MessageTieBreakStrategy,
   MessageVideoPlaybackMode,
@@ -30,6 +31,7 @@ const CTA_TYPES: readonly MessageCtaType[] = ['auth', 'donate', 'subscribe', 'up
 const CTA_LAYOUTS: readonly MessageCtaLayout[] = ['inline', 'stacked']
 const SURFACES: readonly MessageSurface[] = ['global_feed']
 const TIE_BREAK_STRATEGIES: readonly MessageTieBreakStrategy[] = ['first', 'round_robin', 'weighted_random']
+const DELIVERY_SCOPES: readonly MessageDeliveryScope[] = ['standalone_only', 'journey_only', 'both']
 const MESSAGE_TYPES: readonly MessageType[] = [
   'register_login',
   'fund_drive',
@@ -44,6 +46,7 @@ function annotateAdminMessageWrite(row: MessageRow, detail: 'admin.messages.crea
   const appliesToSurface = normalizeSurface((row as any).applies_to_surface, 'global_feed')
   const status = normalizeStatus((row as any).status, 'draft')
   const campaignKey = row.campaign_key == null || String(row.campaign_key).trim() === '' ? null : String(row.campaign_key)
+  const deliveryScope = normalizeDeliveryScope((row as any).delivery_scope, 'both')
   const priority = Number(row.priority || 0)
   const name = String(row.name || '')
 
@@ -56,6 +59,7 @@ function annotateAdminMessageWrite(row: MessageRow, detail: 'admin.messages.crea
     span.setAttribute('app.applies_to_surface', appliesToSurface)
     span.setAttribute('app.message_status', status)
     span.setAttribute('app.message_priority', String(priority))
+    span.setAttribute('app.message_delivery_scope', deliveryScope)
     span.setAttribute('app.outcome', 'success')
     if (campaignKey) span.setAttribute('app.message_campaign_key', campaignKey)
   }
@@ -71,6 +75,7 @@ function annotateAdminMessageWrite(row: MessageRow, detail: 'admin.messages.crea
       app_applies_to_surface: appliesToSurface,
       app_message_status: status,
       app_message_priority: priority,
+      app_message_delivery_scope: deliveryScope,
       app_message_campaign_key: campaignKey,
       message_name: name,
       ...(extra || {}),
@@ -159,6 +164,13 @@ function normalizeTieBreakStrategy(raw: any, fallback: MessageTieBreakStrategy =
   const value = String(raw ?? '').trim().toLowerCase()
   if (!value) return fallback
   if (!isEnumValue(value, TIE_BREAK_STRATEGIES)) throw new DomainError('invalid_tie_break_strategy', 'invalid_tie_break_strategy', 400)
+  return value
+}
+
+function normalizeDeliveryScope(raw: any, fallback: MessageDeliveryScope = 'both'): MessageDeliveryScope {
+  const value = String(raw ?? '').trim().toLowerCase()
+  if (!value) return fallback
+  if (!isEnumValue(value, DELIVERY_SCOPES)) throw new DomainError('invalid_delivery_scope', 'invalid_delivery_scope', 400)
   return value
 }
 
@@ -613,6 +625,7 @@ function mapRow(row: MessageRow): MessageDto {
     type: normalizeMessageType((row as any).type, 'register_login'),
     appliesToSurface: normalizeSurface((row as any).applies_to_surface, 'global_feed'),
     tieBreakStrategy: normalizeTieBreakStrategy((row as any).tie_break_strategy, 'round_robin'),
+    deliveryScope: normalizeDeliveryScope((row as any).delivery_scope, 'both'),
     campaignKey: row.campaign_key == null || String(row.campaign_key).trim() === '' ? null : String(row.campaign_key),
     eligibilityRulesetId: row.eligibility_ruleset_id == null ? null : Number(row.eligibility_ruleset_id),
     priority: Number(row.priority || 0),
@@ -686,6 +699,7 @@ export async function createForAdmin(input: any, actorUserId: number): Promise<M
   })
   await assertCreativeCtaSlotsResolvable(creative, actorUserId)
   const campaignKey = normalizeCampaignKey(input?.campaignKey ?? input?.campaign_key)
+  const deliveryScope = normalizeDeliveryScope(input?.deliveryScope ?? input?.delivery_scope, 'both')
   const eligibilityRulesetId = normalizeOptionalPositiveId(
     input?.eligibilityRulesetId ?? input?.eligibility_ruleset_id,
     'eligibility_ruleset_id'
@@ -707,6 +721,7 @@ export async function createForAdmin(input: any, actorUserId: number): Promise<M
     messageType,
     appliesToSurface,
     tieBreakStrategy,
+    deliveryScope,
     campaignKey,
     eligibilityRulesetId,
     priority,
@@ -801,6 +816,10 @@ export async function updateForAdmin(id: number, patch: any, actorUserId: number
     patch?.campaignKey !== undefined || patch?.campaign_key !== undefined
       ? normalizeCampaignKey(patch?.campaignKey ?? patch?.campaign_key)
       : (existing.campaign_key == null || String(existing.campaign_key).trim() === '' ? null : String(existing.campaign_key))
+  const nextDeliveryScope =
+    patch?.deliveryScope !== undefined || patch?.delivery_scope !== undefined
+      ? normalizeDeliveryScope(patch?.deliveryScope ?? patch?.delivery_scope, 'both')
+      : normalizeDeliveryScope((existing as any).delivery_scope, 'both')
   const nextEligibilityRulesetId =
     patch?.eligibilityRulesetId !== undefined || patch?.eligibility_ruleset_id !== undefined
       ? normalizeOptionalPositiveId(
@@ -838,6 +857,7 @@ export async function updateForAdmin(id: number, patch: any, actorUserId: number
     messageType: nextMessageType,
     appliesToSurface: nextAppliesToSurface,
     tieBreakStrategy: nextTieBreakStrategy,
+    deliveryScope: nextDeliveryScope,
     campaignKey: nextCampaignKey,
     eligibilityRulesetId: nextEligibilityRulesetId,
     priority: nextPriority,
@@ -869,6 +889,7 @@ export async function cloneForAdmin(id: number, actorUserId: number): Promise<Me
     messageType: normalizeMessageType((existing as any).type, 'register_login'),
     appliesToSurface: normalizeSurface((existing as any).applies_to_surface, 'global_feed'),
     tieBreakStrategy: normalizeTieBreakStrategy((existing as any).tie_break_strategy, 'round_robin'),
+    deliveryScope: normalizeDeliveryScope((existing as any).delivery_scope, 'both'),
     campaignKey: existing.campaign_key == null || String(existing.campaign_key).trim() === '' ? null : String(existing.campaign_key),
     eligibilityRulesetId: existing.eligibility_ruleset_id == null ? null : Number(existing.eligibility_ruleset_id),
     priority: Number(existing.priority || 100),

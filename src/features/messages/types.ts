@@ -4,6 +4,7 @@ export type MessageBackgroundMode = 'none' | 'image' | 'video'
 export type MessageVideoPlaybackMode = 'muted_autoplay' | 'tap_to_play_sound'
 export type MessageSurface = 'global_feed'
 export type MessageTieBreakStrategy = 'first' | 'round_robin' | 'weighted_random'
+export type MessageDeliveryScope = 'standalone_only' | 'journey_only' | 'both'
 export type MessageType =
   | 'register_login'
   | 'fund_drive'
@@ -110,6 +111,7 @@ export type MessageRow = {
   type: MessageType
   applies_to_surface: MessageSurface
   tie_break_strategy: MessageTieBreakStrategy
+  delivery_scope: MessageDeliveryScope
   campaign_key: string | null
   eligibility_ruleset_id: number | null
   priority: number
@@ -136,6 +138,7 @@ export type MessageDto = {
   type: MessageType
   appliesToSurface: MessageSurface
   tieBreakStrategy: MessageTieBreakStrategy
+  deliveryScope: MessageDeliveryScope
   campaignKey: string | null
   eligibilityRulesetId: number | null
   priority: number

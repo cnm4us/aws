@@ -209,11 +209,14 @@ type EligibleMessageCandidate = {
   messageType: string
   priority: number
   tieBreakStrategy: 'first' | 'round_robin' | 'weighted_random'
+  deliveryScope: 'standalone_only' | 'journey_only' | 'both'
   eligibilityRulesetId: number | null
   journeyId?: number | null
   journeyStepId?: number | null
   journeyStepOrder?: number | null
   journeyStepKey?: string | null
+  journeyRulesetId?: number | null
+  deliveryContext?: 'standalone' | 'journey'
 }
 
 type SupportProfile = {
@@ -241,7 +244,9 @@ function collectDonationLookbackDays(
 ): number {
   let maxDays = 0
   for (const c of candidates) {
-    const id = c.eligibilityRulesetId
+    const id = (c.journeyStepId != null && Number(c.journeyStepId) > 0)
+      ? c.journeyRulesetId
+      : c.eligibilityRulesetId
     if (!id) continue
     const ruleset = rulesets.get(id)
     if (!ruleset) continue
@@ -333,6 +338,14 @@ function evaluateRuleset(
   return { pass: true, reason: null }
 }
 
+function resolveCandidateRulesetId(candidate: EligibleMessageCandidate): number | null {
+  const inJourney = candidate.journeyStepId != null && Number(candidate.journeyStepId) > 0
+  if (inJourney) {
+    return candidate.journeyRulesetId == null ? null : Number(candidate.journeyRulesetId)
+  }
+  return candidate.eligibilityRulesetId == null ? null : Number(candidate.eligibilityRulesetId)
+}
+
 function selectMessageCandidate(
   candidates: EligibleMessageCandidate[],
   input: MessageDecisionInput,
@@ -389,7 +402,17 @@ async function applyJourneyGating(params: {
 
   const steps = await messageJourneysRepo.listActiveStepsByMessageIds(inputCandidates.map((c) => c.messageId))
   if (!steps.length) {
-    return { eligible: inputCandidates, rejectedCount: 0, dropReasons: [] }
+    const eligible = inputCandidates
+      .filter((c) => c.deliveryScope !== 'journey_only')
+      .map((c) => ({ ...c, deliveryContext: 'standalone' as const }))
+    const rejected = inputCandidates.length - eligible.length
+    const dropReasons = rejected > 0
+      ? inputCandidates
+          .filter((c) => c.deliveryScope === 'journey_only')
+          .slice(0, 40)
+          .map((c) => ({ messageId: c.messageId, reason: 'journey_only_message' }))
+      : []
+    return { eligible, rejectedCount: rejected, dropReasons }
   }
 
   const stepsByMessage = new Map<number, typeof steps>()
@@ -414,7 +437,17 @@ async function applyJourneyGating(params: {
     for (const c of inputCandidates) {
       const attached = stepsByMessage.get(Number(c.messageId)) || []
       if (!attached.length) {
-        eligible.push(c)
+        if (c.deliveryScope === 'journey_only') {
+          rejectedCount += 1
+          if (dropReasons.length < 40) dropReasons.push({ messageId: c.messageId, reason: 'journey_only_message' })
+          continue
+        }
+        eligible.push({ ...c, deliveryContext: 'standalone' })
+        continue
+      }
+      if (c.deliveryScope === 'standalone_only') {
+        rejectedCount += 1
+        if (dropReasons.length < 40) dropReasons.push({ messageId: c.messageId, reason: 'journey_scope_conflict' })
         continue
       }
       rejectedCount += 1
@@ -442,7 +475,17 @@ async function applyJourneyGating(params: {
   for (const c of inputCandidates) {
     const attached = stepsByMessage.get(Number(c.messageId)) || []
     if (!attached.length) {
-      eligible.push(c)
+      if (c.deliveryScope === 'journey_only') {
+        rejectedCount += 1
+        if (dropReasons.length < 40) dropReasons.push({ messageId: c.messageId, reason: 'journey_only_message' })
+        continue
+      }
+      eligible.push({ ...c, deliveryContext: 'standalone' })
+      continue
+    }
+    if (c.deliveryScope === 'standalone_only') {
+      rejectedCount += 1
+      if (dropReasons.length < 40) dropReasons.push({ messageId: c.messageId, reason: 'journey_scope_conflict' })
       continue
     }
     const matches = attached
@@ -465,6 +508,8 @@ async function applyJourneyGating(params: {
       journeyStepId: Number(step.id),
       journeyStepOrder: Number(step.step_order),
       journeyStepKey: String(step.step_key || ''),
+      journeyRulesetId: step.ruleset_id == null ? null : Number(step.ruleset_id),
+      deliveryContext: 'journey',
     })
   }
 
@@ -553,6 +598,7 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
   let selectedJourneyStepId: number | null = null
   let selectedJourneyStepOrder: number | null = null
   let selectedJourneyStepKey: string | null = null
+  let selectedDeliveryContext: 'standalone' | 'journey' | null = null
   let rejectedRulesetId: number | null = null
   let rulesetResult: 'none' | 'pass' | 'reject' = 'none'
   let rulesetReason: string | null = null
@@ -600,6 +646,10 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
             messageType: String(message.type || 'register_login'),
             priority: Number(message.priority || 0),
             tieBreakStrategy,
+            deliveryScope:
+              (String((message as any).deliveryScope || 'both').toLowerCase() === 'journey_only'
+                ? 'journey_only'
+                : (String((message as any).deliveryScope || 'both').toLowerCase() === 'standalone_only' ? 'standalone_only' : 'both')),
             eligibilityRulesetId:
               (message as any).eligibilityRulesetId == null ? null : Number((message as any).eligibilityRulesetId),
           })
@@ -623,12 +673,28 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
           eligible = filtered
         }
 
+        candidateCountBeforeJourney = eligible.length
+        if (eligible.length > 0) {
+          const gated = await applyJourneyGating({
+            userId: input.userId,
+            candidates: eligible,
+          })
+          journeyRejectedCount = gated.rejectedCount
+          if (gated.dropReasons.length) {
+            for (const reason of gated.dropReasons) {
+              if (candidateDropReasons.length >= 40) break
+              candidateDropReasons.push(reason)
+            }
+          }
+          eligible = gated.eligible
+        }
+
         candidateCountBeforeRuleset = eligible.length
         if (eligible.length > 0) {
           const rulesetIds = Array.from(
             new Set(
               eligible
-                .map((c) => (c.eligibilityRulesetId == null ? null : Number(c.eligibilityRulesetId)))
+                .map((c) => resolveCandidateRulesetId(c))
                 .filter((id): id is number => Number.isFinite(id as any) && Number(id) > 0)
             )
           )
@@ -636,15 +702,13 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
           const profile = await buildSupportProfile(input.userId, rulesetsById, eligible)
           const rulesetFiltered: EligibleMessageCandidate[] = []
           for (const c of eligible) {
-            const ruleset =
-              c.eligibilityRulesetId == null
-                ? null
-                : (rulesetsById.get(Number(c.eligibilityRulesetId)) || null)
+            const rulesetId = resolveCandidateRulesetId(c)
+            const ruleset = rulesetId == null ? null : (rulesetsById.get(Number(rulesetId)) || null)
             const evalResult = evaluateRuleset(ruleset, profile)
             if (!evalResult.pass) {
               rulesetRejectedCount += 1
-              if (rejectedRulesetId == null && c.eligibilityRulesetId != null && Number.isFinite(Number(c.eligibilityRulesetId)) && Number(c.eligibilityRulesetId) > 0) {
-                rejectedRulesetId = Math.round(Number(c.eligibilityRulesetId))
+              if (rejectedRulesetId == null && rulesetId != null && Number.isFinite(Number(rulesetId)) && Number(rulesetId) > 0) {
+                rejectedRulesetId = Math.round(Number(rulesetId))
               }
               if (candidateDropReasons.length < 40) {
                 candidateDropReasons.push({
@@ -667,22 +731,6 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
           }
         }
 
-        candidateCountBeforeJourney = eligible.length
-        if (eligible.length > 0) {
-          const gated = await applyJourneyGating({
-            userId: input.userId,
-            candidates: eligible,
-          })
-          journeyRejectedCount = gated.rejectedCount
-          if (gated.dropReasons.length) {
-            for (const reason of gated.dropReasons) {
-              if (candidateDropReasons.length >= 40) break
-              candidateDropReasons.push(reason)
-            }
-          }
-          eligible = gated.eligible
-        }
-
         candidateCount = eligible.length
         if (!candidateCount) {
           reasonCode = 'no_candidate'
@@ -694,11 +742,12 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
             reasonCode = 'eligible'
             messageId = selected.messageId
             selectedPriority = selected.priority
-            selectedRulesetId = selected.eligibilityRulesetId == null ? null : Number(selected.eligibilityRulesetId)
+            selectedRulesetId = resolveCandidateRulesetId(selected)
             selectedJourneyId = selected.journeyId == null ? null : Number(selected.journeyId)
             selectedJourneyStepId = selected.journeyStepId == null ? null : Number(selected.journeyStepId)
             selectedJourneyStepOrder = selected.journeyStepOrder == null ? null : Number(selected.journeyStepOrder)
             selectedJourneyStepKey = selected.journeyStepKey == null ? null : String(selected.journeyStepKey)
+            selectedDeliveryContext = selected.deliveryContext === 'journey' ? 'journey' : 'standalone'
           }
         }
       }
@@ -760,6 +809,7 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
         selectedJourneyStepId,
         selectedJourneyStepOrder,
         selectedJourneyStepKey,
+        selectedDeliveryContext,
         rejectedRulesetId,
         selectedPriority,
         candidateDropReasons,

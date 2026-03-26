@@ -274,6 +274,26 @@ export async function deleteJourneyStepForAdmin(journeyIdRaw: number, stepIdRaw:
   if (!removed) throw new NotFoundError('message_journey_step_not_found')
 }
 
+export async function listJourneyStepRefsForMessage(messageIdRaw: number): Promise<Array<{
+  journeyId: number
+  journeyKey: string
+  journeyStatus: MessageJourneyStatus
+  stepId: number
+  stepKey: string
+  stepOrder: number
+}>> {
+  const messageId = normalizePositiveInt(messageIdRaw, 'bad_message_id')
+  const rows = await repo.listJourneyStepRefsByMessageId(messageId)
+  return rows.map((row) => ({
+    journeyId: Number((row as any).journey_id),
+    journeyKey: String((row as any).journey_key || ''),
+    journeyStatus: normalizeJourneyStatus((row as any).journey_status, 'draft'),
+    stepId: Number((row as any).step_id),
+    stepKey: String((row as any).step_key || ''),
+    stepOrder: Number((row as any).step_order || 0),
+  }))
+}
+
 function eventToState(event: MessageJourneySignalEvent): MessageJourneyProgressState {
   if (event === 'impression') return 'shown'
   if (event === 'click') return 'clicked'

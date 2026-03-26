@@ -16,6 +16,7 @@ const MESSAGE_SELECT_SQL = `
     type,
     applies_to_surface,
     tie_break_strategy,
+    delivery_scope,
     campaign_key,
     eligibility_ruleset_id,
     priority,
@@ -42,6 +43,7 @@ type MessageCreateInput = {
   messageType: string
   appliesToSurface: string
   tieBreakStrategy: string
+  deliveryScope: string
   campaignKey: string | null
   eligibilityRulesetId: number | null
   priority: number
@@ -112,10 +114,11 @@ export async function create(input: MessageCreateInput): Promise<MessageRow> {
         cta_primary_label, cta_primary_href,
         cta_secondary_label, cta_secondary_href,
         media_upload_id, creative_json, type, applies_to_surface, tie_break_strategy, campaign_key, priority, status,
+        delivery_scope,
         eligibility_ruleset_id,
         starts_at, ends_at, created_by, updated_by
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.name,
       input.headline,
@@ -130,6 +133,7 @@ export async function create(input: MessageCreateInput): Promise<MessageRow> {
       input.appliesToSurface,
       input.tieBreakStrategy,
       input.campaignKey,
+      input.deliveryScope,
       input.priority,
       input.status,
       input.eligibilityRulesetId,
@@ -163,6 +167,7 @@ export async function update(id: number, patch: MessageUpdateInput): Promise<Mes
   if (patch.messageType !== undefined) { sets.push('type = ?'); args.push(patch.messageType) }
   if (patch.appliesToSurface !== undefined) { sets.push('applies_to_surface = ?'); args.push(patch.appliesToSurface) }
   if (patch.tieBreakStrategy !== undefined) { sets.push('tie_break_strategy = ?'); args.push(patch.tieBreakStrategy) }
+  if (patch.deliveryScope !== undefined) { sets.push('delivery_scope = ?'); args.push(patch.deliveryScope) }
   if (patch.campaignKey !== undefined) { sets.push('campaign_key = ?'); args.push(patch.campaignKey) }
   if (patch.eligibilityRulesetId !== undefined) { sets.push('eligibility_ruleset_id = ?'); args.push(patch.eligibilityRulesetId) }
   if (patch.priority !== undefined) { sets.push('priority = ?'); args.push(patch.priority) }

@@ -242,6 +242,10 @@ async function handleDecision(req: any, res: any, next: any) {
             ? Number(selectionDebug.selectedJourneyStepOrder)
             : null,
         message_journey_step_key: selectionDebug.selectedJourneyStepKey || null,
+        message_delivery_context:
+          selectionDebug.selectedDeliveryContext === 'journey'
+            ? 'journey'
+            : (selectionDebug.selectedDeliveryContext === 'standalone' ? 'standalone' : null),
         journey_drop_reason:
           Array.isArray(selectionDebug.candidateDropReasons)
             ? ((selectionDebug.candidateDropReasons.find((r: any) => String(r?.reason || '').startsWith('journey_'))?.reason) || null)
@@ -269,6 +273,7 @@ async function handleDecision(req: any, res: any, next: any) {
       const journeyStepIdRaw = (decision.debug as any)?.selection?.selectedJourneyStepId
       const journeyStepOrderRaw = (decision.debug as any)?.selection?.selectedJourneyStepOrder
       const journeyStepKeyRaw = (decision.debug as any)?.selection?.selectedJourneyStepKey
+      const deliveryContextRaw = String((decision.debug as any)?.selection?.selectedDeliveryContext || '').trim().toLowerCase()
       const journeyRejectedCount = Number((decision.debug as any)?.selection?.journeyRejectedCount || 0)
       const candidateCountBeforeJourney = Number((decision.debug as any)?.selection?.candidateCountBeforeJourney || 0)
       span.setAttribute('app.journey_rejected_count', String(journeyRejectedCount))
@@ -284,6 +289,9 @@ async function handleDecision(req: any, res: any, next: any) {
       }
       if (journeyStepKeyRaw != null && String(journeyStepKeyRaw).trim() !== '') {
         span.setAttribute('app.journey_step_key', String(journeyStepKeyRaw).trim())
+      }
+      if (deliveryContextRaw === 'journey' || deliveryContextRaw === 'standalone') {
+        span.setAttribute('app.delivery_context', deliveryContextRaw)
       }
       const journeyDropReason =
         Array.isArray((decision.debug as any)?.selection?.candidateDropReasons)
