@@ -444,6 +444,10 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
   let userSuppressedCount = 0
   let rulesetRejectedCount = 0
   let selectedPriority: number | null = null
+  let selectedRulesetId: number | null = null
+  let rejectedRulesetId: number | null = null
+  let rulesetResult: 'none' | 'pass' | 'reject' = 'none'
+  let rulesetReason: string | null = null
   const candidateDropReasons: Array<{ messageId: number; reason: string }> = []
 
   if (merged.messagesShownThisSession >= MESSAGE_MAX_MESSAGES_PER_SESSION) {
@@ -532,6 +536,9 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
             const evalResult = evaluateRuleset(ruleset, profile)
             if (!evalResult.pass) {
               rulesetRejectedCount += 1
+              if (rejectedRulesetId == null && c.eligibilityRulesetId != null && Number.isFinite(Number(c.eligibilityRulesetId)) && Number(c.eligibilityRulesetId) > 0) {
+                rejectedRulesetId = Math.round(Number(c.eligibilityRulesetId))
+              }
               if (candidateDropReasons.length < 40) {
                 candidateDropReasons.push({
                   messageId: c.messageId,
@@ -543,6 +550,14 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
             rulesetFiltered.push(c)
           }
           eligible = rulesetFiltered
+          if (candidateCountBeforeRuleset > 0) {
+            if (eligible.length > 0) {
+              rulesetResult = 'pass'
+            } else if (rulesetRejectedCount > 0) {
+              rulesetResult = 'reject'
+              rulesetReason = candidateDropReasons[0]?.reason || 'ruleset_rejected'
+            }
+          }
         }
 
         candidateCount = eligible.length
@@ -556,6 +571,7 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
             reasonCode = 'eligible'
             messageId = selected.messageId
             selectedPriority = selected.priority
+            selectedRulesetId = selected.eligibilityRulesetId == null ? null : Number(selected.eligibilityRulesetId)
           }
         }
       }
@@ -608,6 +624,10 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
         candidateCountBeforeRuleset,
         userSuppressedCount,
         rulesetRejectedCount,
+        rulesetResult,
+        rulesetReason,
+        selectedRulesetId,
+        rejectedRulesetId,
         selectedPriority,
         candidateDropReasons,
       },

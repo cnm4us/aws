@@ -157,6 +157,7 @@ Add decision debug/telemetry fields:
   - non-subscriber sees donate prompt
   - recent donor excluded
   - subscriber excluded from upgrade (or inverse tier-targeted upgrade)
+ - Status: Completed (2026-03-26)
 
 ## Acceptance Criteria
 - Messages without ruleset behave exactly as before.

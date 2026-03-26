@@ -175,16 +175,18 @@ async function handleDecision(req: any, res: any, next: any) {
       })
     }
 
-    let includeDebug = false
+    let includeDebugResponse = false
     if (String(process.env.MESSAGE_DEBUG || '0') === '1' && req.user?.id) {
       try {
-        includeDebug = await can(Number(req.user.id), PERM.VIDEO_DELETE_ANY)
+        includeDebugResponse = await can(Number(req.user.id), PERM.VIDEO_DELETE_ANY)
       } catch {
-        includeDebug = false
+        includeDebugResponse = false
       }
     }
 
-    const decision = await decideMessage(input, { includeDebug })
+    // Always compute internal decision debug so telemetry tags remain accurate.
+    // Response exposure remains gated by MESSAGE_DEBUG + site-admin checks.
+    const decision = await decideMessage(input, { includeDebug: true })
 
     if (MESSAGE_DEBUG_ENABLED) {
       ;(req.log || feedMessagesLogger).debug(
@@ -205,6 +207,29 @@ async function handleDecision(req: any, res: any, next: any) {
       )
     }
 
+    const selectionDebug = ((decision.debug as any)?.selection || {}) as any
+    ;(req.log || feedMessagesLogger).info(
+      {
+        app_surface: input.surface,
+        app_operation: 'feed.message.decide',
+        app_outcome: decision.shouldInsert ? 'shown' : 'blocked',
+        audience_segment: audienceSegment,
+        session_id: input.sessionId,
+        message_id: decision.messageId,
+        reason_code: decision.reasonCode,
+        candidate_count: Number(selectionDebug.candidateCount || 0),
+        candidate_count_before_ruleset: Number(selectionDebug.candidateCountBeforeRuleset || 0),
+        ruleset_rejected_count: Number(selectionDebug.rulesetRejectedCount || 0),
+        message_ruleset_result: selectionDebug.rulesetResult || 'none',
+        message_ruleset_reason: selectionDebug.rulesetReason || null,
+        message_ruleset_id:
+          selectionDebug.selectedRulesetId != null
+            ? Number(selectionDebug.selectedRulesetId)
+            : (selectionDebug.rejectedRulesetId != null ? Number(selectionDebug.rejectedRulesetId) : null),
+      },
+      'feed.message.decide'
+    )
+
     const span = trace.getSpan(context.active())
     if (span) {
       span.setAttribute('app.surface', 'global_feed')
@@ -219,6 +244,14 @@ async function handleDecision(req: any, res: any, next: any) {
         span.setAttribute('app.suppressed_candidates', String(userSuppressedCount))
       }
       if (decision.messageId != null) span.setAttribute('app.message_id', String(decision.messageId))
+      const rulesetResult = String((decision.debug as any)?.selection?.rulesetResult || 'none')
+      const rulesetReason = String((decision.debug as any)?.selection?.rulesetReason || '')
+      const rulesetIdRaw = (decision.debug as any)?.selection?.selectedRulesetId ?? (decision.debug as any)?.selection?.rejectedRulesetId
+      span.setAttribute('app.message_ruleset_result', rulesetResult)
+      if (rulesetReason) span.setAttribute('app.message_ruleset_reason', rulesetReason)
+      if (rulesetIdRaw != null && Number.isFinite(Number(rulesetIdRaw)) && Number(rulesetIdRaw) > 0) {
+        span.setAttribute('app.message_ruleset_id', String(Math.round(Number(rulesetIdRaw))))
+      }
     }
 
     return res.json({
@@ -227,7 +260,7 @@ async function handleDecision(req: any, res: any, next: any) {
       insert_after_index: decision.insertAfterIndex,
       reason_code: decision.reasonCode,
       session_id: decision.sessionId,
-      debug: decision.debug,
+      ...(includeDebugResponse ? { debug: decision.debug } : {}),
     })
   } catch (err) {
     return next(err)
