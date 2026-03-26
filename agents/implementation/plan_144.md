@@ -146,6 +146,7 @@ Each pattern includes:
 - Add new journey/progress tables + indexes.
 - Add repo primitives.
 - Acceptance: CRUD-ready persistence with integrity checks.
+- Status: Completed (2026-03-26)
 
 ### Phase C — State Transitions
 - Implement journey progress service.
@@ -194,4 +195,4 @@ Each pattern includes:
   - B) no state update until explicit action
 
 ## Resume Here
-- Start Phase B — Journey Data Model.
+- Start Phase C — State Transitions.

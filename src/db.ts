@@ -1001,6 +1001,103 @@ export async function ensureSchema(db: DB) {
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_cta_intent_status ON feed_message_cta_definitions (intent_key, status, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_cta_executor_status ON feed_message_cta_definitions (executor_type, status, id)`); } catch {}
 
+          // --- Message journeys (plan_144B) ---
+          await db.query(`
+            CREATE TABLE IF NOT EXISTS feed_message_journeys (
+              id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+              journey_key VARCHAR(64) NOT NULL,
+              name VARCHAR(120) NOT NULL,
+              status ENUM('draft','active','archived') NOT NULL DEFAULT 'draft',
+              description VARCHAR(500) NULL,
+              created_by BIGINT UNSIGNED NOT NULL DEFAULT 0,
+              updated_by BIGINT UNSIGNED NOT NULL DEFAULT 0,
+              created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              UNIQUE KEY uniq_feed_message_journeys_key (journey_key),
+              KEY idx_feed_message_journeys_status (status, id),
+              KEY idx_feed_message_journeys_name (name, id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+          `)
+          await db.query(`ALTER TABLE feed_message_journeys ADD COLUMN IF NOT EXISTS journey_key VARCHAR(64) NOT NULL`)
+          await db.query(`ALTER TABLE feed_message_journeys ADD COLUMN IF NOT EXISTS name VARCHAR(120) NOT NULL`)
+          await db.query(`ALTER TABLE feed_message_journeys ADD COLUMN IF NOT EXISTS status ENUM('draft','active','archived') NOT NULL DEFAULT 'draft'`)
+          await db.query(`ALTER TABLE feed_message_journeys ADD COLUMN IF NOT EXISTS description VARCHAR(500) NULL`)
+          await db.query(`ALTER TABLE feed_message_journeys ADD COLUMN IF NOT EXISTS created_by BIGINT UNSIGNED NOT NULL DEFAULT 0`)
+          await db.query(`ALTER TABLE feed_message_journeys ADD COLUMN IF NOT EXISTS updated_by BIGINT UNSIGNED NOT NULL DEFAULT 0`)
+          try { await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_feed_message_journeys_key ON feed_message_journeys (journey_key)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_journeys_status ON feed_message_journeys (status, id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_journeys_name ON feed_message_journeys (name, id)`); } catch {}
+
+          await db.query(`
+            CREATE TABLE IF NOT EXISTS feed_message_journey_steps (
+              id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+              journey_id BIGINT UNSIGNED NOT NULL,
+              step_key VARCHAR(64) NOT NULL,
+              step_order INT UNSIGNED NOT NULL,
+              message_id BIGINT UNSIGNED NOT NULL,
+              ruleset_id BIGINT UNSIGNED NULL,
+              status ENUM('draft','active','archived') NOT NULL DEFAULT 'draft',
+              config_json JSON NOT NULL,
+              created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              UNIQUE KEY uniq_feed_message_journey_steps_key (journey_id, step_key),
+              UNIQUE KEY uniq_feed_message_journey_steps_order (journey_id, step_order),
+              KEY idx_feed_message_journey_steps_journey_status (journey_id, status, step_order, id),
+              KEY idx_feed_message_journey_steps_message (message_id, id),
+              KEY idx_feed_message_journey_steps_ruleset (ruleset_id, id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+          `)
+          await db.query(`ALTER TABLE feed_message_journey_steps ADD COLUMN IF NOT EXISTS journey_id BIGINT UNSIGNED NOT NULL`)
+          await db.query(`ALTER TABLE feed_message_journey_steps ADD COLUMN IF NOT EXISTS step_key VARCHAR(64) NOT NULL`)
+          await db.query(`ALTER TABLE feed_message_journey_steps ADD COLUMN IF NOT EXISTS step_order INT UNSIGNED NOT NULL DEFAULT 1`)
+          await db.query(`ALTER TABLE feed_message_journey_steps ADD COLUMN IF NOT EXISTS message_id BIGINT UNSIGNED NOT NULL DEFAULT 0`)
+          await db.query(`ALTER TABLE feed_message_journey_steps ADD COLUMN IF NOT EXISTS ruleset_id BIGINT UNSIGNED NULL`)
+          await db.query(`ALTER TABLE feed_message_journey_steps ADD COLUMN IF NOT EXISTS status ENUM('draft','active','archived') NOT NULL DEFAULT 'draft'`)
+          await db.query(`ALTER TABLE feed_message_journey_steps ADD COLUMN IF NOT EXISTS config_json JSON NULL`)
+          try { await db.query(`UPDATE feed_message_journey_steps SET config_json = JSON_OBJECT() WHERE config_json IS NULL`) } catch {}
+          try { await db.query(`ALTER TABLE feed_message_journey_steps MODIFY COLUMN config_json JSON NOT NULL`) } catch {}
+          try { await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_feed_message_journey_steps_key ON feed_message_journey_steps (journey_id, step_key)`); } catch {}
+          try { await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_feed_message_journey_steps_order ON feed_message_journey_steps (journey_id, step_order)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_journey_steps_journey_status ON feed_message_journey_steps (journey_id, status, step_order, id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_journey_steps_message ON feed_message_journey_steps (message_id, id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_journey_steps_ruleset ON feed_message_journey_steps (ruleset_id, id)`); } catch {}
+
+          await db.query(`
+            CREATE TABLE IF NOT EXISTS feed_user_message_journey_progress (
+              id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+              user_id BIGINT UNSIGNED NOT NULL,
+              journey_id BIGINT UNSIGNED NOT NULL,
+              step_id BIGINT UNSIGNED NOT NULL,
+              state ENUM('eligible','shown','clicked','completed','skipped','expired','suppressed') NOT NULL DEFAULT 'eligible',
+              first_seen_at DATETIME NULL,
+              last_seen_at DATETIME NULL,
+              completed_at DATETIME NULL,
+              session_id VARCHAR(120) NULL,
+              metadata_json JSON NOT NULL,
+              created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              UNIQUE KEY uniq_feed_user_message_journey_progress_user_step (user_id, step_id),
+              KEY idx_feed_user_message_journey_progress_user_journey (user_id, journey_id, state, updated_at, id),
+              KEY idx_feed_user_message_journey_progress_journey_step (journey_id, step_id, state, updated_at, id),
+              KEY idx_feed_user_message_journey_progress_session (session_id, updated_at, id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+          `)
+          await db.query(`ALTER TABLE feed_user_message_journey_progress ADD COLUMN IF NOT EXISTS user_id BIGINT UNSIGNED NOT NULL`)
+          await db.query(`ALTER TABLE feed_user_message_journey_progress ADD COLUMN IF NOT EXISTS journey_id BIGINT UNSIGNED NOT NULL`)
+          await db.query(`ALTER TABLE feed_user_message_journey_progress ADD COLUMN IF NOT EXISTS step_id BIGINT UNSIGNED NOT NULL`)
+          await db.query(`ALTER TABLE feed_user_message_journey_progress ADD COLUMN IF NOT EXISTS state ENUM('eligible','shown','clicked','completed','skipped','expired','suppressed') NOT NULL DEFAULT 'eligible'`)
+          await db.query(`ALTER TABLE feed_user_message_journey_progress ADD COLUMN IF NOT EXISTS first_seen_at DATETIME NULL`)
+          await db.query(`ALTER TABLE feed_user_message_journey_progress ADD COLUMN IF NOT EXISTS last_seen_at DATETIME NULL`)
+          await db.query(`ALTER TABLE feed_user_message_journey_progress ADD COLUMN IF NOT EXISTS completed_at DATETIME NULL`)
+          await db.query(`ALTER TABLE feed_user_message_journey_progress ADD COLUMN IF NOT EXISTS session_id VARCHAR(120) NULL`)
+          await db.query(`ALTER TABLE feed_user_message_journey_progress ADD COLUMN IF NOT EXISTS metadata_json JSON NULL`)
+          try { await db.query(`UPDATE feed_user_message_journey_progress SET metadata_json = JSON_OBJECT() WHERE metadata_json IS NULL`) } catch {}
+          try { await db.query(`ALTER TABLE feed_user_message_journey_progress MODIFY COLUMN metadata_json JSON NOT NULL`) } catch {}
+          try { await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_feed_user_message_journey_progress_user_step ON feed_user_message_journey_progress (user_id, step_id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_user_message_journey_progress_user_journey ON feed_user_message_journey_progress (user_id, journey_id, state, updated_at, id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_user_message_journey_progress_journey_step ON feed_user_message_journey_progress (journey_id, step_id, state, updated_at, id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_user_message_journey_progress_session ON feed_user_message_journey_progress (session_id, updated_at, id)`); } catch {}
+
           // Legacy prompt rules were removed in favor of message-owned targeting.
           // Drop the legacy table during startup so the schema matches runtime behavior.
           try { await db.query(`DROP TABLE IF EXISTS prompt_rules`) } catch {}
