@@ -24,6 +24,11 @@ This file is a lightweight index for ongoing implementation work.
 - `agents/implementation/plan_136.md` — Message CTA completion attribution + completion-based suppression
 - `agents/implementation/plan_137.md` — Modular CTA widget (message content split + multi-CTA workflows)
 - `agents/implementation/plan_138.md` — Reusable message CTA definitions + slot-based placement
+- `agents/implementation/plan_139.md` — Payments foundation and provider wiring
+- `agents/implementation/plan_140.md` — Support checkout and subscription UX flows
+- `agents/implementation/plan_141.md` — PayPal subscription lifecycle integration
+- `agents/implementation/plan_142.md` — Message eligibility rulesets (inclusion/exclusion)
+- `agents/implementation/plan_143.md` — Remove audience segment and move to rulesets-only targeting
 
 ## Active / Next
 - Check latest `plan_NN.md` with `Status: Active`.
