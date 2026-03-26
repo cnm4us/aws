@@ -154,16 +154,16 @@ async function handleDecision(req: any, res: any, next: any) {
 
     const cookies = parseCookies(req.headers.cookie)
     const cookieSessionId = cookies[ANON_SESSION_COOKIE] ? String(cookies[ANON_SESSION_COOKIE]).trim() : null
-    const audienceSegment = await resolveAudienceSegment(req.user?.id)
+    const viewerState = await resolveAudienceSegment(req.user?.id)
 
     const { input, createdSessionId } = buildDecisionInput({
       body,
       cookieSessionId,
-      audienceSegment,
+      audienceSegment: viewerState,
       userId: req.user?.id ? Number(req.user.id) : null,
     })
 
-    if (audienceSegment === 'anonymous' && (createdSessionId || !cookieSessionId || cookieSessionId !== input.sessionId)) {
+    if (viewerState === 'anonymous' && (createdSessionId || !cookieSessionId || cookieSessionId !== input.sessionId)) {
       const protoHeader = String(req.headers['x-forwarded-proto'] || '')
       const secure = protoHeader.toLowerCase() === 'https' || req.secure
       res.cookie(ANON_SESSION_COOKIE, input.sessionId, {
@@ -193,7 +193,7 @@ async function handleDecision(req: any, res: any, next: any) {
         {
           app_surface: input.surface,
           app_operation: 'feed.message.decide',
-          audience_segment: audienceSegment,
+          viewer_state: viewerState,
           session_id: input.sessionId,
           counters: input.counters,
           decision: {
@@ -213,7 +213,7 @@ async function handleDecision(req: any, res: any, next: any) {
         app_surface: input.surface,
         app_operation: 'feed.message.decide',
         app_outcome: decision.shouldInsert ? 'shown' : 'blocked',
-        audience_segment: audienceSegment,
+        viewer_state: viewerState,
         session_id: input.sessionId,
         message_id: decision.messageId,
         reason_code: decision.reasonCode,
@@ -234,7 +234,8 @@ async function handleDecision(req: any, res: any, next: any) {
     if (span) {
       span.setAttribute('app.surface', 'global_feed')
       span.setAttribute('app.operation', 'feed.message.decide')
-      span.setAttribute('app.audience_segment', audienceSegment)
+      span.setAttribute('app.viewer_state', viewerState)
+      span.setAttribute('app.targeting_model', 'ruleset_only')
       span.setAttribute('app.decision_reason', decision.reasonCode)
       span.setAttribute('app.outcome', decision.shouldInsert ? 'shown' : 'blocked')
       const userSuppressedCount = Number((decision.debug as any)?.selection?.userSuppressedCount || 0)

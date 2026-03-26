@@ -73,6 +73,7 @@ Status: Draft
   - explicit ruleset drop reasons
 - Acceptance:
   - Jaeger/Pino clearly reflect “ruleset-only targeting”.
+ - Status: Completed (2026-03-26)
 
 ### Phase E — Smoke Tests (Ruleset-Only Matrix)
 - Scenario 1: No ruleset attached → message can appear for anon and auth.

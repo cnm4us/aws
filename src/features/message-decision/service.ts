@@ -604,11 +604,11 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
     result.debug = {
       input: {
         surface: input.surface,
-        audienceSegment: input.audienceSegment,
+        viewerState: input.audienceSegment,
         counters: input.counters,
       },
       mergedSession: {
-        audienceSegment: merged.audienceSegment,
+        viewerState: merged.audienceSegment,
         slidesViewed: merged.slidesViewed,
         watchSeconds: merged.watchSeconds,
         messagesShownThisSession: merged.messagesShownThisSession,
