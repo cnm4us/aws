@@ -50,6 +50,7 @@
     "admin:backfill-image-derivatives": "ts-node scripts/backfill-upload-image-derivatives.ts",
     "admin:backfill-image-derivatives:loop": "bash scripts/backfill-upload-image-derivatives-loop.sh",
     "db:clear:suppression": "ts-node scripts/db-clear-suppression.ts",
+    "db:clear:journey_steps": "ts-node scripts/db-clear-journey-steps.ts",
     "e2e": "playwright test --config=e2e/playwright.config.ts",
     "e2e:headed": "cross-env HEADLESS=false playwright test --config=e2e/playwright.config.ts",
     "e2e:ui": "cross-env HEADLESS=false playwright test --config=e2e/playwright.config.ts --ui",
