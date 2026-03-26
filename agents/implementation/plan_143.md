@@ -84,6 +84,7 @@ Status: Draft
   - UI behavior
   - `/api/feed/message-decision` response reason
   - Jaeger tags: ruleset result/reason/id
+ - Status: Completed (2026-03-26)
 
 ### Phase F — Final Sweep
 - Remove any dead constants/options/docs that reference message audience segment as a targeting field.
