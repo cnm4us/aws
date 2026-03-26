@@ -36,7 +36,7 @@ Status: Active
   - Journey step progress (derived state)
 
 ## Phase Status
-- A: Pending
+- A: Completed
 - B: Pending
 - C: Pending
 - D: Pending
@@ -160,6 +160,11 @@ Status: Active
 
 ## Change Log
 - (none yet)
+- (uncommitted) — Phase A schema/contracts:
+  - `feed_message_cta_outcomes` table + indexes
+  - CTA definition `completion_contract`
+  - journey progress `completed_by_outcome_id`
+  - CTA/domain type contracts updated
 
 ## Validation
 - Environment:
@@ -183,6 +188,6 @@ Status: Active
 
 ## Resume Here
 - Next action:
-  - Start Phase A (schema + canonical outcome contract).
+  - Start Phase B (central CTA outcome ingestion service + evaluator).
 - Blocking question (if any):
   - None.

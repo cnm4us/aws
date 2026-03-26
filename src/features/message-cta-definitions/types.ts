@@ -19,6 +19,12 @@ export type MessageCtaExecutorType =
   | 'verification_flow'
   | 'api_action'
 
+export type MessageCtaCompletionContract =
+  | 'on_click'
+  | 'on_return'
+  | 'on_verified'
+  | 'none'
+
 export type MessageCtaProvider = 'mock' | 'paypal' | 'stripe' | 'square'
 
 export type MessageCtaInternalLinkConfig = {
@@ -62,6 +68,7 @@ export type MessageCtaDefinitionRow = {
   scope_space_id: number | null
   intent_key: MessageCtaIntentKey
   executor_type: MessageCtaExecutorType
+  completion_contract: MessageCtaCompletionContract
   label_default: string
   config_json: string
   created_by: number
@@ -78,6 +85,7 @@ export type MessageCtaDefinitionDto = {
   scopeSpaceId: number | null
   intentKey: MessageCtaIntentKey
   executorType: MessageCtaExecutorType
+  completionContract: MessageCtaCompletionContract
   labelDefault: string
   config: MessageCtaDefinitionConfig
   createdBy: number
@@ -90,6 +98,7 @@ export type MessageCtaRuntimeResolution = {
   definitionId: number
   intentKey: MessageCtaIntentKey
   executorType: MessageCtaExecutorType
+  completionContract: MessageCtaCompletionContract
   label: string
   executorConfig: MessageCtaDefinitionConfig
 }

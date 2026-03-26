@@ -38,6 +38,7 @@ export type MessageJourneyProgressRow = {
   first_seen_at: string | null
   last_seen_at: string | null
   completed_at: string | null
+  completed_by_outcome_id: number | null
   session_id: string | null
   metadata_json: string
   created_at: string

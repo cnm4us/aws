@@ -1,5 +1,6 @@
 import { getPool } from '../../db'
 import type {
+  MessageCtaCompletionContract,
   MessageCtaDefinitionRow,
   MessageCtaDefinitionStatus,
   MessageCtaExecutorType,
@@ -16,6 +17,7 @@ const SELECT_SQL = `
     scope_space_id,
     intent_key,
     executor_type,
+    completion_contract,
     label_default,
     config_json,
     created_by,
@@ -32,6 +34,7 @@ type CreateInput = {
   scopeSpaceId: number | null
   intentKey: MessageCtaIntentKey
   executorType: MessageCtaExecutorType
+  completionContract: MessageCtaCompletionContract
   labelDefault: string
   configJson: string
   createdBy: number
@@ -119,6 +122,7 @@ export async function create(input: CreateInput): Promise<MessageCtaDefinitionRo
       scope_space_id,
       intent_key,
       executor_type,
+      completion_contract,
       label_default,
       config_json,
       created_by,
@@ -131,6 +135,7 @@ export async function create(input: CreateInput): Promise<MessageCtaDefinitionRo
       input.scopeSpaceId,
       input.intentKey,
       input.executorType,
+      input.completionContract,
       input.labelDefault,
       input.configJson,
       input.createdBy,
@@ -155,6 +160,7 @@ export async function update(id: number, patch: UpdateInput): Promise<MessageCta
   if (patch.scopeSpaceId !== undefined) { sets.push('scope_space_id = ?'); args.push(patch.scopeSpaceId) }
   if (patch.intentKey !== undefined) { sets.push('intent_key = ?'); args.push(patch.intentKey) }
   if (patch.executorType !== undefined) { sets.push('executor_type = ?'); args.push(patch.executorType) }
+  if (patch.completionContract !== undefined) { sets.push('completion_contract = ?'); args.push(patch.completionContract) }
   if (patch.labelDefault !== undefined) { sets.push('label_default = ?'); args.push(patch.labelDefault) }
   if (patch.configJson !== undefined) { sets.push('config_json = ?'); args.push(patch.configJson) }
   if (patch.updatedBy !== undefined) { sets.push('updated_by = ?'); args.push(patch.updatedBy) }

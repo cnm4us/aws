@@ -846,6 +846,7 @@ export async function ensureSchema(db: DB) {
               type ENUM('register_login','fund_drive','subscription_upgrade','sponsor_message','feature_announcement') NOT NULL DEFAULT 'register_login',
               applies_to_surface ENUM('global_feed') NOT NULL DEFAULT 'global_feed',
               tie_break_strategy ENUM('first','round_robin','weighted_random') NOT NULL DEFAULT 'round_robin',
+              delivery_scope ENUM('standalone_only','journey_only','both') NOT NULL DEFAULT 'both',
               campaign_key VARCHAR(64) NULL,
               priority INT NOT NULL DEFAULT 100,
               status ENUM('draft','active','paused','archived') NOT NULL DEFAULT 'draft',
@@ -878,6 +879,7 @@ export async function ensureSchema(db: DB) {
           await db.query(`ALTER TABLE feed_messages ADD COLUMN IF NOT EXISTS type ENUM('register_login','fund_drive','subscription_upgrade','sponsor_message','feature_announcement') NOT NULL DEFAULT 'register_login'`)
           await db.query(`ALTER TABLE feed_messages ADD COLUMN IF NOT EXISTS applies_to_surface ENUM('global_feed') NOT NULL DEFAULT 'global_feed'`)
           await db.query(`ALTER TABLE feed_messages ADD COLUMN IF NOT EXISTS tie_break_strategy ENUM('first','round_robin','weighted_random') NOT NULL DEFAULT 'round_robin'`)
+          await db.query(`ALTER TABLE feed_messages ADD COLUMN IF NOT EXISTS delivery_scope ENUM('standalone_only','journey_only','both') NOT NULL DEFAULT 'both'`)
           await db.query(`ALTER TABLE feed_messages ADD COLUMN IF NOT EXISTS campaign_key VARCHAR(64) NULL`)
           await db.query(`ALTER TABLE feed_messages ADD COLUMN IF NOT EXISTS eligibility_ruleset_id BIGINT UNSIGNED NULL`)
           await db.query(`ALTER TABLE feed_messages ADD COLUMN IF NOT EXISTS priority INT NOT NULL DEFAULT 100`)
@@ -922,6 +924,7 @@ export async function ensureSchema(db: DB) {
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_messages_active_type ON feed_messages (status, type, starts_at, ends_at, priority, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_messages_surface_type_active ON feed_messages (applies_to_surface, status, type, starts_at, ends_at, priority, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_messages_ruleset_id ON feed_messages (eligibility_ruleset_id, id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_messages_delivery_scope ON feed_messages (delivery_scope, status, id)`); } catch {}
 
           // --- Eligibility rulesets for feed messages (plan_142A) ---
           await db.query(`
@@ -960,6 +963,7 @@ export async function ensureSchema(db: DB) {
               scope_space_id BIGINT UNSIGNED NULL,
               intent_key ENUM('support','login','register','donate','subscribe','upgrade','verify_email','verify_phone','visit_sponsor','visit_link') NOT NULL DEFAULT 'visit_link',
               executor_type ENUM('internal_link','provider_checkout','verification_flow','api_action') NOT NULL DEFAULT 'internal_link',
+              completion_contract ENUM('on_click','on_return','on_verified','none') NOT NULL DEFAULT 'on_click',
               label_default VARCHAR(100) NOT NULL,
               config_json JSON NOT NULL,
               created_by BIGINT UNSIGNED NOT NULL DEFAULT 0,
@@ -977,6 +981,7 @@ export async function ensureSchema(db: DB) {
           await db.query(`ALTER TABLE feed_message_cta_definitions ADD COLUMN IF NOT EXISTS scope_space_id BIGINT UNSIGNED NULL`)
           await db.query(`ALTER TABLE feed_message_cta_definitions ADD COLUMN IF NOT EXISTS intent_key ENUM('support','login','register','donate','subscribe','upgrade','verify_email','verify_phone','visit_sponsor','visit_link') NOT NULL DEFAULT 'visit_link'`)
           await db.query(`ALTER TABLE feed_message_cta_definitions ADD COLUMN IF NOT EXISTS executor_type ENUM('internal_link','provider_checkout','verification_flow','api_action') NOT NULL DEFAULT 'internal_link'`)
+          await db.query(`ALTER TABLE feed_message_cta_definitions ADD COLUMN IF NOT EXISTS completion_contract ENUM('on_click','on_return','on_verified','none') NOT NULL DEFAULT 'on_click'`)
           await db.query(`ALTER TABLE feed_message_cta_definitions ADD COLUMN IF NOT EXISTS label_default VARCHAR(100) NOT NULL`)
           await db.query(`ALTER TABLE feed_message_cta_definitions ADD COLUMN IF NOT EXISTS config_json JSON NULL`)
           await db.query(`ALTER TABLE feed_message_cta_definitions ADD COLUMN IF NOT EXISTS created_by BIGINT UNSIGNED NOT NULL DEFAULT 0`)
@@ -997,9 +1002,17 @@ export async function ensureSchema(db: DB) {
                  NOT NULL DEFAULT 'internal_link'`
             )
           } catch {}
+          try {
+            await db.query(
+              `ALTER TABLE feed_message_cta_definitions
+                 MODIFY COLUMN completion_contract ENUM('on_click','on_return','on_verified','none')
+                 NOT NULL DEFAULT 'on_click'`
+            )
+          } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_cta_scope_status ON feed_message_cta_definitions (scope_type, scope_space_id, status, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_cta_intent_status ON feed_message_cta_definitions (intent_key, status, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_cta_executor_status ON feed_message_cta_definitions (executor_type, status, id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_cta_completion_status ON feed_message_cta_definitions (completion_contract, status, id)`); } catch {}
 
           // --- Message journeys (plan_144B) ---
           await db.query(`
@@ -1072,6 +1085,7 @@ export async function ensureSchema(db: DB) {
               first_seen_at DATETIME NULL,
               last_seen_at DATETIME NULL,
               completed_at DATETIME NULL,
+              completed_by_outcome_id BIGINT UNSIGNED NULL,
               session_id VARCHAR(120) NULL,
               metadata_json JSON NOT NULL,
               created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -1089,6 +1103,7 @@ export async function ensureSchema(db: DB) {
           await db.query(`ALTER TABLE feed_user_message_journey_progress ADD COLUMN IF NOT EXISTS first_seen_at DATETIME NULL`)
           await db.query(`ALTER TABLE feed_user_message_journey_progress ADD COLUMN IF NOT EXISTS last_seen_at DATETIME NULL`)
           await db.query(`ALTER TABLE feed_user_message_journey_progress ADD COLUMN IF NOT EXISTS completed_at DATETIME NULL`)
+          await db.query(`ALTER TABLE feed_user_message_journey_progress ADD COLUMN IF NOT EXISTS completed_by_outcome_id BIGINT UNSIGNED NULL`)
           await db.query(`ALTER TABLE feed_user_message_journey_progress ADD COLUMN IF NOT EXISTS session_id VARCHAR(120) NULL`)
           await db.query(`ALTER TABLE feed_user_message_journey_progress ADD COLUMN IF NOT EXISTS metadata_json JSON NULL`)
           try { await db.query(`UPDATE feed_user_message_journey_progress SET metadata_json = JSON_OBJECT() WHERE metadata_json IS NULL`) } catch {}
@@ -1097,6 +1112,70 @@ export async function ensureSchema(db: DB) {
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_user_message_journey_progress_user_journey ON feed_user_message_journey_progress (user_id, journey_id, state, updated_at, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_user_message_journey_progress_journey_step ON feed_user_message_journey_progress (journey_id, step_id, state, updated_at, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_user_message_journey_progress_session ON feed_user_message_journey_progress (session_id, updated_at, id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_user_message_journey_progress_completed_outcome ON feed_user_message_journey_progress (completed_by_outcome_id, updated_at, id)`); } catch {}
+
+          // --- Canonical CTA outcomes (plan_145A) ---
+          await db.query(`
+            CREATE TABLE IF NOT EXISTS feed_message_cta_outcomes (
+              id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+              outcome_id VARCHAR(64) NOT NULL,
+              source_event_id BIGINT UNSIGNED NULL,
+              source_event_type VARCHAR(64) NOT NULL,
+              outcome_type ENUM('click','return','verified_complete','webhook_complete','failed','abandoned') NOT NULL,
+              outcome_status ENUM('pending','success','failure') NOT NULL DEFAULT 'pending',
+              occurred_at DATETIME NOT NULL,
+              session_id VARCHAR(120) NULL,
+              user_id BIGINT UNSIGNED NULL,
+              message_id BIGINT UNSIGNED NOT NULL,
+              message_campaign_key VARCHAR(64) NULL,
+              delivery_context ENUM('standalone','journey') NOT NULL DEFAULT 'standalone',
+              journey_id BIGINT UNSIGNED NULL,
+              journey_step_id BIGINT UNSIGNED NULL,
+              cta_slot TINYINT UNSIGNED NULL,
+              cta_definition_id BIGINT UNSIGNED NULL,
+              cta_intent_key VARCHAR(64) NULL,
+              cta_executor_type VARCHAR(64) NULL,
+              payload_json JSON NOT NULL,
+              created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              UNIQUE KEY uniq_feed_message_cta_outcomes_outcome_id (outcome_id),
+              KEY idx_feed_message_cta_outcomes_user_time (user_id, occurred_at, id),
+              KEY idx_feed_message_cta_outcomes_message_time (message_id, occurred_at, id),
+              KEY idx_feed_message_cta_outcomes_campaign_time (message_campaign_key, occurred_at, id),
+              KEY idx_feed_message_cta_outcomes_journey_step_time (journey_id, journey_step_id, occurred_at, id),
+              KEY idx_feed_message_cta_outcomes_cta_def_time (cta_definition_id, occurred_at, id),
+              KEY idx_feed_message_cta_outcomes_type_status_time (outcome_type, outcome_status, occurred_at, id),
+              KEY idx_feed_message_cta_outcomes_delivery_time (delivery_context, occurred_at, id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+          `)
+          await db.query(`ALTER TABLE feed_message_cta_outcomes ADD COLUMN IF NOT EXISTS outcome_id VARCHAR(64) NOT NULL`)
+          await db.query(`ALTER TABLE feed_message_cta_outcomes ADD COLUMN IF NOT EXISTS source_event_id BIGINT UNSIGNED NULL`)
+          await db.query(`ALTER TABLE feed_message_cta_outcomes ADD COLUMN IF NOT EXISTS source_event_type VARCHAR(64) NOT NULL DEFAULT 'unknown'`)
+          await db.query(`ALTER TABLE feed_message_cta_outcomes ADD COLUMN IF NOT EXISTS outcome_type ENUM('click','return','verified_complete','webhook_complete','failed','abandoned') NOT NULL DEFAULT 'click'`)
+          await db.query(`ALTER TABLE feed_message_cta_outcomes ADD COLUMN IF NOT EXISTS outcome_status ENUM('pending','success','failure') NOT NULL DEFAULT 'pending'`)
+          await db.query(`ALTER TABLE feed_message_cta_outcomes ADD COLUMN IF NOT EXISTS occurred_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP`)
+          await db.query(`ALTER TABLE feed_message_cta_outcomes ADD COLUMN IF NOT EXISTS session_id VARCHAR(120) NULL`)
+          await db.query(`ALTER TABLE feed_message_cta_outcomes ADD COLUMN IF NOT EXISTS user_id BIGINT UNSIGNED NULL`)
+          await db.query(`ALTER TABLE feed_message_cta_outcomes ADD COLUMN IF NOT EXISTS message_id BIGINT UNSIGNED NOT NULL DEFAULT 0`)
+          await db.query(`ALTER TABLE feed_message_cta_outcomes ADD COLUMN IF NOT EXISTS message_campaign_key VARCHAR(64) NULL`)
+          await db.query(`ALTER TABLE feed_message_cta_outcomes ADD COLUMN IF NOT EXISTS delivery_context ENUM('standalone','journey') NOT NULL DEFAULT 'standalone'`)
+          await db.query(`ALTER TABLE feed_message_cta_outcomes ADD COLUMN IF NOT EXISTS journey_id BIGINT UNSIGNED NULL`)
+          await db.query(`ALTER TABLE feed_message_cta_outcomes ADD COLUMN IF NOT EXISTS journey_step_id BIGINT UNSIGNED NULL`)
+          await db.query(`ALTER TABLE feed_message_cta_outcomes ADD COLUMN IF NOT EXISTS cta_slot TINYINT UNSIGNED NULL`)
+          await db.query(`ALTER TABLE feed_message_cta_outcomes ADD COLUMN IF NOT EXISTS cta_definition_id BIGINT UNSIGNED NULL`)
+          await db.query(`ALTER TABLE feed_message_cta_outcomes ADD COLUMN IF NOT EXISTS cta_intent_key VARCHAR(64) NULL`)
+          await db.query(`ALTER TABLE feed_message_cta_outcomes ADD COLUMN IF NOT EXISTS cta_executor_type VARCHAR(64) NULL`)
+          await db.query(`ALTER TABLE feed_message_cta_outcomes ADD COLUMN IF NOT EXISTS payload_json JSON NULL`)
+          try { await db.query(`UPDATE feed_message_cta_outcomes SET payload_json = JSON_OBJECT() WHERE payload_json IS NULL`) } catch {}
+          try { await db.query(`ALTER TABLE feed_message_cta_outcomes MODIFY COLUMN payload_json JSON NOT NULL`) } catch {}
+          try { await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_feed_message_cta_outcomes_outcome_id ON feed_message_cta_outcomes (outcome_id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_cta_outcomes_user_time ON feed_message_cta_outcomes (user_id, occurred_at, id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_cta_outcomes_message_time ON feed_message_cta_outcomes (message_id, occurred_at, id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_cta_outcomes_campaign_time ON feed_message_cta_outcomes (message_campaign_key, occurred_at, id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_cta_outcomes_journey_step_time ON feed_message_cta_outcomes (journey_id, journey_step_id, occurred_at, id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_cta_outcomes_cta_def_time ON feed_message_cta_outcomes (cta_definition_id, occurred_at, id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_cta_outcomes_type_status_time ON feed_message_cta_outcomes (outcome_type, outcome_status, occurred_at, id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_cta_outcomes_delivery_time ON feed_message_cta_outcomes (delivery_context, occurred_at, id)`); } catch {}
 
           // Legacy prompt rules were removed in favor of message-owned targeting.
           // Drop the legacy table during startup so the schema matches runtime behavior.

@@ -7,6 +7,7 @@ import { can } from '../../security/permissions'
 import * as repo from './repo'
 import type {
   MessageCtaApiActionConfig,
+  MessageCtaCompletionContract,
   MessageCtaDefinitionConfig,
   MessageCtaDefinitionDto,
   MessageCtaDefinitionRow,
@@ -38,6 +39,7 @@ const INTENT_KEYS: readonly MessageCtaIntentKey[] = [
   'visit_link',
 ]
 const EXECUTOR_TYPES: readonly MessageCtaExecutorType[] = ['internal_link', 'provider_checkout', 'verification_flow', 'api_action']
+const COMPLETION_CONTRACTS: readonly MessageCtaCompletionContract[] = ['on_click', 'on_return', 'on_verified', 'none']
 const PROVIDERS: readonly MessageCtaProvider[] = ['mock', 'paypal', 'stripe', 'square']
 
 function isEnumValue<T extends string>(value: unknown, allowed: readonly T[]): value is T {
@@ -90,6 +92,16 @@ function normalizeExecutorType(raw: unknown, fallback: MessageCtaExecutorType = 
   const value = String(raw ?? '').trim().toLowerCase()
   if (!value) return fallback
   if (!isEnumValue(value, EXECUTOR_TYPES)) throw new DomainError('invalid_executor_type', 'invalid_executor_type', 400)
+  return value
+}
+
+function normalizeCompletionContract(
+  raw: unknown,
+  fallback: MessageCtaCompletionContract = 'on_click'
+): MessageCtaCompletionContract {
+  const value = String(raw ?? '').trim().toLowerCase()
+  if (!value) return fallback
+  if (!isEnumValue(value, COMPLETION_CONTRACTS)) throw new DomainError('invalid_completion_contract', 'invalid_completion_contract', 400)
   return value
 }
 
@@ -292,6 +304,7 @@ function toDto(row: MessageCtaDefinitionRow): MessageCtaDefinitionDto {
     scopeSpaceId: row.scope_space_id == null ? null : Number(row.scope_space_id),
     intentKey,
     executorType,
+    completionContract: normalizeCompletionContract((row as any).completion_contract, 'on_click'),
     labelDefault: normalizeLabel(row.label_default),
     config,
     createdBy: Number(row.created_by),
@@ -341,6 +354,7 @@ function annotateCtaWrite(operation: string, dto: MessageCtaDefinitionDto, actor
     if (dto.scopeSpaceId != null) span.setAttribute('app.message_cta_scope_space_id', String(dto.scopeSpaceId))
     span.setAttribute('app.message_cta_intent', dto.intentKey)
     span.setAttribute('app.message_cta_executor', dto.executorType)
+    span.setAttribute('app.message_cta_completion_contract', dto.completionContract)
     span.setAttribute('app.message_cta_status', dto.status)
     span.setAttribute('app.outcome', 'success')
   }
@@ -354,6 +368,7 @@ function annotateCtaWrite(operation: string, dto: MessageCtaDefinitionDto, actor
       message_cta_scope_space_id: dto.scopeSpaceId,
       message_cta_intent: dto.intentKey,
       message_cta_executor: dto.executorType,
+      message_cta_completion_contract: dto.completionContract,
       message_cta_status: dto.status,
       app_operation: 'admin.message_ctas.write',
       app_operation_detail: operation,
@@ -369,6 +384,7 @@ type NormalizedDefinitionInput = {
   scopeSpaceId: number | null
   intentKey: MessageCtaIntentKey
   executorType: MessageCtaExecutorType
+  completionContract: MessageCtaCompletionContract
   labelDefault: string
   config: MessageCtaDefinitionConfig
 }
@@ -378,6 +394,10 @@ function normalizeDefinitionInput(input: Record<string, unknown>, fallback?: Mes
   const scopeSpaceId = normalizeScopeSpaceId(input.scopeSpaceId ?? fallback?.scopeSpaceId, scopeType)
   const intentKey = normalizeIntentKey(input.intentKey ?? fallback?.intentKey, fallback?.intentKey ?? 'visit_link')
   const executorType = normalizeExecutorType(input.executorType ?? fallback?.executorType, fallback?.executorType ?? 'internal_link')
+  const completionContract = normalizeCompletionContract(
+    input.completionContract ?? input.completion_contract ?? fallback?.completionContract,
+    fallback?.completionContract ?? 'on_click'
+  )
   validateIntentExecutor(intentKey, executorType)
 
   const configRaw = parseConfig(input.config ?? fallback?.config)
@@ -390,6 +410,7 @@ function normalizeDefinitionInput(input: Record<string, unknown>, fallback?: Mes
     scopeSpaceId,
     intentKey,
     executorType,
+    completionContract,
     labelDefault: normalizeLabel(input.labelDefault ?? fallback?.labelDefault),
     config,
   }
@@ -462,6 +483,7 @@ export async function createMessageCtaDefinitionForAdmin(input: Record<string, u
     scopeSpaceId: normalized.scopeSpaceId,
     intentKey: normalized.intentKey,
     executorType: normalized.executorType,
+    completionContract: normalized.completionContract,
     labelDefault: normalized.labelDefault,
     configJson: JSON.stringify(normalized.config),
     createdBy: userId,
@@ -495,6 +517,7 @@ export async function updateMessageCtaDefinitionForAdmin(
     scopeSpaceId: normalized.scopeSpaceId,
     intentKey: normalized.intentKey,
     executorType: normalized.executorType,
+    completionContract: normalized.completionContract,
     labelDefault: normalized.labelDefault,
     configJson: JSON.stringify(normalized.config),
     updatedBy: userId,
@@ -519,6 +542,7 @@ export async function cloneMessageCtaDefinitionForAdmin(id: number, actorUserId:
       scopeSpaceId: source.scopeSpaceId,
       intentKey: source.intentKey,
       executorType: source.executorType,
+      completionContract: source.completionContract,
       labelDefault: source.labelDefault,
       config: source.config,
     },
@@ -552,6 +576,7 @@ export async function resolveRuntimeDefinitionsById(params: {
       definitionId: dto.id,
       intentKey: dto.intentKey,
       executorType: dto.executorType,
+      completionContract: dto.completionContract,
       label: dto.labelDefault,
       executorConfig: dto.config,
     })
@@ -562,5 +587,6 @@ export async function resolveRuntimeDefinitionsById(params: {
 
 export const MESSAGE_CTA_INTENT_KEYS = INTENT_KEYS
 export const MESSAGE_CTA_EXECUTOR_TYPES = EXECUTOR_TYPES
+export const MESSAGE_CTA_COMPLETION_CONTRACTS = COMPLETION_CONTRACTS
 export const MESSAGE_CTA_SCOPE_TYPES = SCOPE_TYPES
 export const MESSAGE_CTA_STATUSES = STATUSES

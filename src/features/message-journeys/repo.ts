@@ -47,6 +47,7 @@ const PROGRESS_SELECT_SQL = `
     first_seen_at,
     last_seen_at,
     completed_at,
+    completed_by_outcome_id,
     session_id,
     metadata_json,
     created_at,
@@ -99,6 +100,7 @@ type ProgressUpsertInput = {
   firstSeenAt?: string | null
   lastSeenAt?: string | null
   completedAt?: string | null
+  completedByOutcomeId?: number | null
   sessionId?: string | null
   metadataJson?: string
 }
@@ -276,6 +278,36 @@ export async function listActiveStepsByMessageIds(messageIds: number[]): Promise
   return rows as Array<MessageJourneyStepRow & { journey_status: MessageJourneyStatus }>
 }
 
+export async function listJourneyStepRefsByMessageId(messageId: number): Promise<Array<{
+  journey_id: number
+  journey_key: string
+  journey_status: MessageJourneyStatus
+  step_id: number
+  step_key: string
+  step_order: number
+}>> {
+  const mid = Number(messageId)
+  if (!Number.isFinite(mid) || mid <= 0) return []
+  const db = getPool()
+  const [rows] = await db.query(
+    `SELECT
+       j.id AS journey_id,
+       j.journey_key,
+       j.status AS journey_status,
+       s.id AS step_id,
+       s.step_key,
+       s.step_order
+     FROM feed_message_journey_steps s
+     JOIN feed_message_journeys j ON j.id = s.journey_id
+    WHERE s.message_id = ?
+      AND s.status <> 'archived'
+      AND j.status <> 'archived'
+    ORDER BY j.id ASC, s.step_order ASC, s.id ASC`,
+    [Math.round(mid)]
+  )
+  return rows as any[]
+}
+
 export async function getStepById(id: number): Promise<MessageJourneyStepRow | null> {
   const db = getPool()
   const [rows] = await db.query(`${STEP_SELECT_SQL} WHERE id = ? LIMIT 1`, [id])
@@ -406,15 +438,17 @@ export async function upsertProgress(input: ProgressUpsertInput): Promise<Messag
       first_seen_at,
       last_seen_at,
       completed_at,
+      completed_by_outcome_id,
       session_id,
       metadata_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON DUPLICATE KEY UPDATE
       journey_id = VALUES(journey_id),
       state = VALUES(state),
       first_seen_at = COALESCE(feed_user_message_journey_progress.first_seen_at, VALUES(first_seen_at)),
       last_seen_at = VALUES(last_seen_at),
       completed_at = COALESCE(VALUES(completed_at), feed_user_message_journey_progress.completed_at),
+      completed_by_outcome_id = COALESCE(VALUES(completed_by_outcome_id), feed_user_message_journey_progress.completed_by_outcome_id),
       session_id = VALUES(session_id),
       metadata_json = VALUES(metadata_json),
       updated_at = CURRENT_TIMESTAMP`,
@@ -426,6 +460,7 @@ export async function upsertProgress(input: ProgressUpsertInput): Promise<Messag
       input.firstSeenAt ?? null,
       input.lastSeenAt ?? null,
       input.completedAt ?? null,
+      input.completedByOutcomeId ?? null,
       input.sessionId ?? null,
       metadataJson,
     ]
@@ -445,6 +480,7 @@ export async function updateProgressById(id: number, patch: ProgressUpdateInput)
   if (patch.firstSeenAt !== undefined) { sets.push('first_seen_at = ?'); args.push(patch.firstSeenAt) }
   if (patch.lastSeenAt !== undefined) { sets.push('last_seen_at = ?'); args.push(patch.lastSeenAt) }
   if (patch.completedAt !== undefined) { sets.push('completed_at = ?'); args.push(patch.completedAt) }
+  if (patch.completedByOutcomeId !== undefined) { sets.push('completed_by_outcome_id = ?'); args.push(patch.completedByOutcomeId) }
   if (patch.sessionId !== undefined) { sets.push('session_id = ?'); args.push(patch.sessionId) }
   if (patch.metadataJson !== undefined) { sets.push('metadata_json = ?'); args.push(patch.metadataJson) }
 
