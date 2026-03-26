@@ -52,6 +52,7 @@ Status: Draft
 - Keep API tolerant to extra `audienceSegment` input by ignoring it (or reject with clear validation error; choose one and document).
 - Acceptance:
   - Admin can create/edit messages without any audience selector.
+ - Status: Completed (2026-03-26)
 
 ### Phase C — Decision Engine Simplification
 - Remove baseline `audienceSegment` filter from `messagesSvc.listActiveForFeed` calls in `message-decision/service.ts`.
@@ -99,6 +100,7 @@ Status: Draft
   - Option 1 (recommended): ignore obsolete `audienceSegment` keys.
   - Option 2: reject with validation error.
 - Recommended for dev speed: Option 1.
+- Decision: Option 1 selected (2026-03-26).
 
 ## Resume Here
 - Start Phase A and remove `audience_segment` from message repo/service/types first; then run build.

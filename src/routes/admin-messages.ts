@@ -23,7 +23,6 @@ adminMessagesRouter.get(adminMessageCollectionPaths, async (req, res, next) => {
       status: req.query?.status,
       messageType: req.query?.message_type,
       appliesToSurface: req.query?.applies_to_surface,
-      audienceSegment: req.query?.audience_segment,
       campaignKey: req.query?.campaign_key,
     })
     return res.json({ items })

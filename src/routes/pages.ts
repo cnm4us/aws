@@ -3075,12 +3075,6 @@ const MESSAGE_TYPE_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'feature_announcement', label: 'Feature Announcement' },
 ]
 
-const MESSAGE_AUDIENCE_OPTIONS: Array<{ value: string; label: string }> = [
-  { value: 'anonymous', label: 'Anonymous' },
-  { value: 'authenticated_non_subscriber', label: 'Authenticated (Non-Subscriber)' },
-  { value: 'authenticated_subscriber', label: 'Authenticated (Subscriber)' },
-]
-
 const MESSAGE_SURFACE_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'global_feed', label: 'Global Feed' },
 ]
@@ -3365,7 +3359,6 @@ function buildMessageCreateOrUpdatePayload(body: any): any {
   const mediaUploadId = String(creativeForm.backgroundUploadId || '').trim()
   const messageType = String(body?.type ?? body?.messageType ?? 'register_login').trim().toLowerCase() || 'register_login'
   const appliesToSurface = String(body?.appliesToSurface ?? body?.applies_to_surface ?? 'global_feed').trim().toLowerCase() || 'global_feed'
-  const audienceSegment = String(body?.audienceSegment ?? body?.audience_segment ?? 'anonymous').trim().toLowerCase() || 'anonymous'
   const tieBreakStrategy = String(body?.tieBreakStrategy ?? body?.tie_break_strategy ?? 'round_robin').trim().toLowerCase() || 'round_robin'
   const campaignKey = String(body?.campaignKey ?? body?.campaign_key ?? '').trim().toLowerCase()
   const eligibilityRulesetIdRaw = String(body?.eligibilityRulesetId ?? body?.eligibility_ruleset_id ?? '').trim()
@@ -3405,7 +3398,6 @@ function buildMessageCreateOrUpdatePayload(body: any): any {
     ...(body || {}),
     type: messageType,
     appliesToSurface,
-    audienceSegment,
     tieBreakStrategy,
     campaignKey: campaignKey || null,
     eligibilityRulesetId,
@@ -3704,11 +3696,6 @@ function renderAdminMessageForm(opts: {
   if (!messageTypeOptions.some((opt) => opt.value === messageTypeValue)) {
     messageTypeOptions.unshift({ value: messageTypeValue, label: `Custom (${messageTypeValue})` })
   }
-  const audienceValue = String(values.audienceSegment || values.audience_segment || 'anonymous').trim().toLowerCase() || 'anonymous'
-  const audienceOptions = MESSAGE_AUDIENCE_OPTIONS.slice()
-  if (!audienceOptions.some((opt) => opt.value === audienceValue)) {
-    audienceOptions.unshift({ value: audienceValue, label: `Custom (${audienceValue})` })
-  }
   const surfaceValue = String(values.appliesToSurface || values.applies_to_surface || 'global_feed').trim().toLowerCase() || 'global_feed'
   const surfaceOptions = MESSAGE_SURFACE_OPTIONS.slice()
   if (!surfaceOptions.some((opt) => opt.value === surfaceValue)) {
@@ -3729,11 +3716,6 @@ function renderAdminMessageForm(opts: {
   body += `<div class="mini-field"><div class="mini-field-label">Type</div><select name="type">`
   for (const opt of messageTypeOptions) {
     body += `<option value="${escapeHtml(opt.value)}"${opt.value === messageTypeValue ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
-  }
-  body += `</select></div>`
-  body += `<div class="mini-field"><div class="mini-field-label">Audience</div><select name="audienceSegment">`
-  for (const opt of audienceOptions) {
-    body += `<option value="${escapeHtml(opt.value)}"${opt.value === audienceValue ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
   }
   body += `</select></div>`
   body += `<div class="mini-field"><div class="mini-field-label">Surface</div><select name="appliesToSurface">`
@@ -4576,7 +4558,6 @@ pagesRouter.get('/admin/messages', async (req: any, res: any) => {
     const includeArchived = String(req.query?.include_archived || '0') === '1'
     const status = req.query?.status ? String(req.query.status) : ''
     const messageType = req.query?.message_type ? String(req.query.message_type) : ''
-    const audienceSegment = req.query?.audience_segment ? String(req.query.audience_segment) : ''
     const appliesToSurface = req.query?.applies_to_surface ? String(req.query.applies_to_surface) : ''
     const campaignKey = req.query?.campaign_key ? String(req.query.campaign_key) : ''
     const notice = req.query?.notice ? String(req.query.notice) : ''
@@ -4586,7 +4567,6 @@ pagesRouter.get('/admin/messages', async (req: any, res: any) => {
       limit: 500,
       status,
       messageType,
-      audienceSegment,
       appliesToSurface,
       campaignKey,
     })
@@ -4609,11 +4589,6 @@ pagesRouter.get('/admin/messages', async (req: any, res: any) => {
       body += `<option value="${escapeHtml(opt.value)}"${messageType === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
     }
     body += `</select></label>`
-    body += `<label style="min-width:230px">Audience<select name="audience_segment"><option value="">All</option>`
-    for (const opt of MESSAGE_AUDIENCE_OPTIONS) {
-      body += `<option value="${escapeHtml(opt.value)}"${audienceSegment === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
-    }
-    body += `</select></label>`
     body += `<label style="min-width:170px">Surface<select name="applies_to_surface"><option value="">All</option>`
     for (const opt of MESSAGE_SURFACE_OPTIONS) {
       body += `<option value="${escapeHtml(opt.value)}"${appliesToSurface === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
@@ -4627,14 +4602,13 @@ pagesRouter.get('/admin/messages', async (req: any, res: any) => {
     if (!items.length) {
       body += '<p>No messages found for current filters.</p>'
     } else {
-      body += '<table><thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Audience</th><th>Surface</th><th>Campaign Key</th><th>Ruleset</th><th>Priority</th><th>Status</th><th>Window</th><th>Updated</th></tr></thead><tbody>'
+      body += '<table><thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Surface</th><th>Campaign Key</th><th>Ruleset</th><th>Priority</th><th>Status</th><th>Window</th><th>Updated</th></tr></thead><tbody>'
       for (const item of items) {
         const windowLabel = item.startsAt || item.endsAt ? `${item.startsAt || '—'} → ${item.endsAt || '—'}` : 'Always'
         body += `<tr>
           <td>${item.id}</td>
           <td><a href="/admin/messages/${item.id}">${escapeHtml(item.name)}</a></td>
           <td>${escapeHtml(item.type)}</td>
-          <td>${escapeHtml(item.audienceSegment || '—')}</td>
           <td>${escapeHtml(item.appliesToSurface)}</td>
           <td>${escapeHtml(item.campaignKey || '—')}</td>
           <td>${item.eligibilityRulesetId == null ? '—' : String(item.eligibilityRulesetId)}</td>
@@ -4694,7 +4668,6 @@ pagesRouter.get('/admin/messages/new', async (req: any, res: any) => {
         creativeCtaUpgradeTargetTier: '',
         creativeCtaUpgradeSuccessReturn: '/channels/global-feed',
         type: 'register_login',
-        audienceSegment: 'anonymous',
         appliesToSurface: 'global_feed',
         tieBreakStrategy: 'round_robin',
         campaignKey: '',
