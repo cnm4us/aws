@@ -24,6 +24,12 @@ Status: Active
 - Completion source of truth is CTA outcome events (not message render events).
 - Keep standalone and journey delivery paths; do not force all messages into journeys.
 - Journey-selected messages use journey-step policy/ruleset; standalone uses message policy/ruleset.
+- Keep CTA `executor` generic (no intent-specific executors like `subscribe_executor`).
+- Add CTA `completion_contract` to define completion semantics:
+  - `on_click`
+  - `on_return`
+  - `on_verified`
+  - `none`
 - Persist three layers:
   - CTA outcomes (immutable fact stream)
   - Message progress (derived state)
@@ -42,6 +48,7 @@ Status: Active
   - Define durable schema/contracts for canonical CTA outcomes and derived progress state linkage.
 - Steps:
   - [ ] Add `feed_message_cta_outcomes` (append-only fact table).
+  - [ ] Add `completion_contract` to CTA definitions schema + service DTOs.
   - [ ] Add source pointers on progress rows (e.g., `completed_by_outcome_id`).
   - [ ] Define normalized outcome taxonomy:
     - `outcome_type`: `click`, `return`, `verified_complete`, `webhook_complete`, `failed`, `abandoned`
@@ -62,6 +69,14 @@ Status: Active
   - Centralize CTA outcome writes behind one service API.
 - Steps:
   - [ ] Add `recordCtaOutcome(...)` service used by all CTA execution paths.
+  - [ ] Add completion evaluator:
+    - input: CTA definition + outcome event
+    - output: CTA completed (`true|false`)
+  - [ ] Apply evaluator contract:
+    - `on_click`: complete on click outcome
+    - `on_return`: complete on return outcome
+    - `on_verified`: complete on verified/webhook-confirmed outcome
+    - `none`: never auto-complete
   - [ ] Map current flows:
     - message click endpoints
     - internal_link return handling
@@ -95,6 +110,8 @@ Status: Active
 - Goal:
   - Expose completion/progression policy cleanly in admin.
 - Steps:
+  - [ ] CTA editor: add `Completion Contract` select.
+  - [ ] CTA editor: add compatibility warnings (e.g. `intent=subscribe` + `on_click`).
   - [ ] Message editor: completion policy controls (with defaults).
   - [ ] Journey step editor: progression policy controls + validation.
   - [ ] Guardrails/help text for conflicting configs.
