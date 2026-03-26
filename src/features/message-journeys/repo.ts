@@ -219,6 +219,33 @@ export async function listStepsByJourneyId(journeyId: number, params?: {
   return rows as MessageJourneyStepRow[]
 }
 
+export async function listActiveStepsByMessageId(messageId: number): Promise<Array<MessageJourneyStepRow & { journey_status: MessageJourneyStatus }>> {
+  const db = getPool()
+  const [rows] = await db.query(
+    `SELECT
+       s.id,
+       s.journey_id,
+       s.step_key,
+       s.step_order,
+       s.message_id,
+       s.ruleset_id,
+       s.status,
+       s.config_json,
+       s.created_at,
+       s.updated_at,
+       j.status AS journey_status
+     FROM feed_message_journey_steps s
+     JOIN feed_message_journeys j
+       ON j.id = s.journey_id
+    WHERE s.message_id = ?
+      AND s.status = 'active'
+      AND j.status = 'active'
+    ORDER BY s.step_order ASC, s.id ASC`,
+    [messageId]
+  )
+  return rows as Array<MessageJourneyStepRow & { journey_status: MessageJourneyStatus }>
+}
+
 export async function getStepById(id: number): Promise<MessageJourneyStepRow | null> {
   const db = getPool()
   const [rows] = await db.query(`${STEP_SELECT_SQL} WHERE id = ? LIMIT 1`, [id])

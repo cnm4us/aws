@@ -16,6 +16,7 @@ import * as messageCtasSvc from '../features/message-cta-definitions/service'
 import * as uploadsSvc from '../features/uploads/service'
 import * as messageAnalyticsSvc from '../features/message-analytics/service'
 import * as messageAttributionSvc from '../features/message-attribution/service'
+import * as messageJourneysSvc from '../features/message-journeys/service'
 import * as paymentsSvc from '../features/payments/service'
 import * as spacesRepo from '../features/spaces/repo'
 import { getLogger } from '../lib/logger'
@@ -496,6 +497,25 @@ feedMessagesRouter.post(feedMessageEventPaths, async (req: any, res: any, next: 
       messageId,
       event: body.event,
     })
+    if (
+      normalizedEvent === 'impression' ||
+      normalizedEvent === 'click' ||
+      normalizedEvent === 'pass_through' ||
+      normalizedEvent === 'dismiss' ||
+      normalizedEvent === 'auth_complete' ||
+      normalizedEvent === 'donation_complete' ||
+      normalizedEvent === 'subscription_complete' ||
+      normalizedEvent === 'upgrade_complete'
+    ) {
+      try {
+        await messageJourneysSvc.recordJourneySignalFromMessageEvent({
+          userId: req.user?.id ? Number(req.user.id) : null,
+          messageId: Number(messageId || 0),
+          event: normalizedEvent,
+          sessionId,
+        })
+      } catch {}
+    }
 
     const opByEvent: Record<string, string> = {
       impression: 'feed.message.render',
@@ -1005,6 +1025,16 @@ feedMessagesRouter.get(feedMessageMockCompletionPaths, async (req: any, res: any
       messageId,
       event,
     })
+    if (event === 'donation_complete' || event === 'subscription_complete' || event === 'upgrade_complete') {
+      try {
+        await messageJourneysSvc.recordJourneySignalFromMessageEvent({
+          userId: req.user?.id ? Number(req.user.id) : null,
+          messageId: Number(messageId || 0),
+          event,
+          sessionId,
+        })
+      } catch {}
+    }
 
     const span = trace.getSpan(context.active())
     if (span) {

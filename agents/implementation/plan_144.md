@@ -153,6 +153,7 @@ Each pattern includes:
 - Wire canonical event-to-state mapping.
 - Add idempotency + transition guards.
 - Acceptance: repeat events do not corrupt progression.
+- Status: Completed (2026-03-26)
 
 ### Phase D — Decision Integration
 - Add journey gating in decision engine.
@@ -195,4 +196,4 @@ Each pattern includes:
   - B) no state update until explicit action
 
 ## Resume Here
-- Start Phase C — State Transitions.
+- Start Phase D — Decision Integration.
