@@ -234,7 +234,7 @@ export async function listStepsByJourneyId(journeyId: number, params?: {
   return rows as MessageJourneyStepRow[]
 }
 
-export async function listActiveStepsByMessageId(messageId: number): Promise<Array<MessageJourneyStepRow & { journey_status: MessageJourneyStatus }>> {
+export async function listActiveStepsByMessageId(messageId: number): Promise<Array<MessageJourneyStepRow & { journey_status: MessageJourneyStatus; journey_ruleset_id: number | null }>> {
   const db = getPool()
   const [rows] = await db.query(
     `SELECT
@@ -248,7 +248,8 @@ export async function listActiveStepsByMessageId(messageId: number): Promise<Arr
        s.config_json,
        s.created_at,
        s.updated_at,
-       j.status AS journey_status
+       j.status AS journey_status,
+       j.eligibility_ruleset_id AS journey_ruleset_id
      FROM feed_message_journey_steps s
      JOIN feed_message_journeys j
        ON j.id = s.journey_id
@@ -258,10 +259,10 @@ export async function listActiveStepsByMessageId(messageId: number): Promise<Arr
     ORDER BY s.step_order ASC, s.id ASC`,
     [messageId]
   )
-  return rows as Array<MessageJourneyStepRow & { journey_status: MessageJourneyStatus }>
+  return rows as Array<MessageJourneyStepRow & { journey_status: MessageJourneyStatus; journey_ruleset_id: number | null }>
 }
 
-export async function listActiveStepsByMessageIds(messageIds: number[]): Promise<Array<MessageJourneyStepRow & { journey_status: MessageJourneyStatus }>> {
+export async function listActiveStepsByMessageIds(messageIds: number[]): Promise<Array<MessageJourneyStepRow & { journey_status: MessageJourneyStatus; journey_ruleset_id: number | null }>> {
   const uniq = Array.from(new Set(messageIds.filter((id) => Number.isFinite(id) && id > 0).map((id) => Math.round(id))))
   if (!uniq.length) return []
   const placeholders = uniq.map(() => '?').join(',')
@@ -278,7 +279,8 @@ export async function listActiveStepsByMessageIds(messageIds: number[]): Promise
        s.config_json,
        s.created_at,
        s.updated_at,
-       j.status AS journey_status
+       j.status AS journey_status,
+       j.eligibility_ruleset_id AS journey_ruleset_id
      FROM feed_message_journey_steps s
      JOIN feed_message_journeys j
        ON j.id = s.journey_id
@@ -288,7 +290,7 @@ export async function listActiveStepsByMessageIds(messageIds: number[]): Promise
     ORDER BY s.journey_id ASC, s.step_order ASC, s.id ASC`,
     uniq
   )
-  return rows as Array<MessageJourneyStepRow & { journey_status: MessageJourneyStatus }>
+  return rows as Array<MessageJourneyStepRow & { journey_status: MessageJourneyStatus; journey_ruleset_id: number | null }>
 }
 
 export async function listJourneyStepRefsByMessageId(messageId: number): Promise<Array<{

@@ -508,7 +508,7 @@ async function applyJourneyGating(params: {
       journeyStepId: Number(step.id),
       journeyStepOrder: Number(step.step_order),
       journeyStepKey: String(step.step_key || ''),
-      journeyRulesetId: step.ruleset_id == null ? null : Number(step.ruleset_id),
+      journeyRulesetId: step.journey_ruleset_id == null ? null : Number(step.journey_ruleset_id),
       deliveryContext: 'journey',
     })
   }
