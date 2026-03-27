@@ -131,7 +131,15 @@ function normalizeJourneyStepConfigForAdmin(rawConfig: Record<string, any>): Rec
       throw new DomainError('invalid_progression_slot', 'invalid_progression_slot', 400)
     }
     config.progression_slot = Math.round(slot)
-    delete config.progression_intent_key
+    if (config.progression_intent_key != null && String(config.progression_intent_key).trim() !== '') {
+      const intent = String(config.progression_intent_key).trim().toLowerCase()
+      if (!/^[a-z0-9_:-]{1,64}$/.test(intent)) {
+        throw new DomainError('invalid_progression_intent_key', 'invalid_progression_intent_key', 400)
+      }
+      config.progression_intent_key = intent
+    } else {
+      delete config.progression_intent_key
+    }
     return config
   }
 
@@ -141,7 +149,15 @@ function normalizeJourneyStepConfigForAdmin(rawConfig: Record<string, any>): Rec
       throw new DomainError('invalid_progression_intent_key', 'invalid_progression_intent_key', 400)
     }
     config.progression_intent_key = intent
-    delete config.progression_slot
+    if (config.progression_slot != null && String(config.progression_slot).trim() !== '') {
+      const slot = Number(config.progression_slot)
+      if (!Number.isFinite(slot) || slot <= 0) {
+        throw new DomainError('invalid_progression_slot', 'invalid_progression_slot', 400)
+      }
+      config.progression_slot = Math.round(slot)
+    } else {
+      delete config.progression_slot
+    }
     return config
   }
 
@@ -269,10 +285,23 @@ export async function createJourneyStepForAdmin(journeyIdRaw: number, input: any
   const journey = await repo.getJourneyById(journeyId)
   if (!journey) throw new NotFoundError('message_journey_not_found')
 
+  const existingSteps = await repo.listStepsByJourneyId(journeyId, { includeArchived: true })
+  const nextStepOrder =
+    existingSteps.length > 0
+      ? Math.max(...existingSteps.map((row) => Number((row as any).step_order || 0))) + 1
+      : 1
+  let nextStepKey = `step_${nextStepOrder}`
+  const existingKeys = new Set(existingSteps.map((row) => String((row as any).step_key || '').trim().toLowerCase()).filter(Boolean))
+  if (existingKeys.has(nextStepKey)) {
+    let suffix = 2
+    while (existingKeys.has(`${nextStepKey}_${suffix}`)) suffix += 1
+    nextStepKey = `${nextStepKey}_${suffix}`
+  }
+
   const row = await repo.createStep({
     journeyId,
-    stepKey: normalizeStepKey(input?.stepKey ?? input?.step_key),
-    stepOrder: normalizePositiveInt(input?.stepOrder ?? input?.step_order, 'invalid_step_order'),
+    stepKey: nextStepKey,
+    stepOrder: nextStepOrder,
     messageId: normalizePositiveInt(input?.messageId ?? input?.message_id, 'invalid_message_id'),
     rulesetId: normalizeNullablePositiveInt(input?.rulesetId ?? input?.ruleset_id, 'invalid_ruleset_id'),
     status: normalizeStepStatus(input?.status, 'draft'),
