@@ -4676,12 +4676,40 @@ pagesRouter.get('/admin/messages', async (req: any, res: any) => {
       deliveryScope,
       campaignKey,
     })
+    const rulesets = await messageRulesetsSvc.listRulesetsForAdmin({ includeArchived: false, limit: 500 })
+    const rulesetNameById = new Map<number, string>()
+    for (const r of rulesets) {
+      const id = Number((r as any).id)
+      if (!Number.isFinite(id) || id <= 0) continue
+      rulesetNameById.set(id, String((r as any).name || `Ruleset #${id}`))
+    }
 
-    let body = '<h1>Messages</h1>'
-    body += '<div class="toolbar"><div><span class="pill">Message Registry</span></div><div><a href="/admin/messages/new">New message</a></div></div>'
+    let body = `<style>
+      .messages-nebula { min-height: 100vh; position: relative; color: #fff; font-family: system-ui, sans-serif; background: #050508; margin: -16px; padding: 16px; }
+      .messages-nebula-bg { position: fixed; inset: 0; background-image: url('/nebula_bg.jpg'); background-position: center; background-repeat: no-repeat; background-size: cover; z-index: 0; pointer-events: none; }
+      .messages-nebula-content { position: relative; z-index: 1; }
+      .messages-nebula h1 { color: #ffd60a; margin: 0 0 10px 0; }
+      .messages-nebula .toolbar { display: flex; justify-content: space-between; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+      .messages-nebula .pill { background: rgba(6,8,12,0.6); border: 1px solid rgba(255,255,255,0.2); border-radius: 999px; padding: 6px 10px; }
+      .messages-nebula .msg-btn { display: inline-block; padding: 8px 12px; border-radius: 999px; border: 1px solid rgba(120,180,255,0.45); text-decoration: none; color: #fff; background: linear-gradient(180deg, rgba(52,123,255,0.35), rgba(23,66,160,0.3)); }
+      .messages-nebula .section { background: rgba(6,8,12,0.5); border: 1px solid rgba(255,255,255,0.18); border-radius: 14px; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: 0 12px 28px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.08); }
+      .messages-nebula label { color: #f0f2f5; }
+      .messages-nebula input, .messages-nebula select { background: rgba(0,0,0,0.35); color: #fff; border: 1px solid rgba(255,255,255,0.25); }
+      .messages-nebula .btn { background: linear-gradient(180deg, rgba(52,123,255,0.35), rgba(23,66,160,0.3)); border: 1px solid rgba(120,180,255,0.45); color: #fff; }
+      .messages-nebula .message-list { display: grid; gap: 12px; }
+      .messages-nebula .message-card { position: relative; padding-top: 30px; }
+      .messages-nebula .message-card-id { position: absolute; top: 10px; right: 12px; opacity: 0.85; font-size: 13px; }
+      .messages-nebula .message-card-name { font-size: 18px; font-weight: 700; line-height: 1.2; margin-bottom: 2px; }
+      @media (max-width: 640px) {
+        .messages-nebula { margin: -12px; padding: 12px; }
+      }
+    </style>`
+    body += '<div class="messages-nebula"><div class="messages-nebula-bg"></div><div class="messages-nebula-content">'
+    body += '<h1>Messages</h1>'
+    body += '<div class="toolbar"><div><span class="pill">Message Registry</span></div><div><a class="msg-btn" href="/admin/messages/new">New message</a></div></div>'
     if (notice) body += `<div class="notice">${escapeHtml(notice)}</div>`
     if (error) body += `<div class="error">${escapeHtml(error)}</div>`
-    body += `<form method="get" action="/admin/messages" class="section" style="margin:12px 0">`
+    body += `<form id="messagesFilterForm" method="get" action="/admin/messages" class="section" style="margin:12px 0">`
     body += `<div style="display:flex; gap:10px; flex-wrap:wrap; align-items:end">`
     body += `<label style="min-width:160px">Status<select name="status">
       <option value="">All</option>
@@ -4708,31 +4736,69 @@ pagesRouter.get('/admin/messages', async (req: any, res: any) => {
     </select></label>`
     body += `<label style="min-width:180px">Campaign Key<input type="text" name="campaign_key" value="${escapeHtml(campaignKey)}" /></label>`
     body += `<label><input type="checkbox" name="include_archived" value="1"${includeArchived ? ' checked' : ''} /> Include archived</label>`
-    body += `<button class="btn" type="submit">Apply</button>`
     body += `</div></form>`
+    body += `<script>
+      (function(){
+        var form = document.getElementById('messagesFilterForm');
+        if (!form) return;
+        var debounceTimer = null;
+        var submitNow = function(){ form.submit(); };
+        var applyCampaignClientFilter = function() {
+          var campaignInput = form.querySelector('input[name="campaign_key"]');
+          var q = campaignInput ? String(campaignInput.value || '').toLowerCase().trim() : '';
+          var cards = document.querySelectorAll('.message-card');
+          for (var i = 0; i < cards.length; i++) {
+            var card = cards[i];
+            var key = String(card.getAttribute('data-campaign-key') || '');
+            card.style.display = q === '' || key.indexOf(q) !== -1 ? '' : 'none';
+          }
+        };
+        var applyCampaignClientFilterDebounced = function(){
+          if (debounceTimer) window.clearTimeout(debounceTimer);
+          debounceTimer = window.setTimeout(applyCampaignClientFilter, 100);
+        };
+        var controls = form.querySelectorAll('select,input[type="checkbox"]');
+        for (var i = 0; i < controls.length; i++) {
+          controls[i].addEventListener('change', submitNow);
+        }
+        var campaignInput = form.querySelector('input[name="campaign_key"]');
+        if (campaignInput) {
+          campaignInput.addEventListener('input', applyCampaignClientFilterDebounced);
+        }
+        applyCampaignClientFilter();
+      })();
+    </script>`
 
     if (!items.length) {
       body += '<p>No messages found for current filters.</p>'
     } else {
-      body += '<table><thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Surface</th><th>Delivery</th><th>Campaign Key</th><th>Ruleset</th><th>Priority</th><th>Status</th><th>Window</th><th>Updated</th></tr></thead><tbody>'
+      body += '<div class="message-list">'
       for (const item of items) {
         const windowLabel = item.startsAt || item.endsAt ? `${item.startsAt || '—'} → ${item.endsAt || '—'}` : 'Always'
-        body += `<tr>
-          <td>${item.id}</td>
-          <td><a href="/admin/messages/${item.id}">${escapeHtml(item.name)}</a></td>
-          <td>${escapeHtml(item.type)}</td>
-          <td>${escapeHtml(item.appliesToSurface)}</td>
-          <td>${escapeHtml(String((item as any).deliveryScope || 'both'))}</td>
-          <td>${escapeHtml(item.campaignKey || '—')}</td>
-          <td>${item.eligibilityRulesetId == null ? '—' : String(item.eligibilityRulesetId)}</td>
-          <td>${item.priority}</td>
-          <td>${escapeHtml(item.status)}</td>
-          <td>${escapeHtml(windowLabel)}</td>
-          <td>${escapeHtml(item.updatedAt || '')}</td>
-        </tr>`
+        const rulesetLabel =
+          item.eligibilityRulesetId == null
+            ? '—'
+            : escapeHtml(rulesetNameById.get(Number(item.eligibilityRulesetId)) || `Ruleset #${Number(item.eligibilityRulesetId)}`)
+        body += `<div class="section message-card" data-campaign-key="${escapeHtml(String(item.campaignKey || '').toLowerCase())}" style="margin:0">
+          <div class="message-card-id">${item.id}</div>
+          <div style="font-size:14px; display:grid; gap:6px">
+            <div class="message-card-name"><a href="/admin/messages/${item.id}">${escapeHtml(item.name)}</a></div>
+            <div><strong>Type:</strong> ${escapeHtml(item.type)}</div>
+            <div><strong>Surface:</strong> ${escapeHtml(item.appliesToSurface)}</div>
+            <div><strong>Scope:</strong> ${escapeHtml(String((item as any).deliveryScope || 'both'))}</div>
+            <div><strong>Campaign Key:</strong> ${escapeHtml(item.campaignKey || '—')}</div>
+            <div><strong>Ruleset:</strong> ${rulesetLabel}</div>
+            <div><strong>Priority:</strong> ${item.priority}</div>
+            <div><strong>Status:</strong> ${escapeHtml(item.status)}</div>
+            <div><strong>Window:</strong> ${escapeHtml(windowLabel)}</div>
+            <div><strong>Updated:</strong> ${escapeHtml(item.updatedAt || '')}</div>
+          </div>
+        </div>`
       }
-      body += '</tbody></table>'
+      body += '</div>'
     }
+
+    body += '</div></div>'
 
     const doc = renderAdminPage({ title: 'Messages', bodyHtml: body, active: 'messages' })
     res.set('Content-Type', 'text/html; charset=utf-8')

@@ -90,8 +90,8 @@ export async function list(params?: {
     args.push(params.deliveryScope)
   }
   if (params?.campaignKey) {
-    where.push('campaign_key = ?')
-    args.push(params.campaignKey)
+    where.push('campaign_key LIKE ?')
+    args.push(`%${params.campaignKey}%`)
   }
 
   const [rows] = await db.query(
