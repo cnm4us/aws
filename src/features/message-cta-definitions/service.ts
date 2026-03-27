@@ -1,9 +1,6 @@
 import { context, trace } from '@opentelemetry/api'
 import { DomainError, ForbiddenError, NotFoundError } from '../../core/errors'
-import { getPool } from '../../db'
 import { getLogger } from '../../lib/logger'
-import { PERM } from '../../security/perm'
-import { can } from '../../security/permissions'
 import * as repo from './repo'
 import type {
   MessageCtaApiActionConfig,
@@ -314,36 +311,6 @@ function toDto(row: MessageCtaDefinitionRow): MessageCtaDefinitionDto {
   }
 }
 
-async function listManageableSpaceIds(actorUserId: number): Promise<number[]> {
-  const db = getPool()
-  const [rows] = await db.query(
-    `SELECT DISTINCT s.id
-       FROM spaces s
-       LEFT JOIN user_space_roles usr ON usr.space_id = s.id AND usr.user_id = ?
-       LEFT JOIN roles r ON r.id = usr.role_id
-      WHERE s.owner_user_id = ?
-         OR r.name IN ('space_admin', 'group_admin', 'channel_admin')`,
-    [actorUserId, actorUserId]
-  )
-  return (rows as any[])
-    .map((row) => Number(row.id))
-    .filter((value) => Number.isFinite(value) && value > 0)
-}
-
-async function hasScopeAccess(actorUserId: number, scopeType: MessageCtaScopeType, scopeSpaceId: number | null): Promise<boolean> {
-  const siteAdmin = await can(actorUserId, PERM.VIDEO_DELETE_ANY)
-  if (scopeType === 'global') return siteAdmin
-  if (siteAdmin) return true
-  if (!scopeSpaceId) return false
-
-  if (await can(actorUserId, PERM.SPACE_MANAGE, { spaceId: scopeSpaceId })) return true
-  if (await can(actorUserId, PERM.SPACE_ASSIGN_ROLES, { spaceId: scopeSpaceId })) return true
-  if (await can(actorUserId, PERM.SPACE_MANAGE_MEMBERS, { spaceId: scopeSpaceId })) return true
-
-  const manageableIds = await listManageableSpaceIds(actorUserId)
-  return manageableIds.includes(scopeSpaceId)
-}
-
 function annotateCtaWrite(operation: string, dto: MessageCtaDefinitionDto, actorUserId: number): void {
   const span = trace.getSpan(context.active())
   if (span) {
@@ -390,8 +357,8 @@ type NormalizedDefinitionInput = {
 }
 
 function normalizeDefinitionInput(input: Record<string, unknown>, fallback?: MessageCtaDefinitionDto): NormalizedDefinitionInput {
-  const scopeType = normalizeScopeType(input.scopeType ?? fallback?.scopeType, fallback?.scopeType ?? 'global')
-  const scopeSpaceId = normalizeScopeSpaceId(input.scopeSpaceId ?? fallback?.scopeSpaceId, scopeType)
+  const scopeType: MessageCtaScopeType = 'global'
+  const scopeSpaceId: number | null = null
   const intentKey = normalizeIntentKey(input.intentKey ?? fallback?.intentKey, fallback?.intentKey ?? 'visit_link')
   const executorType = normalizeExecutorType(input.executorType ?? fallback?.executorType, fallback?.executorType ?? 'internal_link')
   const completionContract = normalizeCompletionContract(
@@ -428,9 +395,6 @@ export async function listMessageCtaDefinitionsForAdmin(params: {
 }): Promise<MessageCtaDefinitionDto[]> {
   const actorUserId = Number(params.actorUserId)
   if (!Number.isFinite(actorUserId) || actorUserId <= 0) throw new ForbiddenError('forbidden')
-
-  const siteAdmin = await can(actorUserId, PERM.VIDEO_DELETE_ANY)
-  const manageableSpaceIds = siteAdmin ? [] : await listManageableSpaceIds(actorUserId)
   const rows = await repo.list({
     limit: params.limit,
     includeArchived: params.includeArchived,
@@ -440,17 +404,7 @@ export async function listMessageCtaDefinitionsForAdmin(params: {
     intentKey: params.intentKey,
     executorType: params.executorType,
   })
-
-  return rows
-    .filter((row) => {
-      const scopeType = normalizeScopeType(row.scope_type)
-      const scopeSpaceId = row.scope_space_id == null ? null : Number(row.scope_space_id)
-      if (siteAdmin) return true
-      if (scopeType === 'global') return false
-      if (!scopeSpaceId) return false
-      return manageableSpaceIds.includes(scopeSpaceId)
-    })
-    .map((row) => toDto(row))
+  return rows.map((row) => toDto(row))
 }
 
 export async function getMessageCtaDefinitionForAdmin(id: number, actorUserId: number): Promise<MessageCtaDefinitionDto> {
@@ -461,11 +415,7 @@ export async function getMessageCtaDefinitionForAdmin(id: number, actorUserId: n
 
   const row = await repo.getById(itemId)
   if (!row) throw new NotFoundError('not_found')
-  const dto = toDto(row)
-
-  const allowed = await hasScopeAccess(userId, dto.scopeType, dto.scopeSpaceId)
-  if (!allowed) throw new ForbiddenError('forbidden')
-  return dto
+  return toDto(row)
 }
 
 export async function createMessageCtaDefinitionForAdmin(input: Record<string, unknown>, actorUserId: number): Promise<MessageCtaDefinitionDto> {
@@ -473,9 +423,6 @@ export async function createMessageCtaDefinitionForAdmin(input: Record<string, u
   if (!Number.isFinite(userId) || userId <= 0) throw new ForbiddenError('forbidden')
 
   const normalized = normalizeDefinitionInput(input)
-  const allowed = await hasScopeAccess(userId, normalized.scopeType, normalized.scopeSpaceId)
-  if (!allowed) throw new ForbiddenError('forbidden')
-
   const row = await repo.create({
     name: normalized.name,
     status: normalized.status,
@@ -507,9 +454,6 @@ export async function updateMessageCtaDefinitionForAdmin(
 
   const current = await getMessageCtaDefinitionForAdmin(itemId, userId)
   const normalized = normalizeDefinitionInput(patch, current)
-  const allowed = await hasScopeAccess(userId, normalized.scopeType, normalized.scopeSpaceId)
-  if (!allowed) throw new ForbiddenError('forbidden')
-
   const row = await repo.update(itemId, {
     name: normalized.name,
     status: normalized.status,
@@ -538,8 +482,6 @@ export async function cloneMessageCtaDefinitionForAdmin(id: number, actorUserId:
     {
       name: `${source.name} (Copy)`,
       status: 'draft',
-      scopeType: source.scopeType,
-      scopeSpaceId: source.scopeSpaceId,
       intentKey: source.intentKey,
       executorType: source.executorType,
       completionContract: source.completionContract,
@@ -566,11 +508,6 @@ export async function resolveRuntimeDefinitionsById(params: {
   for (const row of rows) {
     const dto = toDto(row)
     if (!params.includeArchived && dto.status === 'archived') continue
-
-    if (actorUserId && Number.isFinite(actorUserId) && actorUserId > 0) {
-      const allowed = await hasScopeAccess(actorUserId, dto.scopeType, dto.scopeSpaceId)
-      if (!allowed) continue
-    }
 
     map.set(dto.id, {
       definitionId: dto.id,

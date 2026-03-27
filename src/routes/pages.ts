@@ -4399,13 +4399,10 @@ function withoutSupportIntentQuery(rawHref: string): string {
 }
 
 function buildMessageCtaCreateOrUpdatePayload(body: any): any {
-  const scopeType = String(body?.scopeType || 'global').trim().toLowerCase()
   const executorType = String(body?.executorType || 'internal_link').trim().toLowerCase()
   const intentKey = String(body?.intentKey || 'visit_link').trim().toLowerCase()
   const completionContract = String(body?.completionContract || 'on_click').trim().toLowerCase()
   const status = String(body?.status || 'draft').trim().toLowerCase()
-  const scopeSpaceIdRaw = String(body?.scopeSpaceId || '').trim()
-  const scopeSpaceId = scopeType === 'space' && /^\d+$/.test(scopeSpaceIdRaw) ? Number(scopeSpaceIdRaw) : null
 
   let config: any = {}
   if (executorType === 'internal_link') {
@@ -4427,8 +4424,6 @@ function buildMessageCtaCreateOrUpdatePayload(body: any): any {
     name: String(body?.name || '').trim(),
     labelDefault: String(body?.labelDefault || '').trim(),
     status,
-    scopeType,
-    scopeSpaceId,
     intentKey,
     executorType,
     completionContract,
@@ -4449,7 +4444,6 @@ function renderAdminMessageCtaForm(opts: {
   const csrfToken = opts.csrfToken ? String(opts.csrfToken) : ''
   const values = opts.values || {}
   const id = Number(values?.id || 0) || null
-  const scopeType = String(values?.scopeType || 'global')
   const executorType = String(values?.executorType || 'internal_link')
   const config = values?.config && typeof values.config === 'object' ? values.config : {}
 
@@ -4470,12 +4464,6 @@ function renderAdminMessageCtaForm(opts: {
     body += `<option value="${escapeHtml(opt.value)}"${String(values?.status || 'draft') === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
   }
   body += `</select></label>`
-  body += `<label>Scope<select name="scopeType" id="scopeType">`
-  for (const opt of MESSAGE_CTA_SCOPE_OPTIONS) {
-    body += `<option value="${escapeHtml(opt.value)}"${scopeType === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
-  }
-  body += `</select></label>`
-  body += `<label id="scopeSpaceRow">Scope Space ID<input type="number" min="1" name="scopeSpaceId" value="${escapeHtml(String(values?.scopeSpaceId || ''))}" /></label>`
   body += `</div></div>`
 
   body += `<div class="section"><div class="section-title">Intent + Executor</div>`
@@ -4537,8 +4525,6 @@ function renderAdminMessageCtaForm(opts: {
       const executorSel = document.getElementById('executorType');
       const intentSel = document.querySelector('select[name="intentKey"]');
       const completionSel = document.getElementById('completionContract');
-      const scopeSel = document.getElementById('scopeType');
-      const scopeSpaceRow = document.getElementById('scopeSpaceRow');
       const hrefInput = document.getElementById('configInternalHref');
       const resolvedHrefInput = document.getElementById('configInternalResolvedHref');
       const completionHint = document.getElementById('completionContractHint');
@@ -4572,10 +4558,6 @@ function renderAdminMessageCtaForm(opts: {
           el.style.display = show ? '' : 'none';
         });
       }
-      function syncScope() {
-        const scope = String(scopeSel && scopeSel.value || 'global');
-        if (scopeSpaceRow) scopeSpaceRow.style.display = scope === 'space' ? '' : 'none';
-      }
       function syncCompletionHint() {
         if (!completionHint) return;
         const intent = String(intentSel && intentSel.value || '');
@@ -4604,9 +4586,7 @@ function renderAdminMessageCtaForm(opts: {
       if (executorSel) executorSel.addEventListener('change', syncCompletionHint);
       if (completionSel) completionSel.addEventListener('change', syncCompletionHint);
       if (hrefInput) hrefInput.addEventListener('input', syncResolvedHref);
-      if (scopeSel) scopeSel.addEventListener('change', syncScope);
       syncExecutor();
-      syncScope();
       syncResolvedHref();
       syncCompletionHint();
     })();
@@ -4938,8 +4918,6 @@ pagesRouter.get('/admin/message-ctas', async (req: any, res: any) => {
   try {
     const includeArchived = String(req.query?.include_archived || '0') === '1'
     const status = req.query?.status ? String(req.query.status) : ''
-    const scopeType = req.query?.scope_type ? String(req.query.scope_type) : ''
-    const scopeSpaceId = req.query?.scope_space_id ? Number(req.query.scope_space_id) : null
     const intentKey = req.query?.intent_key ? String(req.query.intent_key) : ''
     const executorType = req.query?.executor_type ? String(req.query.executor_type) : ''
     const notice = req.query?.notice ? String(req.query.notice) : ''
@@ -4950,8 +4928,6 @@ pagesRouter.get('/admin/message-ctas', async (req: any, res: any) => {
       includeArchived,
       limit: 500,
       status: status || null as any,
-      scopeType: scopeType || null as any,
-      scopeSpaceId: Number.isFinite(scopeSpaceId as number) && (scopeSpaceId as number) > 0 ? scopeSpaceId : null,
       intentKey: intentKey || null as any,
       executorType: executorType || null as any,
     })
@@ -4967,12 +4943,6 @@ pagesRouter.get('/admin/message-ctas', async (req: any, res: any) => {
       body += `<option value="${escapeHtml(opt.value)}"${status === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
     }
     body += `</select></label>`
-    body += `<label style="min-width:150px">Scope<select name="scope_type"><option value="">All</option>`
-    for (const opt of MESSAGE_CTA_SCOPE_OPTIONS) {
-      body += `<option value="${escapeHtml(opt.value)}"${scopeType === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
-    }
-    body += `</select></label>`
-    body += `<label style="min-width:160px">Scope Space ID<input type="number" min="1" name="scope_space_id" value="${escapeHtml(String(req.query?.scope_space_id || ''))}" /></label>`
     body += `<label style="min-width:190px">Intent<select name="intent_key"><option value="">All</option>`
     for (const opt of MESSAGE_CTA_INTENT_OPTIONS) {
       body += `<option value="${escapeHtml(opt.value)}"${intentKey === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
@@ -4990,13 +4960,11 @@ pagesRouter.get('/admin/message-ctas', async (req: any, res: any) => {
     if (!items.length) {
       body += '<p>No CTA definitions found for current filters.</p>'
     } else {
-      body += '<table><thead><tr><th>ID</th><th>Name</th><th>Scope</th><th>Intent</th><th>Executor</th><th>Completion</th><th>Label</th><th>Status</th><th>Updated</th></tr></thead><tbody>'
+      body += '<table><thead><tr><th>ID</th><th>Name</th><th>Intent</th><th>Executor</th><th>Completion</th><th>Label</th><th>Status</th><th>Updated</th></tr></thead><tbody>'
       for (const item of items) {
-        const scopeLabel = item.scopeType === 'space' ? `space:${item.scopeSpaceId || '—'}` : 'global'
         body += `<tr>
           <td>${item.id}</td>
           <td><a href="/admin/message-ctas/${item.id}">${escapeHtml(item.name)}</a></td>
-          <td>${escapeHtml(scopeLabel)}</td>
           <td>${escapeHtml(item.intentKey)}</td>
           <td>${escapeHtml(item.executorType)}</td>
           <td>${escapeHtml(item.completionContract)}</td>
@@ -5025,15 +4993,13 @@ pagesRouter.get('/admin/message-ctas/new', async (req: any, res: any) => {
     action: '/admin/message-ctas',
     csrfToken,
     backHref: '/admin/message-ctas',
-    values: {
-      name: '',
-      labelDefault: '',
-      status: 'draft',
-      scopeType: 'global',
-      scopeSpaceId: '',
-      intentKey: 'visit_link',
-      executorType: 'internal_link',
-      completionContract: 'on_click',
+      values: {
+        name: '',
+        labelDefault: '',
+        status: 'draft',
+        intentKey: 'visit_link',
+        executorType: 'internal_link',
+        completionContract: 'on_click',
       config: {
         href: '/',
         successReturn: '/',
