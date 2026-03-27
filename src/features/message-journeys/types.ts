@@ -6,6 +6,7 @@ export type MessageJourneyRow = {
   name: string
   status: MessageJourneyStatus
   description: string | null
+  eligibility_ruleset_id: number | null
   created_by: number
   updated_by: number
   created_at: string
@@ -51,6 +52,7 @@ export type MessageJourneyDto = {
   name: string
   status: MessageJourneyStatus
   description: string | null
+  eligibilityRulesetId: number | null
   createdBy: number
   updatedBy: number
   createdAt: string

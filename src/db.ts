@@ -1022,24 +1022,28 @@ export async function ensureSchema(db: DB) {
               name VARCHAR(120) NOT NULL,
               status ENUM('draft','active','archived') NOT NULL DEFAULT 'draft',
               description VARCHAR(500) NULL,
+              eligibility_ruleset_id BIGINT UNSIGNED NULL,
               created_by BIGINT UNSIGNED NOT NULL DEFAULT 0,
               updated_by BIGINT UNSIGNED NOT NULL DEFAULT 0,
               created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
               updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
               UNIQUE KEY uniq_feed_message_journeys_key (journey_key),
               KEY idx_feed_message_journeys_status (status, id),
-              KEY idx_feed_message_journeys_name (name, id)
+              KEY idx_feed_message_journeys_name (name, id),
+              KEY idx_feed_message_journeys_ruleset (eligibility_ruleset_id, id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
           `)
           await db.query(`ALTER TABLE feed_message_journeys ADD COLUMN IF NOT EXISTS journey_key VARCHAR(64) NOT NULL`)
           await db.query(`ALTER TABLE feed_message_journeys ADD COLUMN IF NOT EXISTS name VARCHAR(120) NOT NULL`)
           await db.query(`ALTER TABLE feed_message_journeys ADD COLUMN IF NOT EXISTS status ENUM('draft','active','archived') NOT NULL DEFAULT 'draft'`)
           await db.query(`ALTER TABLE feed_message_journeys ADD COLUMN IF NOT EXISTS description VARCHAR(500) NULL`)
+          await db.query(`ALTER TABLE feed_message_journeys ADD COLUMN IF NOT EXISTS eligibility_ruleset_id BIGINT UNSIGNED NULL`)
           await db.query(`ALTER TABLE feed_message_journeys ADD COLUMN IF NOT EXISTS created_by BIGINT UNSIGNED NOT NULL DEFAULT 0`)
           await db.query(`ALTER TABLE feed_message_journeys ADD COLUMN IF NOT EXISTS updated_by BIGINT UNSIGNED NOT NULL DEFAULT 0`)
           try { await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_feed_message_journeys_key ON feed_message_journeys (journey_key)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_journeys_status ON feed_message_journeys (status, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_journeys_name ON feed_message_journeys (name, id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_journeys_ruleset ON feed_message_journeys (eligibility_ruleset_id, id)`); } catch {}
 
           await db.query(`
             CREATE TABLE IF NOT EXISTS feed_message_journey_steps (

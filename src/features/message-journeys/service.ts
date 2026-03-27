@@ -173,6 +173,7 @@ function toJourneyDto(row: MessageJourneyRow): MessageJourneyDto {
     name: String(row.name || ''),
     status: normalizeJourneyStatus(row.status),
     description: row.description == null ? null : String(row.description),
+    eligibilityRulesetId: row.eligibility_ruleset_id == null ? null : Number(row.eligibility_ruleset_id),
     createdBy: Number(row.created_by || 0),
     updatedBy: Number(row.updated_by || 0),
     createdAt: String(row.created_at || ''),
@@ -229,6 +230,7 @@ export async function createJourneyForAdmin(input: any, actorUserId: number): Pr
     name: normalizeJourneyName(input?.name),
     status: normalizeJourneyStatus(input?.status, 'draft'),
     description: normalizeDescription(input?.description),
+    eligibilityRulesetId: normalizeNullablePositiveInt(input?.eligibilityRulesetId ?? input?.eligibility_ruleset_id, 'invalid_ruleset_id'),
     createdBy: userId,
     updatedBy: userId,
   })
@@ -250,6 +252,10 @@ export async function updateJourneyForAdmin(id: number, patch: any, actorUserId:
     name: patch?.name !== undefined ? normalizeJourneyName(patch?.name) : existingDto.name,
     status: patch?.status !== undefined ? normalizeJourneyStatus(patch?.status, existingDto.status) : existingDto.status,
     description: patch?.description !== undefined ? normalizeDescription(patch?.description) : existingDto.description,
+    eligibilityRulesetId:
+      patch?.eligibilityRulesetId !== undefined || patch?.eligibility_ruleset_id !== undefined
+        ? normalizeNullablePositiveInt(patch?.eligibilityRulesetId ?? patch?.eligibility_ruleset_id, 'invalid_ruleset_id')
+        : existingDto.eligibilityRulesetId,
     updatedBy: userId,
   })
   return toJourneyDto(row)

@@ -5371,11 +5371,13 @@ pagesRouter.post('/admin/message-rulesets/:id', async (req: any, res: any) => {
 })
 
 function buildMessageJourneyCreateOrUpdatePayload(body: any): any {
+  const rulesetIdRaw = String(body?.eligibilityRulesetId ?? body?.eligibility_ruleset_id ?? '').trim()
   return {
     journeyKey: String(body?.journeyKey || body?.journey_key || '').trim().toLowerCase(),
     name: String(body?.name || '').trim(),
     status: String(body?.status || 'draft').trim().toLowerCase(),
     description: String(body?.description || '').trim() || null,
+    eligibilityRulesetId: /^\d+$/.test(rulesetIdRaw) ? Number(rulesetIdRaw) : null,
   }
 }
 

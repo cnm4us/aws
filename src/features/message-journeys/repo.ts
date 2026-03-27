@@ -15,6 +15,7 @@ const JOURNEY_SELECT_SQL = `
     name,
     status,
     description,
+    eligibility_ruleset_id,
     created_by,
     updated_by,
     created_at,
@@ -74,6 +75,7 @@ type JourneyCreateInput = {
   name: string
   status: MessageJourneyStatus
   description: string | null
+  eligibilityRulesetId: number | null
   createdBy: number
   updatedBy: number
 }
@@ -146,6 +148,9 @@ export async function getJourneyByKey(journeyKey: string): Promise<MessageJourne
 }
 
 export async function createJourney(input: JourneyCreateInput): Promise<MessageJourneyRow> {
+  if (input.eligibilityRulesetId != null && !(await rowExists('feed_message_eligibility_rulesets', Number(input.eligibilityRulesetId)))) {
+    throw new Error('invalid_ruleset_id')
+  }
   const db = getPool()
   const [result] = await db.query(
     `INSERT INTO feed_message_journeys (
@@ -153,14 +158,16 @@ export async function createJourney(input: JourneyCreateInput): Promise<MessageJ
       name,
       status,
       description,
+      eligibility_ruleset_id,
       created_by,
       updated_by
-    ) VALUES (?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
     [
       input.journeyKey,
       input.name,
       input.status,
       input.description,
+      input.eligibilityRulesetId,
       input.createdBy,
       input.updatedBy,
     ]
@@ -173,6 +180,11 @@ export async function createJourney(input: JourneyCreateInput): Promise<MessageJ
 }
 
 export async function updateJourney(id: number, patch: JourneyUpdateInput): Promise<MessageJourneyRow> {
+  if (patch.eligibilityRulesetId !== undefined && patch.eligibilityRulesetId != null) {
+    if (!(await rowExists('feed_message_eligibility_rulesets', Number(patch.eligibilityRulesetId)))) {
+      throw new Error('invalid_ruleset_id')
+    }
+  }
   const db = getPool()
   const sets: string[] = []
   const args: any[] = []
@@ -181,6 +193,7 @@ export async function updateJourney(id: number, patch: JourneyUpdateInput): Prom
   if (patch.name !== undefined) { sets.push('name = ?'); args.push(patch.name) }
   if (patch.status !== undefined) { sets.push('status = ?'); args.push(patch.status) }
   if (patch.description !== undefined) { sets.push('description = ?'); args.push(patch.description) }
+  if (patch.eligibilityRulesetId !== undefined) { sets.push('eligibility_ruleset_id = ?'); args.push(patch.eligibilityRulesetId) }
   if (patch.updatedBy !== undefined) { sets.push('updated_by = ?'); args.push(patch.updatedBy) }
 
   if (sets.length) {
