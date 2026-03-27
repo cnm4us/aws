@@ -4663,7 +4663,7 @@ pagesRouter.get('/admin/messages', async (req: any, res: any) => {
     const status = req.query?.status ? String(req.query.status) : ''
     const messageType = req.query?.message_type ? String(req.query.message_type) : ''
     const appliesToSurface = req.query?.applies_to_surface ? String(req.query.applies_to_surface) : ''
-    const deliveryScope = req.query?.delivery_scope ? String(req.query.delivery_scope) : 'both'
+    const deliveryScope = req.query?.delivery_scope ? String(req.query.delivery_scope) : ''
     const campaignKey = req.query?.campaign_key ? String(req.query.campaign_key) : ''
     const notice = req.query?.notice ? String(req.query.notice) : ''
     const error = req.query?.error ? String(req.query.error) : ''
@@ -4701,6 +4701,7 @@ pagesRouter.get('/admin/messages', async (req: any, res: any) => {
     }
     body += `</select></label>`
     body += `<label style="min-width:170px">Scope<select name="delivery_scope">
+      <option value=""${deliveryScope === '' ? ' selected' : ''}>All</option>
       <option value="both"${deliveryScope === 'both' ? ' selected' : ''}>Both</option>
       <option value="journey_only"${deliveryScope === 'journey_only' ? ' selected' : ''}>Journey</option>
       <option value="standalone_only"${deliveryScope === 'standalone_only' ? ' selected' : ''}>Standalone</option>
