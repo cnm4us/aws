@@ -62,6 +62,7 @@ export async function list(params?: {
   status?: string | null
   messageType?: string | null
   appliesToSurface?: string | null
+  deliveryScope?: string | null
   campaignKey?: string | null
 }): Promise<MessageRow[]> {
   const db = getPool()
@@ -83,6 +84,10 @@ export async function list(params?: {
   if (params?.appliesToSurface) {
     where.push('applies_to_surface = ?')
     args.push(params.appliesToSurface)
+  }
+  if (params?.deliveryScope) {
+    where.push('delivery_scope = ?')
+    args.push(params.deliveryScope)
   }
   if (params?.campaignKey) {
     where.push('campaign_key = ?')

@@ -645,11 +645,13 @@ export async function listForAdmin(params: {
   status?: any
   messageType?: any
   appliesToSurface?: any
+  deliveryScope?: any
   campaignKey?: any
 }): Promise<MessageDto[]> {
   const status = params.status == null || params.status === '' ? null : normalizeStatus(params.status)
   const messageType = params.messageType == null || params.messageType === '' ? null : normalizeMessageType(params.messageType)
   const appliesToSurface = params.appliesToSurface == null || params.appliesToSurface === '' ? null : normalizeSurface(params.appliesToSurface)
+  const deliveryScope = params.deliveryScope == null || params.deliveryScope === '' ? null : normalizeDeliveryScope(params.deliveryScope)
   const campaignKey = params.campaignKey == null || params.campaignKey === '' ? null : normalizeCampaignKey(params.campaignKey)
 
   const rows = await repo.list({
@@ -658,6 +660,7 @@ export async function listForAdmin(params: {
     status,
     messageType,
     appliesToSurface,
+    deliveryScope,
     campaignKey,
   })
   return rows.map(mapRow)
