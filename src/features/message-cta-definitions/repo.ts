@@ -127,7 +127,7 @@ export async function create(input: CreateInput): Promise<MessageCtaDefinitionRo
       config_json,
       created_by,
       updated_by
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.name,
       input.status,

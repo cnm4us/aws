@@ -3124,6 +3124,13 @@ const MESSAGE_CTA_EXECUTOR_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'api_action', label: 'API Action' },
 ]
 
+const MESSAGE_CTA_COMPLETION_CONTRACT_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'on_click', label: 'On Click' },
+  { value: 'on_return', label: 'On Return' },
+  { value: 'on_verified', label: 'On Verified' },
+  { value: 'none', label: 'None (never complete)' },
+]
+
 const MESSAGE_RULESET_STATUS_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'draft', label: 'Draft' },
   { value: 'active', label: 'Active' },
@@ -3140,6 +3147,13 @@ const MESSAGE_JOURNEY_STEP_STATUS_OPTIONS: Array<{ value: string; label: string 
   { value: 'draft', label: 'Draft' },
   { value: 'active', label: 'Active' },
   { value: 'archived', label: 'Archived' },
+]
+
+const MESSAGE_JOURNEY_STEP_PROGRESSION_POLICY_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'on_any_completion', label: 'Any CTA Completion' },
+  { value: 'on_any_click', label: 'Any CTA Click' },
+  { value: 'on_cta_slot_completion', label: 'Specific CTA Slot Completion' },
+  { value: 'on_intent_completion', label: 'Specific Intent Completion' },
 ]
 
 const PAYMENT_PROVIDER_OPTIONS: Array<{ value: string; label: string }> = [
@@ -4388,6 +4402,7 @@ function buildMessageCtaCreateOrUpdatePayload(body: any): any {
   const scopeType = String(body?.scopeType || 'global').trim().toLowerCase()
   const executorType = String(body?.executorType || 'internal_link').trim().toLowerCase()
   const intentKey = String(body?.intentKey || 'visit_link').trim().toLowerCase()
+  const completionContract = String(body?.completionContract || 'on_click').trim().toLowerCase()
   const status = String(body?.status || 'draft').trim().toLowerCase()
   const scopeSpaceIdRaw = String(body?.scopeSpaceId || '').trim()
   const scopeSpaceId = scopeType === 'space' && /^\d+$/.test(scopeSpaceIdRaw) ? Number(scopeSpaceIdRaw) : null
@@ -4416,6 +4431,7 @@ function buildMessageCtaCreateOrUpdatePayload(body: any): any {
     scopeSpaceId,
     intentKey,
     executorType,
+    completionContract,
     config,
   }
 }
@@ -4474,7 +4490,13 @@ function renderAdminMessageCtaForm(opts: {
     body += `<option value="${escapeHtml(opt.value)}"${executorType === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
   }
   body += `</select></label>`
+  body += `<label>Completion Contract<select name="completionContract" id="completionContract">`
+  for (const opt of MESSAGE_CTA_COMPLETION_CONTRACT_OPTIONS) {
+    body += `<option value="${escapeHtml(opt.value)}"${String(values?.completionContract || 'on_click') === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+  }
+  body += `</select></label>`
   body += `</div></div>`
+  body += `<div class="field-hint" id="completionContractHint" style="margin-top:-2px"></div>`
 
   body += `<div class="section executor-config" data-executor="internal_link"><div class="section-title">Internal Link Config</div>`
   body += `<label>Base Href<input type="text" id="configInternalHref" name="configInternalHref" value="${escapeHtml(withoutSupportIntentQuery(String(config?.href || config?.returnUrl || config?.startPath || '')))}" placeholder="/channels/global-feed" /></label>`
@@ -4514,10 +4536,12 @@ function renderAdminMessageCtaForm(opts: {
     (function () {
       const executorSel = document.getElementById('executorType');
       const intentSel = document.querySelector('select[name="intentKey"]');
+      const completionSel = document.getElementById('completionContract');
       const scopeSel = document.getElementById('scopeType');
       const scopeSpaceRow = document.getElementById('scopeSpaceRow');
       const hrefInput = document.getElementById('configInternalHref');
       const resolvedHrefInput = document.getElementById('configInternalResolvedHref');
+      const completionHint = document.getElementById('completionContractHint');
       function withIntentQuery(baseHref, intent) {
         const href = String(baseHref || '').trim();
         const flow = String(intent || '').trim().toLowerCase();
@@ -4552,13 +4576,39 @@ function renderAdminMessageCtaForm(opts: {
         const scope = String(scopeSel && scopeSel.value || 'global');
         if (scopeSpaceRow) scopeSpaceRow.style.display = scope === 'space' ? '' : 'none';
       }
+      function syncCompletionHint() {
+        if (!completionHint) return;
+        const intent = String(intentSel && intentSel.value || '');
+        const executor = String(executorSel && executorSel.value || '');
+        const contract = String(completionSel && completionSel.value || 'on_click');
+        let text = '';
+        let level = '';
+        if ((intent === 'donate' || intent === 'subscribe' || intent === 'upgrade') && contract === 'on_click') {
+          text = 'Warning: support intents usually require conversion completion. Consider On Return or On Verified.';
+          level = 'warn';
+        } else if ((intent === 'verify_email' || intent === 'verify_phone') && contract !== 'on_verified') {
+          text = 'Warning: verification intents usually use On Verified to avoid premature completion.';
+          level = 'warn';
+        } else if (executor === 'api_action' && contract === 'on_verified') {
+          text = 'Warning: API Action does not imply verified state unless your endpoint emits verified completion explicitly.';
+          level = 'warn';
+        } else {
+          text = 'Completion contract controls when this CTA emits canonical completion (used by suppression and journey progression).';
+        }
+        completionHint.textContent = text;
+        completionHint.style.color = level === 'warn' ? '#f59e0b' : '';
+      }
       if (executorSel) executorSel.addEventListener('change', syncExecutor);
       if (intentSel) intentSel.addEventListener('change', syncResolvedHref);
+      if (intentSel) intentSel.addEventListener('change', syncCompletionHint);
+      if (executorSel) executorSel.addEventListener('change', syncCompletionHint);
+      if (completionSel) completionSel.addEventListener('change', syncCompletionHint);
       if (hrefInput) hrefInput.addEventListener('input', syncResolvedHref);
       if (scopeSel) scopeSel.addEventListener('change', syncScope);
       syncExecutor();
       syncScope();
       syncResolvedHref();
+      syncCompletionHint();
     })();
   </script>`
 
@@ -4940,7 +4990,7 @@ pagesRouter.get('/admin/message-ctas', async (req: any, res: any) => {
     if (!items.length) {
       body += '<p>No CTA definitions found for current filters.</p>'
     } else {
-      body += '<table><thead><tr><th>ID</th><th>Name</th><th>Scope</th><th>Intent</th><th>Executor</th><th>Label</th><th>Status</th><th>Updated</th></tr></thead><tbody>'
+      body += '<table><thead><tr><th>ID</th><th>Name</th><th>Scope</th><th>Intent</th><th>Executor</th><th>Completion</th><th>Label</th><th>Status</th><th>Updated</th></tr></thead><tbody>'
       for (const item of items) {
         const scopeLabel = item.scopeType === 'space' ? `space:${item.scopeSpaceId || '—'}` : 'global'
         body += `<tr>
@@ -4949,6 +4999,7 @@ pagesRouter.get('/admin/message-ctas', async (req: any, res: any) => {
           <td>${escapeHtml(scopeLabel)}</td>
           <td>${escapeHtml(item.intentKey)}</td>
           <td>${escapeHtml(item.executorType)}</td>
+          <td>${escapeHtml(item.completionContract)}</td>
           <td>${escapeHtml(item.labelDefault)}</td>
           <td>${escapeHtml(item.status)}</td>
           <td>${escapeHtml(item.updatedAt || '')}</td>
@@ -4982,6 +5033,7 @@ pagesRouter.get('/admin/message-ctas/new', async (req: any, res: any) => {
       scopeSpaceId: '',
       intentKey: 'visit_link',
       executorType: 'internal_link',
+      completionContract: 'on_click',
       config: {
         href: '/',
         successReturn: '/',
@@ -5287,14 +5339,82 @@ function buildMessageJourneyCreateOrUpdatePayload(body: any): any {
   }
 }
 
+function parseConfigJsonObjectLoose(raw: any): { ok: boolean; value: Record<string, any> } {
+  if (raw == null || raw === '') return { ok: true, value: {} }
+  if (typeof raw === 'object' && !Array.isArray(raw)) return { ok: true, value: { ...raw } }
+  const value = String(raw).trim()
+  if (!value) return { ok: true, value: {} }
+  try {
+    const parsed = JSON.parse(value)
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return { ok: true, value: parsed as Record<string, any> }
+    }
+  } catch {}
+  return { ok: false, value: {} }
+}
+
+function withJourneyProgressionPolicyConfig(config: Record<string, any>, body: any): Record<string, any> {
+  const out = { ...config }
+  const policy = String(body?.progressionPolicy || body?.createProgressionPolicy || '').trim().toLowerCase()
+  const slotRaw = body?.progressionSlot ?? body?.createProgressionSlot
+  const intentRaw = String(body?.progressionIntentKey || body?.createProgressionIntentKey || '').trim().toLowerCase()
+
+  delete out.progression_policy
+  delete out.progressionPolicy
+  delete out.progression_slot
+  delete out.progressionSlot
+  delete out.progression_intent_key
+  delete out.progressionIntentKey
+
+  if (!policy) return out
+  out.progression_policy = policy
+
+  if (policy === 'on_cta_slot_completion') {
+    const slot = Number(slotRaw)
+    if (Number.isFinite(slot) && slot > 0) out.progression_slot = Math.round(slot)
+  } else if (policy === 'on_intent_completion' && intentRaw) {
+    out.progression_intent_key = intentRaw
+  }
+  return out
+}
+
+function getJourneyProgressionPolicyConfig(config: Record<string, any>): {
+  policy: string
+  slot: string
+  intentKey: string
+} {
+  const policy = String(config.progression_policy || config.progressionPolicy || '').trim().toLowerCase() || 'on_any_completion'
+  const slotNum = Number(config.progression_slot ?? config.progressionSlot ?? 0)
+  const slot = Number.isFinite(slotNum) && slotNum > 0 ? String(Math.round(slotNum)) : ''
+  const intentKey = String(config.progression_intent_key ?? config.progressionIntentKey ?? '').trim().toLowerCase()
+  return { policy, slot, intentKey }
+}
+
 function buildMessageJourneyStepPayload(body: any): any {
+  const stepKeyRaw = body?.stepKey ?? body?.step_key ?? body?.createStepKey ?? body?.create_step_key
+  const stepOrderRaw = body?.stepOrder ?? body?.step_order ?? body?.createStepOrder ?? body?.create_step_order
+  const messageIdRaw = body?.messageId ?? body?.message_id ?? body?.createMessageId ?? body?.create_message_id
+  const rulesetIdRaw = body?.rulesetId ?? body?.ruleset_id ?? body?.createRulesetId ?? body?.create_ruleset_id
+  const statusRaw = body?.status ?? body?.createStatus
+  const progressionPolicyRaw = body?.progressionPolicy ?? body?.createProgressionPolicy
+  const progressionSlotRaw = body?.progressionSlot ?? body?.createProgressionSlot
+  const progressionIntentKeyRaw = body?.progressionIntentKey ?? body?.createProgressionIntentKey
+  const configRaw = String(body?.configJson || body?.config_json || body?.createConfigJson || body?.create_config_json || '').trim()
+  const parsed = parseConfigJsonObjectLoose(configRaw)
+  const config = parsed.ok
+    ? JSON.stringify(withJourneyProgressionPolicyConfig(parsed.value, body))
+    : configRaw
+
   return {
-    stepKey: String(body?.stepKey || body?.step_key || '').trim().toLowerCase(),
-    stepOrder: body?.stepOrder ?? body?.step_order,
-    messageId: body?.messageId ?? body?.message_id,
-    rulesetId: body?.rulesetId ?? body?.ruleset_id ?? null,
-    status: String(body?.status || 'draft').trim().toLowerCase(),
-    config: String(body?.configJson || body?.config_json || '').trim(),
+    stepKey: String(stepKeyRaw || '').trim().toLowerCase(),
+    stepOrder: stepOrderRaw,
+    messageId: messageIdRaw,
+    rulesetId: rulesetIdRaw ?? null,
+    status: String(statusRaw || 'draft').trim().toLowerCase(),
+    progressionPolicy: String(progressionPolicyRaw || '').trim().toLowerCase(),
+    progressionSlot: String(progressionSlotRaw || '').trim(),
+    progressionIntentKey: String(progressionIntentKeyRaw || '').trim().toLowerCase(),
+    config,
   }
 }
 
@@ -5444,14 +5564,23 @@ pagesRouter.get('/admin/message-journeys/:id', async (req: any, res: any) => {
     const csrfToken = cookies['csrf'] || ''
     const notice = req.query?.notice ? String(req.query.notice) : ''
     const error = req.query?.error ? String(req.query.error) : ''
+    const showCreateStep = String(req.query?.add_step || '0') === '1'
     const newStepValues = {
       stepKey: String(req.query?.stepKey || ''),
       stepOrder: String(req.query?.stepOrder || ''),
       messageId: String(req.query?.messageId || ''),
       rulesetId: String(req.query?.rulesetId || ''),
       status: String(req.query?.stepStatus || 'draft'),
+      progressionPolicy: String(req.query?.progressionPolicy || ''),
+      progressionSlot: String(req.query?.progressionSlot || ''),
+      progressionIntentKey: String(req.query?.progressionIntentKey || ''),
       configJson: String(req.query?.configJson || ''),
     }
+    const newStepConfigParsed = parseConfigJsonObjectLoose(newStepValues.configJson || '{}')
+    const newStepPolicyFromConfig = getJourneyProgressionPolicyConfig(newStepConfigParsed.ok ? newStepConfigParsed.value : {})
+    if (!newStepValues.progressionPolicy) newStepValues.progressionPolicy = newStepPolicyFromConfig.policy
+    if (!newStepValues.progressionSlot) newStepValues.progressionSlot = newStepPolicyFromConfig.slot
+    if (!newStepValues.progressionIntentKey) newStepValues.progressionIntentKey = newStepPolicyFromConfig.intentKey
 
     let body = `<h1>Edit Message Journey #${id}</h1>`
     body += `<div class="toolbar"><div><a href="/admin/message-journeys">← Back to message journeys</a></div><div></div></div>`
@@ -5482,8 +5611,11 @@ pagesRouter.get('/admin/message-journeys/:id', async (req: any, res: any) => {
     if (!steps.length) {
       body += `<p>No steps yet.</p>`
     } else {
-      for (const step of steps) {
-        body += `<form method="post" action="/admin/message-journeys/${id}/steps/${step.id}" style="border:1px solid rgba(255,255,255,.14); border-radius:10px; padding:10px; margin:10px 0">`
+      for (const [idx, step] of steps.entries()) {
+        const stepConfig = step.config && typeof step.config === 'object' ? step.config as Record<string, any> : {}
+        const stepPolicy = getJourneyProgressionPolicyConfig(stepConfig)
+        body += `<div class="field-hint" style="margin:10px 0 4px 0">Saved Step ${idx + 1} of ${steps.length} (order ${Number(step.stepOrder || 0)}, db id ${Number(step.id)})</div>`
+        body += `<form method="post" action="/admin/message-journeys/${id}/steps/${step.id}" autocomplete="off" style="border:1px solid rgba(255,255,255,.14); border-radius:10px; padding:10px; margin:10px 0">`
         if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
         body += `<div style="display:grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); gap:8px">`
         body += `<label>Step Key<input type="text" name="stepKey" maxlength="64" value="${escapeHtml(String(step.stepKey || ''))}" required /></label>`
@@ -5509,7 +5641,15 @@ pagesRouter.get('/admin/message-journeys/:id', async (req: any, res: any) => {
           body += `<option value="${rid}"${Number(step.rulesetId || 0) === rid ? ' selected' : ''}>#${rid} — ${escapeHtml(rname)}</option>`
         }
         body += `</select></label>`
+        body += `<label>Progression Policy<select name="progressionPolicy" class="js-progression-policy">`
+        for (const opt of MESSAGE_JOURNEY_STEP_PROGRESSION_POLICY_OPTIONS) {
+          body += `<option value="${escapeHtml(opt.value)}"${stepPolicy.policy === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+        }
+        body += `</select></label>`
+        body += `<label class="js-progression-slot-row">CTA Slot<input type="number" min="1" name="progressionSlot" value="${escapeHtml(stepPolicy.slot)}" /></label>`
+        body += `<label class="js-progression-intent-row">Intent Key<input type="text" maxlength="64" name="progressionIntentKey" value="${escapeHtml(stepPolicy.intentKey)}" placeholder="subscribe" /></label>`
         body += `</div>`
+        body += `<div class="field-hint">Progression policy controls when this journey step is marked complete based on canonical CTA outcomes.</div>`
         body += `<label>Config JSON<textarea name="configJson" rows="6" style="font-family: ui-monospace,SFMono-Regular,Menlo,monospace;">${escapeHtml(JSON.stringify(step.config || {}, null, 2))}</textarea></label>`
         body += `<div class="toolbar"><div></div><div style="display:flex; gap:8px">`
         body += `<button class="btn" type="submit">Save Step</button>`
@@ -5523,35 +5663,95 @@ pagesRouter.get('/admin/message-journeys/:id', async (req: any, res: any) => {
     }
     body += `</div>`
 
-    body += `<form method="post" action="/admin/message-journeys/${id}/steps">`
-    if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
-    body += `<div class="section"><div class="section-title">Add Step</div>`
-    body += `<div style="display:grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); gap:8px">`
-    body += `<label>Step Key<input type="text" name="stepKey" maxlength="64" value="${escapeHtml(newStepValues.stepKey)}" required /></label>`
-    body += `<label>Order<input type="number" min="1" name="stepOrder" value="${escapeHtml(newStepValues.stepOrder || String(steps.length + 1))}" required /></label>`
-    body += `<label>Status<select name="status">`
-    for (const opt of MESSAGE_JOURNEY_STEP_STATUS_OPTIONS) {
-      body += `<option value="${escapeHtml(opt.value)}"${newStepValues.status === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+    body += `<div class="toolbar"><div></div><div style="display:flex; gap:8px"><a class="btn btn-primary-accent" href="/admin/message-journeys/${id}?add_step=1">Add Step</a></div></div>`
+
+    if (showCreateStep) {
+      body += `<form id="create-step-form" method="post" action="/admin/message-journeys/${id}/steps" autocomplete="off">`
+      if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
+      body += `<div class="section"><div class="section-title">New Step</div>`
+      body += `<div style="display:grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); gap:8px">`
+      body += `<label>Step Key<input type="text" name="createStepKey" maxlength="64" value="${escapeHtml(newStepValues.stepKey)}" required /></label>`
+      body += `<label>Order<input type="number" min="1" name="createStepOrder" value="${escapeHtml(newStepValues.stepOrder || '')}" placeholder="${escapeHtml(String(steps.length + 1))}" required /></label>`
+      body += `<label>Status<select name="createStatus">`
+      for (const opt of MESSAGE_JOURNEY_STEP_STATUS_OPTIONS) {
+        body += `<option value="${escapeHtml(opt.value)}"${newStepValues.status === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+      }
+      body += `</select></label>`
+      body += `<label>Message<select name="createMessageId" required><option value="">Select message</option>`
+      for (const m of messages) {
+        const mid = Number(m.id || 0)
+        const mname = messageNameById.get(mid) || `Message #${mid}`
+        body += `<option value="${mid}"${newStepValues.messageId === String(mid) ? ' selected' : ''}>#${mid} — ${escapeHtml(mname)}</option>`
+      }
+      body += `</select></label>`
+      body += `<label>Ruleset (optional)<select name="createRulesetId"><option value="">None</option>`
+      for (const r of rulesets) {
+        const rid = Number(r.id || 0)
+        const rname = rulesetNameById.get(rid) || `Ruleset #${rid}`
+        body += `<option value="${rid}"${newStepValues.rulesetId === String(rid) ? ' selected' : ''}>#${rid} — ${escapeHtml(rname)}</option>`
+      }
+      body += `</select></label>`
+      body += `<label>Progression Policy<select name="createProgressionPolicy" class="js-progression-policy">`
+      for (const opt of MESSAGE_JOURNEY_STEP_PROGRESSION_POLICY_OPTIONS) {
+        body += `<option value="${escapeHtml(opt.value)}"${(newStepValues.progressionPolicy || 'on_any_completion') === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+      }
+      body += `</select></label>`
+      body += `<label class="js-progression-slot-row">CTA Slot<input type="number" min="1" name="createProgressionSlot" value="${escapeHtml(newStepValues.progressionSlot)}" /></label>`
+      body += `<label class="js-progression-intent-row">Intent Key<input type="text" maxlength="64" name="createProgressionIntentKey" value="${escapeHtml(newStepValues.progressionIntentKey)}" placeholder="subscribe" /></label>`
+      body += `</div>`
+      body += `<div class="field-hint">Default policy is <code>on_any_completion</code>. Use slot/intent policy for multi-CTA steps.</div>`
+      body += `<label>Config JSON<textarea name="createConfigJson" rows="6" style="font-family: ui-monospace,SFMono-Regular,Menlo,monospace;">${escapeHtml(newStepValues.configJson || '{}')}</textarea></label>`
+      body += `<div class="toolbar"><div><a class="btn" href="/admin/message-journeys/${id}">Delete Step</a></div><div style="display:flex; gap:8px"><button class="btn btn-primary-accent" type="submit">Save Step</button></div></div>`
+      body += `</div></form>`
     }
-    body += `</select></label>`
-    body += `<label>Message<select name="messageId" required><option value="">Select message</option>`
-    for (const m of messages) {
-      const mid = Number(m.id || 0)
-      const mname = messageNameById.get(mid) || `Message #${mid}`
-      body += `<option value="${mid}"${newStepValues.messageId === String(mid) ? ' selected' : ''}>#${mid} — ${escapeHtml(mname)}</option>`
-    }
-    body += `</select></label>`
-    body += `<label>Ruleset (optional)<select name="rulesetId"><option value="">None</option>`
-    for (const r of rulesets) {
-      const rid = Number(r.id || 0)
-      const rname = rulesetNameById.get(rid) || `Ruleset #${rid}`
-      body += `<option value="${rid}"${newStepValues.rulesetId === String(rid) ? ' selected' : ''}>#${rid} — ${escapeHtml(rname)}</option>`
-    }
-    body += `</select></label>`
-    body += `</div>`
-    body += `<label>Config JSON<textarea name="configJson" rows="6" style="font-family: ui-monospace,SFMono-Regular,Menlo,monospace;">${escapeHtml(newStepValues.configJson || '{}')}</textarea></label>`
-    body += `<div class="toolbar"><div></div><div style="display:flex; gap:8px"><button class="btn btn-primary-accent" type="submit">Add Step</button></div></div>`
-    body += `</div></form>`
+    body += `<script>
+      (function () {
+        const query = new URLSearchParams(window.location.search || '');
+        const hasCreateDraft =
+          query.has('stepKey') ||
+          query.has('stepOrder') ||
+          query.has('messageId') ||
+          query.has('rulesetId') ||
+          query.has('stepStatus') ||
+          query.has('progressionPolicy') ||
+          query.has('progressionSlot') ||
+          query.has('progressionIntentKey') ||
+          query.has('configJson');
+
+        function sync(form) {
+          const policySel = form.querySelector('.js-progression-policy');
+          if (!policySel) return;
+          const policy = String(policySel.value || '');
+          const slotRow = form.querySelector('.js-progression-slot-row');
+          const intentRow = form.querySelector('.js-progression-intent-row');
+          if (slotRow) slotRow.style.display = policy === 'on_cta_slot_completion' ? '' : 'none';
+          if (intentRow) intentRow.style.display = policy === 'on_intent_completion' ? '' : 'none';
+        }
+        document.querySelectorAll('form[action*="/admin/message-journeys/"][action*="/steps"]').forEach((form) => {
+          const policySel = form.querySelector('.js-progression-policy');
+          if (policySel) policySel.addEventListener('change', function () { sync(form); });
+          sync(form);
+        });
+
+        const createForm = document.getElementById('create-step-form');
+        if (createForm && !hasCreateDraft) {
+          const setValue = (sel, val) => {
+            const el = createForm.querySelector(sel);
+            if (el && 'value' in el) el.value = val;
+          };
+          setValue('input[name="createStepKey"]', '');
+          setValue('input[name="createStepOrder"]', '');
+          setValue('select[name="createStatus"]', 'draft');
+          setValue('select[name="createMessageId"]', '');
+          setValue('select[name="createRulesetId"]', '');
+          setValue('select[name="createProgressionPolicy"]', 'on_any_completion');
+          setValue('input[name="createProgressionSlot"]', '');
+          setValue('input[name="createProgressionIntentKey"]', '');
+          setValue('textarea[name="createConfigJson"]', '{}');
+          sync(createForm);
+        }
+      })();
+    </script>`
 
     const doc = renderAdminPage({ title: `Edit Message Journey #${id}`, bodyHtml: body, active: 'message_journeys' })
     res.set('Content-Type', 'text/html; charset=utf-8')
@@ -5594,12 +5794,16 @@ pagesRouter.post('/admin/message-journeys/:id/steps', async (req: any, res: any)
     res.redirect(`/admin/message-journeys/${id}?notice=${encodeURIComponent('Step added.')}`)
   } catch (err: any) {
     const q = new URLSearchParams({
+      add_step: '1',
       error: String(err?.message || 'Failed to add step'),
       stepKey: String(payload.stepKey || ''),
       stepOrder: String(payload.stepOrder ?? ''),
       messageId: String(payload.messageId ?? ''),
       rulesetId: payload.rulesetId == null ? '' : String(payload.rulesetId),
       stepStatus: String(payload.status || 'draft'),
+      progressionPolicy: String(payload.progressionPolicy || ''),
+      progressionSlot: String(payload.progressionSlot || ''),
+      progressionIntentKey: String(payload.progressionIntentKey || ''),
       configJson: String(payload.config || ''),
     })
     res.redirect(`/admin/message-journeys/${id}?${q.toString()}`)

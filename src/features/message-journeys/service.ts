@@ -98,6 +98,58 @@ function parseConfig(raw: any): Record<string, any> {
   throw new DomainError('invalid_config_json', 'invalid_config_json', 400)
 }
 
+function normalizeJourneyStepConfigForAdmin(rawConfig: Record<string, any>): Record<string, any> {
+  const config: Record<string, any> = { ...rawConfig }
+  const policyRaw = String(config.progression_policy || config.progressionPolicy || '').trim().toLowerCase()
+  if (!policyRaw) {
+    delete config.progression_policy
+    delete config.progressionPolicy
+    delete config.progression_slot
+    delete config.progressionSlot
+    delete config.progression_intent_key
+    delete config.progressionIntentKey
+    return config
+  }
+
+  if (
+    policyRaw !== 'on_any_click' &&
+    policyRaw !== 'on_any_completion' &&
+    policyRaw !== 'on_cta_slot_completion' &&
+    policyRaw !== 'on_intent_completion'
+  ) {
+    throw new DomainError('invalid_progression_policy', 'invalid_progression_policy', 400)
+  }
+
+  delete config.progressionPolicy
+  delete config.progressionSlot
+  delete config.progressionIntentKey
+  config.progression_policy = policyRaw
+
+  if (policyRaw === 'on_cta_slot_completion') {
+    const slot = Number(config.progression_slot)
+    if (!Number.isFinite(slot) || slot <= 0) {
+      throw new DomainError('invalid_progression_slot', 'invalid_progression_slot', 400)
+    }
+    config.progression_slot = Math.round(slot)
+    delete config.progression_intent_key
+    return config
+  }
+
+  if (policyRaw === 'on_intent_completion') {
+    const intent = String(config.progression_intent_key ?? '').trim().toLowerCase()
+    if (!intent || !/^[a-z0-9_:-]{1,64}$/.test(intent)) {
+      throw new DomainError('invalid_progression_intent_key', 'invalid_progression_intent_key', 400)
+    }
+    config.progression_intent_key = intent
+    delete config.progression_slot
+    return config
+  }
+
+  delete config.progression_slot
+  delete config.progression_intent_key
+  return config
+}
+
 function toJourneyDto(row: MessageJourneyRow): MessageJourneyDto {
   return {
     id: Number(row.id),
@@ -224,7 +276,7 @@ export async function createJourneyStepForAdmin(journeyIdRaw: number, input: any
     messageId: normalizePositiveInt(input?.messageId ?? input?.message_id, 'invalid_message_id'),
     rulesetId: normalizeNullablePositiveInt(input?.rulesetId ?? input?.ruleset_id, 'invalid_ruleset_id'),
     status: normalizeStepStatus(input?.status, 'draft'),
-    configJson: JSON.stringify(parseConfig(input?.config ?? input?.config_json)),
+    configJson: JSON.stringify(normalizeJourneyStepConfigForAdmin(parseConfig(input?.config ?? input?.config_json))),
   })
   return toStepDto(row)
 }
@@ -258,8 +310,8 @@ export async function updateJourneyStepForAdmin(journeyIdRaw: number, stepIdRaw:
     status: patch?.status !== undefined ? normalizeStepStatus(patch?.status, existing.status) : existing.status,
     configJson:
       patch?.config !== undefined || patch?.config_json !== undefined
-        ? JSON.stringify(parseConfig(patch?.config ?? patch?.config_json))
-        : JSON.stringify(existing.config || {}),
+        ? JSON.stringify(normalizeJourneyStepConfigForAdmin(parseConfig(patch?.config ?? patch?.config_json)))
+        : JSON.stringify(normalizeJourneyStepConfigForAdmin(existing.config || {})),
   })
   return toStepDto(row)
 }
