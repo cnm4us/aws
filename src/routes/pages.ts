@@ -5448,7 +5448,6 @@ function getJourneyProgressionPolicyConfig(config: Record<string, any>): {
 
 function buildMessageJourneyStepPayload(body: any): any {
   const messageIdRaw = body?.messageId ?? body?.message_id ?? body?.createMessageId ?? body?.create_message_id
-  const rulesetIdRaw = body?.rulesetId ?? body?.ruleset_id ?? body?.createRulesetId ?? body?.create_ruleset_id
   const statusRaw = body?.status ?? body?.createStatus
   const progressionPolicyRaw = body?.progressionPolicy ?? body?.createProgressionPolicy
   const progressionSlotRaw = body?.progressionSlot ?? body?.createProgressionSlot
@@ -5461,7 +5460,7 @@ function buildMessageJourneyStepPayload(body: any): any {
 
   return {
     messageId: messageIdRaw,
-    rulesetId: rulesetIdRaw ?? null,
+    rulesetId: null,
     status: String(statusRaw || 'draft').trim().toLowerCase(),
     progressionPolicy: String(progressionPolicyRaw || '').trim().toLowerCase(),
     progressionSlot: String(progressionSlotRaw || '').trim(),
@@ -5477,11 +5476,13 @@ function renderAdminMessageJourneyForm(opts: {
   csrfToken?: string | null
   backHref: string
   values: any
+  rulesetOptions?: Array<{ id: number; name: string }>
   error?: string | null
   notice?: string | null
 }): string {
   const csrfToken = opts.csrfToken ? String(opts.csrfToken) : ''
   const values = opts.values || {}
+  const rulesetOptions = Array.isArray(opts.rulesetOptions) ? opts.rulesetOptions : []
 
   let body = `<h1>${escapeHtml(opts.title)}</h1>`
   body += `<div class="toolbar"><div><a href="${escapeHtml(opts.backHref)}">← Back to message journeys</a></div><div></div></div>`
@@ -5498,6 +5499,14 @@ function renderAdminMessageJourneyForm(opts: {
   }
   body += `</select></label>`
   body += `<label>Description (optional)<input type="text" name="description" maxlength="500" value="${escapeHtml(String(values?.description || ''))}" /></label>`
+  body += `<label>Eligibility Ruleset (optional)<select name="eligibilityRulesetId"><option value="">None</option>`
+  for (const r of rulesetOptions) {
+    const rid = Number((r as any).id || 0)
+    if (!Number.isFinite(rid) || rid <= 0) continue
+    const rname = String((r as any).name || `Ruleset #${rid}`)
+    body += `<option value="${rid}"${String(values?.eligibilityRulesetId || '') === String(rid) ? ' selected' : ''}>${escapeHtml(rname)} [#${rid}]</option>`
+  }
+  body += `</select></label>`
   body += `</div>`
   body += `<div class="toolbar"><div></div><div style="display:flex; gap:8px"><button class="btn btn-primary-accent" type="submit">Save</button></div></div>`
   body += `</form>`
@@ -5559,11 +5568,13 @@ pagesRouter.get('/admin/message-journeys/new', async (req: any, res: any) => {
   try {
     const cookies = parseCookies(req.headers.cookie)
     const csrfToken = cookies['csrf'] || ''
+    const rulesets = await messageRulesetsSvc.listRulesetsForAdmin({ includeArchived: false, limit: 500 })
     const doc = renderAdminMessageJourneyForm({
       title: 'New Message Journey',
       action: '/admin/message-journeys',
       csrfToken,
       backHref: '/admin/message-journeys',
+      rulesetOptions: rulesets.map((r) => ({ id: Number(r.id), name: String((r as any).name || `Ruleset #${r.id}`) })),
       values: { journeyKey: '', name: '', status: 'draft', description: '' },
     })
     res.set('Content-Type', 'text/html; charset=utf-8')
@@ -5582,11 +5593,13 @@ pagesRouter.post('/admin/message-journeys', async (req: any, res: any) => {
     const created = await messageJourneysSvc.createJourneyForAdmin(payload, Number(req.user?.id || 0))
     res.redirect(`/admin/message-journeys/${created.id}?notice=${encodeURIComponent('Message journey created.')}`)
   } catch (err: any) {
+    const rulesets = await messageRulesetsSvc.listRulesetsForAdmin({ includeArchived: false, limit: 500 })
     const doc = renderAdminMessageJourneyForm({
       title: 'New Message Journey',
       action: '/admin/message-journeys',
       csrfToken,
       backHref: '/admin/message-journeys',
+      rulesetOptions: rulesets.map((r) => ({ id: Number(r.id), name: String((r as any).name || `Ruleset #${r.id}`) })),
       values: payload,
       error: String(err?.message || 'Failed to create message journey'),
     })
@@ -5660,7 +5673,6 @@ pagesRouter.get('/admin/message-journeys/:id', async (req: any, res: any) => {
     const showCreateStep = String(req.query?.add_step || '0') === '1'
     const newStepValues = {
       messageId: String(req.query?.messageId || ''),
-      rulesetId: String(req.query?.rulesetId || ''),
       status: String(req.query?.stepStatus || 'draft'),
       progressionPolicy: String(req.query?.progressionPolicy || ''),
       progressionSlot: String(req.query?.progressionSlot || ''),
@@ -5737,6 +5749,13 @@ pagesRouter.get('/admin/message-journeys/:id', async (req: any, res: any) => {
     }
     body += `</select></label>`
     body += `<label>Description (optional)<input type="text" name="description" maxlength="500" value="${escapeHtml(String(journey.description || ''))}" /></label>`
+    body += `<label>Eligibility Ruleset (optional)<select name="eligibilityRulesetId"><option value="">None</option>`
+    for (const r of rulesets) {
+      const rid = Number(r.id || 0)
+      const rname = rulesetNameById.get(rid) || `Ruleset #${rid}`
+      body += `<option value="${rid}"${String(journey.eligibilityRulesetId || '') === String(rid) ? ' selected' : ''}>${escapeHtml(rname)} [#${rid}]</option>`
+    }
+    body += `</select></label>`
     body += `<div class="toolbar" style="display:flex; justify-content:space-between; gap:10px; margin-top:12px">`
     body += `<button class="btn danger" type="submit" formaction="/admin/message-journeys/${id}/delete" formmethod="post" formnovalidate onclick="return confirm('Delete this journey?')">Delete</button>`
     body += `<button class="btn btn-primary-accent" type="submit">Save</button>`
@@ -5763,14 +5782,6 @@ pagesRouter.get('/admin/message-journeys/:id', async (req: any, res: any) => {
           const mid = Number(m.id || 0)
           const mname = messageNameById.get(mid) || `Message #${mid}`
           body += `<option value="${mid}"${mid === Number(step.messageId) ? ' selected' : ''}>${escapeHtml(mname)} [#${mid}]</option>`
-        }
-        body += `</select></label>`
-        body += `<label>Ruleset (optional)<select name="rulesetId">`
-        body += `<option value="">None</option>`
-        for (const r of rulesets) {
-          const rid = Number(r.id || 0)
-          const rname = rulesetNameById.get(rid) || `Ruleset #${rid}`
-          body += `<option value="${rid}"${Number(step.rulesetId || 0) === rid ? ' selected' : ''}>${escapeHtml(rname)} [#${rid}]</option>`
         }
         body += `</select></label>`
         body += `<label>Progression Policy<select name="progressionPolicy" class="js-progression-policy">`
@@ -5815,13 +5826,6 @@ pagesRouter.get('/admin/message-journeys/:id', async (req: any, res: any) => {
         body += `<option value="${mid}"${newStepValues.messageId === String(mid) ? ' selected' : ''}>${escapeHtml(mname)} [#${mid}]</option>`
       }
       body += `</select></label>`
-      body += `<label>Ruleset (optional)<select name="createRulesetId"><option value="">None</option>`
-      for (const r of rulesets) {
-        const rid = Number(r.id || 0)
-        const rname = rulesetNameById.get(rid) || `Ruleset #${rid}`
-        body += `<option value="${rid}"${newStepValues.rulesetId === String(rid) ? ' selected' : ''}>${escapeHtml(rname)} [#${rid}]</option>`
-      }
-      body += `</select></label>`
       body += `<label>Progression Policy<select name="createProgressionPolicy" class="js-progression-policy">`
       for (const opt of MESSAGE_JOURNEY_STEP_PROGRESSION_POLICY_OPTIONS) {
         body += `<option value="${escapeHtml(opt.value)}"${(newStepValues.progressionPolicy || 'on_any_completion') === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
@@ -5852,7 +5856,6 @@ pagesRouter.get('/admin/message-journeys/:id', async (req: any, res: any) => {
         const query = new URLSearchParams(window.location.search || '');
         const hasCreateDraft =
           query.has('messageId') ||
-          query.has('rulesetId') ||
           query.has('stepStatus') ||
           query.has('progressionPolicy') ||
           query.has('progressionSlot') ||
@@ -5938,7 +5941,6 @@ pagesRouter.get('/admin/message-journeys/:id', async (req: any, res: any) => {
           };
           setValue('select[name="createStatus"]', 'draft');
           setValue('select[name="createMessageId"]', '');
-          setValue('select[name="createRulesetId"]', '');
           setValue('select[name="createProgressionPolicy"]', 'on_any_completion');
           setValue('input[name="createProgressionSlot"]', '');
           setValue('input[name="createProgressionIntentKey"]', '');
