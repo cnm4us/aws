@@ -3753,7 +3753,7 @@ function renderAdminMessageForm(opts: {
   const campaignKeyValue = String(values.campaignKey || values.campaign_key || '').trim().toLowerCase()
   const eligibilityRulesetIdValue = String(values.eligibilityRulesetId ?? values.eligibility_ruleset_id ?? '').trim()
 
-  body += `<div class="section-title" style="margin:10px 0 6px">Identity</div>`
+  body += `<div class="section-title" style="margin:10px 0 6px; opacity:0.5">Identity</div>`
   body += `<div class="section">`
   body += `<label>Name<input type="text" name="name" value="${escapeHtml(String(values.name || ''))}" required maxlength="120" /></label>`
   body += `<div style="display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px; margin-top:10px">`
@@ -3869,7 +3869,7 @@ function renderAdminMessageForm(opts: {
     body += `</div>`
   }
 
-  body += `<div class="section-title" style="margin:10px 0 6px">Background Media</div>`
+  body += `<div class="section-title" style="margin:10px 0 6px; opacity:0.5">Background Media</div>`
   body += `<div class="section">`
   body += `<input type="hidden" name="creativeBgUploadId" value="${escapeHtml(String(creativeForm.backgroundUploadId || ''))}" />`
   body += `<div style="display:grid; grid-template-columns:1fr; gap:10px">`
@@ -3894,7 +3894,7 @@ function renderAdminMessageForm(opts: {
   body += `</div>`
 
   body += `<div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin:10px 0 6px">`
-  body += `<div class="section-title" style="margin:0">Message Widget Content</div>`
+  body += `<div class="section-title" style="margin:0; opacity:0.5">Message Widget Content</div>`
   body += `<input type="checkbox" name="creativeMessageEnabled" value="1"${creativeForm.messageEnabled ? ' checked' : ''} />`
   body += `</div>`
   body += `<div id="message-widget-content-section" class="section"${creativeForm.messageEnabled ? '' : ' style="display:none"'}>`
@@ -3919,21 +3919,34 @@ function renderAdminMessageForm(opts: {
   body += `</div>`
 
   body += `<div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin:10px 0 6px">`
-  body += `<div class="section-title" style="margin:0">CTA Widget</div>`
+  body += `<div class="section-title" style="margin:0; opacity:0.5">CTA Widget</div>`
   body += `<input type="checkbox" name="creativeCtaEnabled" value="1"${creativeForm.ctaEnabled ? ' checked' : ''} />`
   body += `</div>`
   body += `<div id="cta-widget-style-section" class="section"${creativeForm.ctaEnabled ? '' : ' style="display:none"'}>`
-  body += `<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px">`
-  body += `<label>Layout<select name="creativeCtaLayout">
-    <option value="inline"${creativeForm.ctaLayout === 'inline' ? ' selected' : ''}>Inline</option>
-    <option value="stacked"${creativeForm.ctaLayout === 'stacked' ? ' selected' : ''}>Stacked</option>
-  </select></label>`
-  body += `</div>`
-  body += `<label style="max-width:220px; margin-top:10px">CTA Count<select name="creativeCtaSlotCount" id="creativeCtaSlotCount">`
+  body += `<div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:10px; align-items:start">`
+  body += `<label>CTA Count<select name="creativeCtaSlotCount" id="creativeCtaSlotCount">`
   for (const count of [1, 2, 3]) {
     body += `<option value="${count}"${slotCount === count ? ' selected' : ''}>${count}</option>`
   }
   body += `</select></label>`
+  body += `<label style="margin-top:0">Layout<select name="creativeCtaLayout">
+    <option value="inline"${creativeForm.ctaLayout === 'inline' ? ' selected' : ''}>Inline</option>
+    <option value="stacked"${creativeForm.ctaLayout === 'stacked' ? ' selected' : ''}>Stacked</option>
+  </select></label>`
+  body += `</div>`
+  body += `<label style="margin-top:10px">Position<select name="creativeCtaPosition">
+    <option value="top"${creativeForm.ctaPosition === 'top' ? ' selected' : ''}>Top</option>
+    <option value="middle"${creativeForm.ctaPosition === 'middle' ? ' selected' : ''}>Middle</option>
+    <option value="bottom"${creativeForm.ctaPosition === 'bottom' ? ' selected' : ''}>Bottom</option>
+  </select></label>`
+  body += `<div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:10px; align-items:start">`
+  body += `<div class="mini-field"><div class="mini-field-label">Y Inset (%)</div><input type="number" name="creativeCtaOffsetPct" min="0" max="80" value="${escapeHtml(String(creativeForm.ctaOffsetPct))}" /></div>`
+  body += `<div class="mini-field"><div class="mini-field-label">Text Color</div><input class="color-swatch-input" type="color" name="creativeCtaTextColor" value="${escapeHtml(String(creativeForm.ctaTextColor || '#FFFFFF'))}" /></div>`
+  body += `</div>`
+  body += `<div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:10px; align-items:start">`
+  body += `<div class="mini-field"><div class="mini-field-label">Background Color</div><input class="color-swatch-input" type="color" name="creativeCtaBgColor" value="${escapeHtml(String(creativeForm.ctaBgColor || '#0B1320'))}" /></div>`
+  body += `<div class="mini-field"><div class="mini-field-label">Background Opacity</div><input type="number" name="creativeCtaBgOpacity" min="0" max="1" step="0.05" value="${escapeHtml(String(creativeForm.ctaBgOpacity))}" /></div>`
+  body += `</div>`
   body += `<div class="section-title" style="margin:10px 0 6px">CTA SLOTS</div>`
   for (const slot of [1, 2, 3] as const) {
     const slotValue = slotsByIndex.get(slot) || {}
@@ -3962,24 +3975,9 @@ function renderAdminMessageForm(opts: {
     body += `</div>`
     body += `</div>`
   }
-  body += `<div class="field-hint" style="margin-top:8px">Slot selections are saved in creative JSON. Legacy primary/secondary fields remain for backward compatibility until Phase D.</div>`
-  body += `<label style="margin-top:10px">Position<select name="creativeCtaPosition">
-    <option value="top"${creativeForm.ctaPosition === 'top' ? ' selected' : ''}>Top</option>
-    <option value="middle"${creativeForm.ctaPosition === 'middle' ? ' selected' : ''}>Middle</option>
-    <option value="bottom"${creativeForm.ctaPosition === 'bottom' ? ' selected' : ''}>Bottom</option>
-  </select></label>`
-  body += `<div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:10px; align-items:start">`
-  body += `<div class="mini-field"><div class="mini-field-label">Y Inset (%)</div><input type="number" name="creativeCtaOffsetPct" min="0" max="80" value="${escapeHtml(String(creativeForm.ctaOffsetPct))}" /></div>`
-  body += `<div class="mini-field"><div class="mini-field-label">Text Color</div><input class="color-swatch-input" type="color" name="creativeCtaTextColor" value="${escapeHtml(String(creativeForm.ctaTextColor || '#FFFFFF'))}" /></div>`
-  body += `</div>`
-  body += `<div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:10px; align-items:start">`
-  body += `<div class="mini-field"><div class="mini-field-label">Background Color</div><input class="color-swatch-input" type="color" name="creativeCtaBgColor" value="${escapeHtml(String(creativeForm.ctaBgColor || '#0B1320'))}" /></div>`
-  body += `<div class="mini-field"><div class="mini-field-label">Background Opacity</div><input type="number" name="creativeCtaBgOpacity" min="0" max="1" step="0.05" value="${escapeHtml(String(creativeForm.ctaBgOpacity))}" /></div>`
-  body += `</div>`
-  body += `<div class="field-hint" style="margin-top:8px">CTA behavior is defined by selected CTA slot definitions (intent + executor + config).</div>`
   body += `</div>`
 
-  body += `<div class="section-title" style="margin:10px 0 6px">Scheduling</div>`
+  body += `<div class="section-title" style="margin:10px 0 6px; opacity:0.5">Scheduling</div>`
   body += `<div class="section">`
   const startsAtBase = values.startsAtDate || values.startsAtTime ? '' : toDateTimeLocalValue(values.startsAt || values.starts_at)
   const endsAtBase = values.endsAtDate || values.endsAtTime ? '' : toDateTimeLocalValue(values.endsAt || values.ends_at)
@@ -3997,7 +3995,7 @@ function renderAdminMessageForm(opts: {
   body += `</div>`
   body += `</div>`
 
-  body += `<div class="section-title" style="margin:10px 0 6px">Preview</div>`
+  body += `<div class="section-title" style="margin:10px 0 6px; opacity:0.5">Preview</div>`
   body += `<div style="border:1px solid rgba(96,165,250,0.6); border-radius:12px; background:linear-gradient(180deg, rgba(28,45,58,0.72) 0%, rgba(12,16,20,0.72) 100%); overflow:hidden">`
   body += `<div id="message-preview-device" style="width:100%; max-width:100%; aspect-ratio:9/16; margin:0; ${previewBaseStyle} position:relative">`
   body += `<div id="message-preview-overlay" style="position:absolute; inset:0; background:${hexToRgba(creativeForm.backgroundOverlayColor, creativeForm.backgroundOverlayOpacity)}"></div>`
