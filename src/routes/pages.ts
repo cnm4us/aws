@@ -3794,7 +3794,7 @@ function renderAdminMessageForm(opts: {
     body += `<option value="${escapeHtml(idValue)}"${eligibilityRulesetIdValue === idValue ? ' selected' : ''}>${escapeHtml(label)}</option>`
   }
   body += `</select></div>`
-  body += `<div class="field-hint" style="grid-column:1 / -1">For journey messages, set ruleset on the journey step; message-level ruleset is ignored when selected via journey.</div>`
+  body += `<div class="field-hint" style="grid-column:1 / -1">For journey delivery, set eligibility on the journey (not the step). Message-level rulesets apply to standalone delivery only.</div>`
   body += `<div class="mini-field"><div class="mini-field-label">Priority</div><input type="number" name="priority" value="${escapeHtml(String(values.priority ?? 100))}" /></div>`
   body += `<div class="mini-field"><div class="mini-field-label">Status</div><select name="status">
     <option value="draft"${String(values.status || '') === 'draft' ? ' selected' : ''}>Draft</option>
@@ -5756,6 +5756,7 @@ pagesRouter.get('/admin/message-journeys/:id', async (req: any, res: any) => {
       body += `<option value="${rid}"${String(journey.eligibilityRulesetId || '') === String(rid) ? ' selected' : ''}>${escapeHtml(rname)} [#${rid}]</option>`
     }
     body += `</select></label>`
+    body += `<div class="field-hint">Journey ruleset gates all steps in this journey. Step progression is controlled only by progression policy.</div>`
     body += `<div class="toolbar" style="display:flex; justify-content:space-between; gap:10px; margin-top:12px">`
     body += `<button class="btn danger" type="submit" formaction="/admin/message-journeys/${id}/delete" formmethod="post" formnovalidate onclick="return confirm('Delete this journey?')">Delete</button>`
     body += `<button class="btn btn-primary-accent" type="submit">Save</button>`
