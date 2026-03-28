@@ -3928,16 +3928,13 @@ function renderAdminMessageForm(opts: {
     <option value="inline"${creativeForm.ctaLayout === 'inline' ? ' selected' : ''}>Inline</option>
     <option value="stacked"${creativeForm.ctaLayout === 'stacked' ? ' selected' : ''}>Stacked</option>
   </select></label>`
-  body += `<label>Primary Label<input type="text" name="creativeCtaPrimaryLabel" value="${escapeHtml(String(creativeForm.ctaPrimaryLabel || 'Register'))}" required maxlength="100" /></label>`
-  body += `<label>Secondary Label<input type="text" name="creativeCtaSecondaryLabel" value="${escapeHtml(String(creativeForm.ctaSecondaryLabel || ''))}" maxlength="100" /></label>`
   body += `</div>`
-  body += `<div class="section" style="margin-top:10px">`
-  body += `<div class="section-title" style="font-size:14px">CTA Slots (Phase C)</div>`
-  body += `<label style="max-width:220px">CTA Count<select name="creativeCtaSlotCount" id="creativeCtaSlotCount">`
+  body += `<label style="max-width:220px; margin-top:10px">CTA Count<select name="creativeCtaSlotCount" id="creativeCtaSlotCount">`
   for (const count of [1, 2, 3]) {
     body += `<option value="${count}"${slotCount === count ? ' selected' : ''}>${count}</option>`
   }
   body += `</select></label>`
+  body += `<div class="section-title" style="margin:10px 0 6px">CTA SLOTS</div>`
   for (const slot of [1, 2, 3] as const) {
     const slotValue = slotsByIndex.get(slot) || {}
     const selectedDefinitionId = Number(slotValue.ctaDefinitionId || slotValue.cta_definition_id || 0) || 0
@@ -3948,7 +3945,7 @@ function renderAdminMessageForm(opts: {
     const slotBgOpacityRaw = Number(styleOverride.bgOpacity ?? styleOverride.bg_opacity)
     const slotBgOpacity = Number.isFinite(slotBgOpacityRaw) ? Math.max(0, Math.min(1, slotBgOpacityRaw)) : 1
     const slotTextColor = String(styleOverride.textColor || styleOverride.text_color || '')
-    body += `<div class="cta-slot-row" data-slot-row="${slot}" style="display:${slot <= slotCount ? 'grid' : 'none'}; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:10px; margin-top:10px">`
+    body += `<div class="section cta-slot-row" data-slot-row="${slot}" style="display:${slot <= slotCount ? 'grid' : 'none'}; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:10px; margin-top:10px">`
     body += `<label>Slot ${slot}: CTA Definition<select name="creativeCtaSlot${slot}DefinitionId">`
     body += `<option value="">(none)</option>`
     for (const def of ctaDefinitionOptions) {
@@ -3966,7 +3963,6 @@ function renderAdminMessageForm(opts: {
     body += `</div>`
   }
   body += `<div class="field-hint" style="margin-top:8px">Slot selections are saved in creative JSON. Legacy primary/secondary fields remain for backward compatibility until Phase D.</div>`
-  body += `</div>`
   body += `<label style="margin-top:10px">Position<select name="creativeCtaPosition">
     <option value="top"${creativeForm.ctaPosition === 'top' ? ' selected' : ''}>Top</option>
     <option value="middle"${creativeForm.ctaPosition === 'middle' ? ' selected' : ''}>Middle</option>
