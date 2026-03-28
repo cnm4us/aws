@@ -22,6 +22,8 @@ type MessageJourneySignalEvent =
 
 const JOURNEY_STATUS_VALUES: readonly MessageJourneyStatus[] = ['draft', 'active', 'archived']
 const STEP_STATUS_VALUES: readonly MessageJourneyStepStatus[] = ['draft', 'active', 'archived']
+const JOURNEY_SURFACE_VALUES = ['global_feed', 'group_feed', 'channel_feed'] as const
+type JourneySurface = (typeof JOURNEY_SURFACE_VALUES)[number]
 
 function isEnumValue<T extends string>(value: any, allowed: readonly T[]): value is T {
   return typeof value === 'string' && (allowed as readonly string[]).includes(value)
@@ -67,6 +69,13 @@ function normalizeStepStatus(raw: any, fallback: MessageJourneyStepStatus = 'dra
   if (!value) return fallback
   if (!isEnumValue(value, STEP_STATUS_VALUES)) throw new DomainError('invalid_step_status', 'invalid_step_status', 400)
   return value
+}
+
+function normalizeJourneySurface(raw: any, fallback: JourneySurface = 'global_feed'): JourneySurface {
+  const value = String(raw ?? '').trim().toLowerCase()
+  if (!value) return fallback
+  if ((JOURNEY_SURFACE_VALUES as readonly string[]).includes(value)) return value as JourneySurface
+  throw new DomainError('invalid_applies_to_surface', 'invalid_applies_to_surface', 400)
 }
 
 function normalizePositiveInt(raw: any, code: string): number {
@@ -171,6 +180,7 @@ function toJourneyDto(row: MessageJourneyRow): MessageJourneyDto {
     id: Number(row.id),
     journeyKey: String(row.journey_key || ''),
     name: String(row.name || ''),
+    appliesToSurface: normalizeJourneySurface((row as any).applies_to_surface, 'global_feed'),
     status: normalizeJourneyStatus(row.status),
     description: row.description == null ? null : String(row.description),
     eligibilityRulesetId: row.eligibility_ruleset_id == null ? null : Number(row.eligibility_ruleset_id),
@@ -227,6 +237,7 @@ export async function createJourneyForAdmin(input: any, actorUserId: number): Pr
   const row = await repo.createJourney({
     journeyKey: normalizeJourneyKey(input?.journeyKey ?? input?.journey_key),
     name: normalizeJourneyName(input?.name),
+    appliesToSurface: normalizeJourneySurface(input?.appliesToSurface ?? input?.applies_to_surface, 'global_feed'),
     status: normalizeJourneyStatus(input?.status, 'draft'),
     description: normalizeDescription(input?.description),
     eligibilityRulesetId: normalizeNullablePositiveInt(input?.eligibilityRulesetId ?? input?.eligibility_ruleset_id, 'invalid_ruleset_id'),
@@ -249,6 +260,10 @@ export async function updateJourneyForAdmin(id: number, patch: any, actorUserId:
         ? normalizeJourneyKey(patch?.journeyKey ?? patch?.journey_key)
         : existingDto.journeyKey,
     name: patch?.name !== undefined ? normalizeJourneyName(patch?.name) : existingDto.name,
+    appliesToSurface:
+      patch?.appliesToSurface !== undefined || patch?.applies_to_surface !== undefined
+        ? normalizeJourneySurface(patch?.appliesToSurface ?? patch?.applies_to_surface, existingDto.appliesToSurface)
+        : existingDto.appliesToSurface,
     status: patch?.status !== undefined ? normalizeJourneyStatus(patch?.status, existingDto.status) : existingDto.status,
     description: patch?.description !== undefined ? normalizeDescription(patch?.description) : existingDto.description,
     eligibilityRulesetId:

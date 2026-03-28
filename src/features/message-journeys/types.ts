@@ -4,6 +4,7 @@ export type MessageJourneyRow = {
   id: number
   journey_key: string
   name: string
+  applies_to_surface: 'global_feed' | 'group_feed' | 'channel_feed'
   status: MessageJourneyStatus
   description: string | null
   eligibility_ruleset_id: number | null
@@ -49,6 +50,7 @@ export type MessageJourneyDto = {
   id: number
   journeyKey: string
   name: string
+  appliesToSurface: 'global_feed' | 'group_feed' | 'channel_feed'
   status: MessageJourneyStatus
   description: string | null
   eligibilityRulesetId: number | null

@@ -389,6 +389,7 @@ function dateToMs(raw: string | null): number | null {
 
 async function applyJourneyGating(params: {
   userId: number | null
+  surface: MessageDecisionSurface
   candidates: EligibleMessageCandidate[]
 }): Promise<{
   eligible: EligibleMessageCandidate[]
@@ -450,6 +451,12 @@ async function applyJourneyGating(params: {
         if (dropReasons.length < 40) dropReasons.push({ messageId: c.messageId, reason: 'journey_scope_conflict' })
         continue
       }
+      const matchingSurface = attached.some((step) => String((step as any).journey_surface || 'global_feed') === params.surface)
+      if (!matchingSurface) {
+        rejectedCount += 1
+        if (dropReasons.length < 40) dropReasons.push({ messageId: c.messageId, reason: 'journey_surface_mismatch' })
+        continue
+      }
       rejectedCount += 1
       if (dropReasons.length < 40) dropReasons.push({ messageId: c.messageId, reason: 'journey_requires_user' })
     }
@@ -488,7 +495,13 @@ async function applyJourneyGating(params: {
       if (dropReasons.length < 40) dropReasons.push({ messageId: c.messageId, reason: 'journey_scope_conflict' })
       continue
     }
-    const matches = attached
+    const attachedOnSurface = attached.filter((step) => String((step as any).journey_surface || 'global_feed') === params.surface)
+    if (!attachedOnSurface.length) {
+      rejectedCount += 1
+      if (dropReasons.length < 40) dropReasons.push({ messageId: c.messageId, reason: 'journey_surface_mismatch' })
+      continue
+    }
+    const matches = attachedOnSurface
       .filter((step) => {
         const active = activeStepByJourney.get(Number(step.journey_id))
         return !!active && Number(active.id) === Number(step.id)
@@ -678,6 +691,7 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
         if (eligible.length > 0) {
           const gated = await applyJourneyGating({
             userId: input.userId,
+            surface: input.surface,
             candidates: eligible,
           })
           journeyRejectedCount = gated.rejectedCount

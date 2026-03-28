@@ -1020,6 +1020,7 @@ export async function ensureSchema(db: DB) {
               id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
               journey_key VARCHAR(64) NOT NULL,
               name VARCHAR(120) NOT NULL,
+              applies_to_surface ENUM('global_feed','group_feed','channel_feed') NOT NULL DEFAULT 'global_feed',
               status ENUM('draft','active','archived') NOT NULL DEFAULT 'draft',
               description VARCHAR(500) NULL,
               eligibility_ruleset_id BIGINT UNSIGNED NULL,
@@ -1035,6 +1036,7 @@ export async function ensureSchema(db: DB) {
           `)
           await db.query(`ALTER TABLE feed_message_journeys ADD COLUMN IF NOT EXISTS journey_key VARCHAR(64) NOT NULL`)
           await db.query(`ALTER TABLE feed_message_journeys ADD COLUMN IF NOT EXISTS name VARCHAR(120) NOT NULL`)
+          await db.query(`ALTER TABLE feed_message_journeys ADD COLUMN IF NOT EXISTS applies_to_surface ENUM('global_feed','group_feed','channel_feed') NOT NULL DEFAULT 'global_feed'`)
           await db.query(`ALTER TABLE feed_message_journeys ADD COLUMN IF NOT EXISTS status ENUM('draft','active','archived') NOT NULL DEFAULT 'draft'`)
           await db.query(`ALTER TABLE feed_message_journeys ADD COLUMN IF NOT EXISTS description VARCHAR(500) NULL`)
           await db.query(`ALTER TABLE feed_message_journeys ADD COLUMN IF NOT EXISTS eligibility_ruleset_id BIGINT UNSIGNED NULL`)

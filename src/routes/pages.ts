@@ -5372,9 +5372,12 @@ pagesRouter.post('/admin/message-rulesets/:id', async (req: any, res: any) => {
 
 function buildMessageJourneyCreateOrUpdatePayload(body: any): any {
   const rulesetIdRaw = String(body?.eligibilityRulesetId ?? body?.eligibility_ruleset_id ?? '').trim()
+  const appliesToSurface = String(body?.appliesToSurface ?? body?.applies_to_surface ?? 'global_feed').trim().toLowerCase() || 'global_feed'
   return {
     journeyKey: String(body?.journeyKey || body?.journey_key || '').trim().toLowerCase(),
     name: String(body?.name || '').trim(),
+    appliesToSurface,
+    applies_to_surface: appliesToSurface,
     status: String(body?.status || 'draft').trim().toLowerCase(),
     description: String(body?.description || '').trim() || null,
     eligibilityRulesetId: /^\d+$/.test(rulesetIdRaw) ? Number(rulesetIdRaw) : null,
@@ -5492,18 +5495,23 @@ function renderAdminMessageJourneyForm(opts: {
   body += `<div class="section"><div class="section-title">Journey</div>`
   body += `<label>Journey Key<input type="text" name="journeyKey" maxlength="64" value="${escapeHtml(String(values?.journeyKey || ''))}" required /></label>`
   body += `<label>Name<input type="text" name="name" maxlength="120" value="${escapeHtml(String(values?.name || ''))}" required /></label>`
-  body += `<label>Status<select name="status">`
-  for (const opt of MESSAGE_JOURNEY_STATUS_OPTIONS) {
-    body += `<option value="${escapeHtml(opt.value)}"${String(values?.status || 'draft') === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+  body += `<label>Description (optional)<input type="text" name="description" maxlength="500" value="${escapeHtml(String(values?.description || ''))}" /></label>`
+  body += `<label>Surface<select name="appliesToSurface">`
+  for (const opt of MESSAGE_SURFACE_OPTIONS) {
+    body += `<option value="${escapeHtml(opt.value)}"${String(values?.appliesToSurface || values?.applies_to_surface || 'global_feed') === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
   }
   body += `</select></label>`
-  body += `<label>Description (optional)<input type="text" name="description" maxlength="500" value="${escapeHtml(String(values?.description || ''))}" /></label>`
   body += `<label>Eligibility Ruleset (optional)<select name="eligibilityRulesetId"><option value="">None</option>`
   for (const r of rulesetOptions) {
     const rid = Number((r as any).id || 0)
     if (!Number.isFinite(rid) || rid <= 0) continue
     const rname = String((r as any).name || `Ruleset #${rid}`)
     body += `<option value="${rid}"${String(values?.eligibilityRulesetId || '') === String(rid) ? ' selected' : ''}>${escapeHtml(rname)} [#${rid}]</option>`
+  }
+  body += `</select></label>`
+  body += `<label>Status<select name="status">`
+  for (const opt of MESSAGE_JOURNEY_STATUS_OPTIONS) {
+    body += `<option value="${escapeHtml(opt.value)}"${String(values?.status || 'draft') === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
   }
   body += `</select></label>`
   body += `</div>`
@@ -5574,7 +5582,7 @@ pagesRouter.get('/admin/message-journeys/new', async (req: any, res: any) => {
       csrfToken,
       backHref: '/admin/message-journeys',
       rulesetOptions: rulesets.map((r) => ({ id: Number(r.id), name: String((r as any).name || `Ruleset #${r.id}`) })),
-      values: { journeyKey: '', name: '', status: 'draft', description: '' },
+      values: { journeyKey: '', name: '', description: '', appliesToSurface: 'global_feed', status: 'draft' },
     })
     res.set('Content-Type', 'text/html; charset=utf-8')
     res.send(doc)
@@ -5742,17 +5750,22 @@ pagesRouter.get('/admin/message-journeys/:id', async (req: any, res: any) => {
     body += `<div class="section journey-card">`
     body += `<label>Journey Key<input type="text" name="journeyKey" maxlength="64" value="${escapeHtml(String(journey.journeyKey || ''))}" required /></label>`
     body += `<label>Name<input type="text" name="name" maxlength="120" value="${escapeHtml(String(journey.name || ''))}" required /></label>`
-    body += `<label>Status<select name="status">`
-    for (const opt of MESSAGE_JOURNEY_STATUS_OPTIONS) {
-      body += `<option value="${escapeHtml(opt.value)}"${String(journey.status || 'draft') === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+    body += `<label>Description (optional)<input type="text" name="description" maxlength="500" value="${escapeHtml(String(journey.description || ''))}" /></label>`
+    body += `<label>Surface<select name="appliesToSurface">`
+    for (const opt of MESSAGE_SURFACE_OPTIONS) {
+      body += `<option value="${escapeHtml(opt.value)}"${String((journey as any).appliesToSurface || 'global_feed') === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
     }
     body += `</select></label>`
-    body += `<label>Description (optional)<input type="text" name="description" maxlength="500" value="${escapeHtml(String(journey.description || ''))}" /></label>`
     body += `<label>Eligibility Ruleset (optional)<select name="eligibilityRulesetId"><option value="">None</option>`
     for (const r of rulesets) {
       const rid = Number(r.id || 0)
       const rname = rulesetNameById.get(rid) || `Ruleset #${rid}`
       body += `<option value="${rid}"${String(journey.eligibilityRulesetId || '') === String(rid) ? ' selected' : ''}>${escapeHtml(rname)} [#${rid}]</option>`
+    }
+    body += `</select></label>`
+    body += `<label>Status<select name="status">`
+    for (const opt of MESSAGE_JOURNEY_STATUS_OPTIONS) {
+      body += `<option value="${escapeHtml(opt.value)}"${String(journey.status || 'draft') === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
     }
     body += `</select></label>`
     body += `<div class="field-hint">Journey ruleset gates all steps in this journey. Step progression is controlled only by progression policy.</div>`

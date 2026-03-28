@@ -13,6 +13,7 @@ const JOURNEY_SELECT_SQL = `
     id,
     journey_key,
     name,
+    applies_to_surface,
     status,
     description,
     eligibility_ruleset_id,
@@ -72,6 +73,7 @@ async function getStepJourneyId(stepId: number): Promise<number | null> {
 type JourneyCreateInput = {
   journeyKey: string
   name: string
+  appliesToSurface: 'global_feed' | 'group_feed' | 'channel_feed'
   status: MessageJourneyStatus
   description: string | null
   eligibilityRulesetId: number | null
@@ -154,6 +156,7 @@ export async function createJourney(input: JourneyCreateInput): Promise<MessageJ
     `INSERT INTO feed_message_journeys (
       journey_key,
       name,
+      applies_to_surface,
       status,
       description,
       eligibility_ruleset_id,
@@ -163,6 +166,7 @@ export async function createJourney(input: JourneyCreateInput): Promise<MessageJ
     [
       input.journeyKey,
       input.name,
+      input.appliesToSurface,
       input.status,
       input.description,
       input.eligibilityRulesetId,
@@ -189,6 +193,7 @@ export async function updateJourney(id: number, patch: JourneyUpdateInput): Prom
 
   if (patch.journeyKey !== undefined) { sets.push('journey_key = ?'); args.push(patch.journeyKey) }
   if (patch.name !== undefined) { sets.push('name = ?'); args.push(patch.name) }
+  if (patch.appliesToSurface !== undefined) { sets.push('applies_to_surface = ?'); args.push(patch.appliesToSurface) }
   if (patch.status !== undefined) { sets.push('status = ?'); args.push(patch.status) }
   if (patch.description !== undefined) { sets.push('description = ?'); args.push(patch.description) }
   if (patch.eligibilityRulesetId !== undefined) { sets.push('eligibility_ruleset_id = ?'); args.push(patch.eligibilityRulesetId) }
@@ -232,7 +237,7 @@ export async function listStepsByJourneyId(journeyId: number, params?: {
   return rows as MessageJourneyStepRow[]
 }
 
-export async function listActiveStepsByMessageId(messageId: number): Promise<Array<MessageJourneyStepRow & { journey_status: MessageJourneyStatus; journey_ruleset_id: number | null }>> {
+export async function listActiveStepsByMessageId(messageId: number): Promise<Array<MessageJourneyStepRow & { journey_status: MessageJourneyStatus; journey_ruleset_id: number | null; journey_surface: string }>> {
   const db = getPool()
   const [rows] = await db.query(
     `SELECT
@@ -246,7 +251,8 @@ export async function listActiveStepsByMessageId(messageId: number): Promise<Arr
        s.created_at,
        s.updated_at,
        j.status AS journey_status,
-       j.eligibility_ruleset_id AS journey_ruleset_id
+       j.eligibility_ruleset_id AS journey_ruleset_id,
+       j.applies_to_surface AS journey_surface
      FROM feed_message_journey_steps s
      JOIN feed_message_journeys j
        ON j.id = s.journey_id
@@ -256,10 +262,10 @@ export async function listActiveStepsByMessageId(messageId: number): Promise<Arr
     ORDER BY s.step_order ASC, s.id ASC`,
     [messageId]
   )
-  return rows as Array<MessageJourneyStepRow & { journey_status: MessageJourneyStatus; journey_ruleset_id: number | null }>
+  return rows as Array<MessageJourneyStepRow & { journey_status: MessageJourneyStatus; journey_ruleset_id: number | null; journey_surface: string }>
 }
 
-export async function listActiveStepsByMessageIds(messageIds: number[]): Promise<Array<MessageJourneyStepRow & { journey_status: MessageJourneyStatus; journey_ruleset_id: number | null }>> {
+export async function listActiveStepsByMessageIds(messageIds: number[]): Promise<Array<MessageJourneyStepRow & { journey_status: MessageJourneyStatus; journey_ruleset_id: number | null; journey_surface: string }>> {
   const uniq = Array.from(new Set(messageIds.filter((id) => Number.isFinite(id) && id > 0).map((id) => Math.round(id))))
   if (!uniq.length) return []
   const placeholders = uniq.map(() => '?').join(',')
@@ -276,7 +282,8 @@ export async function listActiveStepsByMessageIds(messageIds: number[]): Promise
        s.created_at,
        s.updated_at,
        j.status AS journey_status,
-       j.eligibility_ruleset_id AS journey_ruleset_id
+       j.eligibility_ruleset_id AS journey_ruleset_id,
+       j.applies_to_surface AS journey_surface
      FROM feed_message_journey_steps s
      JOIN feed_message_journeys j
        ON j.id = s.journey_id
@@ -286,7 +293,7 @@ export async function listActiveStepsByMessageIds(messageIds: number[]): Promise
     ORDER BY s.journey_id ASC, s.step_order ASC, s.id ASC`,
     uniq
   )
-  return rows as Array<MessageJourneyStepRow & { journey_status: MessageJourneyStatus; journey_ruleset_id: number | null }>
+  return rows as Array<MessageJourneyStepRow & { journey_status: MessageJourneyStatus; journey_ruleset_id: number | null; journey_surface: string }>
 }
 
 export async function listJourneyStepRefsByMessageId(messageId: number): Promise<Array<{
