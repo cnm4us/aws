@@ -6,6 +6,7 @@ import {
   MESSAGE_MIN_SLIDES_BEFORE_FIRST_MESSAGE,
   MESSAGE_MIN_SLIDES_BETWEEN_MESSAGES,
   MESSAGE_MIN_WATCH_SECONDS_BEFORE_FIRST_MESSAGE,
+  MESSAGE_SELECTION_STRATEGY,
 } from '../../config'
 import * as messagesSvc from '../messages/service'
 import * as messageAttributionSvc from '../message-attribution/service'
@@ -208,7 +209,6 @@ type EligibleMessageCandidate = {
   campaignKey: string | null
   messageType: string
   priority: number
-  tieBreakStrategy: 'first' | 'round_robin' | 'weighted_random'
   deliveryScope: 'standalone_only' | 'journey_only' | 'both'
   eligibilityRulesetId: number | null
   journeyId?: number | null
@@ -362,7 +362,7 @@ function selectMessageCandidate(
       return 0
     })
 
-  const tieBreak = sorted[0]?.tieBreakStrategy || 'round_robin'
+  const tieBreak = MESSAGE_SELECTION_STRATEGY || 'round_robin'
 
   if (tieBreak === 'round_robin') {
     const base = Math.max(0, Math.round(Number(merged.messagesShownThisSession || 0)))
@@ -649,17 +649,11 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
           const candidateId = Number(message.id || 0)
           if (!Number.isFinite(candidateId) || candidateId <= 0) continue
           if (isMessageSuppressed(candidateId, merged.suppression)) continue
-          const tieBreakRaw = String((message as any).tieBreakStrategy || '').trim().toLowerCase()
-          const tieBreakStrategy: 'first' | 'round_robin' | 'weighted_random' =
-            tieBreakRaw === 'first' || tieBreakRaw === 'weighted_random' || tieBreakRaw === 'round_robin'
-              ? tieBreakRaw
-              : 'round_robin'
           candidates.push({
             messageId: candidateId,
             campaignKey: (message as any).campaignKey == null ? null : String((message as any).campaignKey),
             messageType: String(message.type || 'register_login'),
             priority: Number(message.priority || 0),
-            tieBreakStrategy,
             deliveryScope:
               (String((message as any).deliveryScope || 'both').toLowerCase() === 'journey_only'
                 ? 'journey_only'

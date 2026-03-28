@@ -136,6 +136,7 @@ export const MESSAGE_MIN_WATCH_SECONDS_BEFORE_FIRST_MESSAGE = envInt('MESSAGE_MI
 export const MESSAGE_MIN_SLIDES_BETWEEN_MESSAGES = envInt('MESSAGE_MIN_SLIDES_BETWEEN_MESSAGES', 15, { min: 0, max: 10000 })
 export const MESSAGE_COOLDOWN_SECONDS_AFTER_MESSAGE = envInt('MESSAGE_COOLDOWN_SECONDS_AFTER_MESSAGE', 900, { min: 0, max: 7 * 24 * 60 * 60 })
 export const MESSAGE_PASS_THROUGH_MIN_VISIBLE_MS = envInt('MESSAGE_PASS_THROUGH_MIN_VISIBLE_MS', 800, { min: 0, max: 30000 })
+export const MESSAGE_SELECTION_STRATEGY = envEnum('MESSAGE_SELECTION_STRATEGY', ['first', 'round_robin', 'weighted_random'] as const, 'round_robin')
 export const MESSAGE_AUTH_INTENT_TTL_MINUTES = envInt('MESSAGE_AUTH_INTENT_TTL_MINUTES', 30, { min: 1, max: 24 * 60 })
 
 export type ImageVariantFormat = 'webp' | 'png'

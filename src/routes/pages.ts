@@ -3083,12 +3083,6 @@ const MESSAGE_SURFACE_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'global_feed', label: 'Global Feed' },
 ]
 
-const MESSAGE_TIE_BREAK_OPTIONS: Array<{ value: string; label: string }> = [
-  { value: 'round_robin', label: 'Round Robin' },
-  { value: 'weighted_random', label: 'Weighted Random' },
-  { value: 'first', label: 'First' },
-]
-
 const MESSAGE_DELIVERY_SCOPE_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'both', label: 'Both (Standalone + Journey)' },
   { value: 'journey_only', label: 'Journey Only' },
@@ -3748,11 +3742,6 @@ function renderAdminMessageForm(opts: {
   if (!surfaceOptions.some((opt) => opt.value === surfaceValue)) {
     surfaceOptions.unshift({ value: surfaceValue, label: `Custom (${surfaceValue})` })
   }
-  const tieBreakValue = String(values.tieBreakStrategy || values.tie_break_strategy || 'round_robin').trim().toLowerCase() || 'round_robin'
-  const tieBreakOptions = MESSAGE_TIE_BREAK_OPTIONS.slice()
-  if (!tieBreakOptions.some((opt) => opt.value === tieBreakValue)) {
-    tieBreakOptions.unshift({ value: tieBreakValue, label: `Custom (${tieBreakValue})` })
-  }
   const deliveryScopeValue = String(values.deliveryScope || values.delivery_scope || 'both').trim().toLowerCase() || 'both'
   const deliveryScopeOptions = MESSAGE_DELIVERY_SCOPE_OPTIONS.slice()
   if (!deliveryScopeOptions.some((opt) => opt.value === deliveryScopeValue)) {
@@ -3773,11 +3762,6 @@ function renderAdminMessageForm(opts: {
   body += `<div class="mini-field"><div class="mini-field-label">Surface</div><select name="appliesToSurface">`
   for (const opt of surfaceOptions) {
     body += `<option value="${escapeHtml(opt.value)}"${opt.value === surfaceValue ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
-  }
-  body += `</select></div>`
-  body += `<div class="mini-field"><div class="mini-field-label">Tie Break</div><select name="tieBreakStrategy">`
-  for (const opt of tieBreakOptions) {
-    body += `<option value="${escapeHtml(opt.value)}"${opt.value === tieBreakValue ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
   }
   body += `</select></div>`
   body += `<div class="mini-field"><div class="mini-field-label">Delivery Scope</div><select name="deliveryScope">`
