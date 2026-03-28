@@ -21,7 +21,6 @@ export type MessageJourneyStepRow = {
   step_key: string
   step_order: number
   message_id: number
-  ruleset_id: number | null
   status: MessageJourneyStepStatus
   config_json: string
   created_at: string
@@ -65,7 +64,6 @@ export type MessageJourneyStepDto = {
   stepKey: string
   stepOrder: number
   messageId: number
-  rulesetId: number | null
   status: MessageJourneyStepStatus
   config: Record<string, any>
   createdAt: string

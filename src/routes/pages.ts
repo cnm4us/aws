@@ -5460,7 +5460,6 @@ function buildMessageJourneyStepPayload(body: any): any {
 
   return {
     messageId: messageIdRaw,
-    rulesetId: null,
     status: String(statusRaw || 'draft').trim().toLowerCase(),
     progressionPolicy: String(progressionPolicyRaw || '').trim().toLowerCase(),
     progressionSlot: String(progressionSlotRaw || '').trim(),
@@ -5996,7 +5995,6 @@ pagesRouter.post('/admin/message-journeys/:id/steps', async (req: any, res: any)
       add_step: '1',
       error: String(err?.message || 'Failed to add step'),
       messageId: String(payload.messageId ?? ''),
-      rulesetId: payload.rulesetId == null ? '' : String(payload.rulesetId),
       stepStatus: String(payload.status || 'draft'),
       progressionPolicy: String(payload.progressionPolicy || ''),
       progressionSlot: String(payload.progressionSlot || ''),

@@ -598,6 +598,7 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
   let selectedJourneyStepId: number | null = null
   let selectedJourneyStepOrder: number | null = null
   let selectedJourneyStepKey: string | null = null
+  let selectedJourneyRulesetId: number | null = null
   let selectedDeliveryContext: 'standalone' | 'journey' | null = null
   let rejectedRulesetId: number | null = null
   let rulesetResult: 'none' | 'pass' | 'reject' = 'none'
@@ -747,6 +748,7 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
             selectedJourneyStepId = selected.journeyStepId == null ? null : Number(selected.journeyStepId)
             selectedJourneyStepOrder = selected.journeyStepOrder == null ? null : Number(selected.journeyStepOrder)
             selectedJourneyStepKey = selected.journeyStepKey == null ? null : String(selected.journeyStepKey)
+            selectedJourneyRulesetId = selected.journeyRulesetId == null ? null : Number(selected.journeyRulesetId)
             selectedDeliveryContext = selected.deliveryContext === 'journey' ? 'journey' : 'standalone'
           }
         }
@@ -809,6 +811,7 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
         selectedJourneyStepId,
         selectedJourneyStepOrder,
         selectedJourneyStepKey,
+        selectedJourneyRulesetId,
         selectedDeliveryContext,
         rejectedRulesetId,
         selectedPriority,

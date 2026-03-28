@@ -193,7 +193,6 @@ function toStepDto(row: MessageJourneyStepRow): MessageJourneyStepDto {
     stepKey: String(row.step_key || ''),
     stepOrder: Number(row.step_order || 0),
     messageId: Number(row.message_id || 0),
-    rulesetId: row.ruleset_id == null ? null : Number(row.ruleset_id),
     status: normalizeStepStatus(row.status),
     config,
     createdAt: String(row.created_at || ''),
@@ -309,7 +308,6 @@ export async function createJourneyStepForAdmin(journeyIdRaw: number, input: any
     stepKey: nextStepKey,
     stepOrder: nextStepOrder,
     messageId: normalizePositiveInt(input?.messageId ?? input?.message_id, 'invalid_message_id'),
-    rulesetId: normalizeNullablePositiveInt(input?.rulesetId ?? input?.ruleset_id, 'invalid_ruleset_id'),
     status: normalizeStepStatus(input?.status, 'draft'),
     configJson: JSON.stringify(normalizeJourneyStepConfigForAdmin(parseConfig(input?.config ?? input?.config_json))),
   })
@@ -338,10 +336,6 @@ export async function updateJourneyStepForAdmin(journeyIdRaw: number, stepIdRaw:
       patch?.messageId !== undefined || patch?.message_id !== undefined
         ? normalizePositiveInt(patch?.messageId ?? patch?.message_id, 'invalid_message_id')
         : existing.messageId,
-    rulesetId:
-      patch?.rulesetId !== undefined || patch?.ruleset_id !== undefined
-        ? normalizeNullablePositiveInt(patch?.rulesetId ?? patch?.ruleset_id, 'invalid_ruleset_id')
-        : existing.rulesetId,
     status: patch?.status !== undefined ? normalizeStepStatus(patch?.status, existing.status) : existing.status,
     configJson:
       patch?.config !== undefined || patch?.config_json !== undefined

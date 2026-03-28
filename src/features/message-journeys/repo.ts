@@ -30,7 +30,6 @@ const STEP_SELECT_SQL = `
     step_key,
     step_order,
     message_id,
-    ruleset_id,
     status,
     config_json,
     created_at,
@@ -87,7 +86,6 @@ type StepCreateInput = {
   stepKey: string
   stepOrder: number
   messageId: number
-  rulesetId: number | null
   status: MessageJourneyStepStatus
   configJson: string
 }
@@ -243,7 +241,6 @@ export async function listActiveStepsByMessageId(messageId: number): Promise<Arr
        s.step_key,
        s.step_order,
        s.message_id,
-       s.ruleset_id,
        s.status,
        s.config_json,
        s.created_at,
@@ -274,7 +271,6 @@ export async function listActiveStepsByMessageIds(messageIds: number[]): Promise
        s.step_key,
        s.step_order,
        s.message_id,
-       s.ruleset_id,
        s.status,
        s.config_json,
        s.created_at,
@@ -336,9 +332,6 @@ export async function createStep(input: StepCreateInput): Promise<MessageJourney
   if (!(await rowExists('feed_messages', Number(input.messageId)))) {
     throw new Error('invalid_message_id')
   }
-  if (input.rulesetId != null && !(await rowExists('feed_message_eligibility_rulesets', Number(input.rulesetId)))) {
-    throw new Error('invalid_ruleset_id')
-  }
 
   const db = getPool()
   const [result] = await db.query(
@@ -347,16 +340,14 @@ export async function createStep(input: StepCreateInput): Promise<MessageJourney
       step_key,
       step_order,
       message_id,
-      ruleset_id,
       status,
       config_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?)`,
     [
       input.journeyId,
       input.stepKey,
       input.stepOrder,
       input.messageId,
-      input.rulesetId,
       input.status,
       input.configJson,
     ]
@@ -377,7 +368,6 @@ export async function updateStep(id: number, patch: StepUpdateInput): Promise<Me
   if (patch.stepKey !== undefined) { sets.push('step_key = ?'); args.push(patch.stepKey) }
   if (patch.stepOrder !== undefined) { sets.push('step_order = ?'); args.push(patch.stepOrder) }
   if (patch.messageId !== undefined) { sets.push('message_id = ?'); args.push(patch.messageId) }
-  if (patch.rulesetId !== undefined) { sets.push('ruleset_id = ?'); args.push(patch.rulesetId) }
   if (patch.status !== undefined) { sets.push('status = ?'); args.push(patch.status) }
   if (patch.configJson !== undefined) { sets.push('config_json = ?'); args.push(patch.configJson) }
 

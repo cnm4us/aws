@@ -243,6 +243,10 @@ async function handleDecision(req: any, res: any, next: any) {
             ? Number(selectionDebug.selectedJourneyStepOrder)
             : null,
         message_journey_step_key: selectionDebug.selectedJourneyStepKey || null,
+        message_journey_ruleset_id:
+          selectionDebug.selectedJourneyRulesetId != null && Number.isFinite(Number(selectionDebug.selectedJourneyRulesetId))
+            ? Number(selectionDebug.selectedJourneyRulesetId)
+            : null,
         message_delivery_context:
           selectionDebug.selectedDeliveryContext === 'journey'
             ? 'journey'
@@ -274,6 +278,7 @@ async function handleDecision(req: any, res: any, next: any) {
       const journeyStepIdRaw = (decision.debug as any)?.selection?.selectedJourneyStepId
       const journeyStepOrderRaw = (decision.debug as any)?.selection?.selectedJourneyStepOrder
       const journeyStepKeyRaw = (decision.debug as any)?.selection?.selectedJourneyStepKey
+      const journeyRulesetIdRaw = (decision.debug as any)?.selection?.selectedJourneyRulesetId
       const deliveryContextRaw = String((decision.debug as any)?.selection?.selectedDeliveryContext || '').trim().toLowerCase()
       const journeyRejectedCount = Number((decision.debug as any)?.selection?.journeyRejectedCount || 0)
       const candidateCountBeforeJourney = Number((decision.debug as any)?.selection?.candidateCountBeforeJourney || 0)
@@ -290,6 +295,9 @@ async function handleDecision(req: any, res: any, next: any) {
       }
       if (journeyStepKeyRaw != null && String(journeyStepKeyRaw).trim() !== '') {
         span.setAttribute('app.journey_step_key', String(journeyStepKeyRaw).trim())
+      }
+      if (journeyRulesetIdRaw != null && Number.isFinite(Number(journeyRulesetIdRaw)) && Number(journeyRulesetIdRaw) > 0) {
+        span.setAttribute('app.journey_ruleset_id', String(Math.round(Number(journeyRulesetIdRaw))))
       }
       if (deliveryContextRaw === 'journey' || deliveryContextRaw === 'standalone') {
         span.setAttribute('app.delivery_context', deliveryContextRaw)
