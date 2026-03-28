@@ -3795,7 +3795,7 @@ function renderAdminMessageForm(opts: {
   body += `<dialog id="message-eligibility-dialog" style="max-width:860px; width:min(92vw, 860px); border:1px solid #444; border-radius:10px; padding:14px;">
     <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px;">
       <strong id="message-eligibility-dialog-title">Eligibility Criteria</strong>
-      <button type="button" id="message-eligibility-dialog-close" class="btn">Close</button>
+      <button type="button" id="message-eligibility-dialog-close" class="btn" aria-label="Close dialog" style="width:30px; min-width:30px; height:30px; padding:0; border-radius:999px; border:1px solid #000; background:#000; color:#fff; display:inline-flex; align-items:center; justify-content:center; font-size:16px; font-weight:900; line-height:1;">×</button>
     </div>
     <pre id="message-eligibility-dialog-json" style="margin:0; max-height:60vh; overflow:auto; border:1px solid rgba(255,255,255,0.18); border-radius:8px; padding:10px; background:#0b0b0b; color:#fff; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px;"></pre>
   </dialog>`
