@@ -3528,6 +3528,7 @@ function renderAdminMessageForm(opts: {
     id: number
     name: string
     status: string
+    criteria: Record<string, any>
   }>
   journeyStepRefs?: Array<{
     journeyId: number
@@ -3767,14 +3768,15 @@ function renderAdminMessageForm(opts: {
     body += `<option value="${escapeHtml(opt.value)}"${opt.value === deliveryScopeValue ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
   }
   body += `</select></div>`
-  body += `<div class="mini-field" id="message-eligibility-row" style="grid-column:1 / -1"><div class="mini-field-label">Eligibility Ruleset</div><select name="eligibilityRulesetId">`
+  body += `<div class="mini-field" id="message-eligibility-row" style="grid-column:1 / -1"><div class="mini-field-label">Eligibility Ruleset</div><div class="picker-row"><select id="message-eligibility-select" name="eligibilityRulesetId">`
   body += `<option value="">(none)</option>`
   for (const opt of eligibilityRulesetOptions) {
     const idValue = String(Number(opt.id))
     const label = `${opt.name} [${opt.status}] #${opt.id}`
     body += `<option value="${escapeHtml(idValue)}"${eligibilityRulesetIdValue === idValue ? ' selected' : ''}>${escapeHtml(label)}</option>`
   }
-  body += `</select></div>`
+  body += `</select><button type="button" id="message-eligibility-view" class="picker-btn" title="View ruleset criteria">{}`
+  body += `</button></div></div>`
   body += `<div class="mini-field" id="message-surface-row" style="grid-column:1 / -1"><div class="mini-field-label">Surface</div><select name="appliesToSurface">`
   for (const opt of surfaceOptions) {
     body += `<option value="${escapeHtml(opt.value)}"${opt.value === surfaceValue ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
@@ -3790,6 +3792,13 @@ function renderAdminMessageForm(opts: {
   </select></div>`
   body += `</div>`
   body += `</div>`
+  body += `<dialog id="message-eligibility-dialog" style="max-width:860px; width:min(92vw, 860px); border:1px solid #444; border-radius:10px; padding:14px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px;">
+      <strong id="message-eligibility-dialog-title">Eligibility Criteria</strong>
+      <button type="button" id="message-eligibility-dialog-close" class="btn">Close</button>
+    </div>
+    <pre id="message-eligibility-dialog-json" style="margin:0; max-height:60vh; overflow:auto; border:1px solid rgba(255,255,255,0.18); border-radius:8px; padding:10px; background:#0b0b0b; color:#fff; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px;"></pre>
+  </dialog>`
   body += `<script>
     (function () {
       const form = document.getElementById('message-editor-form');
@@ -3798,12 +3807,52 @@ function renderAdminMessageForm(opts: {
       const rulesetRow = form.querySelector('#message-eligibility-row');
       const surfaceRow = form.querySelector('#message-surface-row');
       const hint = form.querySelector('#message-eligibility-hint');
+      const rulesetSelect = form.querySelector('#message-eligibility-select');
+      const rulesetViewBtn = form.querySelector('#message-eligibility-view');
+      const rulesetDialog = document.getElementById('message-eligibility-dialog');
+      const rulesetDialogClose = document.getElementById('message-eligibility-dialog-close');
+      const rulesetDialogTitle = document.getElementById('message-eligibility-dialog-title');
+      const rulesetDialogJson = document.getElementById('message-eligibility-dialog-json');
+      const rulesetCriteriaById = ${JSON.stringify(
+        Object.fromEntries(
+          eligibilityRulesetOptions.map((opt) => [String(Number(opt.id)), opt.criteria || { version: 1, inclusion: [], exclusion: [] }])
+        )
+      )};
       const sync = () => {
         const isJourneyOnly = scope && String(scope.value || '').toLowerCase() === 'journey_only';
         if (rulesetRow) rulesetRow.style.display = isJourneyOnly ? 'none' : '';
         if (surfaceRow) surfaceRow.style.display = isJourneyOnly ? 'none' : '';
         if (hint) hint.style.display = isJourneyOnly ? '' : '';
+        if (rulesetViewBtn && rulesetSelect) {
+          const id = String(rulesetSelect.value || '').trim();
+          rulesetViewBtn.disabled = !id || !rulesetCriteriaById[id];
+          rulesetViewBtn.style.opacity = rulesetViewBtn.disabled ? '0.4' : '1';
+          rulesetViewBtn.style.cursor = rulesetViewBtn.disabled ? 'not-allowed' : 'pointer';
+        }
       };
+      if (rulesetViewBtn && rulesetSelect && rulesetDialog && rulesetDialogJson) {
+        rulesetViewBtn.addEventListener('click', () => {
+          const id = String(rulesetSelect.value || '').trim();
+          if (!id || !rulesetCriteriaById[id]) return;
+          const selectedOpt = rulesetSelect.options[rulesetSelect.selectedIndex];
+          if (rulesetDialogTitle) rulesetDialogTitle.textContent = 'Eligibility Criteria — ' + String((selectedOpt && selectedOpt.text) || ('#' + id));
+          rulesetDialogJson.textContent = JSON.stringify(rulesetCriteriaById[id], null, 2);
+          if (typeof rulesetDialog.showModal === 'function') rulesetDialog.showModal();
+        });
+        if (rulesetDialogClose) {
+          rulesetDialogClose.addEventListener('click', () => {
+            if (typeof rulesetDialog.close === 'function') rulesetDialog.close();
+          });
+        }
+        rulesetDialog.addEventListener('click', (ev) => {
+          const rect = rulesetDialog.getBoundingClientRect();
+          const x = ev.clientX;
+          const y = ev.clientY;
+          const outside = x < rect.left || x > rect.right || y < rect.top || y > rect.bottom;
+          if (outside && typeof rulesetDialog.close === 'function') rulesetDialog.close();
+        });
+      }
+      if (rulesetSelect) rulesetSelect.addEventListener('change', sync);
       if (scope) scope.addEventListener('change', sync);
       sync();
     })();
@@ -4628,6 +4677,7 @@ async function loadMessageEligibilityRulesetOptionsForEditor(): Promise<Array<{
   id: number
   name: string
   status: string
+  criteria: Record<string, any>
 }>> {
   const items = await messageRulesetsSvc.listRulesetsForAdmin({
     includeArchived: true,
@@ -4638,6 +4688,7 @@ async function loadMessageEligibilityRulesetOptionsForEditor(): Promise<Array<{
       id: Number(item.id),
       name: String(item.name || ''),
       status: String(item.status || 'draft'),
+      criteria: item.criteria && typeof item.criteria === 'object' ? (item.criteria as Record<string, any>) : { version: 1, inclusion: [], exclusion: [] },
     }))
     .sort((a, b) => a.id - b.id)
 }
