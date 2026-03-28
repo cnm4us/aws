@@ -32,6 +32,7 @@ This file is a lightweight index for ongoing implementation work.
 - `agents/implementation/plan_144.md` — Stateful message journeys (progression, admin, observability)
 - `agents/implementation/plan_145.md` — CTA outcome canonicalization + policy-driven completion architecture
 - `agents/implementation/plan_146.md` — Journey-level eligibility rulesets (remove step-level ruleset gating)
+- `agents/implementation/plan_147.md` — Multi-surface targeting for messages and journeys
 
 ## Active / Next
 - Check latest `plan_NN.md` with `Status: Active`.
