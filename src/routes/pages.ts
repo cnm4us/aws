@@ -4022,9 +4022,9 @@ function renderAdminMessageForm(opts: {
   const previewSlot3Label = slotLabel(3, 'Tertiary')
   body += `<div id="message-preview-cta" style="display:${creativeForm.ctaEnabled ? 'block' : 'none'}; position:absolute; left:14px; right:14px; ${ctaPosStyle}; z-index:2; border:1px solid rgba(255,255,255,0.24); border-radius:10px; background:${hexToRgba(creativeForm.ctaBgColor, creativeForm.ctaBgOpacity)}; color:${escapeHtml(creativeForm.ctaTextColor)}; padding:8px">`
   body += `<div id="message-preview-cta-buttons" style="display:${creativeForm.ctaLayout === 'stacked' ? 'grid' : 'flex'}; grid-template-columns:${creativeForm.ctaLayout === 'stacked' ? '1fr' : 'none'}; justify-content:space-between; align-items:center; gap:8px">`
-  body += `<span id="message-preview-slot-1-btn" class="btn" style="justify-self:start; border:1px solid rgba(255,255,255,0.45); border-radius:11px; background:rgba(0,0,0,0.5); padding:8px 12px; display:${slotCount >= 1 ? 'inline-flex' : 'none'}">${escapeHtml(previewSlot1Label)}</span>`
-  body += `<span id="message-preview-slot-2-btn" class="btn" style="justify-self:center; border:1px solid rgba(255,255,255,0.45); border-radius:11px; background:rgba(0,0,0,0.5); padding:8px 12px; display:${slotCount >= 2 ? 'inline-flex' : 'none'}">${escapeHtml(previewSlot2Label)}</span>`
-  body += `<span id="message-preview-slot-3-btn" class="btn" style="justify-self:end; border:1px solid rgba(255,255,255,0.45); border-radius:11px; background:rgba(0,0,0,0.5); padding:8px 12px; display:${slotCount >= 3 ? 'inline-flex' : 'none'}">${escapeHtml(previewSlot3Label)}</span>`
+  body += `<span id="message-preview-slot-1-btn" class="btn" style="justify-self:start; border:1px solid rgba(255,255,255,0.45); border-radius:11px; background:rgba(0,0,0,0.5); padding:8px 12px; display:${slotCount >= 1 ? 'inline-flex' : 'none'}; text-align:center; white-space:nowrap; box-sizing:border-box">${escapeHtml(previewSlot1Label)}</span>`
+  body += `<span id="message-preview-slot-2-btn" class="btn" style="justify-self:center; border:1px solid rgba(255,255,255,0.45); border-radius:11px; background:rgba(0,0,0,0.5); padding:8px 12px; display:${slotCount >= 2 ? 'inline-flex' : 'none'}; text-align:center; white-space:nowrap; box-sizing:border-box">${escapeHtml(previewSlot2Label)}</span>`
+  body += `<span id="message-preview-slot-3-btn" class="btn" style="justify-self:end; border:1px solid rgba(255,255,255,0.45); border-radius:11px; background:rgba(0,0,0,0.5); padding:8px 12px; display:${slotCount >= 3 ? 'inline-flex' : 'none'}; text-align:center; white-space:nowrap; box-sizing:border-box">${escapeHtml(previewSlot3Label)}</span>`
   body += `</div>`
   body += `</div>`
   body += `</div>`
@@ -4279,16 +4279,34 @@ function renderAdminMessageForm(opts: {
         if (preview.slot1Btn) {
           preview.slot1Btn.textContent = slot1;
           preview.slot1Btn.style.display = ctaSlotCount >= 1 ? 'inline-flex' : 'none';
+          preview.slot1Btn.style.justifySelf = ctaLayout === 'stacked' ? 'stretch' : 'start';
+          preview.slot1Btn.style.width = ctaLayout === 'stacked' ? '100%' : '';
+          preview.slot1Btn.style.boxSizing = 'border-box';
+          preview.slot1Btn.style.whiteSpace = ctaLayout === 'stacked' ? 'normal' : 'nowrap';
+          preview.slot1Btn.style.wordBreak = ctaLayout === 'stacked' ? 'break-word' : '';
+          preview.slot1Btn.style.lineHeight = ctaLayout === 'stacked' ? '1.25' : '';
           applySlotStyle(preview.slot1Btn, slot1Style);
         }
         if (preview.slot2Btn) {
           preview.slot2Btn.textContent = slot2;
           preview.slot2Btn.style.display = ctaSlotCount >= 2 ? 'inline-flex' : 'none';
+          preview.slot2Btn.style.justifySelf = ctaLayout === 'stacked' ? 'stretch' : (ctaSlotCount >= 3 ? 'center' : 'end');
+          preview.slot2Btn.style.width = ctaLayout === 'stacked' ? '100%' : '';
+          preview.slot2Btn.style.boxSizing = 'border-box';
+          preview.slot2Btn.style.whiteSpace = ctaLayout === 'stacked' ? 'normal' : 'nowrap';
+          preview.slot2Btn.style.wordBreak = ctaLayout === 'stacked' ? 'break-word' : '';
+          preview.slot2Btn.style.lineHeight = ctaLayout === 'stacked' ? '1.25' : '';
           applySlotStyle(preview.slot2Btn, slot2Style);
         }
         if (preview.slot3Btn) {
           preview.slot3Btn.textContent = slot3;
           preview.slot3Btn.style.display = ctaSlotCount >= 3 ? 'inline-flex' : 'none';
+          preview.slot3Btn.style.justifySelf = ctaLayout === 'stacked' ? 'stretch' : 'end';
+          preview.slot3Btn.style.width = ctaLayout === 'stacked' ? '100%' : '';
+          preview.slot3Btn.style.boxSizing = 'border-box';
+          preview.slot3Btn.style.whiteSpace = ctaLayout === 'stacked' ? 'normal' : 'nowrap';
+          preview.slot3Btn.style.wordBreak = ctaLayout === 'stacked' ? 'break-word' : '';
+          preview.slot3Btn.style.lineHeight = ctaLayout === 'stacked' ? '1.25' : '';
           applySlotStyle(preview.slot3Btn, slot3Style);
         }
         if (preview.ctaButtons) {
