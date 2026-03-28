@@ -3389,13 +3389,20 @@ function buildMessageCreateOrUpdatePayload(body: any): any {
   const mediaUploadId = String(creativeForm.backgroundUploadId || '').trim()
   const messageType = String(body?.type ?? body?.messageType ?? 'register_login').trim().toLowerCase() || 'register_login'
   const appliesToSurfaceRaw = String(body?.appliesToSurface ?? body?.applies_to_surface ?? 'global_feed').trim().toLowerCase() || 'global_feed'
+  const surfaceTargetingParsed = parseSurfaceTargetingFromBody(body, appliesToSurfaceRaw)
+  const appliesToSurfaceFromTargeting = surfaceTargetingParsed.find((item) => item.surface === 'global_feed')
+    ? 'global_feed'
+    : (surfaceTargetingParsed[0]?.surface || appliesToSurfaceRaw)
   const tieBreakStrategy = String(body?.tieBreakStrategy ?? body?.tie_break_strategy ?? 'round_robin').trim().toLowerCase() || 'round_robin'
   const deliveryScope = String(body?.deliveryScope ?? body?.delivery_scope ?? 'both').trim().toLowerCase() || 'both'
   const campaignKey = String(body?.campaignKey ?? body?.campaign_key ?? '').trim().toLowerCase()
   const eligibilityRulesetIdRaw = String(body?.eligibilityRulesetId ?? body?.eligibility_ruleset_id ?? '').trim()
   const eligibilityRulesetIdParsed = /^\d+$/.test(eligibilityRulesetIdRaw) ? Number(eligibilityRulesetIdRaw) : null
   const eligibilityRulesetId = deliveryScope === 'journey_only' ? null : eligibilityRulesetIdParsed
-  const appliesToSurface = deliveryScope === 'journey_only' ? 'global_feed' : appliesToSurfaceRaw
+  const appliesToSurface = deliveryScope === 'journey_only' ? 'global_feed' : appliesToSurfaceFromTargeting
+  const surfaceTargeting = deliveryScope === 'journey_only'
+    ? [{ surface: 'global_feed' as const, targetingMode: 'all' as const, targetIds: [] }]
+    : surfaceTargetingParsed
   const startsAtDate = String(body?.startsAtDate || '').trim()
   const startsAtTime = String(body?.startsAtTime || '').trim()
   const endsAtDate = String(body?.endsAtDate || '').trim()
@@ -3432,6 +3439,7 @@ function buildMessageCreateOrUpdatePayload(body: any): any {
     type: messageType,
     appliesToSurface,
     tieBreakStrategy,
+    surfaceTargeting,
     deliveryScope,
     campaignKey: campaignKey || null,
     eligibilityRulesetId,
@@ -3538,6 +3546,10 @@ function renderAdminMessageForm(opts: {
     stepKey: string
     stepOrder: number
   }>
+  surfaceTargetOptions?: {
+    groups: Array<{ id: number; name: string; slug: string }>
+    channels: Array<{ id: number; name: string; slug: string }>
+  }
   error?: string | null
   notice?: string | null
   showClone?: boolean
@@ -3547,6 +3559,7 @@ function renderAdminMessageForm(opts: {
   const ctaDefinitionOptions = Array.isArray(opts.ctaDefinitionOptions) ? opts.ctaDefinitionOptions : []
   const eligibilityRulesetOptions = Array.isArray(opts.eligibilityRulesetOptions) ? opts.eligibilityRulesetOptions : []
   const journeyStepRefs = Array.isArray(opts.journeyStepRefs) ? opts.journeyStepRefs : []
+  const surfaceTargetOptions = opts.surfaceTargetOptions || { groups: [], channels: [] }
   const id = values.id ? Number(values.id) : null
   const draftKey = id ? `admin_message_editor_draft_${id}` : 'admin_message_editor_draft_new'
   const creativeForm = extractMessageCreativeForm(values)
@@ -3752,6 +3765,26 @@ function renderAdminMessageForm(opts: {
   }
   const campaignKeyValue = String(values.campaignKey || values.campaign_key || '').trim().toLowerCase()
   const eligibilityRulesetIdValue = String(values.eligibilityRulesetId ?? values.eligibility_ruleset_id ?? '').trim()
+  const rawSurfaceTargeting = Array.isArray(values.surfaceTargeting)
+    ? values.surfaceTargeting
+    : (Array.isArray(values.surface_targeting) ? values.surface_targeting : [])
+  const messageSurfaceTargeting = rawSurfaceTargeting.length
+    ? rawSurfaceTargeting
+    : [{ surface: surfaceValue, targetingMode: 'all', targetIds: [] }]
+  const targetBySurface = new Map<string, { targetingMode: 'all' | 'selected'; targetIds: number[] }>()
+  for (const item of messageSurfaceTargeting as any[]) {
+    const surface = String(item?.surface || '').trim().toLowerCase()
+    if (surface !== 'global_feed' && surface !== 'group_feed' && surface !== 'channel_feed') continue
+    const mode = String(item?.targetingMode || item?.targeting_mode || '').trim().toLowerCase() === 'selected' ? 'selected' : 'all'
+    const targetIds = Array.isArray(item?.targetIds)
+      ? item.targetIds
+      : (Array.isArray(item?.target_ids) ? item.target_ids : [])
+    const normalizedTargetIds: number[] = Array.from(new Set(targetIds.map((n: any) => Number(n)).filter((n: number) => Number.isFinite(n) && n > 0).map((n: number) => Math.round(n)))) as number[]
+    targetBySurface.set(surface, { targetingMode: mode, targetIds: normalizedTargetIds })
+  }
+  const globalChecked = targetBySurface.has('global_feed')
+  const groupsTargeting = targetBySurface.get('group_feed') || { targetingMode: 'all' as const, targetIds: [] }
+  const channelsTargeting = targetBySurface.get('channel_feed') || { targetingMode: 'all' as const, targetIds: [] }
 
   body += `<div class="section-title" style="margin:10px 0 6px; opacity:0.5">Identity</div>`
   body += `<div class="section">`
@@ -3777,11 +3810,35 @@ function renderAdminMessageForm(opts: {
   }
   body += `</select><button type="button" id="message-eligibility-view" class="picker-btn" title="View ruleset criteria">{}`
   body += `</button></div></div>`
-  body += `<div class="mini-field" id="message-surface-row" style="grid-column:1 / -1"><div class="mini-field-label">Surface</div><select name="appliesToSurface">`
-  for (const opt of surfaceOptions) {
-    body += `<option value="${escapeHtml(opt.value)}"${opt.value === surfaceValue ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+  body += `<div class="mini-field" id="message-surface-row" style="grid-column:1 / -1">`
+  body += `<div class="mini-field-label">Surfaces</div>`
+  body += `<input type="hidden" name="appliesToSurface" value="${escapeHtml(surfaceValue)}" />`
+  body += `<div style="display:grid; gap:10px; margin-top:6px">`
+  body += `<label style="display:flex; align-items:center; gap:8px; font-weight:700"><input type="checkbox" name="surfaceGlobalFeed" value="1"${globalChecked ? ' checked' : ''} /> Global Feed</label>`
+  body += `<div style="border:1px solid rgba(255,255,255,0.14); border-radius:10px; padding:10px">`
+  body += `<label style="display:flex; align-items:center; gap:8px; font-weight:700; margin:0 0 8px 0"><input type="checkbox" name="surfaceGroupFeed" value="1"${targetBySurface.has('group_feed') ? ' checked' : ''} /> Groups</label>`
+  body += `<label style="margin:0 0 8px 0">Targeting<select name="surfaceGroupFeedMode"><option value="all"${groupsTargeting.targetingMode === 'all' ? ' selected' : ''}>All</option><option value="selected"${groupsTargeting.targetingMode === 'selected' ? ' selected' : ''}>Selected only</option></select></label>`
+  body += `<label style="margin:0">Selected Groups<select name="surfaceGroupTargetIds" multiple size="6">`
+  for (const group of surfaceTargetOptions.groups) {
+    const selected = groupsTargeting.targetIds.includes(Number(group.id))
+    const label = `${group.name}${group.slug ? ` (${group.slug})` : ''} [#${group.id}]`
+    body += `<option value="${group.id}"${selected ? ' selected' : ''}>${escapeHtml(label)}</option>`
   }
-  body += `</select></div>`
+  body += `</select></label>`
+  body += `</div>`
+  body += `<div style="border:1px solid rgba(255,255,255,0.14); border-radius:10px; padding:10px">`
+  body += `<label style="display:flex; align-items:center; gap:8px; font-weight:700; margin:0 0 8px 0"><input type="checkbox" name="surfaceChannelFeed" value="1"${targetBySurface.has('channel_feed') ? ' checked' : ''} /> Channels</label>`
+  body += `<label style="margin:0 0 8px 0">Targeting<select name="surfaceChannelFeedMode"><option value="all"${channelsTargeting.targetingMode === 'all' ? ' selected' : ''}>All</option><option value="selected"${channelsTargeting.targetingMode === 'selected' ? ' selected' : ''}>Selected only</option></select></label>`
+  body += `<label style="margin:0">Selected Channels<select name="surfaceChannelTargetIds" multiple size="6">`
+  for (const channel of surfaceTargetOptions.channels) {
+    const selected = channelsTargeting.targetIds.includes(Number(channel.id))
+    const label = `${channel.name}${channel.slug ? ` (${channel.slug})` : ''} [#${channel.id}]`
+    body += `<option value="${channel.id}"${selected ? ' selected' : ''}>${escapeHtml(label)}</option>`
+  }
+  body += `</select></label>`
+  body += `</div>`
+  body += `</div>`
+  body += `</div>`
   body += `<div class="field-hint" id="message-eligibility-hint" style="grid-column:1 / -1">For journey delivery, set eligibility on the journey (not the step). Message-level rulesets apply to standalone delivery only.</div>`
   body += `<div class="mini-field"><div class="mini-field-label">Priority</div><input type="number" name="priority" value="${escapeHtml(String(values.priority ?? 100))}" /></div>`
   body += `<div class="mini-field"><div class="mini-field-label">Status</div><select name="status">
@@ -4724,6 +4781,69 @@ async function loadJourneyStepRefsForMessageEditor(messageId: number): Promise<A
   }))
 }
 
+async function loadSurfaceTargetOptionsForEditor(): Promise<{
+  groups: Array<{ id: number; name: string; slug: string }>
+  channels: Array<{ id: number; name: string; slug: string }>
+}> {
+  const db = getPool()
+  const [rows] = await db.query(
+    `SELECT id, name, slug, type
+       FROM spaces
+      WHERE type IN ('group','channel')
+      ORDER BY name ASC, id ASC
+      LIMIT 2000`
+  )
+  const groups: Array<{ id: number; name: string; slug: string }> = []
+  const channels: Array<{ id: number; name: string; slug: string }> = []
+  for (const row of rows as any[]) {
+    const id = Number(row.id || 0)
+    if (!Number.isFinite(id) || id <= 0) continue
+    const name = String(row.name || '').trim() || `Space #${id}`
+    const slug = String(row.slug || '').trim()
+    const type = String(row.type || '').trim().toLowerCase()
+    if (type === 'group') groups.push({ id, name, slug })
+    if (type === 'channel') channels.push({ id, name, slug })
+  }
+  return { groups, channels }
+}
+
+function parseStringListField(raw: any): string[] {
+  if (raw == null || raw === '') return []
+  if (Array.isArray(raw)) return raw.map((v) => String(v || '').trim()).filter(Boolean)
+  return [String(raw).trim()].filter(Boolean)
+}
+
+function parseSurfaceTargetingFromBody(body: any, fallbackSurface: string = 'global_feed'): Array<{
+  surface: 'global_feed' | 'group_feed' | 'channel_feed'
+  targetingMode: 'all' | 'selected'
+  targetIds: number[]
+}> {
+  const hasGlobal = String(body?.surfaceGlobalFeed || '').trim() === '1'
+  const hasGroups = String(body?.surfaceGroupFeed || '').trim() === '1'
+  const hasChannels = String(body?.surfaceChannelFeed || '').trim() === '1'
+  const groupMode = String(body?.surfaceGroupFeedMode || 'all').trim().toLowerCase() === 'selected' ? 'selected' : 'all'
+  const channelMode = String(body?.surfaceChannelFeedMode || 'all').trim().toLowerCase() === 'selected' ? 'selected' : 'all'
+  const groupTargetIds = Array.from(new Set(parseStringListField(body?.surfaceGroupTargetIds)
+    .map((v) => Number(v))
+    .filter((n) => Number.isFinite(n) && n > 0)
+    .map((n) => Math.round(n))))
+  const channelTargetIds = Array.from(new Set(parseStringListField(body?.surfaceChannelTargetIds)
+    .map((v) => Number(v))
+    .filter((n) => Number.isFinite(n) && n > 0)
+    .map((n) => Math.round(n))))
+
+  const out: Array<{ surface: 'global_feed' | 'group_feed' | 'channel_feed'; targetingMode: 'all' | 'selected'; targetIds: number[] }> = []
+  if (hasGlobal) out.push({ surface: 'global_feed', targetingMode: 'all', targetIds: [] })
+  if (hasGroups) out.push({ surface: 'group_feed', targetingMode: groupMode, targetIds: groupMode === 'selected' ? groupTargetIds : [] })
+  if (hasChannels) out.push({ surface: 'channel_feed', targetingMode: channelMode, targetIds: channelMode === 'selected' ? channelTargetIds : [] })
+  if (!out.length) {
+    const normalizedFallback = String(fallbackSurface || 'global_feed').trim().toLowerCase()
+    const surface = normalizedFallback === 'group_feed' || normalizedFallback === 'channel_feed' ? normalizedFallback : 'global_feed'
+    out.push({ surface: surface as any, targetingMode: 'all', targetIds: [] })
+  }
+  return out
+}
+
 pagesRouter.get('/admin/messages', async (req: any, res: any) => {
   try {
     const includeArchived = String(req.query?.include_archived || '0') === '1'
@@ -4882,6 +5002,7 @@ pagesRouter.get('/admin/messages/new', async (req: any, res: any) => {
     const csrfToken = cookies['csrf'] || ''
     const ctaDefinitionOptions = await loadMessageCtaOptionsForEditor(Number(req.user?.id || 0))
     const eligibilityRulesetOptions = await loadMessageEligibilityRulesetOptionsForEditor()
+    const surfaceTargetOptions = await loadSurfaceTargetOptionsForEditor()
     const doc = renderAdminMessageForm({
       title: 'New Message',
       action: '/admin/messages',
@@ -4889,6 +5010,7 @@ pagesRouter.get('/admin/messages/new', async (req: any, res: any) => {
       backHref: '/admin/messages',
       ctaDefinitionOptions,
       eligibilityRulesetOptions,
+      surfaceTargetOptions,
       values: {
         name: '',
         headline: '',
@@ -4915,6 +5037,7 @@ pagesRouter.get('/admin/messages/new', async (req: any, res: any) => {
         creativeCtaUpgradeSuccessReturn: '/channels/global-feed',
         type: 'register_login',
         appliesToSurface: 'global_feed',
+        surfaceTargeting: [{ surface: 'global_feed', targetingMode: 'all', targetIds: [] }],
         tieBreakStrategy: 'round_robin',
         deliveryScope: 'both',
         campaignKey: '',
@@ -4940,9 +5063,11 @@ pagesRouter.post('/admin/messages', async (req: any, res: any) => {
   const payload = buildMessageCreateOrUpdatePayload(req.body || {})
   let ctaDefinitionOptions: Awaited<ReturnType<typeof loadMessageCtaOptionsForEditor>> = []
   let eligibilityRulesetOptions: Awaited<ReturnType<typeof loadMessageEligibilityRulesetOptionsForEditor>> = []
+  let surfaceTargetOptions: Awaited<ReturnType<typeof loadSurfaceTargetOptionsForEditor>> = { groups: [], channels: [] }
   try {
     ctaDefinitionOptions = await loadMessageCtaOptionsForEditor(Number(req.user?.id || 0))
     eligibilityRulesetOptions = await loadMessageEligibilityRulesetOptionsForEditor()
+    surfaceTargetOptions = await loadSurfaceTargetOptionsForEditor()
     const created = await messagesSvc.createMessageForAdmin(payload, Number(req.user?.id || 0))
     res.redirect(`/admin/messages/${created.id}?notice=${encodeURIComponent('Message created.')}`)
   } catch (err: any) {
@@ -4953,6 +5078,7 @@ pagesRouter.post('/admin/messages', async (req: any, res: any) => {
       backHref: '/admin/messages',
       ctaDefinitionOptions,
       eligibilityRulesetOptions,
+      surfaceTargetOptions,
       values: payload,
       error: String(err?.message || 'Failed to create message'),
     })
@@ -4972,6 +5098,7 @@ pagesRouter.get('/admin/messages/:id', async (req: any, res: any) => {
     const csrfToken = cookies['csrf'] || ''
     const ctaDefinitionOptions = await loadMessageCtaOptionsForEditor(Number(req.user?.id || 0))
     const eligibilityRulesetOptions = await loadMessageEligibilityRulesetOptionsForEditor()
+    const surfaceTargetOptions = await loadSurfaceTargetOptionsForEditor()
     const doc = renderAdminMessageForm({
       title: `Edit Message #${id}`,
       action: `/admin/messages/${id}`,
@@ -4979,6 +5106,7 @@ pagesRouter.get('/admin/messages/:id', async (req: any, res: any) => {
       backHref: '/admin/messages',
       ctaDefinitionOptions,
       eligibilityRulesetOptions,
+      surfaceTargetOptions,
       journeyStepRefs,
       values: message,
       notice: req.query?.notice ? String(req.query.notice) : '',
@@ -5001,9 +5129,11 @@ pagesRouter.post('/admin/messages/:id', async (req: any, res: any) => {
   const payload = buildMessageCreateOrUpdatePayload(req.body || {})
   let ctaDefinitionOptions: Awaited<ReturnType<typeof loadMessageCtaOptionsForEditor>> = []
   let eligibilityRulesetOptions: Awaited<ReturnType<typeof loadMessageEligibilityRulesetOptionsForEditor>> = []
+  let surfaceTargetOptions: Awaited<ReturnType<typeof loadSurfaceTargetOptionsForEditor>> = { groups: [], channels: [] }
   try {
     ctaDefinitionOptions = await loadMessageCtaOptionsForEditor(Number(req.user?.id || 0))
     eligibilityRulesetOptions = await loadMessageEligibilityRulesetOptionsForEditor()
+    surfaceTargetOptions = await loadSurfaceTargetOptionsForEditor()
     await messagesSvc.updateMessageForAdmin(id, payload, Number(req.user?.id || 0))
     res.redirect(`/admin/messages/${id}?notice=${encodeURIComponent('Saved.')}`)
   } catch (err: any) {
@@ -5014,6 +5144,7 @@ pagesRouter.post('/admin/messages/:id', async (req: any, res: any) => {
       backHref: '/admin/messages',
       ctaDefinitionOptions,
       eligibilityRulesetOptions,
+      surfaceTargetOptions,
       values: { ...payload, id },
       error: String(err?.message || 'Failed to save message'),
       showClone: true,
@@ -5439,12 +5570,17 @@ pagesRouter.post('/admin/message-rulesets/:id', async (req: any, res: any) => {
 
 function buildMessageJourneyCreateOrUpdatePayload(body: any): any {
   const rulesetIdRaw = String(body?.eligibilityRulesetId ?? body?.eligibility_ruleset_id ?? '').trim()
-  const appliesToSurface = String(body?.appliesToSurface ?? body?.applies_to_surface ?? 'global_feed').trim().toLowerCase() || 'global_feed'
+  const appliesToSurfaceRaw = String(body?.appliesToSurface ?? body?.applies_to_surface ?? 'global_feed').trim().toLowerCase() || 'global_feed'
+  const surfaceTargeting = parseSurfaceTargetingFromBody(body, appliesToSurfaceRaw)
+  const appliesToSurface = surfaceTargeting.find((item) => item.surface === 'global_feed')
+    ? 'global_feed'
+    : (surfaceTargeting[0]?.surface || appliesToSurfaceRaw)
   return {
     journeyKey: String(body?.journeyKey || body?.journey_key || '').trim().toLowerCase(),
     name: String(body?.name || '').trim(),
     appliesToSurface,
     applies_to_surface: appliesToSurface,
+    surfaceTargeting,
     status: String(body?.status || 'draft').trim().toLowerCase(),
     description: String(body?.description || '').trim() || null,
     eligibilityRulesetId: /^\d+$/.test(rulesetIdRaw) ? Number(rulesetIdRaw) : null,
@@ -5546,12 +5682,38 @@ function renderAdminMessageJourneyForm(opts: {
   backHref: string
   values: any
   rulesetOptions?: Array<{ id: number; name: string }>
+  surfaceTargetOptions?: {
+    groups: Array<{ id: number; name: string; slug: string }>
+    channels: Array<{ id: number; name: string; slug: string }>
+  }
   error?: string | null
   notice?: string | null
 }): string {
   const csrfToken = opts.csrfToken ? String(opts.csrfToken) : ''
   const values = opts.values || {}
   const rulesetOptions = Array.isArray(opts.rulesetOptions) ? opts.rulesetOptions : []
+  const surfaceTargetOptions = opts.surfaceTargetOptions || { groups: [], channels: [] }
+  const rawJourneySurfaceTargeting = Array.isArray(values.surfaceTargeting)
+    ? values.surfaceTargeting
+    : (Array.isArray(values.surface_targeting) ? values.surface_targeting : [])
+  const journeySurfaceValue = String(values?.appliesToSurface || values?.applies_to_surface || 'global_feed')
+  const journeySurfaceTargeting = rawJourneySurfaceTargeting.length
+    ? rawJourneySurfaceTargeting
+    : [{ surface: journeySurfaceValue, targetingMode: 'all', targetIds: [] }]
+  const journeyTargetBySurface = new Map<string, { targetingMode: 'all' | 'selected'; targetIds: number[] }>()
+  for (const item of journeySurfaceTargeting as any[]) {
+    const surface = String(item?.surface || '').trim().toLowerCase()
+    if (surface !== 'global_feed' && surface !== 'group_feed' && surface !== 'channel_feed') continue
+    const mode = String(item?.targetingMode || item?.targeting_mode || '').trim().toLowerCase() === 'selected' ? 'selected' : 'all'
+    const targetIds = Array.isArray(item?.targetIds)
+      ? item.targetIds
+      : (Array.isArray(item?.target_ids) ? item.target_ids : [])
+    const normalizedTargetIds: number[] = Array.from(new Set(targetIds.map((n: any) => Number(n)).filter((n: number) => Number.isFinite(n) && n > 0).map((n: number) => Math.round(n)))) as number[]
+    journeyTargetBySurface.set(surface, { targetingMode: mode, targetIds: normalizedTargetIds })
+  }
+  const journeyGlobalChecked = journeyTargetBySurface.has('global_feed')
+  const journeyGroupsTargeting = journeyTargetBySurface.get('group_feed') || { targetingMode: 'all' as const, targetIds: [] }
+  const journeyChannelsTargeting = journeyTargetBySurface.get('channel_feed') || { targetingMode: 'all' as const, targetIds: [] }
 
   let body = `<h1>${escapeHtml(opts.title)}</h1>`
   body += `<div class="toolbar"><div><a href="${escapeHtml(opts.backHref)}">← Back to message journeys</a></div><div></div></div>`
@@ -5563,11 +5725,35 @@ function renderAdminMessageJourneyForm(opts: {
   body += `<label>Journey Key<input type="text" name="journeyKey" maxlength="64" value="${escapeHtml(String(values?.journeyKey || ''))}" required /></label>`
   body += `<label>Name<input type="text" name="name" maxlength="120" value="${escapeHtml(String(values?.name || ''))}" required /></label>`
   body += `<label>Description (optional)<input type="text" name="description" maxlength="500" value="${escapeHtml(String(values?.description || ''))}" /></label>`
-  body += `<label>Surface<select name="appliesToSurface">`
-  for (const opt of MESSAGE_SURFACE_OPTIONS) {
-    body += `<option value="${escapeHtml(opt.value)}"${String(values?.appliesToSurface || values?.applies_to_surface || 'global_feed') === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+  body += `<input type="hidden" name="appliesToSurface" value="${escapeHtml(journeySurfaceValue)}" />`
+  body += `<div class="mini-field">`
+  body += `<div class="mini-field-label">Surfaces</div>`
+  body += `<div style="display:grid; gap:10px; margin-top:6px">`
+  body += `<label style="display:flex; align-items:center; gap:8px; font-weight:700"><input type="checkbox" name="surfaceGlobalFeed" value="1"${journeyGlobalChecked ? ' checked' : ''} /> Global Feed</label>`
+  body += `<div style="border:1px solid rgba(255,255,255,0.14); border-radius:10px; padding:10px">`
+  body += `<label style="display:flex; align-items:center; gap:8px; font-weight:700; margin:0 0 8px 0"><input type="checkbox" name="surfaceGroupFeed" value="1"${journeyTargetBySurface.has('group_feed') ? ' checked' : ''} /> Groups</label>`
+  body += `<label style="margin:0 0 8px 0">Targeting<select name="surfaceGroupFeedMode"><option value="all"${journeyGroupsTargeting.targetingMode === 'all' ? ' selected' : ''}>All</option><option value="selected"${journeyGroupsTargeting.targetingMode === 'selected' ? ' selected' : ''}>Selected only</option></select></label>`
+  body += `<label style="margin:0">Selected Groups<select name="surfaceGroupTargetIds" multiple size="6">`
+  for (const group of surfaceTargetOptions.groups) {
+    const selected = journeyGroupsTargeting.targetIds.includes(Number(group.id))
+    const label = `${group.name}${group.slug ? ` (${group.slug})` : ''} [#${group.id}]`
+    body += `<option value="${group.id}"${selected ? ' selected' : ''}>${escapeHtml(label)}</option>`
   }
   body += `</select></label>`
+  body += `</div>`
+  body += `<div style="border:1px solid rgba(255,255,255,0.14); border-radius:10px; padding:10px">`
+  body += `<label style="display:flex; align-items:center; gap:8px; font-weight:700; margin:0 0 8px 0"><input type="checkbox" name="surfaceChannelFeed" value="1"${journeyTargetBySurface.has('channel_feed') ? ' checked' : ''} /> Channels</label>`
+  body += `<label style="margin:0 0 8px 0">Targeting<select name="surfaceChannelFeedMode"><option value="all"${journeyChannelsTargeting.targetingMode === 'all' ? ' selected' : ''}>All</option><option value="selected"${journeyChannelsTargeting.targetingMode === 'selected' ? ' selected' : ''}>Selected only</option></select></label>`
+  body += `<label style="margin:0">Selected Channels<select name="surfaceChannelTargetIds" multiple size="6">`
+  for (const channel of surfaceTargetOptions.channels) {
+    const selected = journeyChannelsTargeting.targetIds.includes(Number(channel.id))
+    const label = `${channel.name}${channel.slug ? ` (${channel.slug})` : ''} [#${channel.id}]`
+    body += `<option value="${channel.id}"${selected ? ' selected' : ''}>${escapeHtml(label)}</option>`
+  }
+  body += `</select></label>`
+  body += `</div>`
+  body += `</div>`
+  body += `</div>`
   body += `<label>Eligibility Ruleset (optional)<select name="eligibilityRulesetId"><option value="">None</option>`
   for (const r of rulesetOptions) {
     const rid = Number((r as any).id || 0)
@@ -5643,13 +5829,22 @@ pagesRouter.get('/admin/message-journeys/new', async (req: any, res: any) => {
     const cookies = parseCookies(req.headers.cookie)
     const csrfToken = cookies['csrf'] || ''
     const rulesets = await messageRulesetsSvc.listRulesetsForAdmin({ includeArchived: false, limit: 500 })
+    const surfaceTargetOptions = await loadSurfaceTargetOptionsForEditor()
     const doc = renderAdminMessageJourneyForm({
       title: 'New Message Journey',
       action: '/admin/message-journeys',
       csrfToken,
       backHref: '/admin/message-journeys',
       rulesetOptions: rulesets.map((r) => ({ id: Number(r.id), name: String((r as any).name || `Ruleset #${r.id}`) })),
-      values: { journeyKey: '', name: '', description: '', appliesToSurface: 'global_feed', status: 'draft' },
+      surfaceTargetOptions,
+      values: {
+        journeyKey: '',
+        name: '',
+        description: '',
+        appliesToSurface: 'global_feed',
+        surfaceTargeting: [{ surface: 'global_feed', targetingMode: 'all', targetIds: [] }],
+        status: 'draft',
+      },
     })
     res.set('Content-Type', 'text/html; charset=utf-8')
     res.send(doc)
@@ -5668,12 +5863,14 @@ pagesRouter.post('/admin/message-journeys', async (req: any, res: any) => {
     res.redirect(`/admin/message-journeys/${created.id}?notice=${encodeURIComponent('Message journey created.')}`)
   } catch (err: any) {
     const rulesets = await messageRulesetsSvc.listRulesetsForAdmin({ includeArchived: false, limit: 500 })
+    const surfaceTargetOptions = await loadSurfaceTargetOptionsForEditor()
     const doc = renderAdminMessageJourneyForm({
       title: 'New Message Journey',
       action: '/admin/message-journeys',
       csrfToken,
       backHref: '/admin/message-journeys',
       rulesetOptions: rulesets.map((r) => ({ id: Number(r.id), name: String((r as any).name || `Ruleset #${r.id}`) })),
+      surfaceTargetOptions,
       values: payload,
       error: String(err?.message || 'Failed to create message journey'),
     })
@@ -5685,7 +5882,7 @@ pagesRouter.get('/admin/message-journeys/:id', async (req: any, res: any) => {
   const id = Number(req.params.id)
   if (!Number.isFinite(id) || id <= 0) return res.status(400).send('Bad journey id')
   try {
-    const [journey, steps, messages, rulesets, ctaDefinitions] = await Promise.all([
+    const [journey, steps, messages, rulesets, ctaDefinitions, surfaceTargetOptions] = await Promise.all([
       messageJourneysSvc.getJourneyForAdmin(id),
       messageJourneysSvc.listJourneyStepsForAdmin(id, { includeArchived: true }),
       messagesSvc.listForAdmin({ includeArchived: false, limit: 500 }),
@@ -5695,6 +5892,7 @@ pagesRouter.get('/admin/message-journeys/:id', async (req: any, res: any) => {
         includeArchived: false,
         limit: 500,
       }),
+      loadSurfaceTargetOptionsForEditor(),
     ])
     const messageNameById = new Map<number, string>()
     for (const m of messages) {
@@ -5817,12 +6015,55 @@ pagesRouter.get('/admin/message-journeys/:id', async (req: any, res: any) => {
     body += `<div class="section journey-card">`
     body += `<label>Journey Key<input type="text" name="journeyKey" maxlength="64" value="${escapeHtml(String(journey.journeyKey || ''))}" required /></label>`
     body += `<label>Name<input type="text" name="name" maxlength="120" value="${escapeHtml(String(journey.name || ''))}" required /></label>`
+    const journeySurfaceValue = String((journey as any).appliesToSurface || 'global_feed')
+    const rawJourneySurfaceTargeting = Array.isArray((journey as any).surfaceTargeting) ? (journey as any).surfaceTargeting : []
+    const journeySurfaceTargeting = rawJourneySurfaceTargeting.length
+      ? rawJourneySurfaceTargeting
+      : [{ surface: journeySurfaceValue, targetingMode: 'all', targetIds: [] }]
+    const journeyTargetBySurface = new Map<string, { targetingMode: 'all' | 'selected'; targetIds: number[] }>()
+    for (const item of journeySurfaceTargeting) {
+      const surface = String((item as any)?.surface || '').trim().toLowerCase()
+      if (surface !== 'global_feed' && surface !== 'group_feed' && surface !== 'channel_feed') continue
+      const mode = String((item as any)?.targetingMode || (item as any)?.targeting_mode || '').trim().toLowerCase() === 'selected' ? 'selected' : 'all'
+      const targetIds = Array.isArray((item as any)?.targetIds)
+        ? (item as any).targetIds
+        : (Array.isArray((item as any)?.target_ids) ? (item as any).target_ids : [])
+      const normalizedTargetIds: number[] = Array.from(new Set(targetIds.map((n: any) => Number(n)).filter((n: number) => Number.isFinite(n) && n > 0).map((n: number) => Math.round(n)))) as number[]
+      journeyTargetBySurface.set(surface, { targetingMode: mode, targetIds: normalizedTargetIds })
+    }
+    const journeyGlobalChecked = journeyTargetBySurface.has('global_feed')
+    const journeyGroupsTargeting = journeyTargetBySurface.get('group_feed') || { targetingMode: 'all' as const, targetIds: [] }
+    const journeyChannelsTargeting = journeyTargetBySurface.get('channel_feed') || { targetingMode: 'all' as const, targetIds: [] }
     body += `<label>Description (optional)<input type="text" name="description" maxlength="500" value="${escapeHtml(String(journey.description || ''))}" /></label>`
-    body += `<label>Surface<select name="appliesToSurface">`
-    for (const opt of MESSAGE_SURFACE_OPTIONS) {
-      body += `<option value="${escapeHtml(opt.value)}"${String((journey as any).appliesToSurface || 'global_feed') === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+    body += `<input type="hidden" name="appliesToSurface" value="${escapeHtml(journeySurfaceValue)}" />`
+    body += `<div class="mini-field">`
+    body += `<div class="mini-field-label">Surfaces</div>`
+    body += `<div style="display:grid; gap:10px; margin-top:6px">`
+    body += `<label style="display:flex; align-items:center; gap:8px; font-weight:700"><input type="checkbox" name="surfaceGlobalFeed" value="1"${journeyGlobalChecked ? ' checked' : ''} /> Global Feed</label>`
+    body += `<div style="border:1px solid rgba(255,255,255,0.14); border-radius:10px; padding:10px">`
+    body += `<label style="display:flex; align-items:center; gap:8px; font-weight:700; margin:0 0 8px 0"><input type="checkbox" name="surfaceGroupFeed" value="1"${journeyTargetBySurface.has('group_feed') ? ' checked' : ''} /> Groups</label>`
+    body += `<label style="margin:0 0 8px 0">Targeting<select name="surfaceGroupFeedMode"><option value="all"${journeyGroupsTargeting.targetingMode === 'all' ? ' selected' : ''}>All</option><option value="selected"${journeyGroupsTargeting.targetingMode === 'selected' ? ' selected' : ''}>Selected only</option></select></label>`
+    body += `<label style="margin:0">Selected Groups<select name="surfaceGroupTargetIds" multiple size="6">`
+    for (const group of surfaceTargetOptions.groups) {
+      const selected = journeyGroupsTargeting.targetIds.includes(Number(group.id))
+      const label = `${group.name}${group.slug ? ` (${group.slug})` : ''} [#${group.id}]`
+      body += `<option value="${group.id}"${selected ? ' selected' : ''}>${escapeHtml(label)}</option>`
     }
     body += `</select></label>`
+    body += `</div>`
+    body += `<div style="border:1px solid rgba(255,255,255,0.14); border-radius:10px; padding:10px">`
+    body += `<label style="display:flex; align-items:center; gap:8px; font-weight:700; margin:0 0 8px 0"><input type="checkbox" name="surfaceChannelFeed" value="1"${journeyTargetBySurface.has('channel_feed') ? ' checked' : ''} /> Channels</label>`
+    body += `<label style="margin:0 0 8px 0">Targeting<select name="surfaceChannelFeedMode"><option value="all"${journeyChannelsTargeting.targetingMode === 'all' ? ' selected' : ''}>All</option><option value="selected"${journeyChannelsTargeting.targetingMode === 'selected' ? ' selected' : ''}>Selected only</option></select></label>`
+    body += `<label style="margin:0">Selected Channels<select name="surfaceChannelTargetIds" multiple size="6">`
+    for (const channel of surfaceTargetOptions.channels) {
+      const selected = journeyChannelsTargeting.targetIds.includes(Number(channel.id))
+      const label = `${channel.name}${channel.slug ? ` (${channel.slug})` : ''} [#${channel.id}]`
+      body += `<option value="${channel.id}"${selected ? ' selected' : ''}>${escapeHtml(label)}</option>`
+    }
+    body += `</select></label>`
+    body += `</div>`
+    body += `</div>`
+    body += `</div>`
     body += `<label>Eligibility Ruleset (optional)<select name="eligibilityRulesetId"><option value="">None</option>`
     for (const r of rulesets) {
       const rid = Number(r.id || 0)

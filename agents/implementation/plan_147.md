@@ -38,7 +38,7 @@ Status: Active
 
 ## Phase Status
 - A: Complete
-- B: Pending
+- B: Complete
 - C: Pending
 - D: Pending
 - E: Pending
@@ -164,6 +164,11 @@ Status: Active
   - Added message/journey repo helpers to persist and load surface targeting.
   - Extended message/journey DTO contracts with `surfaceTargeting`.
   - Preserved existing `applies_to_surface` behavior as fallback for compatibility.
+  - Phase B completed:
+    - Message and Journey admin forms now support multi-surface targeting inputs.
+    - Added per-surface targeting mode (`all` / `selected`) and selected target lists.
+    - Added payload parsing from admin forms to `surfaceTargeting`.
+    - Added validation: `selected` mode for groups/channels requires non-empty target set.
 
 ## Validation
 - Environment:
@@ -185,6 +190,6 @@ Status: Active
 
 ## Resume Here
 - Next action:
-  - Start Phase B (Admin UI): add multi-surface controls and selected-target picker UX.
+  - Start Phase C (Decision Engine): enforce surface/target prefilter before eligibility/progression checks.
 - Blocking question (if any):
   - None.

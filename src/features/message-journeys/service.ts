@@ -24,6 +24,7 @@ const JOURNEY_STATUS_VALUES: readonly MessageJourneyStatus[] = ['draft', 'active
 const STEP_STATUS_VALUES: readonly MessageJourneyStepStatus[] = ['draft', 'active', 'archived']
 const JOURNEY_SURFACE_VALUES = ['global_feed', 'group_feed', 'channel_feed'] as const
 type JourneySurface = (typeof JOURNEY_SURFACE_VALUES)[number]
+const TARGETING_MODE_VALUES = ['all', 'selected'] as const
 
 function isEnumValue<T extends string>(value: any, allowed: readonly T[]): value is T {
   return typeof value === 'string' && (allowed as readonly string[]).includes(value)
@@ -76,6 +77,35 @@ function normalizeJourneySurface(raw: any, fallback: JourneySurface = 'global_fe
   if (!value) return fallback
   if ((JOURNEY_SURFACE_VALUES as readonly string[]).includes(value)) return value as JourneySurface
   throw new DomainError('invalid_applies_to_surface', 'invalid_applies_to_surface', 400)
+}
+
+function normalizeJourneySurfaceTargeting(raw: any, fallbackSurface: JourneySurface): Array<{
+  surface: JourneySurface
+  targetingMode: 'all' | 'selected'
+  targetIds: number[]
+}> {
+  const input = Array.isArray(raw) ? raw : []
+  const out: Array<{ surface: JourneySurface; targetingMode: 'all' | 'selected'; targetIds: number[] }> = []
+  const seen = new Set<string>()
+  for (const item of input) {
+    const surface = normalizeJourneySurface((item as any)?.surface, fallbackSurface)
+    if (seen.has(surface)) continue
+    seen.add(surface)
+    const modeRaw = String((item as any)?.targetingMode ?? (item as any)?.targeting_mode ?? '').trim().toLowerCase()
+    const targetingMode = (TARGETING_MODE_VALUES as readonly string[]).includes(modeRaw) && modeRaw === 'selected' ? 'selected' : 'all'
+    const idsRaw = Array.isArray((item as any)?.targetIds)
+      ? (item as any).targetIds
+      : (Array.isArray((item as any)?.target_ids) ? (item as any).target_ids : [])
+    const targetIds: number[] = Array.from(new Set(
+      idsRaw.map((n: any) => Number(n)).filter((n: number) => Number.isFinite(n) && n > 0).map((n: number) => Math.round(n))
+    )) as number[]
+    if ((surface === 'group_feed' || surface === 'channel_feed') && targetingMode === 'selected' && targetIds.length === 0) {
+      throw new DomainError('invalid_surface_targeting', 'invalid_surface_targeting', 400)
+    }
+    out.push({ surface, targetingMode, targetIds })
+  }
+  if (!out.length) out.push({ surface: fallbackSurface, targetingMode: 'all', targetIds: [] })
+  return out
 }
 
 function normalizePositiveInt(raw: any, code: string): number {
@@ -246,6 +276,7 @@ export async function createJourneyForAdmin(input: any, actorUserId: number): Pr
     journeyKey: normalizeJourneyKey(input?.journeyKey ?? input?.journey_key),
     name: normalizeJourneyName(input?.name),
     appliesToSurface: normalizeJourneySurface(input?.appliesToSurface ?? input?.applies_to_surface, 'global_feed'),
+    surfaceTargeting: normalizeJourneySurfaceTargeting(input?.surfaceTargeting ?? input?.surface_targeting, normalizeJourneySurface(input?.appliesToSurface ?? input?.applies_to_surface, 'global_feed')),
     status: normalizeJourneyStatus(input?.status, 'draft'),
     description: normalizeDescription(input?.description),
     eligibilityRulesetId: normalizeNullablePositiveInt(input?.eligibilityRulesetId ?? input?.eligibility_ruleset_id, 'invalid_ruleset_id'),
@@ -273,6 +304,15 @@ export async function updateJourneyForAdmin(id: number, patch: any, actorUserId:
       patch?.appliesToSurface !== undefined || patch?.applies_to_surface !== undefined
         ? normalizeJourneySurface(patch?.appliesToSurface ?? patch?.applies_to_surface, existingDto.appliesToSurface)
         : existingDto.appliesToSurface,
+    surfaceTargeting:
+      patch?.surfaceTargeting !== undefined || patch?.surface_targeting !== undefined
+        ? normalizeJourneySurfaceTargeting(
+            patch?.surfaceTargeting ?? patch?.surface_targeting,
+            patch?.appliesToSurface !== undefined || patch?.applies_to_surface !== undefined
+              ? normalizeJourneySurface(patch?.appliesToSurface ?? patch?.applies_to_surface, existingDto.appliesToSurface)
+              : existingDto.appliesToSurface
+          )
+        : undefined,
     status: patch?.status !== undefined ? normalizeJourneyStatus(patch?.status, existingDto.status) : existingDto.status,
     description: patch?.description !== undefined ? normalizeDescription(patch?.description) : existingDto.description,
     eligibilityRulesetId:

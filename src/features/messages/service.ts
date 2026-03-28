@@ -29,7 +29,8 @@ const VIDEO_PLAYBACK_MODES: readonly MessageVideoPlaybackMode[] = ['muted_autopl
 const WIDGET_POSITIONS: readonly MessageWidgetPosition[] = ['top', 'middle', 'bottom']
 const CTA_TYPES: readonly MessageCtaType[] = ['auth', 'donate', 'subscribe', 'upgrade']
 const CTA_LAYOUTS: readonly MessageCtaLayout[] = ['inline', 'stacked']
-const SURFACES: readonly MessageSurface[] = ['global_feed']
+const SURFACES: readonly MessageSurface[] = ['global_feed', 'group_feed', 'channel_feed']
+const TARGETING_MODES = ['all', 'selected'] as const
 const TIE_BREAK_STRATEGIES: readonly MessageTieBreakStrategy[] = ['first', 'round_robin', 'weighted_random']
 const DELIVERY_SCOPES: readonly MessageDeliveryScope[] = ['standalone_only', 'journey_only', 'both']
 const MESSAGE_TYPES: readonly MessageType[] = [
@@ -172,6 +173,37 @@ function normalizeDeliveryScope(raw: any, fallback: MessageDeliveryScope = 'both
   if (!value) return fallback
   if (!isEnumValue(value, DELIVERY_SCOPES)) throw new DomainError('invalid_delivery_scope', 'invalid_delivery_scope', 400)
   return value
+}
+
+function normalizeSurfaceTargeting(raw: any, fallbackSurface: MessageSurface): Array<{
+  surface: MessageSurface
+  targetingMode: 'all' | 'selected'
+  targetIds: number[]
+}> {
+  const input = Array.isArray(raw) ? raw : []
+  const out: Array<{ surface: MessageSurface; targetingMode: 'all' | 'selected'; targetIds: number[] }> = []
+  const seen = new Set<string>()
+  for (const item of input) {
+    const surface = normalizeSurface((item as any)?.surface, fallbackSurface)
+    if (seen.has(surface)) continue
+    seen.add(surface)
+    const modeRaw = String((item as any)?.targetingMode ?? (item as any)?.targeting_mode ?? '').trim().toLowerCase()
+    const targetingMode = (TARGETING_MODES as readonly string[]).includes(modeRaw) && modeRaw === 'selected' ? 'selected' : 'all'
+    const idsRaw = Array.isArray((item as any)?.targetIds)
+      ? (item as any).targetIds
+      : (Array.isArray((item as any)?.target_ids) ? (item as any).target_ids : [])
+    const targetIds: number[] = Array.from(new Set(
+      idsRaw.map((n: any) => Number(n)).filter((n: number) => Number.isFinite(n) && n > 0).map((n: number) => Math.round(n))
+    )) as number[]
+    if ((surface === 'group_feed' || surface === 'channel_feed') && targetingMode === 'selected' && targetIds.length === 0) {
+      throw new DomainError('invalid_surface_targeting', 'invalid_surface_targeting', 400)
+    }
+    out.push({ surface, targetingMode, targetIds })
+  }
+  if (!out.length) {
+    out.push({ surface: fallbackSurface, targetingMode: 'all', targetIds: [] })
+  }
+  return out
 }
 
 function normalizePriority(raw: any, fallback = 100): number {
@@ -715,6 +747,7 @@ export async function createForAdmin(input: any, actorUserId: number): Promise<M
     input?.eligibilityRulesetId ?? input?.eligibility_ruleset_id,
     'eligibility_ruleset_id'
   )
+  const surfaceTargeting = normalizeSurfaceTargeting(input?.surfaceTargeting ?? input?.surface_targeting, appliesToSurface)
   const priority = normalizePriority(input?.priority, 100)
   const status = normalizeStatus(input?.status, 'draft')
   const { startsAt, endsAt } = normalizeDateWindow(input?.startsAt ?? input?.starts_at, input?.endsAt ?? input?.ends_at)
@@ -732,6 +765,7 @@ export async function createForAdmin(input: any, actorUserId: number): Promise<M
     messageType,
     appliesToSurface,
     tieBreakStrategy,
+    surfaceTargeting,
     deliveryScope,
     campaignKey,
     eligibilityRulesetId,
@@ -839,6 +873,10 @@ export async function updateForAdmin(id: number, patch: any, actorUserId: number
           'eligibility_ruleset_id'
         )
       : (existing.eligibility_ruleset_id == null ? null : Number(existing.eligibility_ruleset_id))
+  const nextSurfaceTargeting =
+    patch?.surfaceTargeting !== undefined || patch?.surface_targeting !== undefined
+      ? normalizeSurfaceTargeting(patch?.surfaceTargeting ?? patch?.surface_targeting, nextAppliesToSurface)
+      : undefined
   const nextPriority = patch?.priority !== undefined ? normalizePriority(patch.priority, Number(existing.priority)) : Number(existing.priority)
   const nextStatus = patch?.status !== undefined ? normalizeStatus(patch.status, existing.status) : existing.status
 
@@ -869,6 +907,7 @@ export async function updateForAdmin(id: number, patch: any, actorUserId: number
     messageType: nextMessageType,
     appliesToSurface: nextAppliesToSurface,
     tieBreakStrategy: nextTieBreakStrategy,
+    surfaceTargeting: nextSurfaceTargeting,
     deliveryScope: nextDeliveryScope,
     campaignKey: nextCampaignKey,
     eligibilityRulesetId: nextEligibilityRulesetId,
@@ -902,6 +941,7 @@ export async function cloneForAdmin(id: number, actorUserId: number): Promise<Me
     messageType: normalizeMessageType((existing as any).type, 'register_login'),
     appliesToSurface: normalizeSurface((existing as any).applies_to_surface, 'global_feed'),
     tieBreakStrategy: normalizeTieBreakStrategy((existing as any).tie_break_strategy, 'round_robin'),
+    surfaceTargeting: normalizeSurfaceTargeting((existing as any).surfaceTargeting ?? (existing as any).surface_targeting, normalizeSurface((existing as any).applies_to_surface, 'global_feed')),
     deliveryScope: normalizeDeliveryScope((existing as any).delivery_scope, 'both'),
     campaignKey: existing.campaign_key == null || String(existing.campaign_key).trim() === '' ? null : String(existing.campaign_key),
     eligibilityRulesetId: existing.eligibility_ruleset_id == null ? null : Number(existing.eligibility_ruleset_id),
