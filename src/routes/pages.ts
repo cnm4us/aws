@@ -3388,12 +3388,14 @@ function buildMessageCreateOrUpdatePayload(body: any): any {
   const secondaryHref = secondaryHrefRaw || null
   const mediaUploadId = String(creativeForm.backgroundUploadId || '').trim()
   const messageType = String(body?.type ?? body?.messageType ?? 'register_login').trim().toLowerCase() || 'register_login'
-  const appliesToSurface = String(body?.appliesToSurface ?? body?.applies_to_surface ?? 'global_feed').trim().toLowerCase() || 'global_feed'
+  const appliesToSurfaceRaw = String(body?.appliesToSurface ?? body?.applies_to_surface ?? 'global_feed').trim().toLowerCase() || 'global_feed'
   const tieBreakStrategy = String(body?.tieBreakStrategy ?? body?.tie_break_strategy ?? 'round_robin').trim().toLowerCase() || 'round_robin'
   const deliveryScope = String(body?.deliveryScope ?? body?.delivery_scope ?? 'both').trim().toLowerCase() || 'both'
   const campaignKey = String(body?.campaignKey ?? body?.campaign_key ?? '').trim().toLowerCase()
   const eligibilityRulesetIdRaw = String(body?.eligibilityRulesetId ?? body?.eligibility_ruleset_id ?? '').trim()
-  const eligibilityRulesetId = /^\d+$/.test(eligibilityRulesetIdRaw) ? Number(eligibilityRulesetIdRaw) : null
+  const eligibilityRulesetIdParsed = /^\d+$/.test(eligibilityRulesetIdRaw) ? Number(eligibilityRulesetIdRaw) : null
+  const eligibilityRulesetId = deliveryScope === 'journey_only' ? null : eligibilityRulesetIdParsed
+  const appliesToSurface = deliveryScope === 'journey_only' ? 'global_feed' : appliesToSurfaceRaw
   const startsAtDate = String(body?.startsAtDate || '').trim()
   const startsAtTime = String(body?.startsAtTime || '').trim()
   const endsAtDate = String(body?.endsAtDate || '').trim()
@@ -3753,24 +3755,19 @@ function renderAdminMessageForm(opts: {
   body += `<div class="section-title" style="margin:10px 0 6px">Identity</div>`
   body += `<div class="section">`
   body += `<label>Name<input type="text" name="name" value="${escapeHtml(String(values.name || ''))}" required maxlength="120" /></label>`
-  body += `<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px; margin-top:10px">`
+  body += `<div style="display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px; margin-top:10px">`
   body += `<div class="mini-field"><div class="mini-field-label">Type</div><select name="type">`
   for (const opt of messageTypeOptions) {
     body += `<option value="${escapeHtml(opt.value)}"${opt.value === messageTypeValue ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
   }
   body += `</select></div>`
-  body += `<div class="mini-field"><div class="mini-field-label">Surface</div><select name="appliesToSurface">`
-  for (const opt of surfaceOptions) {
-    body += `<option value="${escapeHtml(opt.value)}"${opt.value === surfaceValue ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
-  }
-  body += `</select></div>`
-  body += `<div class="mini-field"><div class="mini-field-label">Delivery Scope</div><select name="deliveryScope">`
+  body += `<div class="mini-field"><div class="mini-field-label">Campaign Key</div><input type="text" name="campaignKey" value="${escapeHtml(campaignKeyValue)}" maxlength="64" placeholder="spring_2026_drive" /></div>`
+  body += `<div class="mini-field" style="grid-column:1 / -1"><div class="mini-field-label">Delivery Scope</div><select name="deliveryScope" id="message-delivery-scope">`
   for (const opt of deliveryScopeOptions) {
     body += `<option value="${escapeHtml(opt.value)}"${opt.value === deliveryScopeValue ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
   }
   body += `</select></div>`
-  body += `<div class="mini-field"><div class="mini-field-label">Campaign Key</div><input type="text" name="campaignKey" value="${escapeHtml(campaignKeyValue)}" maxlength="64" placeholder="spring_2026_drive" /></div>`
-  body += `<div class="mini-field"><div class="mini-field-label">Eligibility Ruleset</div><select name="eligibilityRulesetId">`
+  body += `<div class="mini-field" id="message-eligibility-row" style="grid-column:1 / -1"><div class="mini-field-label">Eligibility Ruleset</div><select name="eligibilityRulesetId">`
   body += `<option value="">(none)</option>`
   for (const opt of eligibilityRulesetOptions) {
     const idValue = String(Number(opt.id))
@@ -3778,7 +3775,12 @@ function renderAdminMessageForm(opts: {
     body += `<option value="${escapeHtml(idValue)}"${eligibilityRulesetIdValue === idValue ? ' selected' : ''}>${escapeHtml(label)}</option>`
   }
   body += `</select></div>`
-  body += `<div class="field-hint" style="grid-column:1 / -1">For journey delivery, set eligibility on the journey (not the step). Message-level rulesets apply to standalone delivery only.</div>`
+  body += `<div class="mini-field" id="message-surface-row" style="grid-column:1 / -1"><div class="mini-field-label">Surface</div><select name="appliesToSurface">`
+  for (const opt of surfaceOptions) {
+    body += `<option value="${escapeHtml(opt.value)}"${opt.value === surfaceValue ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+  }
+  body += `</select></div>`
+  body += `<div class="field-hint" id="message-eligibility-hint" style="grid-column:1 / -1">For journey delivery, set eligibility on the journey (not the step). Message-level rulesets apply to standalone delivery only.</div>`
   body += `<div class="mini-field"><div class="mini-field-label">Priority</div><input type="number" name="priority" value="${escapeHtml(String(values.priority ?? 100))}" /></div>`
   body += `<div class="mini-field"><div class="mini-field-label">Status</div><select name="status">
     <option value="draft"${String(values.status || '') === 'draft' ? ' selected' : ''}>Draft</option>
@@ -3788,6 +3790,24 @@ function renderAdminMessageForm(opts: {
   </select></div>`
   body += `</div>`
   body += `</div>`
+  body += `<script>
+    (function () {
+      const form = document.getElementById('message-editor-form');
+      if (!form) return;
+      const scope = form.querySelector('#message-delivery-scope');
+      const rulesetRow = form.querySelector('#message-eligibility-row');
+      const surfaceRow = form.querySelector('#message-surface-row');
+      const hint = form.querySelector('#message-eligibility-hint');
+      const sync = () => {
+        const isJourneyOnly = scope && String(scope.value || '').toLowerCase() === 'journey_only';
+        if (rulesetRow) rulesetRow.style.display = isJourneyOnly ? 'none' : '';
+        if (surfaceRow) surfaceRow.style.display = isJourneyOnly ? 'none' : '';
+        if (hint) hint.style.display = isJourneyOnly ? '' : '';
+      };
+      if (scope) scope.addEventListener('change', sync);
+      sync();
+    })();
+  </script>`
   if (journeyStepRefs.length > 0) {
     body += `<div class="section-title" style="margin:10px 0 6px">Journey Usage</div>`
     body += `<div class="section">`
