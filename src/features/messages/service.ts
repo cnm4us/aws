@@ -610,7 +610,12 @@ async function assertCreativeCtaSlotsResolvable(creative: MessageCreative, actor
   }
 }
 
-function mapRow(row: MessageRow): MessageDto {
+function mapRow(
+  row: MessageRow,
+  targetingMap?: Map<number, Array<{ surface: 'global_feed' | 'group_feed' | 'channel_feed'; targetingMode: 'all' | 'selected'; targetIds: number[] }>>
+): MessageDto {
+  const fallbackSurface = normalizeSurface((row as any).applies_to_surface, 'global_feed')
+  const surfaceTargeting = targetingMap?.get(Number(row.id)) || [{ surface: fallbackSurface, targetingMode: 'all' as const, targetIds: [] }]
   return {
     id: Number(row.id),
     name: String(row.name || ''),
@@ -623,7 +628,8 @@ function mapRow(row: MessageRow): MessageDto {
     mediaUploadId: row.media_upload_id == null ? null : Number(row.media_upload_id),
     creative: resolveCreativeFromRow(row),
     type: normalizeMessageType((row as any).type, 'register_login'),
-    appliesToSurface: normalizeSurface((row as any).applies_to_surface, 'global_feed'),
+    appliesToSurface: fallbackSurface,
+    surfaceTargeting,
     tieBreakStrategy: normalizeTieBreakStrategy((row as any).tie_break_strategy, 'round_robin'),
     deliveryScope: normalizeDeliveryScope((row as any).delivery_scope, 'both'),
     campaignKey: row.campaign_key == null || String(row.campaign_key).trim() === '' ? null : String(row.campaign_key),
@@ -663,13 +669,15 @@ export async function listForAdmin(params: {
     deliveryScope,
     campaignKey,
   })
-  return rows.map(mapRow)
+  const targetingMap = await repo.listSurfaceTargetingByMessageIds(rows.map((row) => Number((row as any).id || 0)))
+  return rows.map((row) => mapRow(row, targetingMap))
 }
 
 export async function getForAdmin(id: number): Promise<MessageDto> {
   const row = await repo.getById(id)
   if (!row) throw new NotFoundError('message_not_found')
-  return mapRow(row)
+  const targetingMap = await repo.listSurfaceTargetingByMessageIds([Number(row.id)])
+  return mapRow(row, targetingMap)
 }
 
 export async function createForAdmin(input: any, actorUserId: number): Promise<MessageDto> {
@@ -736,7 +744,8 @@ export async function createForAdmin(input: any, actorUserId: number): Promise<M
   })
 
   annotateAdminMessageWrite(row, 'admin.messages.create', actorUserId)
-  return mapRow(row)
+  const targetingMap = await repo.listSurfaceTargetingByMessageIds([Number(row.id)])
+  return mapRow(row, targetingMap)
 }
 
 export async function updateForAdmin(id: number, patch: any, actorUserId: number): Promise<MessageDto> {
@@ -871,7 +880,8 @@ export async function updateForAdmin(id: number, patch: any, actorUserId: number
   })
 
   annotateAdminMessageWrite(row, 'admin.messages.update', actorUserId)
-  return mapRow(row)
+  const targetingMap = await repo.listSurfaceTargetingByMessageIds([Number(row.id)])
+  return mapRow(row, targetingMap)
 }
 
 export async function cloneForAdmin(id: number, actorUserId: number): Promise<MessageDto> {
@@ -904,7 +914,8 @@ export async function cloneForAdmin(id: number, actorUserId: number): Promise<Me
   })
 
   annotateAdminMessageWrite(row, 'admin.messages.clone', actorUserId, { cloned_from_message_id: id })
-  return mapRow(row)
+  const targetingMap = await repo.listSurfaceTargetingByMessageIds([Number(row.id)])
+  return mapRow(row, targetingMap)
 }
 
 export async function updateStatusForAdmin(id: number, statusRaw: any, actorUserId: number): Promise<MessageDto> {
@@ -919,7 +930,8 @@ export async function updateStatusForAdmin(id: number, statusRaw: any, actorUser
   })
 
   annotateAdminMessageWrite(row, 'admin.messages.status', actorUserId)
-  return mapRow(row)
+  const targetingMap = await repo.listSurfaceTargetingByMessageIds([Number(row.id)])
+  return mapRow(row, targetingMap)
 }
 
 export async function deleteForAdmin(id: number, actorUserId: number): Promise<void> {
@@ -941,7 +953,8 @@ export async function listActiveForFeed(params?: {
   const appliesToSurface = params?.appliesToSurface == null || params?.appliesToSurface === '' ? null : normalizeSurface(params.appliesToSurface)
   const campaignKey = params?.campaignKey == null || params?.campaignKey === '' ? null : normalizeCampaignKey(params.campaignKey)
   const rows = await repo.listActiveForFeed({ messageType, appliesToSurface, campaignKey, limit: params?.limit })
-  return rows.map(mapRow)
+  const targetingMap = await repo.listSurfaceTargetingByMessageIds(rows.map((row) => Number((row as any).id || 0)))
+  return rows.map((row) => mapRow(row, targetingMap))
 }
 
 export async function getActiveForFeedById(id: number): Promise<MessageDto> {
@@ -955,7 +968,8 @@ export async function getActiveForFeedById(id: number): Promise<MessageDto> {
   const endsAtMs = row.ends_at ? Date.parse(String(row.ends_at).replace(' ', 'T') + 'Z') : null
   if (startsAtMs != null && Number.isFinite(startsAtMs) && startsAtMs > now) throw new NotFoundError('message_not_found')
   if (endsAtMs != null && Number.isFinite(endsAtMs) && endsAtMs < now) throw new NotFoundError('message_not_found')
-  return mapRow(row)
+  const targetingMap = await repo.listSurfaceTargetingByMessageIds([Number(row.id)])
+  return mapRow(row, targetingMap)
 }
 
 // Phase F1 compatibility aliases for message terminology.

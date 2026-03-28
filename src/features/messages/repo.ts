@@ -1,6 +1,18 @@
 import { getPool } from '../../db'
 import type { MessageRow } from './types'
 
+type MessageTargetingInput = Array<{
+  surface: 'global_feed' | 'group_feed' | 'channel_feed'
+  targetingMode: 'all' | 'selected'
+  targetIds?: number[] | null
+}>
+
+type MessageTargetingRow = {
+  surface: 'global_feed' | 'group_feed' | 'channel_feed'
+  targetingMode: 'all' | 'selected'
+  targetIds: number[]
+}
+
 const MESSAGE_SELECT_SQL = `
   SELECT
     id,
@@ -52,9 +64,101 @@ type MessageCreateInput = {
   endsAt: string | null
   createdBy: number
   updatedBy: number
+  surfaceTargeting?: MessageTargetingInput | null
 }
 
 type MessageUpdateInput = Partial<MessageCreateInput>
+
+function normalizeSurfaceTargeting(input: MessageTargetingInput | null | undefined, fallbackSurface: string): MessageTargetingRow[] {
+  const src = Array.isArray(input) ? input : []
+  const out = new Map<string, MessageTargetingRow>()
+  for (const item of src) {
+    const surface = String(item?.surface || '').toLowerCase()
+    if (surface !== 'global_feed' && surface !== 'group_feed' && surface !== 'channel_feed') continue
+    const targetingMode = String(item?.targetingMode || '').toLowerCase() === 'selected' ? 'selected' : 'all'
+    const targetIds = Array.isArray(item?.targetIds)
+      ? Array.from(new Set(item!.targetIds.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0).map((id) => Math.round(id))))
+      : []
+    out.set(surface, { surface: surface as any, targetingMode, targetIds })
+  }
+  if (!out.size) {
+    const normalizedFallback = String(fallbackSurface || 'global_feed').toLowerCase()
+    const fallback = (normalizedFallback === 'group_feed' || normalizedFallback === 'channel_feed') ? normalizedFallback : 'global_feed'
+    out.set(fallback, { surface: fallback as any, targetingMode: 'all', targetIds: [] })
+  }
+  return Array.from(out.values())
+}
+
+export async function listSurfaceTargetingByMessageIds(messageIds: number[]): Promise<Map<number, MessageTargetingRow[]>> {
+  const uniq = Array.from(new Set(messageIds.filter((id) => Number.isFinite(id) && id > 0).map((id) => Math.round(id))))
+  const result = new Map<number, MessageTargetingRow[]>()
+  if (!uniq.length) return result
+  const db = getPool()
+  const placeholders = uniq.map(() => '?').join(',')
+  const [surfaceRows] = await db.query(
+    `SELECT message_id, surface, targeting_mode
+       FROM feed_message_surfaces
+      WHERE message_id IN (${placeholders})`,
+    uniq
+  )
+  const [targetRows] = await db.query(
+    `SELECT message_id, surface, target_id
+       FROM feed_message_targets
+      WHERE message_id IN (${placeholders})`,
+    uniq
+  )
+  const keyMap = new Map<string, MessageTargetingRow>()
+  for (const row of surfaceRows as any[]) {
+    const messageId = Number(row.message_id || 0)
+    if (!messageId) continue
+    const surface = String(row.surface || '').toLowerCase()
+    if (surface !== 'global_feed' && surface !== 'group_feed' && surface !== 'channel_feed') continue
+    const targetingMode = String(row.targeting_mode || '').toLowerCase() === 'selected' ? 'selected' : 'all'
+    const entry: MessageTargetingRow = { surface: surface as any, targetingMode, targetIds: [] }
+    const key = `${messageId}:${surface}`
+    keyMap.set(key, entry)
+    const list = result.get(messageId) || []
+    list.push(entry)
+    result.set(messageId, list)
+  }
+  for (const row of targetRows as any[]) {
+    const messageId = Number(row.message_id || 0)
+    const targetId = Number(row.target_id || 0)
+    if (!messageId || !targetId) continue
+    const surface = String(row.surface || '').toLowerCase()
+    if (surface !== 'group_feed' && surface !== 'channel_feed') continue
+    const key = `${messageId}:${surface}`
+    const entry = keyMap.get(key)
+    if (!entry) continue
+    if (!entry.targetIds.includes(targetId)) entry.targetIds.push(targetId)
+  }
+  for (const [, list] of result) {
+    list.sort((a, b) => a.surface.localeCompare(b.surface))
+    for (const item of list) item.targetIds.sort((a, b) => a - b)
+  }
+  return result
+}
+
+async function saveSurfaceTargeting(messageId: number, fallbackSurface: string, input: MessageTargetingInput | null | undefined): Promise<void> {
+  const db = getPool()
+  const targeting = normalizeSurfaceTargeting(input, fallbackSurface)
+  await db.query(`DELETE FROM feed_message_targets WHERE message_id = ?`, [messageId])
+  await db.query(`DELETE FROM feed_message_surfaces WHERE message_id = ?`, [messageId])
+  for (const item of targeting) {
+    await db.query(
+      `INSERT INTO feed_message_surfaces (message_id, surface, targeting_mode) VALUES (?, ?, ?)`,
+      [messageId, item.surface, item.targetingMode]
+    )
+    if (item.surface === 'group_feed' || item.surface === 'channel_feed') {
+      for (const targetId of item.targetIds) {
+        await db.query(
+          `INSERT IGNORE INTO feed_message_targets (message_id, surface, target_id) VALUES (?, ?, ?)`,
+          [messageId, item.surface, targetId]
+        )
+      }
+    }
+  }
+}
 
 export async function list(params?: {
   limit?: number
@@ -150,6 +254,7 @@ export async function create(input: MessageCreateInput): Promise<MessageRow> {
   )
 
   const id = Number((result as any).insertId)
+  await saveSurfaceTargeting(id, input.appliesToSurface, input.surfaceTargeting)
   const row = await getById(id)
   if (!row) throw new Error('failed_to_create_prompt')
   return row
@@ -188,6 +293,11 @@ export async function update(id: number, patch: MessageUpdateInput): Promise<Mes
   }
 
   await db.query(`UPDATE feed_messages SET ${sets.join(', ')} WHERE id = ?`, [...args, id])
+  if (patch.surfaceTargeting !== undefined || patch.appliesToSurface !== undefined) {
+    const [surfaceRows] = await db.query(`SELECT applies_to_surface FROM feed_messages WHERE id = ? LIMIT 1`, [id])
+    const fallbackSurface = String(((surfaceRows as any[])[0] as any)?.applies_to_surface || 'global_feed')
+    await saveSurfaceTargeting(id, fallbackSurface, patch.surfaceTargeting)
+  }
   const row = await getById(id)
   if (!row) throw new Error('not_found')
   return row

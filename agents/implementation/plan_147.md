@@ -37,7 +37,7 @@ Status: Active
 - Journey progress remains global to `user + journey`.
 
 ## Phase Status
-- A: Pending
+- A: Complete
 - B: Pending
 - C: Pending
 - D: Pending
@@ -48,16 +48,16 @@ Status: Active
 - Goal:
   - Add storage model for multi-surface + selected targets for both messages and journeys.
 - Steps:
-  - [ ] Add `feed_message_surfaces`:
+  - [x] Add `feed_message_surfaces`:
     - `message_id`, `surface`, `targeting_mode`
-  - [ ] Add `feed_message_targets`:
+  - [x] Add `feed_message_targets`:
     - `message_id`, `surface`, `target_id`
-  - [ ] Add `feed_message_journey_surfaces`:
+  - [x] Add `feed_message_journey_surfaces`:
     - `journey_id`, `surface`, `targeting_mode`
-  - [ ] Add `feed_message_journey_targets`:
+  - [x] Add `feed_message_journey_targets`:
     - `journey_id`, `surface`, `target_id`
-  - [ ] Add indexes/uniques for fast matching and dedupe.
-  - [ ] Implement repo read/write mapping for the new structures.
+  - [x] Add indexes/uniques for fast matching and dedupe.
+  - [x] Implement repo read/write mapping for the new structures.
 - Test gate:
   - Create/update/read message/journey with:
     - global only
@@ -154,7 +154,16 @@ Status: Active
   - Feature is operationally usable and debuggable.
 
 ## Change Log
-- (pending)
+- 2026-03-28:
+  - Added new targeting tables and indexes:
+    - `feed_message_surfaces`
+    - `feed_message_targets`
+    - `feed_message_journey_surfaces`
+    - `feed_message_journey_targets`
+  - Added DB backfill inserts from legacy `applies_to_surface` into new surfaces tables.
+  - Added message/journey repo helpers to persist and load surface targeting.
+  - Extended message/journey DTO contracts with `surfaceTargeting`.
+  - Preserved existing `applies_to_surface` behavior as fallback for compatibility.
 
 ## Validation
 - Environment:
@@ -176,6 +185,6 @@ Status: Active
 
 ## Resume Here
 - Next action:
-  - Start Phase A with new `*_surfaces` and `*_targets` tables + repo mapping.
+  - Start Phase B (Admin UI): add multi-surface controls and selected-target picker UX.
 - Blocking question (if any):
   - None.

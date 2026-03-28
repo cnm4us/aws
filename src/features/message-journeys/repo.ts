@@ -8,6 +8,18 @@ import type {
   MessageJourneyStepStatus,
 } from './types'
 
+type JourneyTargetingInput = Array<{
+  surface: 'global_feed' | 'group_feed' | 'channel_feed'
+  targetingMode: 'all' | 'selected'
+  targetIds?: number[] | null
+}>
+
+type JourneyTargetingRow = {
+  surface: 'global_feed' | 'group_feed' | 'channel_feed'
+  targetingMode: 'all' | 'selected'
+  targetIds: number[]
+}
+
 const JOURNEY_SELECT_SQL = `
   SELECT
     id,
@@ -79,9 +91,101 @@ type JourneyCreateInput = {
   eligibilityRulesetId: number | null
   createdBy: number
   updatedBy: number
+  surfaceTargeting?: JourneyTargetingInput | null
 }
 
 type JourneyUpdateInput = Partial<JourneyCreateInput>
+
+function normalizeJourneyTargeting(input: JourneyTargetingInput | null | undefined, fallbackSurface: string): JourneyTargetingRow[] {
+  const src = Array.isArray(input) ? input : []
+  const out = new Map<string, JourneyTargetingRow>()
+  for (const item of src) {
+    const surface = String(item?.surface || '').toLowerCase()
+    if (surface !== 'global_feed' && surface !== 'group_feed' && surface !== 'channel_feed') continue
+    const targetingMode = String(item?.targetingMode || '').toLowerCase() === 'selected' ? 'selected' : 'all'
+    const targetIds = Array.isArray(item?.targetIds)
+      ? Array.from(new Set(item!.targetIds.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0).map((id) => Math.round(id))))
+      : []
+    out.set(surface, { surface: surface as any, targetingMode, targetIds })
+  }
+  if (!out.size) {
+    const normalizedFallback = String(fallbackSurface || 'global_feed').toLowerCase()
+    const fallback = (normalizedFallback === 'group_feed' || normalizedFallback === 'channel_feed') ? normalizedFallback : 'global_feed'
+    out.set(fallback, { surface: fallback as any, targetingMode: 'all', targetIds: [] })
+  }
+  return Array.from(out.values())
+}
+
+export async function listSurfaceTargetingByJourneyIds(journeyIds: number[]): Promise<Map<number, JourneyTargetingRow[]>> {
+  const uniq = Array.from(new Set(journeyIds.filter((id) => Number.isFinite(id) && id > 0).map((id) => Math.round(id))))
+  const result = new Map<number, JourneyTargetingRow[]>()
+  if (!uniq.length) return result
+  const db = getPool()
+  const placeholders = uniq.map(() => '?').join(',')
+  const [surfaceRows] = await db.query(
+    `SELECT journey_id, surface, targeting_mode
+       FROM feed_message_journey_surfaces
+      WHERE journey_id IN (${placeholders})`,
+    uniq
+  )
+  const [targetRows] = await db.query(
+    `SELECT journey_id, surface, target_id
+       FROM feed_message_journey_targets
+      WHERE journey_id IN (${placeholders})`,
+    uniq
+  )
+  const keyMap = new Map<string, JourneyTargetingRow>()
+  for (const row of surfaceRows as any[]) {
+    const journeyId = Number(row.journey_id || 0)
+    if (!journeyId) continue
+    const surface = String(row.surface || '').toLowerCase()
+    if (surface !== 'global_feed' && surface !== 'group_feed' && surface !== 'channel_feed') continue
+    const targetingMode = String(row.targeting_mode || '').toLowerCase() === 'selected' ? 'selected' : 'all'
+    const entry: JourneyTargetingRow = { surface: surface as any, targetingMode, targetIds: [] }
+    const key = `${journeyId}:${surface}`
+    keyMap.set(key, entry)
+    const list = result.get(journeyId) || []
+    list.push(entry)
+    result.set(journeyId, list)
+  }
+  for (const row of targetRows as any[]) {
+    const journeyId = Number(row.journey_id || 0)
+    const targetId = Number(row.target_id || 0)
+    if (!journeyId || !targetId) continue
+    const surface = String(row.surface || '').toLowerCase()
+    if (surface !== 'group_feed' && surface !== 'channel_feed') continue
+    const key = `${journeyId}:${surface}`
+    const entry = keyMap.get(key)
+    if (!entry) continue
+    if (!entry.targetIds.includes(targetId)) entry.targetIds.push(targetId)
+  }
+  for (const [, list] of result) {
+    list.sort((a, b) => a.surface.localeCompare(b.surface))
+    for (const item of list) item.targetIds.sort((a, b) => a - b)
+  }
+  return result
+}
+
+async function saveSurfaceTargeting(journeyId: number, fallbackSurface: string, input: JourneyTargetingInput | null | undefined): Promise<void> {
+  const db = getPool()
+  const targeting = normalizeJourneyTargeting(input, fallbackSurface)
+  await db.query(`DELETE FROM feed_message_journey_targets WHERE journey_id = ?`, [journeyId])
+  await db.query(`DELETE FROM feed_message_journey_surfaces WHERE journey_id = ?`, [journeyId])
+  for (const item of targeting) {
+    await db.query(
+      `INSERT INTO feed_message_journey_surfaces (journey_id, surface, targeting_mode) VALUES (?, ?, ?)`,
+      [journeyId, item.surface, item.targetingMode]
+    )
+    if (item.surface === 'group_feed' || item.surface === 'channel_feed') {
+      for (const targetId of item.targetIds) {
+        await db.query(
+          `INSERT IGNORE INTO feed_message_journey_targets (journey_id, surface, target_id) VALUES (?, ?, ?)`,
+          [journeyId, item.surface, targetId]
+        )
+      }
+    }
+  }
+}
 
 type StepCreateInput = {
   journeyId: number
@@ -162,7 +266,7 @@ export async function createJourney(input: JourneyCreateInput): Promise<MessageJ
       eligibility_ruleset_id,
       created_by,
       updated_by
-    ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.journeyKey,
       input.name,
@@ -176,6 +280,7 @@ export async function createJourney(input: JourneyCreateInput): Promise<MessageJ
   )
 
   const id = Number((result as any).insertId)
+  await saveSurfaceTargeting(id, input.appliesToSurface, input.surfaceTargeting)
   const row = await getJourneyById(id)
   if (!row) throw new Error('failed_to_create_message_journey')
   return row
@@ -201,6 +306,11 @@ export async function updateJourney(id: number, patch: JourneyUpdateInput): Prom
 
   if (sets.length) {
     await db.query(`UPDATE feed_message_journeys SET ${sets.join(', ')} WHERE id = ?`, [...args, id])
+  }
+  if (patch.surfaceTargeting !== undefined || patch.appliesToSurface !== undefined) {
+    const [surfaceRows] = await db.query(`SELECT applies_to_surface FROM feed_message_journeys WHERE id = ? LIMIT 1`, [id])
+    const fallbackSurface = String(((surfaceRows as any[])[0] as any)?.applies_to_surface || 'global_feed')
+    await saveSurfaceTargeting(id, fallbackSurface, patch.surfaceTargeting)
   }
 
   const row = await getJourneyById(id)

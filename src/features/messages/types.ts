@@ -2,7 +2,9 @@ export type MessageStatus = 'draft' | 'active' | 'paused' | 'archived'
 export type MessageWidgetPosition = 'top' | 'middle' | 'bottom'
 export type MessageBackgroundMode = 'none' | 'image' | 'video'
 export type MessageVideoPlaybackMode = 'muted_autoplay' | 'tap_to_play_sound'
-export type MessageSurface = 'global_feed'
+export type MessageSurface = 'global_feed' | 'group_feed' | 'channel_feed'
+export type MessageTargetSurface = 'group_feed' | 'channel_feed'
+export type MessageTargetingMode = 'all' | 'selected'
 export type MessageTieBreakStrategy = 'first' | 'round_robin' | 'weighted_random'
 export type MessageDeliveryScope = 'standalone_only' | 'journey_only' | 'both'
 export type MessageType =
@@ -137,6 +139,11 @@ export type MessageDto = {
   creative: MessageCreative
   type: MessageType
   appliesToSurface: MessageSurface
+  surfaceTargeting: Array<{
+    surface: MessageSurface
+    targetingMode: MessageTargetingMode
+    targetIds: number[]
+  }>
   tieBreakStrategy: MessageTieBreakStrategy
   deliveryScope: MessageDeliveryScope
   campaignKey: string | null

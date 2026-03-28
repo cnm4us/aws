@@ -175,12 +175,18 @@ function normalizeJourneyStepConfigForAdmin(rawConfig: Record<string, any>): Rec
   return config
 }
 
-function toJourneyDto(row: MessageJourneyRow): MessageJourneyDto {
+function toJourneyDto(
+  row: MessageJourneyRow,
+  targetingMap?: Map<number, Array<{ surface: 'global_feed' | 'group_feed' | 'channel_feed'; targetingMode: 'all' | 'selected'; targetIds: number[] }>>
+): MessageJourneyDto {
+  const appliesToSurface = normalizeJourneySurface((row as any).applies_to_surface, 'global_feed')
+  const surfaceTargeting = targetingMap?.get(Number(row.id)) || [{ surface: appliesToSurface, targetingMode: 'all' as const, targetIds: [] }]
   return {
     id: Number(row.id),
     journeyKey: String(row.journey_key || ''),
     name: String(row.name || ''),
-    appliesToSurface: normalizeJourneySurface((row as any).applies_to_surface, 'global_feed'),
+    appliesToSurface,
+    surfaceTargeting,
     status: normalizeJourneyStatus(row.status),
     description: row.description == null ? null : String(row.description),
     eligibilityRulesetId: row.eligibility_ruleset_id == null ? null : Number(row.eligibility_ruleset_id),
@@ -221,14 +227,16 @@ export async function listJourneysForAdmin(params?: {
     includeArchived: params?.includeArchived,
     status,
   })
-  return rows.map(toJourneyDto)
+  const targetingMap = await repo.listSurfaceTargetingByJourneyIds(rows.map((row) => Number((row as any).id || 0)))
+  return rows.map((row) => toJourneyDto(row, targetingMap))
 }
 
 export async function getJourneyForAdmin(id: number): Promise<MessageJourneyDto> {
   const journeyId = normalizePositiveInt(id, 'bad_id')
   const row = await repo.getJourneyById(journeyId)
   if (!row) throw new NotFoundError('message_journey_not_found')
-  return toJourneyDto(row)
+  const targetingMap = await repo.listSurfaceTargetingByJourneyIds([Number(row.id)])
+  return toJourneyDto(row, targetingMap)
 }
 
 export async function createJourneyForAdmin(input: any, actorUserId: number): Promise<MessageJourneyDto> {
@@ -244,7 +252,8 @@ export async function createJourneyForAdmin(input: any, actorUserId: number): Pr
     createdBy: userId,
     updatedBy: userId,
   })
-  return toJourneyDto(row)
+  const targetingMap = await repo.listSurfaceTargetingByJourneyIds([Number(row.id)])
+  return toJourneyDto(row, targetingMap)
 }
 
 export async function updateJourneyForAdmin(id: number, patch: any, actorUserId: number): Promise<MessageJourneyDto> {
@@ -272,7 +281,8 @@ export async function updateJourneyForAdmin(id: number, patch: any, actorUserId:
         : existingDto.eligibilityRulesetId,
     updatedBy: userId,
   })
-  return toJourneyDto(row)
+  const targetingMap = await repo.listSurfaceTargetingByJourneyIds([Number(row.id)])
+  return toJourneyDto(row, targetingMap)
 }
 
 export async function deleteJourneyForAdmin(id: number, actorUserId: number): Promise<void> {

@@ -51,6 +51,11 @@ export type MessageJourneyDto = {
   journeyKey: string
   name: string
   appliesToSurface: 'global_feed' | 'group_feed' | 'channel_feed'
+  surfaceTargeting: Array<{
+    surface: 'global_feed' | 'group_feed' | 'channel_feed'
+    targetingMode: 'all' | 'selected'
+    targetIds: number[]
+  }>
   status: MessageJourneyStatus
   description: string | null
   eligibilityRulesetId: number | null

@@ -926,6 +926,55 @@ export async function ensureSchema(db: DB) {
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_messages_ruleset_id ON feed_messages (eligibility_ruleset_id, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_messages_delivery_scope ON feed_messages (delivery_scope, status, id)`); } catch {}
 
+          // --- Message multi-surface targeting (plan_147A) ---
+          await db.query(`
+            CREATE TABLE IF NOT EXISTS feed_message_surfaces (
+              id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+              message_id BIGINT UNSIGNED NOT NULL,
+              surface ENUM('global_feed','group_feed','channel_feed') NOT NULL,
+              targeting_mode ENUM('all','selected') NOT NULL DEFAULT 'all',
+              created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              UNIQUE KEY uniq_feed_message_surfaces_message_surface (message_id, surface),
+              KEY idx_feed_message_surfaces_surface_mode (surface, targeting_mode, message_id),
+              KEY idx_feed_message_surfaces_message (message_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+          `)
+          await db.query(`ALTER TABLE feed_message_surfaces ADD COLUMN IF NOT EXISTS message_id BIGINT UNSIGNED NOT NULL`)
+          await db.query(`ALTER TABLE feed_message_surfaces ADD COLUMN IF NOT EXISTS surface ENUM('global_feed','group_feed','channel_feed') NOT NULL`)
+          await db.query(`ALTER TABLE feed_message_surfaces ADD COLUMN IF NOT EXISTS targeting_mode ENUM('all','selected') NOT NULL DEFAULT 'all'`)
+          try { await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_feed_message_surfaces_message_surface ON feed_message_surfaces (message_id, surface)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_surfaces_surface_mode ON feed_message_surfaces (surface, targeting_mode, message_id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_surfaces_message ON feed_message_surfaces (message_id)`); } catch {}
+
+          await db.query(`
+            CREATE TABLE IF NOT EXISTS feed_message_targets (
+              id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+              message_id BIGINT UNSIGNED NOT NULL,
+              surface ENUM('group_feed','channel_feed') NOT NULL,
+              target_id BIGINT UNSIGNED NOT NULL,
+              created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              UNIQUE KEY uniq_feed_message_targets_message_surface_target (message_id, surface, target_id),
+              KEY idx_feed_message_targets_surface_target (surface, target_id, message_id),
+              KEY idx_feed_message_targets_message_surface (message_id, surface)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+          `)
+          await db.query(`ALTER TABLE feed_message_targets ADD COLUMN IF NOT EXISTS message_id BIGINT UNSIGNED NOT NULL`)
+          await db.query(`ALTER TABLE feed_message_targets ADD COLUMN IF NOT EXISTS surface ENUM('group_feed','channel_feed') NOT NULL`)
+          await db.query(`ALTER TABLE feed_message_targets ADD COLUMN IF NOT EXISTS target_id BIGINT UNSIGNED NOT NULL`)
+          try { await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_feed_message_targets_message_surface_target ON feed_message_targets (message_id, surface, target_id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_targets_surface_target ON feed_message_targets (surface, target_id, message_id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_targets_message_surface ON feed_message_targets (message_id, surface)`); } catch {}
+
+          try {
+            await db.query(`
+              INSERT IGNORE INTO feed_message_surfaces (message_id, surface, targeting_mode)
+              SELECT id, applies_to_surface, 'all'
+              FROM feed_messages
+            `)
+          } catch {}
+
           // --- Eligibility rulesets for feed messages (plan_142A) ---
           await db.query(`
             CREATE TABLE IF NOT EXISTS feed_message_eligibility_rulesets (
@@ -1046,6 +1095,54 @@ export async function ensureSchema(db: DB) {
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_journeys_status ON feed_message_journeys (status, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_journeys_name ON feed_message_journeys (name, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_journeys_ruleset ON feed_message_journeys (eligibility_ruleset_id, id)`); } catch {}
+
+          await db.query(`
+            CREATE TABLE IF NOT EXISTS feed_message_journey_surfaces (
+              id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+              journey_id BIGINT UNSIGNED NOT NULL,
+              surface ENUM('global_feed','group_feed','channel_feed') NOT NULL,
+              targeting_mode ENUM('all','selected') NOT NULL DEFAULT 'all',
+              created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              UNIQUE KEY uniq_feed_message_journey_surfaces_journey_surface (journey_id, surface),
+              KEY idx_feed_message_journey_surfaces_surface_mode (surface, targeting_mode, journey_id),
+              KEY idx_feed_message_journey_surfaces_journey (journey_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+          `)
+          await db.query(`ALTER TABLE feed_message_journey_surfaces ADD COLUMN IF NOT EXISTS journey_id BIGINT UNSIGNED NOT NULL`)
+          await db.query(`ALTER TABLE feed_message_journey_surfaces ADD COLUMN IF NOT EXISTS surface ENUM('global_feed','group_feed','channel_feed') NOT NULL`)
+          await db.query(`ALTER TABLE feed_message_journey_surfaces ADD COLUMN IF NOT EXISTS targeting_mode ENUM('all','selected') NOT NULL DEFAULT 'all'`)
+          try { await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_feed_message_journey_surfaces_journey_surface ON feed_message_journey_surfaces (journey_id, surface)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_journey_surfaces_surface_mode ON feed_message_journey_surfaces (surface, targeting_mode, journey_id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_journey_surfaces_journey ON feed_message_journey_surfaces (journey_id)`); } catch {}
+
+          await db.query(`
+            CREATE TABLE IF NOT EXISTS feed_message_journey_targets (
+              id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+              journey_id BIGINT UNSIGNED NOT NULL,
+              surface ENUM('group_feed','channel_feed') NOT NULL,
+              target_id BIGINT UNSIGNED NOT NULL,
+              created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              UNIQUE KEY uniq_feed_message_journey_targets_journey_surface_target (journey_id, surface, target_id),
+              KEY idx_feed_message_journey_targets_surface_target (surface, target_id, journey_id),
+              KEY idx_feed_message_journey_targets_journey_surface (journey_id, surface)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+          `)
+          await db.query(`ALTER TABLE feed_message_journey_targets ADD COLUMN IF NOT EXISTS journey_id BIGINT UNSIGNED NOT NULL`)
+          await db.query(`ALTER TABLE feed_message_journey_targets ADD COLUMN IF NOT EXISTS surface ENUM('group_feed','channel_feed') NOT NULL`)
+          await db.query(`ALTER TABLE feed_message_journey_targets ADD COLUMN IF NOT EXISTS target_id BIGINT UNSIGNED NOT NULL`)
+          try { await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_feed_message_journey_targets_journey_surface_target ON feed_message_journey_targets (journey_id, surface, target_id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_journey_targets_surface_target ON feed_message_journey_targets (surface, target_id, journey_id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_journey_targets_journey_surface ON feed_message_journey_targets (journey_id, surface)`); } catch {}
+
+          try {
+            await db.query(`
+              INSERT IGNORE INTO feed_message_journey_surfaces (journey_id, surface, targeting_mode)
+              SELECT id, applies_to_surface, 'all'
+              FROM feed_message_journeys
+            `)
+          } catch {}
 
           await db.query(`
             CREATE TABLE IF NOT EXISTS feed_message_journey_steps (
