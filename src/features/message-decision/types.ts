@@ -1,4 +1,4 @@
-export type MessageDecisionSurface = 'global_feed'
+export type MessageDecisionSurface = 'global_feed' | 'group_feed' | 'channel_feed'
 export type MessageViewerState = 'anonymous' | 'authenticated_non_subscriber' | 'authenticated_subscriber'
 
 export type MessageDecisionReasonCode =
@@ -29,6 +29,10 @@ export type MessageDecisionSessionRow = {
 
 export type MessageDecisionInput = {
   surface: MessageDecisionSurface
+  surfaceTarget: {
+    groupId: number | null
+    channelId: number | null
+  }
   sessionId: string
   userId: number | null
   viewerState: MessageViewerState

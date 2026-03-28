@@ -556,6 +556,9 @@ async function sendMessageEvent(input: {
   messageId: number
   messageCampaignKey: string | null
   sessionId: string | null
+  surface?: 'global_feed' | 'group_feed' | 'channel_feed'
+  groupId?: number | null
+  channelId?: number | null
   ctaKind?: 'primary' | 'secondary'
   messageCtaSlot?: 1 | 2 | 3 | null
   messageCtaDefinitionId?: number | null
@@ -576,7 +579,9 @@ async function sendMessageEvent(input: {
       },
       body: JSON.stringify({
         event: input.event,
-        surface: 'global_feed',
+        surface: input.surface || 'global_feed',
+        group_id: input.groupId ?? null,
+        channel_id: input.channelId ?? null,
         message_id: input.messageId,
         message_campaign_key: input.messageCampaignKey,
         message_session_id: input.sessionId,
@@ -599,6 +604,9 @@ async function issueMessageAuthIntent(input: {
   messageCampaignKey: string | null
   sessionId: string | null
   messageSequenceKey: string | null
+  surface?: 'global_feed' | 'group_feed' | 'channel_feed'
+  groupId?: number | null
+  channelId?: number | null
 }, opts?: { sequenceEngineTag?: FeedSequenceEngineTag }): Promise<{ intentId: string | null }> {
   try {
     const res = await fetch('/api/feed/message-auth-intent', {
@@ -610,7 +618,9 @@ async function issueMessageAuthIntent(input: {
         ...feedSequenceHeader(opts?.sequenceEngineTag),
       },
       body: JSON.stringify({
-        surface: 'global_feed',
+        surface: input.surface || 'global_feed',
+        group_id: input.groupId ?? null,
+        channel_id: input.channelId ?? null,
         message_flow: input.flow,
         message_id: input.messageId,
         message_campaign_key: input.messageCampaignKey,
@@ -1220,6 +1230,16 @@ export default function Feed() {
     } catch {}
     return null
   }, [feedMode, spaceList])
+
+  const messageDecisionContext = useMemo(() => {
+    if (!feedActivityContext) return null
+    if (feedActivityContext.surface === 'my_feed') return null
+    return {
+      surface: feedActivityContext.surface as 'global_feed' | 'group_feed' | 'channel_feed',
+      groupId: feedActivityContext.surface === 'group_feed' ? (feedActivityContext.spaceId ?? null) : null,
+      channelId: feedActivityContext.surface === 'channel_feed' ? (feedActivityContext.spaceId ?? null) : null,
+    }
+  }, [feedActivityContext])
 
   useEffect(() => {
     browserDebugContextRef.current = {
@@ -2594,6 +2614,9 @@ export default function Feed() {
         messageCampaignKey: message.campaignKey || null,
         sessionId: messageSessionId,
         messageSequenceKey: activeSequence || null,
+        surface: messageDecisionContext?.surface || 'global_feed',
+        groupId: messageDecisionContext?.groupId ?? null,
+        channelId: messageDecisionContext?.channelId ?? null,
       }, { sequenceEngineTag: feedSequenceEngineTag })
       intentId = issued.intentId
     } else if (flow) {
@@ -2604,6 +2627,9 @@ export default function Feed() {
       messageId: message.id,
       messageCampaignKey: message.campaignKey || null,
       sessionId: messageSessionId,
+      surface: messageDecisionContext?.surface || 'global_feed',
+      groupId: messageDecisionContext?.groupId ?? null,
+      channelId: messageDecisionContext?.channelId ?? null,
       ctaKind: action.legacyKind,
       messageCtaSlot: action.slot,
       messageCtaDefinitionId: action.ctaDefinitionId,
@@ -2619,6 +2645,9 @@ export default function Feed() {
         messageId: message.id,
         messageCampaignKey: message.campaignKey || null,
         sessionId: messageSessionId,
+        surface: messageDecisionContext?.surface || 'global_feed',
+        groupId: messageDecisionContext?.groupId ?? null,
+        channelId: messageDecisionContext?.channelId ?? null,
         ctaKind: action.legacyKind,
         messageCtaSlot: action.slot,
         messageCtaDefinitionId: action.ctaDefinitionId,
@@ -2667,7 +2696,7 @@ export default function Feed() {
       }
     } catch {}
     window.location.href = targetHref
-  }, [activeSequenceKey, messageSessionId, feedSequenceEngineTag])
+  }, [activeSequenceKey, messageSessionId, feedSequenceEngineTag, messageDecisionContext])
 
   const closeFeedActivitySession = useCallback((reason: 'pagehide' | 'beforeunload' | 'unmount' | 'mode_change' | 'visibility_hidden') => {
     if (!feedActivityStartedRef.current) return
@@ -2761,7 +2790,7 @@ export default function Feed() {
   useEffect(() => {
     const timer = window.setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
-      if (isGlobalBillboard) {
+      if (messageDecisionContext) {
         messageCountersRef.current.watchSeconds += 1
       }
       if (feedActivityStartedRef.current && !feedActivityEndedRef.current) {
@@ -2769,11 +2798,11 @@ export default function Feed() {
       }
     }, 1000)
     return () => window.clearInterval(timer)
-  }, [isGlobalBillboard])
+  }, [messageDecisionContext])
 
   // In-feed message counters: track per-session slide traversal.
   useEffect(() => {
-    if (!isGlobalBillboard) return
+    if (!messageDecisionContext) return
     if (!items.length) return
     const current = activeItem
     if (!current) return
@@ -2790,14 +2819,14 @@ export default function Feed() {
     }
     messageCountersRef.current.slidesViewed += 1
     messageCountersRef.current.slidesSinceLastMessage += 1
-  }, [activeItem, activeSequenceKey, items.length, isGlobalBillboard])
+  }, [activeItem, activeSequenceKey, items.length, messageDecisionContext])
 
   // Reset per-slide decision guard when leaving global feed.
   useEffect(() => {
-    if (!isGlobalBillboard) {
+    if (!messageDecisionContext) {
       messageDecisionLastContentKeyRef.current = null
     }
-  }, [isGlobalBillboard])
+  }, [messageDecisionContext])
 
   // In-feed message analytics: record impression/pass-through by message sequence instance.
   useEffect(() => {
@@ -2816,6 +2845,9 @@ export default function Feed() {
           messageId: previous.messageId,
           messageCampaignKey: previous.messageCampaignKey,
           sessionId: messageSessionId,
+          surface: messageDecisionContext?.surface || 'global_feed',
+          groupId: messageDecisionContext?.groupId ?? null,
+          channelId: messageDecisionContext?.channelId ?? null,
           messageSequenceKey: previous.sequenceKey,
         }, { sequenceEngineTag: feedSequenceEngineTag })
         emitMessageDebug('pass_through:recorded', {
@@ -2848,6 +2880,9 @@ export default function Feed() {
         messageId: message.id,
         messageCampaignKey: message.campaignKey || null,
         sessionId: messageSessionId,
+        surface: messageDecisionContext?.surface || 'global_feed',
+        groupId: messageDecisionContext?.groupId ?? null,
+        channelId: messageDecisionContext?.channelId ?? null,
         messageSequenceKey: nextSequenceKey,
       }, { sequenceEngineTag: feedSequenceEngineTag })
       emitMessageDebug('impression:recorded', {
@@ -2869,7 +2904,7 @@ export default function Feed() {
       clicked: false,
       completed: false,
     }
-  }, [activeItem, activeSequenceKey, messageSessionId, feedSequenceEngineTag])
+  }, [activeItem, activeSequenceKey, messageSessionId, feedSequenceEngineTag, messageDecisionContext])
 
   // Feed baseline activity: emit slide impression once per session per publication.
   useEffect(() => {
@@ -2895,8 +2930,8 @@ export default function Feed() {
 
   // Ask the decision service whether to insert an in-feed message in the global feed.
   useEffect(() => {
-    if (!isGlobalBillboard) {
-      emitMessageDebug('decision:skip:not_global')
+    if (!messageDecisionContext) {
+      emitMessageDebug('decision:skip:no_surface_context')
       return
     }
     if (!meLoaded) {
@@ -2953,7 +2988,9 @@ export default function Feed() {
             ...feedSequenceHeader(feedSequenceEngineTag),
           },
           body: JSON.stringify({
-            surface: 'global_feed',
+            surface: messageDecisionContext.surface,
+            group_id: messageDecisionContext.groupId ?? null,
+            channel_id: messageDecisionContext.channelId ?? null,
             message_session_id: messageSessionId,
             slides_viewed: counters.slidesViewed,
             watch_seconds: counters.watchSeconds,
@@ -3112,7 +3149,7 @@ export default function Feed() {
       canceled = true
       window.clearTimeout(timer)
     }
-  }, [isGlobalBillboard, meLoaded, isAuthed, initialLoading, items, activeItem, activeSequenceIndex, activeSequenceKey, messageSessionId, feedSequenceEngineTag])
+  }, [messageDecisionContext, meLoaded, isAuthed, initialLoading, items, activeItem, activeSequenceIndex, activeSequenceKey, messageSessionId, feedSequenceEngineTag])
 
   // HLSVideo handles attaching source on Safari and via hls.js elsewhere
 

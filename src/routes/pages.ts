@@ -4833,9 +4833,12 @@ function parseSurfaceTargetingFromBody(body: any, fallbackSurface: string = 'glo
     .map((n) => Math.round(n))))
 
   const out: Array<{ surface: 'global_feed' | 'group_feed' | 'channel_feed'; targetingMode: 'all' | 'selected'; targetIds: number[] }> = []
+  const normalizedGroupMode: 'all' | 'selected' = groupTargetIds.length > 0 ? 'selected' : groupMode
+  const normalizedChannelMode: 'all' | 'selected' = channelTargetIds.length > 0 ? 'selected' : channelMode
+
   if (hasGlobal) out.push({ surface: 'global_feed', targetingMode: 'all', targetIds: [] })
-  if (hasGroups) out.push({ surface: 'group_feed', targetingMode: groupMode, targetIds: groupMode === 'selected' ? groupTargetIds : [] })
-  if (hasChannels) out.push({ surface: 'channel_feed', targetingMode: channelMode, targetIds: channelMode === 'selected' ? channelTargetIds : [] })
+  if (hasGroups) out.push({ surface: 'group_feed', targetingMode: normalizedGroupMode, targetIds: normalizedGroupMode === 'selected' ? groupTargetIds : [] })
+  if (hasChannels) out.push({ surface: 'channel_feed', targetingMode: normalizedChannelMode, targetIds: normalizedChannelMode === 'selected' ? channelTargetIds : [] })
   if (!out.length) {
     const normalizedFallback = String(fallbackSurface || 'global_feed').trim().toLowerCase()
     const surface = normalizedFallback === 'group_feed' || normalizedFallback === 'channel_feed' ? normalizedFallback : 'global_feed'

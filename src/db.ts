@@ -844,7 +844,7 @@ export async function ensureSchema(db: DB) {
               media_upload_id BIGINT UNSIGNED NULL,
               creative_json JSON NULL,
               type ENUM('register_login','fund_drive','subscription_upgrade','sponsor_message','feature_announcement') NOT NULL DEFAULT 'register_login',
-              applies_to_surface ENUM('global_feed') NOT NULL DEFAULT 'global_feed',
+              applies_to_surface ENUM('global_feed','group_feed','channel_feed') NOT NULL DEFAULT 'global_feed',
               tie_break_strategy ENUM('first','round_robin','weighted_random') NOT NULL DEFAULT 'round_robin',
               delivery_scope ENUM('standalone_only','journey_only','both') NOT NULL DEFAULT 'both',
               campaign_key VARCHAR(64) NULL,
@@ -877,7 +877,14 @@ export async function ensureSchema(db: DB) {
             `ENUM('register_login','fund_drive','subscription_upgrade','sponsor_message','feature_announcement') NOT NULL DEFAULT 'register_login'`
           )
           await db.query(`ALTER TABLE feed_messages ADD COLUMN IF NOT EXISTS type ENUM('register_login','fund_drive','subscription_upgrade','sponsor_message','feature_announcement') NOT NULL DEFAULT 'register_login'`)
-          await db.query(`ALTER TABLE feed_messages ADD COLUMN IF NOT EXISTS applies_to_surface ENUM('global_feed') NOT NULL DEFAULT 'global_feed'`)
+          await db.query(`ALTER TABLE feed_messages ADD COLUMN IF NOT EXISTS applies_to_surface ENUM('global_feed','group_feed','channel_feed') NOT NULL DEFAULT 'global_feed'`)
+          try {
+            await db.query(
+              `ALTER TABLE feed_messages
+                 MODIFY COLUMN applies_to_surface ENUM('global_feed','group_feed','channel_feed')
+                 NOT NULL DEFAULT 'global_feed'`
+            )
+          } catch {}
           await db.query(`ALTER TABLE feed_messages ADD COLUMN IF NOT EXISTS tie_break_strategy ENUM('first','round_robin','weighted_random') NOT NULL DEFAULT 'round_robin'`)
           await db.query(`ALTER TABLE feed_messages ADD COLUMN IF NOT EXISTS delivery_scope ENUM('standalone_only','journey_only','both') NOT NULL DEFAULT 'both'`)
           await db.query(`ALTER TABLE feed_messages ADD COLUMN IF NOT EXISTS campaign_key VARCHAR(64) NULL`)
@@ -1291,7 +1298,7 @@ export async function ensureSchema(db: DB) {
             CREATE TABLE IF NOT EXISTS message_decision_sessions (
               id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
               session_id VARCHAR(120) NOT NULL,
-              surface ENUM('global_feed') NOT NULL DEFAULT 'global_feed',
+              surface ENUM('global_feed','group_feed','channel_feed') NOT NULL DEFAULT 'global_feed',
               viewer_state ENUM('anonymous','authenticated','authenticated_non_subscriber','authenticated_subscriber') NOT NULL DEFAULT 'anonymous',
               slides_viewed INT UNSIGNED NOT NULL DEFAULT 0,
               watch_seconds INT UNSIGNED NOT NULL DEFAULT 0,
@@ -1309,7 +1316,14 @@ export async function ensureSchema(db: DB) {
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
           `)
           await db.query(`ALTER TABLE message_decision_sessions ADD COLUMN IF NOT EXISTS session_id VARCHAR(120) NOT NULL`)
-          await db.query(`ALTER TABLE message_decision_sessions ADD COLUMN IF NOT EXISTS surface ENUM('global_feed') NOT NULL DEFAULT 'global_feed'`)
+          await db.query(`ALTER TABLE message_decision_sessions ADD COLUMN IF NOT EXISTS surface ENUM('global_feed','group_feed','channel_feed') NOT NULL DEFAULT 'global_feed'`)
+          try {
+            await db.query(
+              `ALTER TABLE message_decision_sessions
+                 MODIFY COLUMN surface ENUM('global_feed','group_feed','channel_feed')
+                 NOT NULL DEFAULT 'global_feed'`
+            )
+          } catch {}
           await db.query(`ALTER TABLE message_decision_sessions ADD COLUMN IF NOT EXISTS viewer_state ENUM('anonymous','authenticated','authenticated_non_subscriber','authenticated_subscriber') NOT NULL DEFAULT 'anonymous'`)
           try {
             await db.query(

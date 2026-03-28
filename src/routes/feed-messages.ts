@@ -261,7 +261,7 @@ async function handleDecision(req: any, res: any, next: any) {
 
     const span = trace.getSpan(context.active())
     if (span) {
-      span.setAttribute('app.surface', 'global_feed')
+      span.setAttribute('app.surface', input.surface)
       span.setAttribute('app.operation', 'feed.message.decide')
       span.setAttribute('app.viewer_state', viewerState)
       span.setAttribute('app.targeting_model', 'ruleset_only')

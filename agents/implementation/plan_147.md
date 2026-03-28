@@ -39,7 +39,7 @@ Status: Active
 ## Phase Status
 - A: Complete
 - B: Complete
-- C: Pending
+- C: Complete
 - D: Pending
 - E: Pending
 - F: Pending
@@ -91,15 +91,15 @@ Status: Active
 - Goal:
   - Enforce surface/target matching before candidate eligibility/progression checks.
 - Steps:
-  - [ ] Add context input to decision calls:
+  - [x] Add context input to decision calls:
     - `surface_context` (`global_feed|group_feed|channel_feed`)
     - optional `group_id` / `channel_id`
-  - [ ] Message candidate prefilter:
+  - [x] Message candidate prefilter:
     - surface present
     - if mode `all`, pass
     - if mode `selected`, require target match
-  - [ ] Journey candidate prefilter with same rules.
-  - [ ] Keep existing ruleset/progression checks after targeting prefilter.
+  - [x] Journey candidate prefilter with same rules.
+  - [x] Keep existing ruleset/progression checks after targeting prefilter.
 - Test gate:
   - Group-targeted message does not appear in unrelated groups/channels/global.
   - Channel-targeted journey appears only in targeted channels.
@@ -169,6 +169,13 @@ Status: Active
     - Added per-surface targeting mode (`all` / `selected`) and selected target lists.
     - Added payload parsing from admin forms to `surfaceTargeting`.
     - Added validation: `selected` mode for groups/channels requires non-empty target set.
+  - Phase C completed:
+    - Decision input now accepts multi-surface context:
+      - `surface` = `global_feed|group_feed|channel_feed`
+      - optional `group_id` / `channel_id` (plus camelCase aliases).
+    - Message candidate selection now prefilters by `surfaceTargeting` before suppression/ruleset/journey gating.
+    - Journey gating now prefilters by journey `surfaceTargeting` (with legacy `applies_to_surface` fallback).
+    - Decision session schema now supports all three surfaces in `message_decision_sessions.surface`.
 
 ## Validation
 - Environment:
@@ -190,6 +197,6 @@ Status: Active
 
 ## Resume Here
 - Next action:
-  - Start Phase C (Decision Engine): enforce surface/target prefilter before eligibility/progression checks.
+  - Start Phase D (Observability): emit targeting tags/reasons and add Jaeger preset support.
 - Blocking question (if any):
   - None.

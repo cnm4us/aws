@@ -23,7 +23,7 @@ import type {
   MessageDecisionSurface,
 } from './types'
 
-const ALLOWED_SURFACES: readonly MessageDecisionSurface[] = ['global_feed']
+const ALLOWED_SURFACES: readonly MessageDecisionSurface[] = ['global_feed', 'group_feed', 'channel_feed']
 const SESSION_ID_RE = /^[a-zA-Z0-9:_-]{8,120}$/
 
 export const ANON_SESSION_COOKIE = 'anon_session_id'
@@ -45,6 +45,13 @@ function normalizeCounter(raw: any, key: string, min: number, max: number, fallb
   const rounded = Math.round(value)
   if (rounded < min || rounded > max) throw new DomainError(`invalid_${key}`, `invalid_${key}`, 400)
   return rounded
+}
+
+function normalizeOptionalPositiveInt(raw: any): number | null {
+  if (raw == null || raw === '') return null
+  const value = Number(raw)
+  if (!Number.isFinite(value) || value <= 0) return null
+  return Math.round(value)
 }
 
 function normalizeDateTime(raw: any, key: string): string | null {
@@ -217,6 +224,11 @@ type EligibleMessageCandidate = {
   journeyStepKey?: string | null
   journeyRulesetId?: number | null
   deliveryContext?: 'standalone' | 'journey'
+  surfaceTargeting?: Array<{
+    surface: MessageDecisionSurface
+    targetingMode: 'all' | 'selected'
+    targetIds: number[]
+  }>
 }
 
 type SupportProfile = {
@@ -380,6 +392,22 @@ function selectMessageCandidate(
   return sorted[0]
 }
 
+function matchesSurfaceTargeting(params: {
+  surface: MessageDecisionSurface
+  groupId: number | null
+  channelId: number | null
+  targeting: Array<{ surface: MessageDecisionSurface; targetingMode: 'all' | 'selected'; targetIds: number[] }>
+}): boolean {
+  const row = (params.targeting || []).find((item) => String(item.surface || '').toLowerCase() === params.surface)
+  if (!row) return false
+  const mode = String(row.targetingMode || 'all').toLowerCase() === 'selected' ? 'selected' : 'all'
+  if (params.surface === 'global_feed') return true
+  if (mode === 'all') return true
+  const targetId = params.surface === 'group_feed' ? params.groupId : params.channelId
+  if (targetId == null || !Number.isFinite(targetId) || targetId <= 0) return false
+  return Array.isArray(row.targetIds) && row.targetIds.some((id) => Number(id) === Number(targetId))
+}
+
 function dateToMs(raw: string | null): number | null {
   if (!raw) return null
   const date = new Date(String(raw).replace(' ', 'T') + 'Z')
@@ -390,6 +418,7 @@ function dateToMs(raw: string | null): number | null {
 async function applyJourneyGating(params: {
   userId: number | null
   surface: MessageDecisionSurface
+  surfaceTarget: { groupId: number | null; channelId: number | null }
   candidates: EligibleMessageCandidate[]
 }): Promise<{
   eligible: EligibleMessageCandidate[]
@@ -426,6 +455,7 @@ async function applyJourneyGating(params: {
     if (!stepsByJourney.has(journeyId)) stepsByJourney.set(journeyId, [])
     stepsByJourney.get(journeyId)!.push(step)
   }
+  const journeyTargetingMap = await messageJourneysRepo.listSurfaceTargetingByJourneyIds(Array.from(stepsByJourney.keys()))
 
   const dropReasons: Array<{ messageId: number; reason: string }> = []
   const eligible: EligibleMessageCandidate[] = []
@@ -451,7 +481,19 @@ async function applyJourneyGating(params: {
         if (dropReasons.length < 40) dropReasons.push({ messageId: c.messageId, reason: 'journey_scope_conflict' })
         continue
       }
-      const matchingSurface = attached.some((step) => String((step as any).journey_surface || 'global_feed') === params.surface)
+      const matchingSurface = attached.some((step) => {
+        const journeyId = Number((step as any).journey_id || 0)
+        const targeting = journeyTargetingMap.get(journeyId)
+        if (targeting && targeting.length) {
+          return matchesSurfaceTargeting({
+            surface: params.surface,
+            groupId: params.surfaceTarget.groupId,
+            channelId: params.surfaceTarget.channelId,
+            targeting: targeting as any,
+          })
+        }
+        return String((step as any).journey_surface || 'global_feed') === params.surface
+      })
       if (!matchingSurface) {
         rejectedCount += 1
         if (dropReasons.length < 40) dropReasons.push({ messageId: c.messageId, reason: 'journey_surface_mismatch' })
@@ -495,7 +537,19 @@ async function applyJourneyGating(params: {
       if (dropReasons.length < 40) dropReasons.push({ messageId: c.messageId, reason: 'journey_scope_conflict' })
       continue
     }
-    const attachedOnSurface = attached.filter((step) => String((step as any).journey_surface || 'global_feed') === params.surface)
+    const attachedOnSurface = attached.filter((step) => {
+      const journeyId = Number((step as any).journey_id || 0)
+      const targeting = journeyTargetingMap.get(journeyId)
+      if (targeting && targeting.length) {
+        return matchesSurfaceTargeting({
+          surface: params.surface,
+          groupId: params.surfaceTarget.groupId,
+          channelId: params.surfaceTarget.channelId,
+          targeting: targeting as any,
+        })
+      }
+      return String((step as any).journey_surface || 'global_feed') === params.surface
+    })
     if (!attachedOnSurface.length) {
       rejectedCount += 1
       if (dropReasons.length < 40) dropReasons.push({ messageId: c.messageId, reason: 'journey_surface_mismatch' })
@@ -536,6 +590,12 @@ export function buildDecisionInput(params: {
   userId?: number | null
 }): { input: MessageDecisionInput; createdSessionId: string | null } {
   const surface = normalizeSurface(params.body?.surface)
+  const groupId = normalizeOptionalPositiveInt(
+    params.body?.group_id ?? params.body?.groupId ?? params.body?.surface_group_id ?? params.body?.surfaceGroupId
+  )
+  const channelId = normalizeOptionalPositiveInt(
+    params.body?.channel_id ?? params.body?.channelId ?? params.body?.surface_channel_id ?? params.body?.surfaceChannelId
+  )
 
   const bodySessionRaw = String(params.body?.message_session_id ?? params.body?.messageSessionId ?? params.body?.session_id ?? params.body?.sessionId ?? '').trim()
   const bodySessionId = bodySessionRaw && isValidSessionId(bodySessionRaw) ? bodySessionRaw : null
@@ -555,6 +615,10 @@ export function buildDecisionInput(params: {
   return {
     input: {
       surface,
+      surfaceTarget: {
+        groupId,
+        channelId,
+      },
       sessionId,
       userId: params.userId != null && Number.isFinite(Number(params.userId)) && Number(params.userId) > 0 ? Number(params.userId) : null,
       viewerState: params.viewerState,
@@ -638,7 +702,6 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
     } else {
       const messages = await messagesSvc.listActiveForFeed({
         limit: 300,
-        appliesToSurface: input.surface,
       })
 
       if (!messages.length) {
@@ -660,13 +723,40 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
                 : (String((message as any).deliveryScope || 'both').toLowerCase() === 'standalone_only' ? 'standalone_only' : 'both')),
             eligibilityRulesetId:
               (message as any).eligibilityRulesetId == null ? null : Number((message as any).eligibilityRulesetId),
+            surfaceTargeting: Array.isArray((message as any).surfaceTargeting)
+              ? (message as any).surfaceTargeting.map((item: any) => ({
+                  surface: String(item?.surface || 'global_feed').toLowerCase() as MessageDecisionSurface,
+                  targetingMode: String(item?.targetingMode || 'all').toLowerCase() === 'selected' ? 'selected' : 'all',
+                  targetIds: Array.isArray(item?.targetIds)
+                    ? item.targetIds
+                        .map((id: any) => Number(id))
+                        .filter((id: number) => Number.isFinite(id) && id > 0)
+                        .map((id: number) => Math.round(id))
+                    : [],
+                }))
+              : [{ surface: String((message as any).appliesToSurface || 'global_feed').toLowerCase() as MessageDecisionSurface, targetingMode: 'all', targetIds: [] }],
           })
         }
 
-        let eligible = candidates
-        if (input.userId != null && input.userId > 0 && candidates.length > 0) {
+        let eligible = candidates.filter((candidate) => {
+          const matched = matchesSurfaceTargeting({
+            surface: input.surface,
+            groupId: input.surfaceTarget.groupId,
+            channelId: input.surfaceTarget.channelId,
+            targeting: candidate.surfaceTargeting || [],
+          })
+          if (!matched && candidateDropReasons.length < 40) {
+            candidateDropReasons.push({
+              messageId: candidate.messageId,
+              reason: 'target_miss',
+            })
+          }
+          return matched
+        })
+
+        if (input.userId != null && input.userId > 0 && eligible.length > 0) {
           const filtered: EligibleMessageCandidate[] = []
-          for (const c of candidates) {
+          for (const c of eligible) {
             const suppressed = await messageAttributionSvc.isUserSuppressed({
               userId: input.userId,
               messageId: c.messageId,
@@ -686,6 +776,7 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
           const gated = await applyJourneyGating({
             userId: input.userId,
             surface: input.surface,
+            surfaceTarget: input.surfaceTarget,
             candidates: eligible,
           })
           journeyRejectedCount = gated.rejectedCount
@@ -791,6 +882,7 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
     result.debug = {
       input: {
         surface: input.surface,
+        surfaceTarget: input.surfaceTarget,
         viewerState: input.viewerState,
         counters: input.counters,
       },

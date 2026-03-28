@@ -494,7 +494,7 @@ function normalizeCreative(raw: any, legacy: LegacyMessageFields): MessageCreati
     'creative_cta_primary_label',
     true
   ) || '')
-  const ctaSecondaryLabel = normalizeLabel(
+  let ctaSecondaryLabel = normalizeLabel(
     ctaSrc.secondaryLabel ?? ctaSrc.secondary_label ?? messageSrc.secondaryLabel ?? messageSrc.secondary_label ?? base.widgets.cta.secondaryLabel,
     'creative_cta_secondary_label',
     false
@@ -518,13 +518,15 @@ function normalizeCreative(raw: any, legacy: LegacyMessageFields): MessageCreati
     'creative_cta_auth_primary_href',
     true
   ) || '')
-  const ctaAuthSecondaryHref = normalizeInternalHref(
+  let ctaAuthSecondaryHref = normalizeInternalHref(
     authConfigSrc.secondaryHref ?? authConfigSrc.secondary_href ?? ctaSrc.secondaryHref ?? ctaSrc.secondary_href ?? messageSrc.secondaryHref ?? messageSrc.secondary_href ?? base.widgets.cta.config.auth.secondaryHref,
     'creative_cta_auth_secondary_href',
     false
   )
   if ((ctaSecondaryLabel && !ctaAuthSecondaryHref && ctaType === 'auth') || (!ctaSecondaryLabel && ctaAuthSecondaryHref && ctaType === 'auth')) {
-    throw new DomainError('invalid_creative_cta_secondary', 'invalid_creative_cta_secondary', 400)
+    // Legacy auth secondary fields are optional in current CTA-slot model.
+    ctaSecondaryLabel = null
+    ctaAuthSecondaryHref = null
   }
   const donateProviderRaw = String(donateConfigSrc.provider ?? base.widgets.cta.config.donate.provider).trim().toLowerCase()
   const donateProvider = (donateProviderRaw === 'paypal' ? 'paypal' : 'mock') as 'mock' | 'paypal'
@@ -721,10 +723,12 @@ export async function createForAdmin(input: any, actorUserId: number): Promise<M
   const ctaPrimaryLabel = String(normalizeLabel(input?.ctaPrimaryLabel ?? input?.cta_primary_label, 'cta_primary_label', true) || '')
   const ctaPrimaryHref = String(normalizeInternalHref(input?.ctaPrimaryHref ?? input?.cta_primary_href, 'cta_primary_href', true) || '')
 
-  const ctaSecondaryLabel = normalizeLabel(input?.ctaSecondaryLabel ?? input?.cta_secondary_label, 'cta_secondary_label', false)
-  const ctaSecondaryHref = normalizeInternalHref(input?.ctaSecondaryHref ?? input?.cta_secondary_href, 'cta_secondary_href', false)
+  let ctaSecondaryLabel = normalizeLabel(input?.ctaSecondaryLabel ?? input?.cta_secondary_label, 'cta_secondary_label', false)
+  let ctaSecondaryHref = normalizeInternalHref(input?.ctaSecondaryHref ?? input?.cta_secondary_href, 'cta_secondary_href', false)
+  // Legacy secondary CTA fields are optional; keep them as a strict pair when present.
   if ((ctaSecondaryLabel && !ctaSecondaryHref) || (!ctaSecondaryLabel && ctaSecondaryHref)) {
-    throw new DomainError('invalid_secondary_cta', 'invalid_secondary_cta', 400)
+    ctaSecondaryLabel = null
+    ctaSecondaryHref = null
   }
 
   const mediaUploadId = normalizeMediaUploadId(input?.mediaUploadId ?? input?.media_upload_id)
@@ -805,17 +809,18 @@ export async function updateForAdmin(id: number, patch: any, actorUserId: number
       ? String(normalizeInternalHref(primaryHrefInput, 'cta_primary_href', true) || '')
       : String(existing.cta_primary_href)
 
-  const nextCtaSecondaryLabel =
+  let nextCtaSecondaryLabel =
     patch?.ctaSecondaryLabel !== undefined || patch?.cta_secondary_label !== undefined
       ? normalizeLabel(secondaryLabelInput, 'cta_secondary_label', false)
       : (existing.cta_secondary_label == null ? null : String(existing.cta_secondary_label))
-  const nextCtaSecondaryHref =
+  let nextCtaSecondaryHref =
     patch?.ctaSecondaryHref !== undefined || patch?.cta_secondary_href !== undefined
       ? normalizeInternalHref(secondaryHrefInput, 'cta_secondary_href', false)
       : (existing.cta_secondary_href == null ? null : String(existing.cta_secondary_href))
 
   if ((nextCtaSecondaryLabel && !nextCtaSecondaryHref) || (!nextCtaSecondaryLabel && nextCtaSecondaryHref)) {
-    throw new DomainError('invalid_secondary_cta', 'invalid_secondary_cta', 400)
+    nextCtaSecondaryLabel = null
+    nextCtaSecondaryHref = null
   }
 
   const nextMediaUploadId =
