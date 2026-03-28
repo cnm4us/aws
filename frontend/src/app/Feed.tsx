@@ -3585,9 +3585,6 @@ export default function Feed() {
                           padding: '10px 10px',
                         }}
                       >
-                        <div style={{ fontSize: 12, opacity: 0.9, marginBottom: 6, textTransform: 'capitalize' }}>
-                          {message.widgets.cta.type}
-                        </div>
                         <div
                           style={{
                             display: 'grid',
