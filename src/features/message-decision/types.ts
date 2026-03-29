@@ -35,6 +35,7 @@ export type MessageDecisionInput = {
   }
   sessionId: string
   userId: number | null
+  anonVisitorId?: string | null
   viewerState: MessageViewerState
   counters: {
     slidesViewed: number

@@ -602,6 +602,7 @@ feedMessagesRouter.post(feedMessageEventPaths, async (req: any, res: any, next: 
           outcomeStatus: mapped.status,
           sessionId,
           userId: req.user?.id ? Number(req.user.id) : null,
+          anonVisitorId: req.user?.id ? null : sessionId,
           messageId,
           messageCampaignKey,
           deliveryContext: messageJourneyId && messageJourneyStepId ? 'journey' : 'standalone',
@@ -656,6 +657,7 @@ feedMessagesRouter.post(feedMessageEventPaths, async (req: any, res: any, next: 
       try {
         journeySignalResult = await messageJourneysSvc.recordJourneySignalFromMessageEvent({
           userId: req.user?.id ? Number(req.user.id) : null,
+          anonVisitorId: req.user?.id ? null : sessionId,
           messageId: Number(messageId || 0),
           event: normalizedEvent,
           sessionId,
@@ -1172,6 +1174,7 @@ feedMessagesRouter.get(feedMessageMockCompletionPaths, async (req: any, res: any
         outcomeStatus: 'success',
         sessionId,
         userId: req.user?.id ? Number(req.user.id) : null,
+        anonVisitorId: req.user?.id ? null : sessionId,
         messageId: Number(messageId || 0),
         messageCampaignKey,
         deliveryContext: messageJourneyId && messageJourneyStepId ? 'journey' : 'standalone',

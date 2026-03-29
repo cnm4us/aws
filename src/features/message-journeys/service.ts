@@ -608,14 +608,16 @@ function policyQualifiesCompletion(policy: StepProgressionPolicy, input: {
 
 export async function recordJourneySignalFromMessageEvent(input: {
   userId: number | null
+  anonVisitorId?: string | null
   messageId: number
   event: MessageJourneySignalEvent
   sessionId?: string | null
   occurredAt?: Date
 }): Promise<{ stepsMatched: number; progressed: number; ignored: number }> {
   const userId = Number(input.userId || 0)
+  const anonVisitorId = String(input.anonVisitorId || '').trim()
   const messageId = Number(input.messageId || 0)
-  if (!Number.isFinite(userId) || userId <= 0) {
+  if ((!Number.isFinite(userId) || userId <= 0) && !anonVisitorId) {
     return { stepsMatched: 0, progressed: 0, ignored: 0 }
   }
   if (!Number.isFinite(messageId) || messageId <= 0) {
@@ -632,7 +634,9 @@ export async function recordJourneySignalFromMessageEvent(input: {
   let ignored = 0
 
   for (const step of steps) {
-    const existing = await repo.getProgressByUserStep(userId, Number(step.id))
+    const existing = userId > 0
+      ? await repo.getProgressByUserStep(userId, Number(step.id))
+      : await repo.getAnonProgressByVisitorStep(anonVisitorId, Number(step.id))
     if (!existing) {
       const metadata = JSON.stringify({
         source: 'message_event',
@@ -640,17 +644,31 @@ export async function recordJourneySignalFromMessageEvent(input: {
         source_message_id: messageId,
         last_event_at: ts,
       })
-      await repo.upsertProgress({
-        userId,
-        journeyId: Number(step.journey_id),
-        stepId: Number(step.id),
-        state: eventState,
-        firstSeenAt: eventState === 'shown' ? ts : null,
-        lastSeenAt: ts,
-        completedAt: eventState === 'completed' ? ts : null,
-        sessionId: input.sessionId ?? null,
-        metadataJson: metadata,
-      })
+      if (userId > 0) {
+        await repo.upsertProgress({
+          userId,
+          journeyId: Number(step.journey_id),
+          stepId: Number(step.id),
+          state: eventState,
+          firstSeenAt: eventState === 'shown' ? ts : null,
+          lastSeenAt: ts,
+          completedAt: eventState === 'completed' ? ts : null,
+          sessionId: input.sessionId ?? null,
+          metadataJson: metadata,
+        })
+      } else {
+        await repo.upsertAnonProgress({
+          anonVisitorId,
+          journeyId: Number(step.journey_id),
+          stepId: Number(step.id),
+          state: eventState,
+          firstSeenAt: eventState === 'shown' ? ts : null,
+          lastSeenAt: ts,
+          completedAt: eventState === 'completed' ? ts : null,
+          sessionId: input.sessionId ?? null,
+          metadataJson: metadata,
+        })
+      }
       progressed += 1
       continue
     }
@@ -669,14 +687,25 @@ export async function recordJourneySignalFromMessageEvent(input: {
       last_event_at: ts,
     })
 
-    await repo.updateProgressById(Number(existing.id), {
-      state: to,
-      firstSeenAt: existing.first_seen_at || (to === 'shown' ? ts : null),
-      lastSeenAt: ts,
-      completedAt: to === 'completed' ? (existing.completed_at || ts) : existing.completed_at,
-      sessionId: input.sessionId ?? existing.session_id,
-      metadataJson,
-    })
+    if (userId > 0) {
+      await repo.updateProgressById(Number(existing.id), {
+        state: to,
+        firstSeenAt: existing.first_seen_at || (to === 'shown' ? ts : null),
+        lastSeenAt: ts,
+        completedAt: to === 'completed' ? (existing.completed_at || ts) : existing.completed_at,
+        sessionId: input.sessionId ?? existing.session_id,
+        metadataJson,
+      })
+    } else {
+      await repo.updateAnonProgressById(Number(existing.id), {
+        state: to,
+        firstSeenAt: existing.first_seen_at || (to === 'shown' ? ts : null),
+        lastSeenAt: ts,
+        completedAt: to === 'completed' ? (existing.completed_at || ts) : existing.completed_at,
+        sessionId: input.sessionId ?? existing.session_id,
+        metadataJson,
+      })
+    }
     progressed += 1
   }
 
@@ -690,6 +719,7 @@ export async function recordJourneySignalFromMessageEvent(input: {
 export async function recordJourneySignalFromCtaOutcome(input: {
   outcomeRowId: number
   userId: number | null
+  anonVisitorId?: string | null
   messageId: number
   sessionId?: string | null
   ctaSlot?: number | null
@@ -700,8 +730,9 @@ export async function recordJourneySignalFromCtaOutcome(input: {
   occurredAt?: Date
 }): Promise<{ stepsMatched: number; progressed: number; ignored: number }> {
   const userId = Number(input.userId || 0)
+  const anonVisitorId = String(input.anonVisitorId || '').trim()
   const messageId = Number(input.messageId || 0)
-  if (!Number.isFinite(userId) || userId <= 0) return { stepsMatched: 0, progressed: 0, ignored: 0 }
+  if ((!Number.isFinite(userId) || userId <= 0) && !anonVisitorId) return { stepsMatched: 0, progressed: 0, ignored: 0 }
   if (!Number.isFinite(messageId) || messageId <= 0) return { stepsMatched: 0, progressed: 0, ignored: 0 }
 
   const steps = await repo.listActiveStepsByMessageId(messageId)
@@ -734,32 +765,50 @@ export async function recordJourneySignalFromCtaOutcome(input: {
       continue
     }
 
-    const existing = await repo.getProgressByUserStep(userId, Number(step.id))
+    const existing = userId > 0
+      ? await repo.getProgressByUserStep(userId, Number(step.id))
+      : await repo.getAnonProgressByVisitorStep(anonVisitorId, Number(step.id))
     if (!existing) {
-      await repo.upsertProgress({
-        userId,
-        journeyId: Number(step.journey_id),
-        stepId: Number(step.id),
-        state: nextState,
-        firstSeenAt: null,
-        lastSeenAt: ts,
-        completedAt: nextState === 'completed' ? ts : null,
-        completedByOutcomeId: nextState === 'completed' ? Number(input.outcomeRowId) : null,
-        sessionId: input.sessionId ?? null,
-        metadataJson: JSON.stringify({
-          source: 'cta_outcome',
-          source_message_id: messageId,
-          cta_slot: input.ctaSlot ?? null,
-          cta_intent_key: input.ctaIntentKey || null,
-          outcome_type: input.outcomeType,
-          outcome_status: input.outcomeStatus,
-          completion_contract_matched: qualifiesCompletion,
-          policy: policy.kind,
-          policy_slot: policy.kind === 'on_cta_slot_completion' ? policy.slot : null,
-          policy_intent_key: policy.kind === 'on_intent_completion' ? policy.intentKey : null,
-          last_event_at: ts,
-        }),
+      const metadataJson = JSON.stringify({
+        source: 'cta_outcome',
+        source_message_id: messageId,
+        cta_slot: input.ctaSlot ?? null,
+        cta_intent_key: input.ctaIntentKey || null,
+        outcome_type: input.outcomeType,
+        outcome_status: input.outcomeStatus,
+        completion_contract_matched: qualifiesCompletion,
+        policy: policy.kind,
+        policy_slot: policy.kind === 'on_cta_slot_completion' ? policy.slot : null,
+        policy_intent_key: policy.kind === 'on_intent_completion' ? policy.intentKey : null,
+        last_event_at: ts,
       })
+      if (userId > 0) {
+        await repo.upsertProgress({
+          userId,
+          journeyId: Number(step.journey_id),
+          stepId: Number(step.id),
+          state: nextState,
+          firstSeenAt: null,
+          lastSeenAt: ts,
+          completedAt: nextState === 'completed' ? ts : null,
+          completedByOutcomeId: nextState === 'completed' ? Number(input.outcomeRowId) : null,
+          sessionId: input.sessionId ?? null,
+          metadataJson,
+        })
+      } else {
+        await repo.upsertAnonProgress({
+          anonVisitorId,
+          journeyId: Number(step.journey_id),
+          stepId: Number(step.id),
+          state: nextState,
+          firstSeenAt: null,
+          lastSeenAt: ts,
+          completedAt: nextState === 'completed' ? ts : null,
+          completedByOutcomeId: nextState === 'completed' ? Number(input.outcomeRowId) : null,
+          sessionId: input.sessionId ?? null,
+          metadataJson,
+        })
+      }
       progressed += 1
       continue
     }
@@ -782,15 +831,27 @@ export async function recordJourneySignalFromCtaOutcome(input: {
       policy_intent_key: policy.kind === 'on_intent_completion' ? policy.intentKey : null,
       last_event_at: ts,
     })
-    await repo.updateProgressById(Number(existing.id), {
-      state: nextState,
-      firstSeenAt: existing.first_seen_at || null,
-      lastSeenAt: ts,
-      completedAt: nextState === 'completed' ? (existing.completed_at || ts) : existing.completed_at,
-      completedByOutcomeId: nextState === 'completed' ? (existing.completed_by_outcome_id || Number(input.outcomeRowId)) : existing.completed_by_outcome_id,
-      sessionId: input.sessionId ?? existing.session_id,
-      metadataJson,
-    })
+    if (userId > 0) {
+      await repo.updateProgressById(Number(existing.id), {
+        state: nextState,
+        firstSeenAt: existing.first_seen_at || null,
+        lastSeenAt: ts,
+        completedAt: nextState === 'completed' ? (existing.completed_at || ts) : existing.completed_at,
+        completedByOutcomeId: nextState === 'completed' ? (existing.completed_by_outcome_id || Number(input.outcomeRowId)) : existing.completed_by_outcome_id,
+        sessionId: input.sessionId ?? existing.session_id,
+        metadataJson,
+      })
+    } else {
+      await repo.updateAnonProgressById(Number(existing.id), {
+        state: nextState,
+        firstSeenAt: existing.first_seen_at || null,
+        lastSeenAt: ts,
+        completedAt: nextState === 'completed' ? (existing.completed_at || ts) : existing.completed_at,
+        completedByOutcomeId: nextState === 'completed' ? (existing.completed_by_outcome_id || Number(input.outcomeRowId)) : existing.completed_by_outcome_id,
+        sessionId: input.sessionId ?? existing.session_id,
+        metadataJson,
+      })
+    }
     progressed += 1
   }
 

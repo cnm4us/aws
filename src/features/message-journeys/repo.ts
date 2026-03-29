@@ -1,5 +1,6 @@
 import { getPool } from '../../db'
 import type {
+  MessageJourneyAnonProgressRow,
   MessageJourneyProgressRow,
   MessageJourneyProgressState,
   MessageJourneyRow,
@@ -66,6 +67,24 @@ const PROGRESS_SELECT_SQL = `
     created_at,
     updated_at
   FROM feed_user_message_journey_progress
+`
+
+const ANON_PROGRESS_SELECT_SQL = `
+  SELECT
+    id,
+    anon_visitor_id,
+    journey_id,
+    step_id,
+    state,
+    first_seen_at,
+    last_seen_at,
+    completed_at,
+    completed_by_outcome_id,
+    session_id,
+    metadata_json,
+    created_at,
+    updated_at
+  FROM feed_anon_message_journey_progress
 `
 
 async function rowExists(tableName: string, id: number): Promise<boolean> {
@@ -212,6 +231,21 @@ type ProgressUpsertInput = {
 }
 
 type ProgressUpdateInput = Partial<Omit<ProgressUpsertInput, 'userId' | 'journeyId' | 'stepId'>>
+
+type AnonProgressUpsertInput = {
+  anonVisitorId: string
+  journeyId: number
+  stepId: number
+  state: MessageJourneyProgressState
+  firstSeenAt?: string | null
+  lastSeenAt?: string | null
+  completedAt?: string | null
+  completedByOutcomeId?: number | null
+  sessionId?: string | null
+  metadataJson?: string
+}
+
+type AnonProgressUpdateInput = Partial<Omit<AnonProgressUpsertInput, 'anonVisitorId' | 'journeyId' | 'stepId'>>
 
 export async function listJourneys(params?: {
   status?: MessageJourneyStatus | null
@@ -623,6 +657,122 @@ export async function updateProgressById(id: number, patch: ProgressUpdateInput)
 
   const [rows] = await db.query(`${PROGRESS_SELECT_SQL} WHERE id = ? LIMIT 1`, [id])
   const row = ((rows as any[])[0] as MessageJourneyProgressRow) || null
+  if (!row) throw new Error('not_found')
+  return row
+}
+
+export async function getAnonProgressByVisitorStep(anonVisitorId: string, stepId: number): Promise<MessageJourneyAnonProgressRow | null> {
+  const db = getPool()
+  const [rows] = await db.query(
+    `${ANON_PROGRESS_SELECT_SQL}
+      WHERE anon_visitor_id = ? AND step_id = ?
+      LIMIT 1`,
+    [anonVisitorId, stepId]
+  )
+  return ((rows as any[])[0] as MessageJourneyAnonProgressRow) || null
+}
+
+export async function listAnonProgressByVisitorJourney(anonVisitorId: string, journeyId: number): Promise<MessageJourneyAnonProgressRow[]> {
+  const db = getPool()
+  const [rows] = await db.query(
+    `${ANON_PROGRESS_SELECT_SQL}
+      WHERE anon_visitor_id = ?
+        AND journey_id = ?
+      ORDER BY updated_at DESC, id DESC`,
+    [anonVisitorId, journeyId]
+  )
+  return rows as MessageJourneyAnonProgressRow[]
+}
+
+export async function listAnonProgressByVisitorJourneyIds(anonVisitorId: string, journeyIds: number[]): Promise<MessageJourneyAnonProgressRow[]> {
+  const uniq = Array.from(new Set(journeyIds.filter((id) => Number.isFinite(id) && id > 0).map((id) => Math.round(id))))
+  if (!uniq.length) return []
+  const placeholders = uniq.map(() => '?').join(',')
+  const db = getPool()
+  const [rows] = await db.query(
+    `${ANON_PROGRESS_SELECT_SQL}
+      WHERE anon_visitor_id = ?
+        AND journey_id IN (${placeholders})
+      ORDER BY updated_at DESC, id DESC`,
+    [anonVisitorId, ...uniq]
+  )
+  return rows as MessageJourneyAnonProgressRow[]
+}
+
+export async function upsertAnonProgress(input: AnonProgressUpsertInput): Promise<MessageJourneyAnonProgressRow> {
+  if (!(await rowExists('feed_message_journeys', Number(input.journeyId)))) {
+    throw new Error('invalid_journey_id')
+  }
+  const stepJourneyId = await getStepJourneyId(Number(input.stepId))
+  if (stepJourneyId == null) throw new Error('invalid_step_id')
+  if (stepJourneyId !== Number(input.journeyId)) throw new Error('step_journey_mismatch')
+
+  const anonVisitorId = String(input.anonVisitorId || '').trim()
+  if (!anonVisitorId) throw new Error('invalid_anon_visitor_id')
+
+  const db = getPool()
+  const metadataJson = input.metadataJson ?? '{}'
+  await db.query(
+    `INSERT INTO feed_anon_message_journey_progress (
+      anon_visitor_id,
+      journey_id,
+      step_id,
+      state,
+      first_seen_at,
+      last_seen_at,
+      completed_at,
+      completed_by_outcome_id,
+      session_id,
+      metadata_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON DUPLICATE KEY UPDATE
+      journey_id = VALUES(journey_id),
+      state = VALUES(state),
+      first_seen_at = COALESCE(feed_anon_message_journey_progress.first_seen_at, VALUES(first_seen_at)),
+      last_seen_at = VALUES(last_seen_at),
+      completed_at = COALESCE(VALUES(completed_at), feed_anon_message_journey_progress.completed_at),
+      completed_by_outcome_id = COALESCE(VALUES(completed_by_outcome_id), feed_anon_message_journey_progress.completed_by_outcome_id),
+      session_id = VALUES(session_id),
+      metadata_json = VALUES(metadata_json),
+      updated_at = CURRENT_TIMESTAMP`,
+    [
+      anonVisitorId,
+      input.journeyId,
+      input.stepId,
+      input.state,
+      input.firstSeenAt ?? null,
+      input.lastSeenAt ?? null,
+      input.completedAt ?? null,
+      input.completedByOutcomeId ?? null,
+      input.sessionId ?? null,
+      metadataJson,
+    ]
+  )
+
+  const row = await getAnonProgressByVisitorStep(anonVisitorId, input.stepId)
+  if (!row) throw new Error('failed_to_upsert_anon_message_journey_progress')
+  return row
+}
+
+export async function updateAnonProgressById(id: number, patch: AnonProgressUpdateInput): Promise<MessageJourneyAnonProgressRow> {
+  const db = getPool()
+  const sets: string[] = []
+  const args: any[] = []
+
+  if (patch.state !== undefined) { sets.push('state = ?'); args.push(patch.state) }
+  if (patch.firstSeenAt !== undefined) { sets.push('first_seen_at = ?'); args.push(patch.firstSeenAt) }
+  if (patch.lastSeenAt !== undefined) { sets.push('last_seen_at = ?'); args.push(patch.lastSeenAt) }
+  if (patch.completedAt !== undefined) { sets.push('completed_at = ?'); args.push(patch.completedAt) }
+  if (patch.completedByOutcomeId !== undefined) { sets.push('completed_by_outcome_id = ?'); args.push(patch.completedByOutcomeId) }
+  if (patch.sessionId !== undefined) { sets.push('session_id = ?'); args.push(patch.sessionId) }
+  if (patch.metadataJson !== undefined) { sets.push('metadata_json = ?'); args.push(patch.metadataJson) }
+
+  if (sets.length) {
+    await db.query(`UPDATE feed_anon_message_journey_progress SET ${sets.join(', ')} WHERE id = ?`, [...args, id])
+  }
+
+  const [rows] = await db.query(`${ANON_PROGRESS_SELECT_SQL} WHERE id = ? LIMIT 1`, [id])
+  const row = ((rows as any[])[0] as MessageJourneyAnonProgressRow) || null
   if (!row) throw new Error('not_found')
   return row
 }

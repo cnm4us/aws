@@ -447,6 +447,7 @@ function dateToMs(raw: string | null): number | null {
 
 async function applyJourneyGating(params: {
   userId: number | null
+  anonVisitorId?: string | null
   surface: MessageDecisionSurface
   surfaceTarget: { groupId: number | null; channelId: number | null }
   candidates: EligibleMessageCandidate[]
@@ -494,7 +495,25 @@ async function applyJourneyGating(params: {
   const userId = params.userId != null && Number.isFinite(Number(params.userId)) && Number(params.userId) > 0
     ? Math.round(Number(params.userId))
     : null
+  const anonVisitorId = userId == null ? String(params.anonVisitorId || '').trim() : ''
   if (userId == null) {
+    const completedByJourneyStep = new Set<string>()
+    if (anonVisitorId) {
+      const anonProgressRows = await messageJourneysRepo.listAnonProgressByVisitorJourneyIds(anonVisitorId, Array.from(stepsByJourney.keys()))
+      for (const row of anonProgressRows) {
+        if (String((row as any).state || '') !== 'completed') continue
+        completedByJourneyStep.add(`${Number((row as any).journey_id)}:${Number((row as any).step_id)}`)
+      }
+    }
+    const activeStepByJourney = new Map<number, (typeof steps)[number]>()
+    for (const [journeyId, journeySteps] of stepsByJourney.entries()) {
+      const sorted = journeySteps
+        .slice()
+        .sort((a, b) => Number(a.step_order) - Number(b.step_order) || Number(a.id) - Number(b.id))
+      const next = sorted.find((step) => !completedByJourneyStep.has(`${journeyId}:${Number(step.id)}`))
+      if (next) activeStepByJourney.set(journeyId, next)
+    }
+
     for (const c of inputCandidates) {
       const attached = stepsByMessage.get(Number(c.messageId)) || []
       if (!attached.length) {
@@ -543,8 +562,27 @@ async function applyJourneyGating(params: {
         if (dropReasons.length < 40) dropReasons.push({ messageId: c.messageId, reason: 'journey_surface_mismatch' })
         continue
       }
-      rejectedCount += 1
-      if (dropReasons.length < 40) dropReasons.push({ messageId: c.messageId, reason: 'journey_requires_user' })
+      const matches = attached
+        .filter((step) => {
+          const active = activeStepByJourney.get(Number(step.journey_id))
+          return !!active && Number(active.id) === Number(step.id)
+        })
+        .sort((a, b) => Number(a.step_order) - Number(b.step_order) || Number(a.id) - Number(b.id))
+      if (!matches.length) {
+        rejectedCount += 1
+        if (dropReasons.length < 40) dropReasons.push({ messageId: c.messageId, reason: 'journey_step_not_current' })
+        continue
+      }
+      const step = matches[0] as any
+      eligible.push({
+        ...c,
+        journeyId: Number(step.journey_id),
+        journeyStepId: Number(step.id),
+        journeyStepOrder: Number(step.step_order || 0),
+        journeyStepKey: String(step.step_key || ''),
+        journeyRulesetId: step.journey_ruleset_id == null ? null : Number(step.journey_ruleset_id),
+        deliveryContext: 'journey',
+      })
     }
     return { eligible, rejectedCount, dropReasons }
   }
@@ -679,6 +717,10 @@ export function buildDecisionInput(params: {
       },
       sessionId,
       userId: params.userId != null && Number.isFinite(Number(params.userId)) && Number(params.userId) > 0 ? Number(params.userId) : null,
+      anonVisitorId:
+        (params.userId != null && Number.isFinite(Number(params.userId)) && Number(params.userId) > 0)
+          ? null
+          : sessionId,
       viewerState: params.viewerState,
       counters,
     },
@@ -857,6 +899,7 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
         if (eligible.length > 0) {
           const gated = await applyJourneyGating({
             userId: input.userId,
+            anonVisitorId: input.anonVisitorId || input.sessionId || null,
             surface: input.surface,
             surfaceTarget: input.surfaceTarget,
             candidates: eligible,

@@ -112,6 +112,7 @@ export async function recordCtaOutcome(input: {
   occurredAt?: Date
   sessionId?: string | null
   userId?: number | null
+  anonVisitorId?: string | null
   messageId: number
   messageCampaignKey?: string | null
   deliveryContext?: MessageDeliveryContext | null
@@ -142,6 +143,9 @@ export async function recordCtaOutcome(input: {
   const outcomeStatus = normalizeOutcomeStatus(input.outcomeStatus)
   const sessionId = input.sessionId == null || input.sessionId === '' ? null : String(input.sessionId).trim()
   const userId = normalizeNullablePositiveInt(input.userId, 'invalid_user_id')
+  const anonVisitorId = userId == null
+    ? ((input.anonVisitorId == null || input.anonVisitorId === '') ? (sessionId || null) : String(input.anonVisitorId).trim())
+    : null
   const messageCampaignKey = normalizeNullableCampaignKey(input.messageCampaignKey)
   const deliveryContext = normalizeDeliveryContext(input.deliveryContext, 'standalone')
   const journeyId = normalizeNullablePositiveInt(input.journeyId, 'invalid_journey_id')
@@ -204,6 +208,7 @@ export async function recordCtaOutcome(input: {
     journeySignal = await messageJourneysSvc.recordJourneySignalFromCtaOutcome({
       outcomeRowId: Number(saved.row.id),
       userId,
+      anonVisitorId,
       messageId,
       sessionId,
       ctaSlot,
