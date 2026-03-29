@@ -3913,6 +3913,7 @@ function renderAdminMessageForm(opts: {
     <pre id="message-eligibility-dialog-json" style="margin:0; max-height:60vh; overflow:auto; border:1px solid rgba(255,255,255,0.18); border-radius:8px; padding:10px; background:#0b0b0b; color:#fff; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px;"></pre>
   </dialog>`
   body += `<script>
+    ${sharedMessagePreviewRendererScript()}
     (function () {
       const form = document.getElementById('message-editor-form');
       if (!form) return;
@@ -4383,33 +4384,7 @@ function renderAdminMessageForm(opts: {
         const ctaBgOpacity = clamp(vn('creativeCtaBgOpacity', 0.55), 0, 1);
         const ctaText = hex(v('creativeCtaTextColor', '#FFFFFF'), '#FFFFFF');
 
-        const msgTop = (msgPos === 'top' ? 2 : 42) + msgOffset;
-        const ctaTop = (ctaPos === 'top' ? 2 : 56) + ctaOffset;
-        const msgBottom = 2 + msgOffset;
-        const ctaBottom = 2 + ctaOffset;
-        if (msgPos === 'bottom') {
-          preview.message.style.top = '';
-          preview.message.style.bottom = clamp(msgBottom, 2, 92) + '%';
-        } else {
-          preview.message.style.bottom = '';
-          preview.message.style.top = clamp(msgTop, 2, 92) + '%';
-        }
-        if (ctaPos === 'bottom') {
-          preview.cta.style.top = '';
-          preview.cta.style.bottom = clamp(ctaBottom, 2, 94) + '%';
-        } else {
-          preview.cta.style.bottom = '';
-          preview.cta.style.top = clamp(ctaTop, 2, 94) + '%';
-        }
-
-        preview.message.style.display = msgEnabled ? 'block' : 'none';
-        preview.cta.style.display = ctaEnabled ? 'block' : 'none';
         syncWidgetEditorState();
-
-        preview.message.style.background = hexToRgba(msgBg, msgBgOpacity);
-        preview.message.style.color = msgText;
-        preview.cta.style.background = hexToRgba(ctaBg, ctaBgOpacity);
-        preview.cta.style.color = ctaText;
 
         const label = v('creativeMessageLabel', 'Message');
         const headline = v('headline', 'Message headline');
@@ -4446,103 +4421,59 @@ function renderAdminMessageForm(opts: {
         const slot2Style = slotStyle(2);
         const slot3Style = slotStyle(3);
 
-        const applySlotStyle = (btn, style) => {
-          if (!btn) return;
-          btn.style.background = style.bg ? hexToRgba(style.bg, style.bgOpacity) : 'rgba(0,0,0,0.5)';
-          btn.style.color = style.text || '#fff';
-        };
-
-        if (preview.messageLabel) preview.messageLabel.textContent = label;
-        if (preview.messageHeadline) preview.messageHeadline.textContent = headline;
-        if (preview.messageBody) {
-          preview.messageBody.textContent = body;
-          preview.messageBody.hidden = !body;
-        }
-        if (preview.slot1Btn) {
-          preview.slot1Btn.textContent = slot1;
-          preview.slot1Btn.style.display = ctaSlotCount >= 1 ? 'inline-flex' : 'none';
-          preview.slot1Btn.style.justifySelf = ctaLayout === 'stacked' ? 'stretch' : 'start';
-          preview.slot1Btn.style.width = ctaLayout === 'stacked' ? '100%' : '';
-          preview.slot1Btn.style.boxSizing = 'border-box';
-          preview.slot1Btn.style.whiteSpace = ctaLayout === 'stacked' ? 'normal' : 'nowrap';
-          preview.slot1Btn.style.wordBreak = ctaLayout === 'stacked' ? 'break-word' : '';
-          preview.slot1Btn.style.lineHeight = ctaLayout === 'stacked' ? '1.25' : '';
-          applySlotStyle(preview.slot1Btn, slot1Style);
-        }
-        if (preview.slot2Btn) {
-          preview.slot2Btn.textContent = slot2;
-          preview.slot2Btn.style.display = ctaSlotCount >= 2 ? 'inline-flex' : 'none';
-          preview.slot2Btn.style.justifySelf = ctaLayout === 'stacked' ? 'stretch' : (ctaSlotCount >= 3 ? 'center' : 'end');
-          preview.slot2Btn.style.width = ctaLayout === 'stacked' ? '100%' : '';
-          preview.slot2Btn.style.boxSizing = 'border-box';
-          preview.slot2Btn.style.whiteSpace = ctaLayout === 'stacked' ? 'normal' : 'nowrap';
-          preview.slot2Btn.style.wordBreak = ctaLayout === 'stacked' ? 'break-word' : '';
-          preview.slot2Btn.style.lineHeight = ctaLayout === 'stacked' ? '1.25' : '';
-          applySlotStyle(preview.slot2Btn, slot2Style);
-        }
-        if (preview.slot3Btn) {
-          preview.slot3Btn.textContent = slot3;
-          preview.slot3Btn.style.display = ctaSlotCount >= 3 ? 'inline-flex' : 'none';
-          preview.slot3Btn.style.justifySelf = ctaLayout === 'stacked' ? 'stretch' : 'end';
-          preview.slot3Btn.style.width = ctaLayout === 'stacked' ? '100%' : '';
-          preview.slot3Btn.style.boxSizing = 'border-box';
-          preview.slot3Btn.style.whiteSpace = ctaLayout === 'stacked' ? 'normal' : 'nowrap';
-          preview.slot3Btn.style.wordBreak = ctaLayout === 'stacked' ? 'break-word' : '';
-          preview.slot3Btn.style.lineHeight = ctaLayout === 'stacked' ? '1.25' : '';
-          applySlotStyle(preview.slot3Btn, slot3Style);
-        }
-        if (preview.ctaButtons) {
-          const stacked = ctaLayout === 'stacked';
-          preview.ctaButtons.style.display = stacked ? 'grid' : 'flex';
-          preview.ctaButtons.style.gridTemplateColumns = stacked ? '1fr' : '';
-        }
         form.querySelectorAll('[data-slot-row]').forEach((row) => {
           const slot = Number(row.getAttribute('data-slot-row') || '0');
           row.style.display = slot >= 1 && slot <= ctaSlotCount ? 'grid' : 'none';
         });
-
-        if (preview.overlay) preview.overlay.style.background = hexToRgba(bgOverlayColor, bgOverlayOpacity);
-        if (preview.modeBadge) {
-          const playbackLabel = bgMode === 'video' ? (' (' + (bgVideoPlayback === 'tap_to_play_sound' ? 'tap-to-play' : 'muted-autoplay') + ')') : '';
-          preview.modeBadge.textContent = 'Mode: ' + (bgMode || 'none') + playbackLabel + (bgUploadId ? (' #' + bgUploadId) : '');
-        }
         if (preview.videoPlaybackRow) preview.videoPlaybackRow.style.display = bgMode === 'video' ? '' : 'none';
         if (pickImageBtn) pickImageBtn.style.display = bgMode === 'image' ? '' : 'none';
         if (pickVideoBtn) pickVideoBtn.style.display = bgMode === 'video' ? '' : 'none';
+        let mediaUrl = '';
         if (preview.device) {
           const dprRaw = typeof window !== 'undefined' && Number.isFinite(window.devicePixelRatio) ? Number(window.devicePixelRatio) : 1;
           const dpr = Math.max(1, Math.min(3, Math.round(dprRaw * 100) / 100));
           const orientation = preview.device.clientWidth > preview.device.clientHeight ? 'landscape' : 'portrait';
-          const mediaUrl = bgUploadId
+          mediaUrl = bgUploadId
             ? (bgMode === 'image'
               ? ('/api/uploads/' + encodeURIComponent(String(bgUploadId)) + '/image?mode=image&usage=message_bg&orientation=' + encodeURIComponent(orientation) + '&dpr=' + encodeURIComponent(String(dpr)))
               : ('/api/uploads/' + encodeURIComponent(String(bgUploadId)) + '/thumb'))
             : '';
-          if ((bgMode === 'image' || bgMode === 'video') && mediaUrl) {
-            preview.device.style.backgroundImage = 'url("' + mediaUrl + '")';
-            preview.device.style.backgroundSize = 'cover';
-            preview.device.style.backgroundPosition = 'center';
-            preview.device.style.backgroundRepeat = 'no-repeat';
-            preview.device.style.backgroundColor = '#0B1320';
-          } else if (bgMode === 'video') {
-            preview.device.style.backgroundImage = '';
-            preview.device.style.backgroundSize = '';
-            preview.device.style.backgroundPosition = '';
-            preview.device.style.backgroundRepeat = '';
-            preview.device.style.background = 'linear-gradient(135deg,#0a1930,#1e3a8a)';
-          } else if (bgMode === 'image') {
-            preview.device.style.backgroundImage = '';
-            preview.device.style.backgroundSize = '';
-            preview.device.style.backgroundPosition = '';
-            preview.device.style.backgroundRepeat = '';
-            preview.device.style.background = 'linear-gradient(135deg,#1f2937,#4b5563)';
-          } else {
-            preview.device.style.backgroundImage = '';
-            preview.device.style.backgroundSize = '';
-            preview.device.style.backgroundPosition = '';
-            preview.device.style.backgroundRepeat = '';
-            preview.device.style.background = 'linear-gradient(130deg,#101828,#1f2937)';
-          }
+        }
+        if (window.__renderMessagePreview) {
+          window.__renderMessagePreview(preview, {
+            bgMode,
+            bgVideoPlayback,
+            bgUploadId,
+            bgOverlayColor,
+            bgOverlayOpacity,
+            mediaUrl,
+            message: {
+              enabled: msgEnabled,
+              position: msgPos,
+              offsetPct: msgOffset,
+              bgColor: msgBg,
+              bgOpacity: msgBgOpacity,
+              textColor: msgText,
+              label,
+              headline,
+              body,
+            },
+            cta: {
+              enabled: ctaEnabled,
+              layout: ctaLayout,
+              slotCount: ctaSlotCount,
+              position: ctaPos,
+              offsetPct: ctaOffset,
+              bgColor: ctaBg,
+              bgOpacity: ctaBgOpacity,
+              textColor: ctaText,
+              slots: [
+                { label: slot1, bgColor: slot1Style.bg, bgOpacity: slot1Style.bgOpacity, textColor: slot1Style.text },
+                { label: slot2, bgColor: slot2Style.bg, bgOpacity: slot2Style.bgOpacity, textColor: slot2Style.text },
+                { label: slot3, bgColor: slot3Style.bg, bgOpacity: slot3Style.bgOpacity, textColor: slot3Style.text },
+              ],
+            },
+          });
         }
       }
 
@@ -5814,6 +5745,133 @@ function buildMessageJourneyStepPayload(body: any): any {
   }
 }
 
+function sharedMessagePreviewRendererScript(): string {
+  return `
+    (function () {
+      if (typeof window === 'undefined' || window.__renderMessagePreview) return;
+      const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
+      const hex = (s, fallback) => /^#[0-9a-fA-F]{6}$/.test(String(s || '')) ? String(s).toUpperCase() : fallback;
+      const hexToRgba = (h, a) => {
+        const c = hex(h, '#000000').slice(1);
+        const r = parseInt(c.slice(0, 2), 16);
+        const g = parseInt(c.slice(2, 4), 16);
+        const b = parseInt(c.slice(4, 6), 16);
+        return 'rgba(' + r + ', ' + g + ', ' + b + ', ' + clamp(Number(a || 0), 0, 1) + ')';
+      };
+      window.__renderMessagePreview = function (preview, state) {
+        if (!preview || !preview.device) return;
+        const message = state && state.message ? state.message : {};
+        const cta = state && state.cta ? state.cta : {};
+        const bgMode = String(state && state.bgMode || 'none').toLowerCase();
+        const bgVideoPlayback = String(state && state.bgVideoPlayback || 'muted_autoplay').toLowerCase();
+        const bgOverlayColor = hex(state && state.bgOverlayColor, '#000000');
+        const bgOverlayOpacity = clamp(Number(state && state.bgOverlayOpacity || 0), 0, 1);
+        const bgUploadId = String(state && state.bgUploadId || '').trim();
+
+        const msgEnabled = !!message.enabled;
+        const msgPos = String(message.position || 'middle').toLowerCase();
+        const msgOffset = clamp(Number(message.offsetPct || 0), 0, 80);
+        const msgTop = (msgPos === 'top' ? 2 : 42) + msgOffset;
+        const msgBottom = 2 + msgOffset;
+        if (preview.message) {
+          if (msgPos === 'bottom') {
+            preview.message.style.top = '';
+            preview.message.style.bottom = clamp(msgBottom, 2, 92) + '%';
+          } else {
+            preview.message.style.bottom = '';
+            preview.message.style.top = clamp(msgTop, 2, 92) + '%';
+          }
+          preview.message.style.display = msgEnabled ? 'block' : 'none';
+          preview.message.style.background = hexToRgba(message.bgColor, message.bgOpacity);
+          preview.message.style.color = hex(message.textColor, '#FFFFFF');
+        }
+        if (preview.messageLabel) preview.messageLabel.textContent = String(message.label || 'Message');
+        if (preview.messageHeadline) preview.messageHeadline.textContent = String(message.headline || 'Message headline');
+        if (preview.messageBody) {
+          const bodyText = String(message.body || '').trim();
+          preview.messageBody.textContent = bodyText;
+          preview.messageBody.hidden = !bodyText;
+        }
+
+        const ctaEnabled = !!cta.enabled;
+        const ctaPos = String(cta.position || 'middle').toLowerCase();
+        const ctaOffset = clamp(Number(cta.offsetPct || 0), 0, 80);
+        const ctaTop = (ctaPos === 'top' ? 2 : 56) + ctaOffset;
+        const ctaBottom = 2 + ctaOffset;
+        if (preview.cta) {
+          if (ctaPos === 'bottom') {
+            preview.cta.style.top = '';
+            preview.cta.style.bottom = clamp(ctaBottom, 2, 94) + '%';
+          } else {
+            preview.cta.style.bottom = '';
+            preview.cta.style.top = clamp(ctaTop, 2, 94) + '%';
+          }
+          preview.cta.style.display = ctaEnabled ? 'block' : 'none';
+          preview.cta.style.background = hexToRgba(cta.bgColor, cta.bgOpacity);
+          preview.cta.style.color = hex(cta.textColor, '#FFFFFF');
+        }
+        const slotCount = clamp(Number(cta.slotCount || 1), 1, 3);
+        const layout = String(cta.layout || 'inline').toLowerCase();
+        if (preview.ctaButtons) {
+          const stacked = layout === 'stacked';
+          preview.ctaButtons.style.display = stacked ? 'grid' : 'flex';
+          preview.ctaButtons.style.gridTemplateColumns = stacked ? '1fr' : '';
+        }
+        const slots = Array.isArray(cta.slots) ? cta.slots : [];
+        const applySlot = (btn, idx, fallbackLabel) => {
+          if (!btn) return;
+          const slot = slots[idx - 1] || {};
+          btn.textContent = String(slot.label || fallbackLabel);
+          btn.style.display = slotCount >= idx ? 'inline-flex' : 'none';
+          btn.style.justifySelf = layout === 'stacked' ? 'stretch' : (idx === 1 ? 'start' : (idx === 2 ? (slotCount >= 3 ? 'center' : 'end') : 'end'));
+          btn.style.width = layout === 'stacked' ? '100%' : '';
+          btn.style.boxSizing = 'border-box';
+          btn.style.whiteSpace = layout === 'stacked' ? 'normal' : 'nowrap';
+          btn.style.wordBreak = layout === 'stacked' ? 'break-word' : '';
+          btn.style.lineHeight = layout === 'stacked' ? '1.25' : '';
+          btn.style.background = slot.bgColor ? hexToRgba(slot.bgColor, slot.bgOpacity == null ? 1 : slot.bgOpacity) : 'rgba(0,0,0,0.5)';
+          btn.style.color = slot.textColor ? hex(slot.textColor, '#FFFFFF') : '#fff';
+        };
+        applySlot(preview.slot1Btn, 1, 'Primary');
+        applySlot(preview.slot2Btn, 2, 'Secondary');
+        applySlot(preview.slot3Btn, 3, 'Tertiary');
+
+        if (preview.overlay) preview.overlay.style.background = hexToRgba(bgOverlayColor, bgOverlayOpacity);
+        if (preview.modeBadge) {
+          const playbackLabel = bgMode === 'video' ? (' (' + (bgVideoPlayback === 'tap_to_play_sound' ? 'tap-to-play' : 'muted-autoplay') + ')') : '';
+          preview.modeBadge.textContent = 'Mode: ' + (bgMode || 'none') + playbackLabel + (bgUploadId ? (' #' + bgUploadId) : '');
+        }
+        const mediaUrl = String(state && state.mediaUrl || '').trim();
+        if ((bgMode === 'image' || bgMode === 'video') && mediaUrl) {
+          preview.device.style.backgroundImage = 'url("' + mediaUrl + '")';
+          preview.device.style.backgroundSize = 'cover';
+          preview.device.style.backgroundPosition = 'center';
+          preview.device.style.backgroundRepeat = 'no-repeat';
+          preview.device.style.backgroundColor = '#0B1320';
+        } else if (bgMode === 'video') {
+          preview.device.style.backgroundImage = '';
+          preview.device.style.backgroundSize = '';
+          preview.device.style.backgroundPosition = '';
+          preview.device.style.backgroundRepeat = '';
+          preview.device.style.background = 'linear-gradient(135deg,#0a1930,#1e3a8a)';
+        } else if (bgMode === 'image') {
+          preview.device.style.backgroundImage = '';
+          preview.device.style.backgroundSize = '';
+          preview.device.style.backgroundPosition = '';
+          preview.device.style.backgroundRepeat = '';
+          preview.device.style.background = 'linear-gradient(135deg,#1f2937,#4b5563)';
+        } else {
+          preview.device.style.backgroundImage = '';
+          preview.device.style.backgroundSize = '';
+          preview.device.style.backgroundPosition = '';
+          preview.device.style.backgroundRepeat = '';
+          preview.device.style.background = 'linear-gradient(130deg,#101828,#1f2937)';
+        }
+      };
+    })();
+  `
+}
+
 function renderAdminMessageJourneyForm(opts: {
   title: string
   action: string
@@ -6147,6 +6205,7 @@ pagesRouter.get('/admin/message-journeys/:id', async (req: any, res: any) => {
       })
     }
     const messageCtaPickerOptionsByMessageId: Record<string, Array<{ value: string; label: string; slot: number; intentKey: string }>> = {}
+    const messagePreviewById: Record<string, any> = {}
     for (const m of messages) {
       const mid = Number((m as any).id || 0)
       if (!Number.isFinite(mid) || mid <= 0) continue
@@ -6171,6 +6230,59 @@ pagesRouter.get('/admin/message-journeys/:id', async (req: any, res: any) => {
       }
       options.sort((a, b) => a.slot - b.slot)
       messageCtaPickerOptionsByMessageId[String(mid)] = options
+      const bg = creative?.background && typeof creative.background === 'object' ? creative.background : {}
+      const msgWidget = creative?.widgets?.message && typeof creative.widgets.message === 'object' ? creative.widgets.message : {}
+      const ctaWidget = creative?.widgets?.cta && typeof creative.widgets.cta === 'object' ? creative.widgets.cta : {}
+      const uploadId = String(bg.uploadId || '').trim()
+      const previewSlots = options.slice(0, 3).map((o) => {
+        const slotDef = slots.find((s: any) => Number((s as any)?.slot || 0) === Number(o.slot))
+        const styleOverride = slotDef && typeof slotDef.styleOverride === 'object' ? slotDef.styleOverride : {}
+        const slotLabelOverride = String((slotDef as any)?.labelOverride || '').trim()
+        const ctaDefinitionId = Number((slotDef as any)?.ctaDefinitionId || 0)
+        const def = ctaDefsById.get(ctaDefinitionId)
+        return {
+          label: slotLabelOverride || String(def?.labelDefault || `Slot ${o.slot}`),
+          bgColor: String((styleOverride as any).bgColor || ''),
+          bgOpacity: Number((styleOverride as any).bgOpacity),
+          textColor: String((styleOverride as any).textColor || ''),
+        }
+      })
+      messagePreviewById[String(mid)] = {
+        id: mid,
+        name: String((m as any).name || `Message #${mid}`),
+        mediaUrl: uploadId
+          ? (String(bg.mode || '').toLowerCase() === 'image'
+            ? `/api/uploads/${encodeURIComponent(uploadId)}/image?mode=image&usage=message_bg&orientation=portrait&dpr=1`
+            : `/api/uploads/${encodeURIComponent(uploadId)}/thumb`)
+          : '',
+        bgMode: String(bg.mode || 'none').toLowerCase(),
+        bgVideoPlayback: String(bg.videoPlaybackMode || 'muted_autoplay').toLowerCase(),
+        bgUploadId: uploadId,
+        bgOverlayColor: String(bg.overlayColor || '#000000'),
+        bgOverlayOpacity: Number(bg.overlayOpacity),
+        message: {
+          enabled: !!msgWidget.enabled,
+          position: String(msgWidget.position || 'middle').toLowerCase(),
+          offsetPct: Number(msgWidget.yOffsetPct),
+          bgColor: String(msgWidget.bgColor || '#0B1320'),
+          bgOpacity: Number(msgWidget.bgOpacity),
+          textColor: String(msgWidget.textColor || '#FFFFFF'),
+          label: String(msgWidget.label || 'Message'),
+          headline: String((m as any).headline || msgWidget.headline || ''),
+          body: String((m as any).body || msgWidget.body || ''),
+        },
+        cta: {
+          enabled: !!ctaWidget.enabled,
+          layout: String(ctaWidget.layout || 'inline').toLowerCase(),
+          slotCount: Number(ctaWidget.count || (previewSlots.length || 1)),
+          position: String(ctaWidget.position || 'bottom').toLowerCase(),
+          offsetPct: Number(ctaWidget.yOffsetPct),
+          bgColor: String(ctaWidget.bgColor || '#0B1320'),
+          bgOpacity: Number(ctaWidget.bgOpacity),
+          textColor: String(ctaWidget.textColor || '#FFFFFF'),
+          slots: previewSlots,
+        },
+      }
     }
 
     const cookies = parseCookies(req.headers.cookie)
@@ -6352,14 +6464,19 @@ pagesRouter.get('/admin/message-journeys/:id', async (req: any, res: any) => {
         body += `<div style="font-weight:800; letter-spacing:0.02em; margin:0 0 8px 0">STEP ${idx + 1}</div>`
         body += `<div class="field-hint" style="margin:0 0 8px 0; display:none" data-internal-step-meta="1">Internal key: ${escapeHtml(String(step.stepKey || ''))} | Order: ${Number(step.stepOrder || 0)}</div>`
         body += `<div style="display:grid; grid-template-columns:minmax(0,1fr); gap:10px">`
-        body += `<label>Message<select name="messageId" required>`
+        body += `<label>Message</label>`
+        body += `<select name="messageId" required style="width:100%">`
         body += `<option value="">Select message</option>`
         for (const m of messages) {
           const mid = Number(m.id || 0)
           const mname = messageNameById.get(mid) || `Message #${mid}`
-          body += `<option value="${mid}"${mid === Number(step.messageId) ? ' selected' : ''}>${escapeHtml(mname)} [#${mid}]</option>`
+          body += `<option value="${mid}"${mid === Number(step.messageId) ? ' selected' : ''}>${escapeHtml(`${mname} [#${mid}]`)}</option>`
         }
-        body += `</select></label>`
+        body += `</select>`
+        body += `<div style="display:flex; justify-content:flex-end; gap:8px">`
+        body += `<a class="btn js-message-edit-link" href="${Number(step.messageId) > 0 ? `/admin/messages/${Number(step.messageId)}` : '#'}" title="Open selected message" style="width:40px; min-width:40px; height:40px; padding:0; display:inline-flex; align-items:center; justify-content:center; font-size:16px; line-height:1;">🔗</a>`
+        body += `<button type="button" class="btn js-message-preview-open" title="Preview selected message" style="width:40px; min-width:40px; height:40px; padding:0; display:inline-flex; align-items:center; justify-content:center; font-size:16px; line-height:1;">👁</button>`
+        body += `</div>`
         body += `<label>Progression Policy<select name="progressionPolicy" class="js-progression-policy">`
         for (const opt of MESSAGE_JOURNEY_STEP_PROGRESSION_POLICY_OPTIONS) {
           body += `<option value="${escapeHtml(opt.value)}"${stepPolicy.policy === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
@@ -6395,13 +6512,18 @@ pagesRouter.get('/admin/message-journeys/:id', async (req: any, res: any) => {
       if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
       body += `<div class="section journey-card"><div class="section-title">New Step</div>`
       body += `<div style="display:grid; grid-template-columns:minmax(0,1fr); gap:10px">`
-      body += `<label>Message<select name="createMessageId" required><option value="">Select message</option>`
+      body += `<label>Message</label>`
+      body += `<select name="createMessageId" required style="width:100%"><option value="">Select message</option>`
       for (const m of messages) {
         const mid = Number(m.id || 0)
         const mname = messageNameById.get(mid) || `Message #${mid}`
-        body += `<option value="${mid}"${newStepValues.messageId === String(mid) ? ' selected' : ''}>${escapeHtml(mname)} [#${mid}]</option>`
+        body += `<option value="${mid}"${newStepValues.messageId === String(mid) ? ' selected' : ''}>${escapeHtml(`${mname} [#${mid}]`)}</option>`
       }
-      body += `</select></label>`
+      body += `</select>`
+      body += `<div style="display:flex; justify-content:flex-end; gap:8px">`
+      body += `<a class="btn js-message-edit-link" href="${newStepValues.messageId ? `/admin/messages/${encodeURIComponent(String(newStepValues.messageId))}` : '#'}" title="Open selected message" style="width:40px; min-width:40px; height:40px; padding:0; display:inline-flex; align-items:center; justify-content:center; font-size:16px; line-height:1;">🔗</a>`
+      body += `<button type="button" class="btn js-message-preview-open" title="Preview selected message" style="width:40px; min-width:40px; height:40px; padding:0; display:inline-flex; align-items:center; justify-content:center; font-size:16px; line-height:1;">👁</button>`
+      body += `</div>`
       body += `<label>Progression Policy<select name="createProgressionPolicy" class="js-progression-policy">`
       for (const opt of MESSAGE_JOURNEY_STEP_PROGRESSION_POLICY_OPTIONS) {
         body += `<option value="${escapeHtml(opt.value)}"${(newStepValues.progressionPolicy || 'on_any_completion') === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
@@ -6434,7 +6556,32 @@ pagesRouter.get('/admin/message-journeys/:id', async (req: any, res: any) => {
       </div>
       <pre id="journey-eligibility-dialog-json" style="margin:0; max-height:60vh; overflow:auto; border:1px solid rgba(255,255,255,0.18); border-radius:8px; padding:10px; background:#0b0b0b; color:#fff; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px;"></pre>
     </dialog>`
+    body += `<dialog id="journey-message-preview-dialog" style="max-width:560px; width:min(92vw, 560px); border:1px solid #444; border-radius:10px; padding:14px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px;">
+        <strong id="journey-message-preview-title">Message Preview</strong>
+        <button type="button" id="journey-message-preview-close" class="btn" aria-label="Close dialog" style="width:30px; min-width:30px; height:30px; padding:0; border-radius:999px; border:1px solid #000; background:#000; color:#fff; display:inline-flex; align-items:center; justify-content:center; font-size:16px; font-weight:900; line-height:1;">×</button>
+      </div>
+      <div id="journey-message-preview-shell" style="border:1px solid rgba(96,165,250,0.6); border-radius:12px; background:linear-gradient(180deg, rgba(28,45,58,0.72) 0%, rgba(12,16,20,0.72) 100%); overflow:hidden">
+        <div id="journey-message-preview-device" style="width:100%; max-width:100%; aspect-ratio:9/16; margin:0; background:linear-gradient(130deg,#101828,#1f2937); position:relative">
+          <div id="journey-message-preview-overlay" style="position:absolute; inset:0;"></div>
+          <div id="journey-message-preview-mode-badge" style="position:absolute; top:10px; right:10px; z-index:2; border:1px solid rgba(255,255,255,0.25); border-radius:999px; padding:3px 8px; font-size:11px; background:rgba(0,0,0,0.45)">Mode: none</div>
+          <div id="journey-message-preview-message" style="display:none; position:absolute; left:14px; right:14px; z-index:2; border:1px solid rgba(255,255,255,0.24); border-radius:10px; padding:10px">
+            <div id="journey-message-preview-message-label" style="font-size:12px; opacity:0.9; margin-bottom:4px">Message</div>
+            <div id="journey-message-preview-message-headline" style="font-size:24px; line-height:1.18; font-weight:800; margin-bottom:8px">Message headline</div>
+            <div id="journey-message-preview-message-body" hidden style="opacity:0.9; margin-bottom:8px"></div>
+          </div>
+          <div id="journey-message-preview-cta" style="display:none; position:absolute; left:14px; right:14px; z-index:2; border:1px solid rgba(255,255,255,0.24); border-radius:10px; padding:8px">
+            <div id="journey-message-preview-cta-buttons" style="display:flex; justify-content:space-between; align-items:center; gap:8px">
+              <span id="journey-message-preview-slot-1-btn" class="btn" style="justify-self:start; border:1px solid rgba(255,255,255,0.45); border-radius:11px; background:rgba(0,0,0,0.5); padding:8px 12px; display:none; text-align:center; white-space:nowrap; box-sizing:border-box">Primary</span>
+              <span id="journey-message-preview-slot-2-btn" class="btn" style="justify-self:center; border:1px solid rgba(255,255,255,0.45); border-radius:11px; background:rgba(0,0,0,0.5); padding:8px 12px; display:none; text-align:center; white-space:nowrap; box-sizing:border-box">Secondary</span>
+              <span id="journey-message-preview-slot-3-btn" class="btn" style="justify-self:end; border:1px solid rgba(255,255,255,0.45); border-radius:11px; background:rgba(0,0,0,0.5); padding:8px 12px; display:none; text-align:center; white-space:nowrap; box-sizing:border-box">Tertiary</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </dialog>`
     body += `<script>
+      ${sharedMessagePreviewRendererScript()}
       (function () {
         const sectionToggles = document.querySelectorAll('.journey-section-toggle[data-target]');
         const setExpanded = (btn, expanded) => {
@@ -6497,6 +6644,36 @@ pagesRouter.get('/admin/message-journeys/:id', async (req: any, res: any) => {
             const y = ev.clientY;
             const outside = x < rect.left || x > rect.right || y < rect.top || y > rect.bottom;
             if (outside && typeof rulesetDialog.close === 'function') rulesetDialog.close();
+          });
+        }
+        const messagePreviewById = ${JSON.stringify(messagePreviewById)};
+        const messagePreviewDialog = document.getElementById('journey-message-preview-dialog');
+        const messagePreviewClose = document.getElementById('journey-message-preview-close');
+        const messagePreviewTitle = document.getElementById('journey-message-preview-title');
+        const messagePreview = {
+          device: document.getElementById('journey-message-preview-device'),
+          overlay: document.getElementById('journey-message-preview-overlay'),
+          modeBadge: document.getElementById('journey-message-preview-mode-badge'),
+          message: document.getElementById('journey-message-preview-message'),
+          cta: document.getElementById('journey-message-preview-cta'),
+          ctaButtons: document.getElementById('journey-message-preview-cta-buttons'),
+          messageLabel: document.getElementById('journey-message-preview-message-label'),
+          messageHeadline: document.getElementById('journey-message-preview-message-headline'),
+          messageBody: document.getElementById('journey-message-preview-message-body'),
+          slot1Btn: document.getElementById('journey-message-preview-slot-1-btn'),
+          slot2Btn: document.getElementById('journey-message-preview-slot-2-btn'),
+          slot3Btn: document.getElementById('journey-message-preview-slot-3-btn'),
+        };
+        if (messagePreviewClose && messagePreviewDialog) {
+          messagePreviewClose.addEventListener('click', () => {
+            if (typeof messagePreviewDialog.close === 'function') messagePreviewDialog.close();
+          });
+          messagePreviewDialog.addEventListener('click', (ev) => {
+            const rect = messagePreviewDialog.getBoundingClientRect();
+            const x = ev.clientX;
+            const y = ev.clientY;
+            const outside = x < rect.left || x > rect.right || y < rect.top || y > rect.bottom;
+            if (outside && typeof messagePreviewDialog.close === 'function') messagePreviewDialog.close();
           });
         }
         const ctaOptionsByMessageId = ${JSON.stringify(messageCtaPickerOptionsByMessageId)};
@@ -6567,16 +6744,42 @@ pagesRouter.get('/admin/message-journeys/:id', async (req: any, res: any) => {
           const policySel = form.querySelector('.js-progression-policy');
           const messageSel = form.querySelector('select[name="messageId"], select[name="createMessageId"]');
           const ctaPickerSel = form.querySelector('.js-cta-picker');
+          const editLink = form.querySelector('.js-message-edit-link');
+          const syncMessageLink = () => {
+            if (!editLink || !messageSel) return;
+            const messageId = String(messageSel.value || '').trim();
+            const enabled = /^\\d+$/.test(messageId);
+            editLink.setAttribute('href', enabled ? ('/admin/messages/' + messageId) : '#');
+            editLink.style.opacity = enabled ? '1' : '0.4';
+            editLink.style.pointerEvents = enabled ? 'auto' : 'none';
+          };
           if (policySel) policySel.addEventListener('change', function () { sync(form); });
           if (messageSel) messageSel.addEventListener('change', function () {
             const picker = form.querySelector('.js-cta-picker');
             if (picker) picker.setAttribute('data-selected', '');
             sync(form);
+            syncMessageLink();
           });
           if (ctaPickerSel) ctaPickerSel.addEventListener('change', function () {
             ctaPickerSel.setAttribute('data-selected', String(ctaPickerSel.value || ''));
             sync(form);
           });
+          const previewBtn = form.querySelector('.js-message-preview-open');
+          if (previewBtn) {
+            previewBtn.addEventListener('click', function () {
+              const selected = form.querySelector('select[name="messageId"], select[name="createMessageId"]');
+              const messageId = selected ? String(selected.value || '') : '';
+              const payload = messagePreviewById[messageId];
+              if (!payload || !window.__renderMessagePreview || !messagePreviewDialog) return;
+              if (messagePreviewTitle) {
+                const name = String(payload.name || ('Message #' + messageId));
+                messagePreviewTitle.textContent = 'Message Preview — ' + name + ' [#' + messageId + ']';
+              }
+              window.__renderMessagePreview(messagePreview, payload);
+              if (typeof messagePreviewDialog.showModal === 'function') messagePreviewDialog.showModal();
+            });
+          }
+          syncMessageLink();
           sync(form);
         });
 
