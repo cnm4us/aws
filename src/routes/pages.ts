@@ -675,6 +675,7 @@ type AdminNavKey =
   | 'message_analytics'
   | 'analytics_sink'
   | 'debug'
+  | 'dev_tools'
 	| 'settings'
 	| 'dev';
 
@@ -704,9 +705,16 @@ const ADMIN_NAV_ITEMS: Array<{ key: AdminNavKey; label: string; href: string }> 
   { key: 'message_analytics', label: 'Message Analytics', href: '/admin/message-analytics' },
   { key: 'analytics_sink', label: 'Analytics Sink', href: '/admin/analytics-sink' },
   { key: 'debug', label: 'Debug', href: '/admin/debug' },
+  { key: 'dev_tools', label: 'Dev Tools', href: '/admin/dev-tools' },
   { key: 'settings', label: 'Settings', href: '/admin/settings' },
   { key: 'dev', label: 'Dev', href: '/admin/dev' },
 ];
+
+function isAdminDevToolsEnabled(): boolean {
+  const env = String(process.env.NODE_ENV || '').trim().toLowerCase()
+  if (env !== 'production') return true
+  return String(process.env.ENABLE_ADMIN_DEV_TOOLS || '').trim() === '1'
+}
 
 function renderAdminPage(opts: { title: string; bodyHtml: string; active?: AdminNavKey }): string {
   const safeTitle = escapeHtml(opts.title || 'Admin');
@@ -8022,6 +8030,106 @@ pagesRouter.get('/admin/debug', async (_req: any, res: any) => {
     return res.send(doc)
   } catch (err) {
     return res.status(500).send('Failed to load debug controls')
+  }
+})
+
+pagesRouter.get('/admin/dev-tools', async (req: any, res: any) => {
+  if (!isAdminDevToolsEnabled()) return res.status(404).send('Not found')
+  const cookies = parseCookies(req.headers?.cookie || '')
+  const csrfToken = cookies['csrf'] || ''
+  const notice = req.query?.notice ? String(req.query.notice) : ''
+  const error = req.query?.error ? String(req.query.error) : ''
+
+  let body = '<h1>Dev Tools</h1>'
+  body += '<div class="toolbar"><div><span class="pill">Development Reset Actions</span></div><div></div></div>'
+  body += '<p class="field-hint">Use these while testing. These actions are destructive and intended for development only.</p>'
+  if (notice) body += `<div class="notice">${escapeHtml(notice)}</div>`
+  if (error) body += `<div class="error">${escapeHtml(error)}</div>`
+
+  const addCsrf = csrfToken ? `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />` : ''
+
+  body += `<div class="section"><div class="section-title">Safe Reset</div>`
+  body += `<form method="post" action="/admin/dev-tools/clear-my-journey-progress" style="margin:0 0 10px 0">`
+  body += addCsrf
+  body += `<button class="btn" type="submit">Clear My Journey Progress</button>`
+  body += `<div class="field-hint" style="margin-top:6px">Resets only the logged-in admin user journey progress.</div>`
+  body += `</form>`
+  body += `<form method="post" action="/admin/dev-tools/clear-decision-sessions" style="margin:0">`
+  body += addCsrf
+  body += `<button class="btn" type="submit">Clear Decision Sessions</button>`
+  body += `<div class="field-hint" style="margin-top:6px">Resets cadence/session state used by the decision engine.</div>`
+  body += `</form>`
+  body += `</div>`
+
+  body += `<div class="section"><div class="section-title">Destructive Reset</div>`
+  body += `<form method="post" action="/admin/dev-tools/clear-suppressions" style="margin:0 0 10px 0" onsubmit="return confirm('Clear all suppressions and decision sessions?')">`
+  body += addCsrf
+  body += `<button class="btn" type="submit" style="background:#5a1d1d;border-color:#8a2d2d">Clear Suppressions</button>`
+  body += `<div class="field-hint" style="margin-top:6px">Clears <code>feed_message_user_suppressions</code> and <code>message_decision_sessions</code>.</div>`
+  body += `</form>`
+  body += `<form method="post" action="/admin/dev-tools/clear-journey-progress" style="margin:0" onsubmit="return confirm('Clear all user and anonymous journey progress?')">`
+  body += addCsrf
+  body += `<button class="btn" type="submit" style="background:#5a1d1d;border-color:#8a2d2d">Clear Journey Progress (All)</button>`
+  body += `<div class="field-hint" style="margin-top:6px">Clears <code>feed_user_message_journey_progress</code> and <code>feed_anon_message_journey_progress</code>.</div>`
+  body += `</form>`
+  body += `</div>`
+
+  const doc = renderAdminPage({ title: 'Dev Tools', bodyHtml: body, active: 'dev_tools' })
+  res.set('Content-Type', 'text/html; charset=utf-8')
+  return res.send(doc)
+})
+
+pagesRouter.post('/admin/dev-tools/clear-suppressions', async (_req: any, res: any) => {
+  if (!isAdminDevToolsEnabled()) return res.status(404).send('Not found')
+  const db = getPool()
+  try {
+    const [suppressionResult] = await db.query(`DELETE FROM feed_message_user_suppressions`)
+    const [sessionResult] = await db.query(`DELETE FROM message_decision_sessions`)
+    const suppressions = Number((suppressionResult as any)?.affectedRows || 0)
+    const sessions = Number((sessionResult as any)?.affectedRows || 0)
+    return res.redirect(`/admin/dev-tools?notice=${encodeURIComponent(`Cleared suppressions=${suppressions}, decision_sessions=${sessions}`)}`)
+  } catch (err: any) {
+    return res.redirect(`/admin/dev-tools?error=${encodeURIComponent(String(err?.message || 'clear_suppressions_failed'))}`)
+  }
+})
+
+pagesRouter.post('/admin/dev-tools/clear-journey-progress', async (_req: any, res: any) => {
+  if (!isAdminDevToolsEnabled()) return res.status(404).send('Not found')
+  const db = getPool()
+  try {
+    const [userResult] = await db.query(`DELETE FROM feed_user_message_journey_progress`)
+    const [anonResult] = await db.query(`DELETE FROM feed_anon_message_journey_progress`)
+    const users = Number((userResult as any)?.affectedRows || 0)
+    const anonymous = Number((anonResult as any)?.affectedRows || 0)
+    return res.redirect(`/admin/dev-tools?notice=${encodeURIComponent(`Cleared journey_progress users=${users}, anonymous=${anonymous}`)}`)
+  } catch (err: any) {
+    return res.redirect(`/admin/dev-tools?error=${encodeURIComponent(String(err?.message || 'clear_journey_progress_failed'))}`)
+  }
+})
+
+pagesRouter.post('/admin/dev-tools/clear-my-journey-progress', async (req: any, res: any) => {
+  if (!isAdminDevToolsEnabled()) return res.status(404).send('Not found')
+  const userId = Number(req.user?.id || 0)
+  if (!Number.isFinite(userId) || userId <= 0) return res.redirect('/admin/dev-tools?error=invalid_user')
+  const db = getPool()
+  try {
+    const [result] = await db.query(`DELETE FROM feed_user_message_journey_progress WHERE user_id = ?`, [userId])
+    const count = Number((result as any)?.affectedRows || 0)
+    return res.redirect(`/admin/dev-tools?notice=${encodeURIComponent(`Cleared my journey progress rows=${count}`)}`)
+  } catch (err: any) {
+    return res.redirect(`/admin/dev-tools?error=${encodeURIComponent(String(err?.message || 'clear_my_journey_progress_failed'))}`)
+  }
+})
+
+pagesRouter.post('/admin/dev-tools/clear-decision-sessions', async (_req: any, res: any) => {
+  if (!isAdminDevToolsEnabled()) return res.status(404).send('Not found')
+  const db = getPool()
+  try {
+    const [result] = await db.query(`DELETE FROM message_decision_sessions`)
+    const count = Number((result as any)?.affectedRows || 0)
+    return res.redirect(`/admin/dev-tools?notice=${encodeURIComponent(`Cleared decision sessions rows=${count}`)}`)
+  } catch (err: any) {
+    return res.redirect(`/admin/dev-tools?error=${encodeURIComponent(String(err?.message || 'clear_decision_sessions_failed'))}`)
   }
 })
 
