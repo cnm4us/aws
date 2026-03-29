@@ -1,5 +1,6 @@
 import { DomainError, ForbiddenError, NotFoundError } from '../../core/errors'
 import { context, trace } from '@opentelemetry/api'
+import { getPool } from '../../db'
 import { getLogger } from '../../lib/logger'
 import * as repo from './repo'
 import * as messageCtasSvc from '../message-cta-definitions/service'
@@ -204,6 +205,54 @@ function normalizeSurfaceTargeting(raw: any, fallbackSurface: MessageSurface): A
     out.push({ surface: fallbackSurface, targetingMode: 'all', targetIds: [] })
   }
   return out
+}
+
+async function assertSurfaceTargetingTargetIds(targeting: Array<{
+  surface: MessageSurface
+  targetingMode: 'all' | 'selected'
+  targetIds: number[]
+}>): Promise<void> {
+  const groupIds = Array.from(new Set(
+    targeting
+      .filter((item) => item.surface === 'group_feed' && item.targetingMode === 'selected')
+      .flatMap((item) => item.targetIds)
+      .map((n) => Math.round(Number(n)))
+      .filter((n) => Number.isFinite(n) && n > 0)
+  ))
+  const channelIds = Array.from(new Set(
+    targeting
+      .filter((item) => item.surface === 'channel_feed' && item.targetingMode === 'selected')
+      .flatMap((item) => item.targetIds)
+      .map((n) => Math.round(Number(n)))
+      .filter((n) => Number.isFinite(n) && n > 0)
+  ))
+
+  if (!groupIds.length && !channelIds.length) return
+  const db = getPool()
+
+  if (groupIds.length) {
+    const placeholders = groupIds.map(() => '?').join(',')
+    const [rows] = await db.query(
+      `SELECT id FROM spaces WHERE type = 'group' AND id IN (${placeholders})`,
+      groupIds as any
+    )
+    const found = new Set((rows as any[]).map((row) => Math.round(Number(row.id || 0))).filter((n) => Number.isFinite(n) && n > 0))
+    if (found.size !== groupIds.length) throw new DomainError('invalid_surface_targeting', 'invalid_surface_targeting', 400)
+  }
+
+  if (channelIds.length) {
+    const placeholders = channelIds.map(() => '?').join(',')
+    const [rows] = await db.query(
+      `SELECT id
+         FROM spaces
+        WHERE type = 'channel'
+          AND slug NOT IN ('global', 'global-feed')
+          AND id IN (${placeholders})`,
+      channelIds as any
+    )
+    const found = new Set((rows as any[]).map((row) => Math.round(Number(row.id || 0))).filter((n) => Number.isFinite(n) && n > 0))
+    if (found.size !== channelIds.length) throw new DomainError('invalid_surface_targeting', 'invalid_surface_targeting', 400)
+  }
 }
 
 function normalizePriority(raw: any, fallback = 100): number {
@@ -752,6 +801,7 @@ export async function createForAdmin(input: any, actorUserId: number): Promise<M
     'eligibility_ruleset_id'
   )
   const surfaceTargeting = normalizeSurfaceTargeting(input?.surfaceTargeting ?? input?.surface_targeting, appliesToSurface)
+  await assertSurfaceTargetingTargetIds(surfaceTargeting)
   const priority = normalizePriority(input?.priority, 100)
   const status = normalizeStatus(input?.status, 'draft')
   const { startsAt, endsAt } = normalizeDateWindow(input?.startsAt ?? input?.starts_at, input?.endsAt ?? input?.ends_at)
@@ -882,6 +932,7 @@ export async function updateForAdmin(id: number, patch: any, actorUserId: number
     patch?.surfaceTargeting !== undefined || patch?.surface_targeting !== undefined
       ? normalizeSurfaceTargeting(patch?.surfaceTargeting ?? patch?.surface_targeting, nextAppliesToSurface)
       : undefined
+  if (nextSurfaceTargeting) await assertSurfaceTargetingTargetIds(nextSurfaceTargeting)
   const nextPriority = patch?.priority !== undefined ? normalizePriority(patch.priority, Number(existing.priority)) : Number(existing.priority)
   const nextStatus = patch?.status !== undefined ? normalizeStatus(patch.status, existing.status) : existing.status
 

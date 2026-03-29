@@ -3648,6 +3648,52 @@ function renderAdminMessageForm(opts: {
       font-weight: 900;
       margin-bottom: 10px;
     }
+    #message-editor-form .section-toggle {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border: 0;
+      background: transparent;
+      color: #fff;
+      font-size: 18px;
+      font-weight: 900;
+      text-align: left;
+      padding: 0;
+      margin: 10px 0 6px;
+      cursor: pointer;
+    }
+    #message-editor-form .section-toggle-chevron {
+      font-size: 16px;
+      line-height: 1;
+      opacity: 0.85;
+      width: 14px;
+      display: inline-flex;
+      justify-content: center;
+      flex: 0 0 14px;
+    }
+    #message-editor-form .section-header-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin: 10px 0 6px;
+    }
+    #message-editor-form .section-enable-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 800;
+      font-size: 12px;
+      color: #dbe7f3;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      white-space: nowrap;
+      min-width: auto;
+    }
+    #message-editor-form .section-disabled {
+      opacity: 0.6;
+    }
     #message-editor-form .field-hint {
       color: #bbb;
       font-size: 12px;
@@ -3697,6 +3743,9 @@ function renderAdminMessageForm(opts: {
       gap: 6px;
       min-width: 0;
       align-items: flex-start;
+    }
+    #message-editor-form #message-section-surface {
+      align-items: stretch;
     }
     #message-editor-form .mini-field-label {
       color: #e9eef5;
@@ -3786,8 +3835,8 @@ function renderAdminMessageForm(opts: {
   const groupsTargeting = targetBySurface.get('group_feed') || { targetingMode: 'all' as const, targetIds: [] }
   const channelsTargeting = targetBySurface.get('channel_feed') || { targetingMode: 'all' as const, targetIds: [] }
 
-  body += `<div class="section-title" style="margin:10px 0 6px; opacity:0.5">Identity</div>`
-  body += `<div class="section">`
+  body += `<button type="button" class="section-toggle" data-target="message-section-identity" aria-expanded="false"><span class="section-toggle-chevron">▸</span><span style="opacity:0.5">IDENTITY</span></button>`
+  body += `<div id="message-section-identity" class="section" style="display:none">`
   body += `<label>Name<input type="text" name="name" value="${escapeHtml(String(values.name || ''))}" required maxlength="120" /></label>`
   body += `<div style="display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px; margin-top:10px">`
   body += `<div class="mini-field"><div class="mini-field-label">Type</div><select name="type">`
@@ -3801,22 +3850,23 @@ function renderAdminMessageForm(opts: {
     body += `<option value="${escapeHtml(opt.value)}"${opt.value === deliveryScopeValue ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
   }
   body += `</select></div>`
-  body += `<div class="mini-field" id="message-eligibility-row" style="grid-column:1 / -1"><div class="mini-field-label">Eligibility Ruleset</div><div class="picker-row"><select id="message-eligibility-select" name="eligibilityRulesetId">`
-  body += `<option value="">(none)</option>`
-  for (const opt of eligibilityRulesetOptions) {
-    const idValue = String(Number(opt.id))
-    const label = `${opt.name} [${opt.status}] #${opt.id}`
-    body += `<option value="${escapeHtml(idValue)}"${eligibilityRulesetIdValue === idValue ? ' selected' : ''}>${escapeHtml(label)}</option>`
-  }
-  body += `</select><button type="button" id="message-eligibility-view" class="picker-btn" title="View ruleset criteria">{}`
-  body += `</button></div></div>`
-  body += `<div class="mini-field" id="message-surface-row" style="grid-column:1 / -1">`
-  body += `<div class="mini-field-label">Surfaces</div>`
+  body += `<div class="mini-field"><div class="mini-field-label">Priority</div><input type="number" name="priority" value="${escapeHtml(String(values.priority ?? 100))}" /></div>`
+  body += `<div class="mini-field"><div class="mini-field-label">Status</div><select name="status">
+    <option value="draft"${String(values.status || '') === 'draft' ? ' selected' : ''}>Draft</option>
+    <option value="active"${String(values.status || '') === 'active' ? ' selected' : ''}>Active</option>
+    <option value="paused"${String(values.status || '') === 'paused' ? ' selected' : ''}>Paused</option>
+    <option value="archived"${String(values.status || '') === 'archived' ? ' selected' : ''}>Archived</option>
+  </select></div>`
+  body += `</div>`
+  body += `</div>`
+  body += `<div id="message-surface-targeting-section">`
+  body += `<button type="button" class="section-toggle" data-target="message-section-surface" aria-expanded="false"><span class="section-toggle-chevron">▸</span><span style="opacity:0.5">SURFACE TARGETING</span></button>`
+  body += `<div id="message-section-surface" class="section" style="display:none">`
   body += `<input type="hidden" name="appliesToSurface" value="${escapeHtml(surfaceValue)}" />`
-  body += `<div style="display:grid; gap:10px; margin-top:6px">`
-  body += `<label style="display:flex; align-items:center; gap:8px; font-weight:700"><input type="checkbox" name="surfaceGlobalFeed" value="1"${globalChecked ? ' checked' : ''} /> Global Feed</label>`
-  body += `<div style="border:1px solid rgba(255,255,255,0.14); border-radius:10px; padding:10px">`
-  body += `<label style="display:flex; align-items:center; gap:8px; font-weight:700; margin:0 0 8px 0"><input type="checkbox" name="surfaceGroupFeed" value="1"${targetBySurface.has('group_feed') ? ' checked' : ''} /> Groups</label>`
+  body += `<div style="display:grid; gap:10px">`
+  body += `<label style="display:flex; align-items:center; justify-content:flex-start; gap:8px; font-weight:700; margin:0; white-space:nowrap"><input type="checkbox" name="surfaceGlobalFeed" value="1"${globalChecked ? ' checked' : ''} /> Global Feed</label>`
+  body += `<div style="border:1px solid rgba(255,255,255,0.14); border-radius:10px; padding:10px; box-sizing:border-box">`
+  body += `<label style="display:flex; align-items:center; justify-content:flex-start; gap:8px; font-weight:700; margin:0 0 8px 0; white-space:nowrap"><input type="checkbox" name="surfaceGroupFeed" value="1"${targetBySurface.has('group_feed') ? ' checked' : ''} /> Groups</label>`
   body += `<label style="margin:0 0 8px 0">Targeting<select name="surfaceGroupFeedMode"><option value="all"${groupsTargeting.targetingMode === 'all' ? ' selected' : ''}>All</option><option value="selected"${groupsTargeting.targetingMode === 'selected' ? ' selected' : ''}>Selected only</option></select></label>`
   body += `<label style="margin:0">Selected Groups<select name="surfaceGroupTargetIds" multiple size="6">`
   for (const group of surfaceTargetOptions.groups) {
@@ -3826,8 +3876,8 @@ function renderAdminMessageForm(opts: {
   }
   body += `</select></label>`
   body += `</div>`
-  body += `<div style="border:1px solid rgba(255,255,255,0.14); border-radius:10px; padding:10px">`
-  body += `<label style="display:flex; align-items:center; gap:8px; font-weight:700; margin:0 0 8px 0"><input type="checkbox" name="surfaceChannelFeed" value="1"${targetBySurface.has('channel_feed') ? ' checked' : ''} /> Channels</label>`
+  body += `<div style="border:1px solid rgba(255,255,255,0.14); border-radius:10px; padding:10px; box-sizing:border-box">`
+  body += `<label style="display:flex; align-items:center; justify-content:flex-start; gap:8px; font-weight:700; margin:0 0 8px 0; white-space:nowrap"><input type="checkbox" name="surfaceChannelFeed" value="1"${targetBySurface.has('channel_feed') ? ' checked' : ''} /> Channels</label>`
   body += `<label style="margin:0 0 8px 0">Targeting<select name="surfaceChannelFeedMode"><option value="all"${channelsTargeting.targetingMode === 'all' ? ' selected' : ''}>All</option><option value="selected"${channelsTargeting.targetingMode === 'selected' ? ' selected' : ''}>Selected only</option></select></label>`
   body += `<label style="margin:0">Selected Channels<select name="surfaceChannelTargetIds" multiple size="6">`
   for (const channel of surfaceTargetOptions.channels) {
@@ -3839,14 +3889,20 @@ function renderAdminMessageForm(opts: {
   body += `</div>`
   body += `</div>`
   body += `</div>`
-  body += `<div class="field-hint" id="message-eligibility-hint" style="grid-column:1 / -1">For journey delivery, set eligibility on the journey (not the step). Message-level rulesets apply to standalone delivery only.</div>`
-  body += `<div class="mini-field"><div class="mini-field-label">Priority</div><input type="number" name="priority" value="${escapeHtml(String(values.priority ?? 100))}" /></div>`
-  body += `<div class="mini-field"><div class="mini-field-label">Status</div><select name="status">
-    <option value="draft"${String(values.status || '') === 'draft' ? ' selected' : ''}>Draft</option>
-    <option value="active"${String(values.status || '') === 'active' ? ' selected' : ''}>Active</option>
-    <option value="paused"${String(values.status || '') === 'paused' ? ' selected' : ''}>Paused</option>
-    <option value="archived"${String(values.status || '') === 'archived' ? ' selected' : ''}>Archived</option>
-  </select></div>`
+  body += `</div>`
+  body += `<div id="message-eligibility-section">`
+  body += `<button type="button" class="section-toggle" data-target="message-section-eligibility" aria-expanded="false"><span class="section-toggle-chevron">▸</span><span style="opacity:0.5">ELIGIBILITY</span></button>`
+  body += `<div id="message-section-eligibility" class="section" style="display:none">`
+  body += `<div class="mini-field" id="message-eligibility-row"><div class="mini-field-label">Eligibility Ruleset</div><div class="picker-row"><select id="message-eligibility-select" name="eligibilityRulesetId">`
+  body += `<option value="">(none)</option>`
+  for (const opt of eligibilityRulesetOptions) {
+    const idValue = String(Number(opt.id))
+    const label = `${opt.name} [${opt.status}] #${opt.id}`
+    body += `<option value="${escapeHtml(idValue)}"${eligibilityRulesetIdValue === idValue ? ' selected' : ''}>${escapeHtml(label)}</option>`
+  }
+  body += `</select><button type="button" id="message-eligibility-view" class="picker-btn" title="View ruleset criteria">{}`
+  body += `</button></div></div>`
+  body += `<div class="field-hint" id="message-eligibility-hint">For journey delivery, set eligibility on the journey (not the step). Message-level rulesets apply to standalone delivery only.</div>`
   body += `</div>`
   body += `</div>`
   body += `<dialog id="message-eligibility-dialog" style="max-width:860px; width:min(92vw, 860px); border:1px solid #444; border-radius:10px; padding:14px;">
@@ -3861,8 +3917,12 @@ function renderAdminMessageForm(opts: {
       const form = document.getElementById('message-editor-form');
       if (!form) return;
       const scope = form.querySelector('#message-delivery-scope');
+      const eligibilitySection = form.querySelector('#message-eligibility-section');
+      const eligibilityToggle = form.querySelector('.section-toggle[data-target="message-section-eligibility"]');
       const rulesetRow = form.querySelector('#message-eligibility-row');
-      const surfaceRow = form.querySelector('#message-surface-row');
+      const surfaceSection = form.querySelector('#message-surface-targeting-section');
+      const surfaceToggle = form.querySelector('.section-toggle[data-target="message-section-surface"]');
+      const surfaceRow = form.querySelector('#message-section-surface');
       const hint = form.querySelector('#message-eligibility-hint');
       const rulesetSelect = form.querySelector('#message-eligibility-select');
       const rulesetViewBtn = form.querySelector('#message-eligibility-view');
@@ -3877,8 +3937,24 @@ function renderAdminMessageForm(opts: {
       )};
       const sync = () => {
         const isJourneyOnly = scope && String(scope.value || '').toLowerCase() === 'journey_only';
+        if (eligibilitySection) {
+          if (isJourneyOnly) eligibilitySection.style.display = 'none';
+          else {
+            const expanded = eligibilityToggle && eligibilityToggle.getAttribute('aria-expanded') === 'true';
+            eligibilitySection.style.display = expanded ? '' : 'none';
+          }
+        }
         if (rulesetRow) rulesetRow.style.display = isJourneyOnly ? 'none' : '';
+        if (eligibilityToggle) eligibilityToggle.style.display = isJourneyOnly ? 'none' : '';
+        if (surfaceSection) {
+          if (isJourneyOnly) surfaceSection.style.display = 'none';
+          else {
+            const expanded = surfaceToggle && surfaceToggle.getAttribute('aria-expanded') === 'true';
+            surfaceSection.style.display = expanded ? '' : 'none';
+          }
+        }
         if (surfaceRow) surfaceRow.style.display = isJourneyOnly ? 'none' : '';
+        if (surfaceToggle) surfaceToggle.style.display = isJourneyOnly ? 'none' : '';
         if (hint) hint.style.display = isJourneyOnly ? '' : '';
         if (rulesetViewBtn && rulesetSelect) {
           const id = String(rulesetSelect.value || '').trim();
@@ -3915,8 +3991,8 @@ function renderAdminMessageForm(opts: {
     })();
   </script>`
   if (journeyStepRefs.length > 0) {
-    body += `<div class="section-title" style="margin:10px 0 6px">Journey Usage</div>`
-    body += `<div class="section">`
+    body += `<button type="button" class="section-toggle" data-target="message-section-journey-usage" aria-expanded="false"><span class="section-toggle-chevron">▸</span><span>Journey Usage</span></button>`
+    body += `<div id="message-section-journey-usage" class="section" style="display:none">`
     body += `<div class="field-hint">This message is currently referenced by the following journey steps.</div>`
     body += `<ul style="margin:10px 0 0 18px; padding:0">`
     for (const ref of journeyStepRefs) {
@@ -3926,8 +4002,8 @@ function renderAdminMessageForm(opts: {
     body += `</div>`
   }
 
-  body += `<div class="section-title" style="margin:10px 0 6px; opacity:0.5">Background Media</div>`
-  body += `<div class="section">`
+  body += `<button type="button" class="section-toggle" data-target="message-section-background" aria-expanded="false"><span class="section-toggle-chevron">▸</span><span style="opacity:0.5">BACKGROUND MEDIA</span></button>`
+  body += `<div id="message-section-background" class="section" style="display:none">`
   body += `<input type="hidden" name="creativeBgUploadId" value="${escapeHtml(String(creativeForm.backgroundUploadId || ''))}" />`
   body += `<div style="display:grid; grid-template-columns:1fr; gap:10px">`
   body += `<label>Mode<select name="creativeBgMode">
@@ -3950,11 +4026,11 @@ function renderAdminMessageForm(opts: {
   body += `</div>`
   body += `</div>`
 
-  body += `<div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin:10px 0 6px">`
-  body += `<div class="section-title" style="margin:0; opacity:0.5">Message Widget Content</div>`
-  body += `<input type="checkbox" name="creativeMessageEnabled" value="1"${creativeForm.messageEnabled ? ' checked' : ''} />`
+  body += `<div class="section-header-row">`
+  body += `<button type="button" class="section-toggle" data-target="message-widget-content-section" aria-expanded="false" style="margin:0"><span class="section-toggle-chevron">▸</span><span style="opacity:0.5">MESSAGE WIDGET</span></button>`
+  body += `<label class="section-enable-toggle"><input type="checkbox" name="creativeMessageEnabled" value="1"${creativeForm.messageEnabled ? ' checked' : ''} /> Enabled</label>`
   body += `</div>`
-  body += `<div id="message-widget-content-section" class="section"${creativeForm.messageEnabled ? '' : ' style="display:none"'}>`
+  body += `<div id="message-widget-content-section" class="section" style="display:none">`
   body += `<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px">`
   body += `<label>Message Label<input type="text" name="creativeMessageLabel" value="${escapeHtml(String(creativeForm.messageLabel || 'Join the Community'))}" required maxlength="100" /></label>`
   body += `<label>Headline<input type="text" name="headline" value="${escapeHtml(String(values.headline || ''))}" required maxlength="280" /></label>`
@@ -3975,11 +4051,11 @@ function renderAdminMessageForm(opts: {
   body += `</div>`
   body += `</div>`
 
-  body += `<div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin:10px 0 6px">`
-  body += `<div class="section-title" style="margin:0; opacity:0.5">CTA Widget</div>`
-  body += `<input type="checkbox" name="creativeCtaEnabled" value="1"${creativeForm.ctaEnabled ? ' checked' : ''} />`
+  body += `<div class="section-header-row">`
+  body += `<button type="button" class="section-toggle" data-target="cta-widget-style-section" aria-expanded="false" style="margin:0"><span class="section-toggle-chevron">▸</span><span style="opacity:0.5">CTA WIDGET</span></button>`
+  body += `<label class="section-enable-toggle"><input type="checkbox" name="creativeCtaEnabled" value="1"${creativeForm.ctaEnabled ? ' checked' : ''} /> Enabled</label>`
   body += `</div>`
-  body += `<div id="cta-widget-style-section" class="section"${creativeForm.ctaEnabled ? '' : ' style="display:none"'}>`
+  body += `<div id="cta-widget-style-section" class="section" style="display:none">`
   body += `<div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:10px; align-items:start">`
   body += `<label>CTA Count<select name="creativeCtaSlotCount" id="creativeCtaSlotCount">`
   for (const count of [1, 2, 3]) {
@@ -4034,8 +4110,8 @@ function renderAdminMessageForm(opts: {
   }
   body += `</div>`
 
-  body += `<div class="section-title" style="margin:10px 0 6px; opacity:0.5">Scheduling</div>`
-  body += `<div class="section">`
+  body += `<button type="button" class="section-toggle" data-target="message-section-scheduling" aria-expanded="false"><span class="section-toggle-chevron">▸</span><span style="opacity:0.5">SCHEDULING</span></button>`
+  body += `<div id="message-section-scheduling" class="section" style="display:none">`
   const startsAtBase = values.startsAtDate || values.startsAtTime ? '' : toDateTimeLocalValue(values.startsAt || values.starts_at)
   const endsAtBase = values.endsAtDate || values.endsAtTime ? '' : toDateTimeLocalValue(values.endsAt || values.ends_at)
   const startsAtDateValue = String(values.startsAtDate || toDateOnlyValue(startsAtBase))
@@ -4052,8 +4128,8 @@ function renderAdminMessageForm(opts: {
   body += `</div>`
   body += `</div>`
 
-  body += `<div class="section-title" style="margin:10px 0 6px; opacity:0.5">Preview</div>`
-  body += `<div style="border:1px solid rgba(96,165,250,0.6); border-radius:12px; background:linear-gradient(180deg, rgba(28,45,58,0.72) 0%, rgba(12,16,20,0.72) 100%); overflow:hidden">`
+  body += `<button type="button" class="section-toggle" data-target="message-section-preview" aria-expanded="true"><span class="section-toggle-chevron">▾</span><span style="opacity:0.5">PREVIEW</span></button>`
+  body += `<div id="message-section-preview" style="border:1px solid rgba(96,165,250,0.6); border-radius:12px; background:linear-gradient(180deg, rgba(28,45,58,0.72) 0%, rgba(12,16,20,0.72) 100%); overflow:hidden">`
   body += `<div id="message-preview-device" style="width:100%; max-width:100%; aspect-ratio:9/16; margin:0; ${previewBaseStyle} position:relative">`
   body += `<div id="message-preview-overlay" style="position:absolute; inset:0; background:${hexToRgba(creativeForm.backgroundOverlayColor, creativeForm.backgroundOverlayOpacity)}"></div>`
   body += `<div id="message-preview-mode-badge" style="position:absolute; top:10px; right:10px; z-index:2; border:1px solid rgba(255,255,255,0.25); border-radius:999px; padding:3px 8px; font-size:11px; background:rgba(0,0,0,0.45)">Mode: ${escapeHtml(String(creativeForm.backgroundMode))}${creativeForm.backgroundMode === 'video' ? ` (${escapeHtml(creativeForm.backgroundVideoPlayback === 'tap_to_play_sound' ? 'tap-to-play' : 'muted-autoplay')})` : ''}</div>`
@@ -4137,10 +4213,62 @@ function renderAdminMessageForm(opts: {
         slot2Btn: document.getElementById('message-preview-slot-2-btn'),
         slot3Btn: document.getElementById('message-preview-slot-3-btn'),
       };
+      const sectionToggles = form.querySelectorAll('.section-toggle[data-target]');
       const pickImageBtn = document.getElementById('message-pick-bg-image');
       const pickVideoBtn = document.getElementById('message-pick-bg-video');
       if (!preview.device || !preview.message || !preview.cta) return;
       let lastBgMode = String(v('creativeBgMode', 'none')).toLowerCase();
+
+      function setToggleExpanded(btn, expanded) {
+        if (!btn) return;
+        btn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+        const chev = btn.querySelector('.section-toggle-chevron');
+        if (chev) chev.textContent = expanded ? '▾' : '▸';
+      }
+
+      function syncCollapsibleSections() {
+        sectionToggles.forEach(function (btn) {
+          const targetId = btn.getAttribute('data-target');
+          if (!targetId) return;
+          const target = document.getElementById(targetId);
+          if (!target) return;
+          const expanded = btn.getAttribute('aria-expanded') === 'true';
+          target.style.display = expanded ? '' : 'none';
+          setToggleExpanded(btn, expanded);
+        });
+      }
+
+      function bindCollapsibleSections() {
+        sectionToggles.forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            const targetId = btn.getAttribute('data-target');
+            if (!targetId) return;
+            const target = document.getElementById(targetId);
+            if (!target) return;
+            const nextExpanded = btn.getAttribute('aria-expanded') !== 'true';
+            setToggleExpanded(btn, nextExpanded);
+            target.style.display = nextExpanded ? '' : 'none';
+          });
+        });
+        syncCollapsibleSections();
+      }
+
+      function syncWidgetEditorState() {
+        const msgEnabled = vb('creativeMessageEnabled', false);
+        const ctaEnabled = vb('creativeCtaEnabled', false);
+        if (preview.messageSection) {
+          preview.messageSection.classList.toggle('section-disabled', !msgEnabled);
+          preview.messageSection.querySelectorAll('input, select, textarea, button').forEach(function (el) {
+            el.disabled = !msgEnabled;
+          });
+        }
+        if (preview.ctaSection) {
+          preview.ctaSection.classList.toggle('section-disabled', !ctaEnabled);
+          preview.ctaSection.querySelectorAll('input, select, textarea, button').forEach(function (el) {
+            el.disabled = !ctaEnabled;
+          });
+        }
+      }
 
       function serializeForm() {
         const out = {};
@@ -4276,8 +4404,7 @@ function renderAdminMessageForm(opts: {
 
         preview.message.style.display = msgEnabled ? 'block' : 'none';
         preview.cta.style.display = ctaEnabled ? 'block' : 'none';
-        if (preview.messageSection) preview.messageSection.style.display = msgEnabled ? '' : 'none';
-        if (preview.ctaSection) preview.ctaSection.style.display = ctaEnabled ? '' : 'none';
+        syncWidgetEditorState();
 
         preview.message.style.background = hexToRgba(msgBg, msgBgOpacity);
         preview.message.style.color = msgText;
@@ -4424,6 +4551,7 @@ function renderAdminMessageForm(opts: {
         if (url.searchParams.has('notice')) sessionStorage.removeItem(draftKey);
       } catch {}
 
+      bindCollapsibleSections();
       restoreDraftIfAny();
       handlePickedAssetFromQuery();
       syncScheduleDateTimeFields();
@@ -4466,20 +4594,27 @@ function renderAdminMessageForm(opts: {
     })();
   </script>`
 
-  body += `<div class="toolbar"><div></div><div style="display:flex; gap:8px"><button class="btn btn-primary-accent" type="submit">Save</button></div></div>`
   body += `</form>`
 
+  body += `<div class="section">`
+  body += `<div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; justify-content:space-between">`
   if (opts.showClone && id) {
-    body += `<div class="section"><div class="section-title">Actions</div>`
-    body += `<div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; justify-content:space-between">`
     body += `<form method="post" action="/admin/messages/${id}/delete" style="margin:0" onsubmit="return confirm('Delete this message? This cannot be undone.');">`
     if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
     body += `<button class="btn danger" type="submit">Delete</button></form>`
-    body += `<form method="post" action="/admin/messages/${id}/clone" style="margin:0 0 0 auto">`
+  } else {
+    body += `<div></div>`
+  }
+  body += `<div style="display:flex; gap:8px; align-items:center; margin-left:auto">`
+  if (opts.showClone && id) {
+    body += `<form method="post" action="/admin/messages/${id}/clone" style="margin:0">`
     if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
     body += `<button class="btn" type="submit">Clone</button></form>`
-    body += `</div></div>`
   }
+  body += `<button class="btn btn-primary-accent" type="submit" form="message-editor-form">Save</button>`
+  body += `</div>`
+  body += `</div>`
+  body += `</div>`
 
   return renderAdminPage({ title: opts.title, bodyHtml: body, active: 'messages' })
 }
@@ -4790,6 +4925,7 @@ async function loadSurfaceTargetOptionsForEditor(): Promise<{
     `SELECT id, name, slug, type
        FROM spaces
       WHERE type IN ('group','channel')
+        AND NOT (type = 'channel' AND slug IN ('global', 'global-feed'))
       ORDER BY name ASC, id ASC
       LIMIT 2000`
   )
@@ -5732,9 +5868,9 @@ function renderAdminMessageJourneyForm(opts: {
   body += `<div class="mini-field">`
   body += `<div class="mini-field-label">Surfaces</div>`
   body += `<div style="display:grid; gap:10px; margin-top:6px">`
-  body += `<label style="display:flex; align-items:center; gap:8px; font-weight:700"><input type="checkbox" name="surfaceGlobalFeed" value="1"${journeyGlobalChecked ? ' checked' : ''} /> Global Feed</label>`
-  body += `<div style="border:1px solid rgba(255,255,255,0.14); border-radius:10px; padding:10px">`
-  body += `<label style="display:flex; align-items:center; gap:8px; font-weight:700; margin:0 0 8px 0"><input type="checkbox" name="surfaceGroupFeed" value="1"${journeyTargetBySurface.has('group_feed') ? ' checked' : ''} /> Groups</label>`
+  body += `<label style="display:flex; align-items:center; justify-content:flex-start; gap:8px; font-weight:700; margin:0; white-space:nowrap"><input type="checkbox" name="surfaceGlobalFeed" value="1"${journeyGlobalChecked ? ' checked' : ''} /> Global Feed</label>`
+  body += `<div style="width:100%; border:1px solid rgba(255,255,255,0.14); border-radius:10px; padding:10px">`
+  body += `<label style="display:flex; align-items:center; justify-content:flex-start; gap:8px; font-weight:700; margin:0 0 8px 0; white-space:nowrap"><input type="checkbox" name="surfaceGroupFeed" value="1"${journeyTargetBySurface.has('group_feed') ? ' checked' : ''} /> Groups</label>`
   body += `<label style="margin:0 0 8px 0">Targeting<select name="surfaceGroupFeedMode"><option value="all"${journeyGroupsTargeting.targetingMode === 'all' ? ' selected' : ''}>All</option><option value="selected"${journeyGroupsTargeting.targetingMode === 'selected' ? ' selected' : ''}>Selected only</option></select></label>`
   body += `<label style="margin:0">Selected Groups<select name="surfaceGroupTargetIds" multiple size="6">`
   for (const group of surfaceTargetOptions.groups) {
@@ -5744,8 +5880,8 @@ function renderAdminMessageJourneyForm(opts: {
   }
   body += `</select></label>`
   body += `</div>`
-  body += `<div style="border:1px solid rgba(255,255,255,0.14); border-radius:10px; padding:10px">`
-  body += `<label style="display:flex; align-items:center; gap:8px; font-weight:700; margin:0 0 8px 0"><input type="checkbox" name="surfaceChannelFeed" value="1"${journeyTargetBySurface.has('channel_feed') ? ' checked' : ''} /> Channels</label>`
+  body += `<div style="width:100%; border:1px solid rgba(255,255,255,0.14); border-radius:10px; padding:10px">`
+  body += `<label style="display:flex; align-items:center; justify-content:flex-start; gap:8px; font-weight:700; margin:0 0 8px 0; white-space:nowrap"><input type="checkbox" name="surfaceChannelFeed" value="1"${journeyTargetBySurface.has('channel_feed') ? ' checked' : ''} /> Channels</label>`
   body += `<label style="margin:0 0 8px 0">Targeting<select name="surfaceChannelFeedMode"><option value="all"${journeyChannelsTargeting.targetingMode === 'all' ? ' selected' : ''}>All</option><option value="selected"${journeyChannelsTargeting.targetingMode === 'selected' ? ' selected' : ''}>Selected only</option></select></label>`
   body += `<label style="margin:0">Selected Channels<select name="surfaceChannelTargetIds" multiple size="6">`
   for (const channel of surfaceTargetOptions.channels) {
@@ -6001,6 +6137,13 @@ pagesRouter.get('/admin/message-journeys/:id', async (req: any, res: any) => {
         font-size: 14px;
         font-weight: 700;
       }
+      .journey-ui input[type="checkbox"] {
+        width: auto;
+        max-width: none;
+        padding: 0;
+        border: 0;
+        background: transparent;
+      }
       .journey-ui .journey-actions {
         display:flex;
         justify-content:flex-end;
@@ -6042,9 +6185,9 @@ pagesRouter.get('/admin/message-journeys/:id', async (req: any, res: any) => {
     body += `<div class="mini-field">`
     body += `<div class="mini-field-label">Surfaces</div>`
     body += `<div style="display:grid; gap:10px; margin-top:6px">`
-    body += `<label style="display:flex; align-items:center; gap:8px; font-weight:700"><input type="checkbox" name="surfaceGlobalFeed" value="1"${journeyGlobalChecked ? ' checked' : ''} /> Global Feed</label>`
-    body += `<div style="border:1px solid rgba(255,255,255,0.14); border-radius:10px; padding:10px">`
-    body += `<label style="display:flex; align-items:center; gap:8px; font-weight:700; margin:0 0 8px 0"><input type="checkbox" name="surfaceGroupFeed" value="1"${journeyTargetBySurface.has('group_feed') ? ' checked' : ''} /> Groups</label>`
+    body += `<label style="display:flex; align-items:center; justify-content:flex-start; gap:8px; font-weight:700; margin:0; white-space:nowrap"><input type="checkbox" name="surfaceGlobalFeed" value="1"${journeyGlobalChecked ? ' checked' : ''} /> Global Feed</label>`
+    body += `<div style="width:100%; border:1px solid rgba(255,255,255,0.14); border-radius:10px; padding:10px">`
+    body += `<label style="display:flex; align-items:center; justify-content:flex-start; gap:8px; font-weight:700; margin:0 0 8px 0; white-space:nowrap"><input type="checkbox" name="surfaceGroupFeed" value="1"${journeyTargetBySurface.has('group_feed') ? ' checked' : ''} /> Groups</label>`
     body += `<label style="margin:0 0 8px 0">Targeting<select name="surfaceGroupFeedMode"><option value="all"${journeyGroupsTargeting.targetingMode === 'all' ? ' selected' : ''}>All</option><option value="selected"${journeyGroupsTargeting.targetingMode === 'selected' ? ' selected' : ''}>Selected only</option></select></label>`
     body += `<label style="margin:0">Selected Groups<select name="surfaceGroupTargetIds" multiple size="6">`
     for (const group of surfaceTargetOptions.groups) {
@@ -6054,8 +6197,8 @@ pagesRouter.get('/admin/message-journeys/:id', async (req: any, res: any) => {
     }
     body += `</select></label>`
     body += `</div>`
-    body += `<div style="border:1px solid rgba(255,255,255,0.14); border-radius:10px; padding:10px">`
-    body += `<label style="display:flex; align-items:center; gap:8px; font-weight:700; margin:0 0 8px 0"><input type="checkbox" name="surfaceChannelFeed" value="1"${journeyTargetBySurface.has('channel_feed') ? ' checked' : ''} /> Channels</label>`
+    body += `<div style="width:100%; border:1px solid rgba(255,255,255,0.14); border-radius:10px; padding:10px">`
+    body += `<label style="display:flex; align-items:center; justify-content:flex-start; gap:8px; font-weight:700; margin:0 0 8px 0; white-space:nowrap"><input type="checkbox" name="surfaceChannelFeed" value="1"${journeyTargetBySurface.has('channel_feed') ? ' checked' : ''} /> Channels</label>`
     body += `<label style="margin:0 0 8px 0">Targeting<select name="surfaceChannelFeedMode"><option value="all"${journeyChannelsTargeting.targetingMode === 'all' ? ' selected' : ''}>All</option><option value="selected"${journeyChannelsTargeting.targetingMode === 'selected' ? ' selected' : ''}>Selected only</option></select></label>`
     body += `<label style="margin:0">Selected Channels<select name="surfaceChannelTargetIds" multiple size="6">`
     for (const channel of surfaceTargetOptions.channels) {

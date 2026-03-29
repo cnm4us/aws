@@ -1,5 +1,6 @@
 import * as repo from './repo'
 import { DomainError, ForbiddenError, NotFoundError } from '../../core/errors'
+import { getPool } from '../../db'
 import type {
   MessageJourneyDto,
   MessageJourneyProgressState,
@@ -106,6 +107,54 @@ function normalizeJourneySurfaceTargeting(raw: any, fallbackSurface: JourneySurf
   }
   if (!out.length) out.push({ surface: fallbackSurface, targetingMode: 'all', targetIds: [] })
   return out
+}
+
+async function assertJourneySurfaceTargetingTargetIds(targeting: Array<{
+  surface: JourneySurface
+  targetingMode: 'all' | 'selected'
+  targetIds: number[]
+}>): Promise<void> {
+  const groupIds = Array.from(new Set(
+    targeting
+      .filter((item) => item.surface === 'group_feed' && item.targetingMode === 'selected')
+      .flatMap((item) => item.targetIds)
+      .map((n) => Math.round(Number(n)))
+      .filter((n) => Number.isFinite(n) && n > 0)
+  ))
+  const channelIds = Array.from(new Set(
+    targeting
+      .filter((item) => item.surface === 'channel_feed' && item.targetingMode === 'selected')
+      .flatMap((item) => item.targetIds)
+      .map((n) => Math.round(Number(n)))
+      .filter((n) => Number.isFinite(n) && n > 0)
+  ))
+
+  if (!groupIds.length && !channelIds.length) return
+  const db = getPool()
+
+  if (groupIds.length) {
+    const placeholders = groupIds.map(() => '?').join(',')
+    const [rows] = await db.query(
+      `SELECT id FROM spaces WHERE type = 'group' AND id IN (${placeholders})`,
+      groupIds as any
+    )
+    const found = new Set((rows as any[]).map((row) => Math.round(Number(row.id || 0))).filter((n) => Number.isFinite(n) && n > 0))
+    if (found.size !== groupIds.length) throw new DomainError('invalid_surface_targeting', 'invalid_surface_targeting', 400)
+  }
+
+  if (channelIds.length) {
+    const placeholders = channelIds.map(() => '?').join(',')
+    const [rows] = await db.query(
+      `SELECT id
+         FROM spaces
+        WHERE type = 'channel'
+          AND slug NOT IN ('global', 'global-feed')
+          AND id IN (${placeholders})`,
+      channelIds as any
+    )
+    const found = new Set((rows as any[]).map((row) => Math.round(Number(row.id || 0))).filter((n) => Number.isFinite(n) && n > 0))
+    if (found.size !== channelIds.length) throw new DomainError('invalid_surface_targeting', 'invalid_surface_targeting', 400)
+  }
 }
 
 function normalizePositiveInt(raw: any, code: string): number {
@@ -271,12 +320,15 @@ export async function getJourneyForAdmin(id: number): Promise<MessageJourneyDto>
 
 export async function createJourneyForAdmin(input: any, actorUserId: number): Promise<MessageJourneyDto> {
   const userId = normalizeActorUserId(actorUserId)
+  const appliesToSurface = normalizeJourneySurface(input?.appliesToSurface ?? input?.applies_to_surface, 'global_feed')
+  const surfaceTargeting = normalizeJourneySurfaceTargeting(input?.surfaceTargeting ?? input?.surface_targeting, appliesToSurface)
+  await assertJourneySurfaceTargetingTargetIds(surfaceTargeting)
 
   const row = await repo.createJourney({
     journeyKey: normalizeJourneyKey(input?.journeyKey ?? input?.journey_key),
     name: normalizeJourneyName(input?.name),
-    appliesToSurface: normalizeJourneySurface(input?.appliesToSurface ?? input?.applies_to_surface, 'global_feed'),
-    surfaceTargeting: normalizeJourneySurfaceTargeting(input?.surfaceTargeting ?? input?.surface_targeting, normalizeJourneySurface(input?.appliesToSurface ?? input?.applies_to_surface, 'global_feed')),
+    appliesToSurface,
+    surfaceTargeting,
     status: normalizeJourneyStatus(input?.status, 'draft'),
     description: normalizeDescription(input?.description),
     eligibilityRulesetId: normalizeNullablePositiveInt(input?.eligibilityRulesetId ?? input?.eligibility_ruleset_id, 'invalid_ruleset_id'),
@@ -294,25 +346,27 @@ export async function updateJourneyForAdmin(id: number, patch: any, actorUserId:
   if (!existing) throw new NotFoundError('message_journey_not_found')
   const existingDto = toJourneyDto(existing)
 
+  const nextAppliesToSurface =
+    patch?.appliesToSurface !== undefined || patch?.applies_to_surface !== undefined
+      ? normalizeJourneySurface(patch?.appliesToSurface ?? patch?.applies_to_surface, existingDto.appliesToSurface)
+      : existingDto.appliesToSurface
+  const nextSurfaceTargeting =
+    patch?.surfaceTargeting !== undefined || patch?.surface_targeting !== undefined
+      ? normalizeJourneySurfaceTargeting(
+          patch?.surfaceTargeting ?? patch?.surface_targeting,
+          nextAppliesToSurface
+        )
+      : undefined
+  if (nextSurfaceTargeting) await assertJourneySurfaceTargetingTargetIds(nextSurfaceTargeting)
+
   const row = await repo.updateJourney(journeyId, {
     journeyKey:
       patch?.journeyKey !== undefined || patch?.journey_key !== undefined
         ? normalizeJourneyKey(patch?.journeyKey ?? patch?.journey_key)
         : existingDto.journeyKey,
     name: patch?.name !== undefined ? normalizeJourneyName(patch?.name) : existingDto.name,
-    appliesToSurface:
-      patch?.appliesToSurface !== undefined || patch?.applies_to_surface !== undefined
-        ? normalizeJourneySurface(patch?.appliesToSurface ?? patch?.applies_to_surface, existingDto.appliesToSurface)
-        : existingDto.appliesToSurface,
-    surfaceTargeting:
-      patch?.surfaceTargeting !== undefined || patch?.surface_targeting !== undefined
-        ? normalizeJourneySurfaceTargeting(
-            patch?.surfaceTargeting ?? patch?.surface_targeting,
-            patch?.appliesToSurface !== undefined || patch?.applies_to_surface !== undefined
-              ? normalizeJourneySurface(patch?.appliesToSurface ?? patch?.applies_to_surface, existingDto.appliesToSurface)
-              : existingDto.appliesToSurface
-          )
-        : undefined,
+    appliesToSurface: nextAppliesToSurface,
+    surfaceTargeting: nextSurfaceTargeting,
     status: patch?.status !== undefined ? normalizeJourneyStatus(patch?.status, existingDto.status) : existingDto.status,
     description: patch?.description !== undefined ? normalizeDescription(patch?.description) : existingDto.description,
     eligibilityRulesetId:
