@@ -229,6 +229,8 @@ type EligibleMessageCandidate = {
     targetingMode: 'all' | 'selected'
     targetIds: number[]
   }>
+  standaloneTargetMatch?: boolean
+  standaloneTargetingMode?: 'all' | 'selected' | null
 }
 
 type CandidateDropReason = {
@@ -501,6 +503,20 @@ async function applyJourneyGating(params: {
           if (dropReasons.length < 40) dropReasons.push({ messageId: c.messageId, reason: 'journey_only_message' })
           continue
         }
+        if (c.standaloneTargetMatch === false) {
+          rejectedCount += 1
+          if (dropReasons.length < 40) {
+            dropReasons.push({
+              messageId: c.messageId,
+              reason: 'target_miss',
+              targetingMode: c.standaloneTargetingMode ?? null,
+              targetType: resolveTargetTypeForSurface(params.surface),
+              targetId: resolveTargetIdForSurface(params.surface, params.surfaceTarget),
+              targetMatch: false,
+            })
+          }
+          continue
+        }
         eligible.push({ ...c, deliveryContext: 'standalone' })
         continue
       }
@@ -555,6 +571,20 @@ async function applyJourneyGating(params: {
       if (c.deliveryScope === 'journey_only') {
         rejectedCount += 1
         if (dropReasons.length < 40) dropReasons.push({ messageId: c.messageId, reason: 'journey_only_message' })
+        continue
+      }
+      if (c.standaloneTargetMatch === false) {
+        rejectedCount += 1
+        if (dropReasons.length < 40) {
+          dropReasons.push({
+            messageId: c.messageId,
+            reason: 'target_miss',
+            targetingMode: c.standaloneTargetingMode ?? null,
+            targetType: resolveTargetTypeForSurface(params.surface),
+            targetId: resolveTargetIdForSurface(params.surface, params.surfaceTarget),
+            targetMatch: false,
+          })
+        }
         continue
       }
       eligible.push({ ...c, deliveryContext: 'standalone' })
@@ -746,6 +776,29 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
           const candidateId = Number(message.id || 0)
           if (!Number.isFinite(candidateId) || candidateId <= 0) continue
           if (isMessageSuppressed(candidateId, merged.suppression)) continue
+          const surfaceTargeting: Array<{
+            surface: MessageDecisionSurface
+            targetingMode: 'all' | 'selected'
+            targetIds: number[]
+          }> = Array.isArray((message as any).surfaceTargeting)
+            ? (message as any).surfaceTargeting.map((item: any) => ({
+                surface: String(item?.surface || 'global_feed').toLowerCase() as MessageDecisionSurface,
+                targetingMode: String(item?.targetingMode || 'all').toLowerCase() === 'selected' ? 'selected' : 'all',
+                targetIds: Array.isArray(item?.targetIds)
+                  ? item.targetIds
+                      .map((id: any) => Number(id))
+                      .filter((id: number) => Number.isFinite(id) && id > 0)
+                      .map((id: number) => Math.round(id))
+                  : [],
+              }))
+            : [{ surface: String((message as any).appliesToSurface || 'global_feed').toLowerCase() as MessageDecisionSurface, targetingMode: 'all', targetIds: [] }]
+          const standaloneTargetingMode = resolveSurfaceTargetingMode(surfaceTargeting, input.surface)
+          const standaloneTargetMatch = matchesSurfaceTargeting({
+            surface: input.surface,
+            groupId: input.surfaceTarget.groupId,
+            channelId: input.surfaceTarget.channelId,
+            targeting: surfaceTargeting,
+          })
           candidates.push({
             messageId: candidateId,
             campaignKey: (message as any).campaignKey == null ? null : String((message as any).campaignKey),
@@ -757,42 +810,28 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
                 : (String((message as any).deliveryScope || 'both').toLowerCase() === 'standalone_only' ? 'standalone_only' : 'both')),
             eligibilityRulesetId:
               (message as any).eligibilityRulesetId == null ? null : Number((message as any).eligibilityRulesetId),
-            surfaceTargeting: Array.isArray((message as any).surfaceTargeting)
-              ? (message as any).surfaceTargeting.map((item: any) => ({
-                  surface: String(item?.surface || 'global_feed').toLowerCase() as MessageDecisionSurface,
-                  targetingMode: String(item?.targetingMode || 'all').toLowerCase() === 'selected' ? 'selected' : 'all',
-                  targetIds: Array.isArray(item?.targetIds)
-                    ? item.targetIds
-                        .map((id: any) => Number(id))
-                        .filter((id: number) => Number.isFinite(id) && id > 0)
-                        .map((id: number) => Math.round(id))
-                    : [],
-                }))
-              : [{ surface: String((message as any).appliesToSurface || 'global_feed').toLowerCase() as MessageDecisionSurface, targetingMode: 'all', targetIds: [] }],
+            surfaceTargeting,
+            standaloneTargetMatch,
+            standaloneTargetingMode,
           })
         }
 
         let eligible = candidates.filter((candidate) => {
-          const targetingMode = resolveSurfaceTargetingMode(candidate.surfaceTargeting || [], input.surface)
-          const matched = matchesSurfaceTargeting({
-            surface: input.surface,
-            groupId: input.surfaceTarget.groupId,
-            channelId: input.surfaceTarget.channelId,
-            targeting: candidate.surfaceTargeting || [],
-          })
+          if (candidate.deliveryScope !== 'standalone_only') return true
+          const matched = candidate.standaloneTargetMatch !== false
           if (!matched) {
             targetRejectedCount += 1
-            if (rejectedTargetingMode == null) rejectedTargetingMode = targetingMode
-          }
-          if (!matched && candidateDropReasons.length < 40) {
-            candidateDropReasons.push({
-              messageId: candidate.messageId,
-              reason: 'target_miss',
-              targetingMode,
-              targetType: selectedTargetType,
-              targetId: selectedTargetId,
-              targetMatch: false,
-            })
+            if (rejectedTargetingMode == null) rejectedTargetingMode = candidate.standaloneTargetingMode ?? null
+            if (candidateDropReasons.length < 40) {
+              candidateDropReasons.push({
+                messageId: candidate.messageId,
+                reason: 'target_miss',
+                targetingMode: candidate.standaloneTargetingMode ?? null,
+                targetType: selectedTargetType,
+                targetId: selectedTargetId,
+                targetMatch: false,
+              })
+            }
           }
           return matched
         })
