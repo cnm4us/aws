@@ -41,7 +41,7 @@ Status: Active
 - B: Complete
 - C: Complete
 - D: Complete
-- E: Pending
+- E: Complete
 - F: Pending
 
 ## Phase A — Data Model + Repository Layer
@@ -127,10 +127,10 @@ Status: Active
 - Goal:
   - Preserve current global behavior while migrating existing data.
 - Steps:
-  - [ ] Backfill existing messages/journeys to `global_feed + all`.
-  - [ ] Keep old single-surface fields as read-only fallback during transition.
-  - [ ] Ensure runtime prioritizes new tables; fallback only when new rows missing.
-  - [ ] Add cleanup TODO for legacy fields post-validation.
+  - [x] Backfill existing messages/journeys to `global_feed + all`.
+  - [x] Keep old single-surface fields as read-only fallback during transition.
+  - [x] Ensure runtime prioritizes new tables; fallback only when new rows missing.
+  - [x] Add cleanup TODO for legacy fields post-validation.
 - Test gate:
   - Existing content still appears in global feed after deploy.
 - Acceptance:
@@ -184,6 +184,17 @@ Status: Active
       - `app.surface_context`, `app.targeting_mode`, `app.target_type`, `app.target_id`, `app.target_match`
       - `app.target_rejected_count`, `app.target_reject_reason`
     - Added Jaeger preset `message_targeting` to query target-miss decisions quickly.
+  - Phase E completed:
+    - Confirmed DB startup migration backfills legacy rows into canonical targeting tables:
+      - `feed_message_surfaces`
+      - `feed_message_journey_surfaces`
+    - Confirmed runtime prioritizes canonical `surfaceTargeting`; legacy `applies_to_surface` is used only as fallback when canonical rows are missing.
+    - Added verification utility:
+      - `npm run db:verify:surface-targeting`
+      - optional auto-fix mode: `npm run db:verify:surface-targeting -- --fix`
+      - `--fix` prunes orphaned targeting rows and backfills missing canonical surface rows.
+    - Added explicit legacy cleanup TODO:
+      - Remove legacy `applies_to_surface` fallback once verifier reports zero missing rows consistently.
 
 ## Validation
 - Environment:
@@ -205,6 +216,6 @@ Status: Active
 
 ## Resume Here
 - Next action:
-  - Start Phase E (Surface-safe defaults/backfill validation and legacy fallback review).
+  - Start Phase F (smoke matrix + docs).
 - Blocking question (if any):
   - None.
