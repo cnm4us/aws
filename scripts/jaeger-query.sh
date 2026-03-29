@@ -33,6 +33,7 @@ Usage:
 
 Presets:
   message_decide           app.operation=feed.message.decide
+  message_targeting        app.operation=feed.message.decide + app.target_match=false
   message_fetch            app.operation=feed.message.fetch
   message_event            app.operation=feed.message.event
   admin_messages           HTTP GET /admin/messages
@@ -230,6 +231,9 @@ run_preset_once() {
   case "$name" in
     message_decide)
       preset_tags=("app.operation=feed.message.decide")
+      ;;
+    message_targeting)
+      preset_tags=("app.operation=feed.message.decide" "app.target_match=false")
       ;;
     message_fetch)
       preset_tags=("app.operation=feed.message.fetch")

@@ -210,9 +210,19 @@ async function handleDecision(req: any, res: any, next: any) {
     }
 
     const selectionDebug = ((decision.debug as any)?.selection || {}) as any
+    const targetRejectedCount = Number(selectionDebug.targetRejectedCount || 0)
+    const targetMatchValue =
+      typeof selectionDebug.targetMatch === 'boolean'
+        ? selectionDebug.targetMatch
+        : (targetRejectedCount > 0 ? false : null)
+    const targetMissReason =
+      Array.isArray(selectionDebug.candidateDropReasons)
+        ? ((selectionDebug.candidateDropReasons.find((r: any) => String(r?.reason || '') === 'target_miss')?.reason) || null)
+        : null
     ;(req.log || feedMessagesLogger).info(
       {
         app_surface: input.surface,
+        app_surface_context: selectionDebug.surfaceContext || input.surface,
         app_operation: 'feed.message.decide',
         app_outcome: decision.shouldInsert ? 'shown' : 'blocked',
         viewer_state: viewerState,
@@ -251,6 +261,15 @@ async function handleDecision(req: any, res: any, next: any) {
           selectionDebug.selectedDeliveryContext === 'journey'
             ? 'journey'
             : (selectionDebug.selectedDeliveryContext === 'standalone' ? 'standalone' : null),
+        app_targeting_mode: selectionDebug.targetingMode || null,
+        app_target_type: selectionDebug.targetType || null,
+        app_target_id:
+          selectionDebug.targetId != null && Number.isFinite(Number(selectionDebug.targetId))
+            ? Number(selectionDebug.targetId)
+            : null,
+        app_target_match: targetMatchValue,
+        app_target_rejected_count: targetRejectedCount,
+        app_target_reject_reason: targetMissReason,
         journey_drop_reason:
           Array.isArray(selectionDebug.candidateDropReasons)
             ? ((selectionDebug.candidateDropReasons.find((r: any) => String(r?.reason || '').startsWith('journey_'))?.reason) || null)
@@ -262,6 +281,7 @@ async function handleDecision(req: any, res: any, next: any) {
     const span = trace.getSpan(context.active())
     if (span) {
       span.setAttribute('app.surface', input.surface)
+      span.setAttribute('app.surface_context', String((decision.debug as any)?.selection?.surfaceContext || input.surface))
       span.setAttribute('app.operation', 'feed.message.decide')
       span.setAttribute('app.viewer_state', viewerState)
       span.setAttribute('app.targeting_model', 'ruleset_only')
@@ -315,6 +335,27 @@ async function handleDecision(req: any, res: any, next: any) {
       if (rulesetIdRaw != null && Number.isFinite(Number(rulesetIdRaw)) && Number(rulesetIdRaw) > 0) {
         span.setAttribute('app.message_ruleset_id', String(Math.round(Number(rulesetIdRaw))))
       }
+      const targetModeRaw = (decision.debug as any)?.selection?.targetingMode
+      const targetTypeRaw = (decision.debug as any)?.selection?.targetType
+      const targetIdRaw = (decision.debug as any)?.selection?.targetId
+      const targetMatchRaw = (decision.debug as any)?.selection?.targetMatch
+      const targetRejectedCountRaw = Number((decision.debug as any)?.selection?.targetRejectedCount || 0)
+      const targetMissReasonRaw =
+        Array.isArray((decision.debug as any)?.selection?.candidateDropReasons)
+          ? (((decision.debug as any).selection.candidateDropReasons.find((r: any) => String(r?.reason || '') === 'target_miss')?.reason) || '')
+          : ''
+      if (targetModeRaw) span.setAttribute('app.targeting_mode', String(targetModeRaw))
+      if (targetTypeRaw) span.setAttribute('app.target_type', String(targetTypeRaw))
+      if (targetIdRaw != null && Number.isFinite(Number(targetIdRaw)) && Number(targetIdRaw) > 0) {
+        span.setAttribute('app.target_id', String(Math.round(Number(targetIdRaw))))
+      }
+      if (typeof targetMatchRaw === 'boolean') {
+        span.setAttribute('app.target_match', targetMatchRaw ? 'true' : 'false')
+      } else if (targetRejectedCountRaw > 0) {
+        span.setAttribute('app.target_match', 'false')
+      }
+      if (targetRejectedCountRaw > 0) span.setAttribute('app.target_rejected_count', String(targetRejectedCountRaw))
+      if (targetMissReasonRaw) span.setAttribute('app.target_reject_reason', String(targetMissReasonRaw))
     }
 
     return res.json({

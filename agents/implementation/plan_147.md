@@ -40,7 +40,7 @@ Status: Active
 - A: Complete
 - B: Complete
 - C: Complete
-- D: Pending
+- D: Complete
 - E: Pending
 - F: Pending
 
@@ -110,14 +110,14 @@ Status: Active
 - Goal:
   - Make targeting decisions auditable in Jaeger/Pino/debug bundle.
 - Steps:
-  - [ ] Emit tags/log fields:
+  - [x] Emit tags/log fields:
     - `app.surface_context`
     - `app.targeting_mode`
     - `app.target_type`
     - `app.target_id`
     - `app.target_match`
-  - [ ] Emit reject reason for targeting miss (`target_miss`).
-  - [ ] Add/extend Jaeger preset(s) for target match diagnostics.
+  - [x] Emit reject reason for targeting miss (`target_miss`).
+  - [x] Add/extend Jaeger preset(s) for target match diagnostics.
 - Test gate:
   - Targeted/non-targeted decisions are distinguishable from traces/logs alone.
 - Acceptance:
@@ -176,6 +176,14 @@ Status: Active
     - Message candidate selection now prefilters by `surfaceTargeting` before suppression/ruleset/journey gating.
     - Journey gating now prefilters by journey `surfaceTargeting` (with legacy `applies_to_surface` fallback).
     - Decision session schema now supports all three surfaces in `message_decision_sessions.surface`.
+  - Phase D completed:
+    - Added targeting diagnostics into message decision debug selection payload:
+      - `surfaceContext`, `targetingMode`, `targetType`, `targetId`, `targetMatch`, `targetRejectedCount`
+    - Added structured `target_miss` drop reason enrichment for debugging.
+    - Added decision observability tags/log fields:
+      - `app.surface_context`, `app.targeting_mode`, `app.target_type`, `app.target_id`, `app.target_match`
+      - `app.target_rejected_count`, `app.target_reject_reason`
+    - Added Jaeger preset `message_targeting` to query target-miss decisions quickly.
 
 ## Validation
 - Environment:
@@ -197,6 +205,6 @@ Status: Active
 
 ## Resume Here
 - Next action:
-  - Start Phase D (Observability): emit targeting tags/reasons and add Jaeger preset support.
+  - Start Phase E (Surface-safe defaults/backfill validation and legacy fallback review).
 - Blocking question (if any):
   - None.
