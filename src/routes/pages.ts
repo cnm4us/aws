@@ -3938,25 +3938,27 @@ function renderAdminMessageForm(opts: {
       )};
       const sync = () => {
         const isJourneyOnly = scope && String(scope.value || '').toLowerCase() === 'journey_only';
-        if (eligibilitySection) {
-          if (isJourneyOnly) eligibilitySection.style.display = 'none';
-          else {
-            const expanded = eligibilityToggle && eligibilityToggle.getAttribute('aria-expanded') === 'true';
-            eligibilitySection.style.display = expanded ? '' : 'none';
-          }
+        const eligibilityExpanded = eligibilityToggle && eligibilityToggle.getAttribute('aria-expanded') === 'true';
+        if (eligibilitySection) eligibilitySection.style.display = '';
+        const eligibilityBody = form.querySelector('#message-section-eligibility');
+        if (eligibilityBody) eligibilityBody.style.display = eligibilityExpanded ? '' : 'none';
+        if (rulesetRow) {
+          rulesetRow.style.display = '';
+          rulesetRow.style.opacity = isJourneyOnly ? '0.55' : '1';
+          rulesetRow.style.pointerEvents = isJourneyOnly ? 'none' : 'auto';
         }
-        if (rulesetRow) rulesetRow.style.display = isJourneyOnly ? 'none' : '';
-        if (eligibilityToggle) eligibilityToggle.style.display = isJourneyOnly ? 'none' : '';
-        if (surfaceSection) {
-          if (isJourneyOnly) surfaceSection.style.display = 'none';
-          else {
-            const expanded = surfaceToggle && surfaceToggle.getAttribute('aria-expanded') === 'true';
-            surfaceSection.style.display = expanded ? '' : 'none';
-          }
+        if (eligibilityToggle) eligibilityToggle.style.display = '';
+        const surfaceExpanded = surfaceToggle && surfaceToggle.getAttribute('aria-expanded') === 'true';
+        if (surfaceSection) surfaceSection.style.display = '';
+        const surfaceBody = form.querySelector('#message-section-surface');
+        if (surfaceBody) surfaceBody.style.display = surfaceExpanded ? '' : 'none';
+        if (surfaceRow) {
+          surfaceRow.style.display = '';
+          surfaceRow.style.opacity = isJourneyOnly ? '0.55' : '1';
+          surfaceRow.style.pointerEvents = isJourneyOnly ? 'none' : 'auto';
         }
-        if (surfaceRow) surfaceRow.style.display = isJourneyOnly ? 'none' : '';
-        if (surfaceToggle) surfaceToggle.style.display = isJourneyOnly ? 'none' : '';
-        if (hint) hint.style.display = isJourneyOnly ? '' : '';
+        if (surfaceToggle) surfaceToggle.style.display = '';
+        if (hint) hint.style.display = '';
         if (rulesetViewBtn && rulesetSelect) {
           const id = String(rulesetSelect.value || '').trim();
           rulesetViewBtn.disabled = !id || !rulesetCriteriaById[id];
