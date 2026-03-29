@@ -581,6 +581,7 @@ feedMessagesRouter.post(feedMessageEventPaths, async (req: any, res: any, next: 
     }
     const normalizedEvent = String(body.event || '').trim().toLowerCase()
     let journeySignalResult: { stepsMatched: number; progressed: number; ignored: number } | null = null
+    let ctaOutcomeCompleted = false
     try {
       const mapOutcome = (): { type: 'click' | 'verified_complete'; status: 'success' } | null => {
         if (normalizedEvent === 'click') return { type: 'click', status: 'success' }
@@ -616,12 +617,19 @@ feedMessagesRouter.post(feedMessageEventPaths, async (req: any, res: any, next: 
             message_sequence_key: messageSequenceKey || null,
           },
         })
+        ctaOutcomeCompleted = Boolean(ctaOutcome.completed)
         if (ctaOutcome.journeySignal) journeySignalResult = ctaOutcome.journeySignal
       }
     } catch {}
     if (
       req.user?.id &&
-      (normalizedEvent === 'auth_complete' || normalizedEvent === 'donation_complete' || normalizedEvent === 'subscription_complete' || normalizedEvent === 'upgrade_complete')
+      (
+        normalizedEvent === 'auth_complete' ||
+        normalizedEvent === 'donation_complete' ||
+        normalizedEvent === 'subscription_complete' ||
+        normalizedEvent === 'upgrade_complete' ||
+        ctaOutcomeCompleted
+      )
     ) {
       try {
         await messageAttributionSvc.upsertUserSuppressionFromCompletion({

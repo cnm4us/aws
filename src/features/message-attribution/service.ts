@@ -40,7 +40,7 @@ function normalizeFlow(raw: any): MessageAttributionFlow {
 
 function normalizeSurface(raw: any): MessageAttributionSurface {
   const v = String(raw || '').trim().toLowerCase()
-  if (v === 'global_feed') return v
+  if (v === 'global_feed' || v === 'group_feed' || v === 'channel_feed') return v
   throw new DomainError('invalid_surface', 'invalid_surface', 400)
 }
 

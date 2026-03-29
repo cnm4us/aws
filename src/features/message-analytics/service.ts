@@ -48,8 +48,8 @@ function parseYmd(raw: any, key: string): Date {
 function normalizeSurface(raw: any): MessageAnalyticsSurface | null {
   if (raw == null || raw === '') return null
   const v = String(raw).trim().toLowerCase()
-  if (v !== 'global_feed') throw new DomainError('invalid_surface', 'invalid_surface', 400)
-  return 'global_feed'
+  if (v === 'global_feed' || v === 'group_feed' || v === 'channel_feed') return v
+  throw new DomainError('invalid_surface', 'invalid_surface', 400)
 }
 
 function normalizeViewerState(raw: any): MessageAnalyticsViewerState | null {

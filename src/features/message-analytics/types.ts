@@ -1,4 +1,4 @@
-export type MessageAnalyticsSurface = 'global_feed'
+export type MessageAnalyticsSurface = 'global_feed' | 'group_feed' | 'channel_feed'
 export type MessageAnalyticsViewerState = 'anonymous' | 'authenticated'
 export type MessageAnalyticsCtaKind = 'primary' | 'secondary' | null
 

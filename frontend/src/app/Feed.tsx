@@ -569,6 +569,30 @@ async function sendMessageEvent(input: {
   messageSequenceKey?: string | null
 }, opts?: { sequenceEngineTag?: FeedSequenceEngineTag }) {
   try {
+    const payload = {
+      event: input.event,
+      surface: input.surface || 'global_feed',
+      group_id: input.groupId ?? null,
+      channel_id: input.channelId ?? null,
+      message_id: input.messageId,
+      message_campaign_key: input.messageCampaignKey,
+      message_session_id: input.sessionId,
+      message_cta_kind: input.ctaKind || null,
+      message_cta_slot: input.messageCtaSlot ?? null,
+      message_cta_definition_id: input.messageCtaDefinitionId ?? null,
+      message_cta_intent_key: input.messageCtaIntentKey || null,
+      message_cta_executor_type: input.messageCtaExecutorType || null,
+      message_flow: input.flow || null,
+      message_intent_id: input.intentId || null,
+      message_sequence_key: input.messageSequenceKey || null,
+    }
+    // Click events are often followed by immediate navigation; beacon improves delivery reliability.
+    if (input.event === 'click' && typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+      try {
+        const body = new Blob([JSON.stringify(payload)], { type: 'application/json' })
+        if (navigator.sendBeacon('/api/feed/message-events', body)) return
+      } catch {}
+    }
     await fetch('/api/feed/message-events', {
       method: 'POST',
       credentials: 'same-origin',
@@ -577,23 +601,7 @@ async function sendMessageEvent(input: {
         'Content-Type': 'application/json',
         ...feedSequenceHeader(opts?.sequenceEngineTag),
       },
-      body: JSON.stringify({
-        event: input.event,
-        surface: input.surface || 'global_feed',
-        group_id: input.groupId ?? null,
-        channel_id: input.channelId ?? null,
-        message_id: input.messageId,
-        message_campaign_key: input.messageCampaignKey,
-        message_session_id: input.sessionId,
-        message_cta_kind: input.ctaKind || null,
-        message_cta_slot: input.messageCtaSlot ?? null,
-        message_cta_definition_id: input.messageCtaDefinitionId ?? null,
-        message_cta_intent_key: input.messageCtaIntentKey || null,
-        message_cta_executor_type: input.messageCtaExecutorType || null,
-        message_flow: input.flow || null,
-        message_intent_id: input.intentId || null,
-        message_sequence_key: input.messageSequenceKey || null,
-      }),
+      body: JSON.stringify(payload),
     })
   } catch {}
 }
@@ -2622,7 +2630,7 @@ export default function Feed() {
     } else if (flow) {
       intentId = createClientIntentId()
     }
-    void sendMessageEvent({
+    const clickEventPromise = sendMessageEvent({
       event: 'click',
       messageId: message.id,
       messageCampaignKey: message.campaignKey || null,
@@ -2661,6 +2669,10 @@ export default function Feed() {
     try {
       const url = new URL(targetHref, window.location.origin)
       if (url.origin === window.location.origin) {
+        await Promise.race([
+          clickEventPromise,
+          new Promise<void>((resolve) => window.setTimeout(() => resolve(), 120)),
+        ])
         const returnPath = `${url.pathname}${url.search}${url.hash || ''}`
         if ((flow === 'donate' || flow === 'subscribe' || flow === 'upgrade') && String(action.ctaExecutorType || '').toLowerCase() === 'provider_checkout') {
           const support = new URL('/support', window.location.origin)
@@ -2695,6 +2707,10 @@ export default function Feed() {
         return
       }
     } catch {}
+    await Promise.race([
+      clickEventPromise,
+      new Promise<void>((resolve) => window.setTimeout(() => resolve(), 120)),
+    ])
     window.location.href = targetHref
   }, [activeSequenceKey, messageSessionId, feedSequenceEngineTag, messageDecisionContext])
 

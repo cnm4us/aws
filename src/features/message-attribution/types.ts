@@ -1,4 +1,4 @@
-export type MessageAttributionSurface = 'global_feed'
+export type MessageAttributionSurface = 'global_feed' | 'group_feed' | 'channel_feed'
 export type MessageAttributionViewerState = 'anonymous' | 'authenticated'
 export type MessageAttributionFlow = 'login' | 'register'
 export type MessageAttributionIntentState = 'created' | 'started' | 'completed' | 'expired'
