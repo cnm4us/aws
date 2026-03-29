@@ -5820,7 +5820,7 @@ function renderAdminMessageJourneyForm(opts: {
   csrfToken?: string | null
   backHref: string
   values: any
-  rulesetOptions?: Array<{ id: number; name: string }>
+  rulesetOptions?: Array<{ id: number; name: string; status?: string; criteria?: Record<string, any> }>
   surfaceTargetOptions?: {
     groups: Array<{ id: number; name: string; slug: string }>
     channels: Array<{ id: number; name: string; slug: string }>
@@ -5831,6 +5831,9 @@ function renderAdminMessageJourneyForm(opts: {
   const csrfToken = opts.csrfToken ? String(opts.csrfToken) : ''
   const values = opts.values || {}
   const rulesetOptions = Array.isArray(opts.rulesetOptions) ? opts.rulesetOptions : []
+  const rulesetCriteriaById = Object.fromEntries(
+    rulesetOptions.map((r) => [String(Number((r as any).id || 0)), (r as any).criteria || { version: 1, inclusion: [], exclusion: [] }])
+  )
   const surfaceTargetOptions = opts.surfaceTargetOptions || { groups: [], channels: [] }
   const rawJourneySurfaceTargeting = Array.isArray(values.surfaceTargeting)
     ? values.surfaceTargeting
@@ -5860,16 +5863,23 @@ function renderAdminMessageJourneyForm(opts: {
   if (opts.notice) body += `<div class="notice">${escapeHtml(String(opts.notice))}</div>`
   body += `<form method="post" action="${escapeHtml(opts.action)}">`
   if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
-  body += `<div class="section"><div class="section-title">Journey</div>`
+  body += `<button type="button" class="journey-section-toggle" data-target="journey-new-section-identity" aria-expanded="false" style="width:100%; display:flex; align-items:center; gap:8px; border:0; background:transparent; color:#fff; font-size:18px; font-weight:900; text-align:left; padding:0; margin:10px 0 6px; cursor:pointer;"><span class="journey-section-chevron">▸</span><span style="opacity:0.5">IDENTITY</span></button>`
+  body += `<div id="journey-new-section-identity" class="section" style="display:none">`
   body += `<label>Journey Key<input type="text" name="journeyKey" maxlength="64" value="${escapeHtml(String(values?.journeyKey || ''))}" required /></label>`
   body += `<label>Name<input type="text" name="name" maxlength="120" value="${escapeHtml(String(values?.name || ''))}" required /></label>`
   body += `<label>Description (optional)<input type="text" name="description" maxlength="500" value="${escapeHtml(String(values?.description || ''))}" /></label>`
+  body += `<label>Status<select name="status">`
+  for (const opt of MESSAGE_JOURNEY_STATUS_OPTIONS) {
+    body += `<option value="${escapeHtml(opt.value)}"${String(values?.status || 'draft') === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+  }
+  body += `</select></label>`
+  body += `</div>`
+  body += `<button type="button" class="journey-section-toggle" data-target="journey-new-section-surface" aria-expanded="false" style="width:100%; display:flex; align-items:center; gap:8px; border:0; background:transparent; color:#fff; font-size:18px; font-weight:900; text-align:left; padding:0; margin:10px 0 6px; cursor:pointer;"><span class="journey-section-chevron">▸</span><span style="opacity:0.5">SURFACE TARGETING</span></button>`
+  body += `<div id="journey-new-section-surface" class="section" style="display:none">`
   body += `<input type="hidden" name="appliesToSurface" value="${escapeHtml(journeySurfaceValue)}" />`
-  body += `<div class="mini-field">`
-  body += `<div class="mini-field-label">Surfaces</div>`
   body += `<div style="display:grid; gap:10px; margin-top:6px">`
   body += `<label style="display:flex; align-items:center; justify-content:flex-start; gap:8px; font-weight:700; margin:0; white-space:nowrap"><input type="checkbox" name="surfaceGlobalFeed" value="1"${journeyGlobalChecked ? ' checked' : ''} /> Global Feed</label>`
-  body += `<div style="width:100%; border:1px solid rgba(255,255,255,0.14); border-radius:10px; padding:10px">`
+  body += `<div style="border:1px solid rgba(255,255,255,0.14); border-radius:10px; padding:10px; box-sizing:border-box">`
   body += `<label style="display:flex; align-items:center; justify-content:flex-start; gap:8px; font-weight:700; margin:0 0 8px 0; white-space:nowrap"><input type="checkbox" name="surfaceGroupFeed" value="1"${journeyTargetBySurface.has('group_feed') ? ' checked' : ''} /> Groups</label>`
   body += `<label style="margin:0 0 8px 0">Targeting<select name="surfaceGroupFeedMode"><option value="all"${journeyGroupsTargeting.targetingMode === 'all' ? ' selected' : ''}>All</option><option value="selected"${journeyGroupsTargeting.targetingMode === 'selected' ? ' selected' : ''}>Selected only</option></select></label>`
   body += `<label style="margin:0">Selected Groups<select name="surfaceGroupTargetIds" multiple size="6">`
@@ -5880,7 +5890,7 @@ function renderAdminMessageJourneyForm(opts: {
   }
   body += `</select></label>`
   body += `</div>`
-  body += `<div style="width:100%; border:1px solid rgba(255,255,255,0.14); border-radius:10px; padding:10px">`
+  body += `<div style="border:1px solid rgba(255,255,255,0.14); border-radius:10px; padding:10px; box-sizing:border-box">`
   body += `<label style="display:flex; align-items:center; justify-content:flex-start; gap:8px; font-weight:700; margin:0 0 8px 0; white-space:nowrap"><input type="checkbox" name="surfaceChannelFeed" value="1"${journeyTargetBySurface.has('channel_feed') ? ' checked' : ''} /> Channels</label>`
   body += `<label style="margin:0 0 8px 0">Targeting<select name="surfaceChannelFeedMode"><option value="all"${journeyChannelsTargeting.targetingMode === 'all' ? ' selected' : ''}>All</option><option value="selected"${journeyChannelsTargeting.targetingMode === 'selected' ? ' selected' : ''}>Selected only</option></select></label>`
   body += `<label style="margin:0">Selected Channels<select name="surfaceChannelTargetIds" multiple size="6">`
@@ -5893,22 +5903,98 @@ function renderAdminMessageJourneyForm(opts: {
   body += `</div>`
   body += `</div>`
   body += `</div>`
-  body += `<label>Eligibility Ruleset (optional)<select name="eligibilityRulesetId"><option value="">None</option>`
+  body += `</div>`
+  body += `<button type="button" class="journey-section-toggle" data-target="journey-new-section-eligibility" aria-expanded="false" style="width:100%; display:flex; align-items:center; gap:8px; border:0; background:transparent; color:#fff; font-size:18px; font-weight:900; text-align:left; padding:0; margin:10px 0 6px; cursor:pointer;"><span class="journey-section-chevron">▸</span><span style="opacity:0.5">ELIGIBILITY</span></button>`
+  body += `<div id="journey-new-section-eligibility" class="section" style="display:none">`
+  body += `<label>Eligibility Ruleset (optional)</label>`
+  body += `<div class="picker-row" style="display:flex; align-items:center; gap:8px">`
+  body += `<select id="journey-eligibility-select" name="eligibilityRulesetId"><option value="">None</option>`
   for (const r of rulesetOptions) {
     const rid = Number((r as any).id || 0)
     if (!Number.isFinite(rid) || rid <= 0) continue
     const rname = String((r as any).name || `Ruleset #${rid}`)
-    body += `<option value="${rid}"${String(values?.eligibilityRulesetId || '') === String(rid) ? ' selected' : ''}>${escapeHtml(rname)} [#${rid}]</option>`
+    const rstatus = String((r as any).status || '').trim().toLowerCase()
+    const suffix = rstatus ? ` [${rstatus}]` : ''
+    body += `<option value="${rid}"${String(values?.eligibilityRulesetId || '') === String(rid) ? ' selected' : ''}>${escapeHtml(`${rname}${suffix} #${rid}`)}</option>`
   }
-  body += `</select></label>`
-  body += `<label>Status<select name="status">`
-  for (const opt of MESSAGE_JOURNEY_STATUS_OPTIONS) {
-    body += `<option value="${escapeHtml(opt.value)}"${String(values?.status || 'draft') === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
-  }
-  body += `</select></label>`
+  body += `</select>`
+  body += `<button type="button" id="journey-eligibility-view" class="btn" title="View ruleset criteria" style="width:40px; min-width:40px; height:40px; padding:0; display:inline-flex; align-items:center; justify-content:center; font-size:16px; line-height:1;">{}</button>`
+  body += `</div>`
+  body += `<div class="field-hint">Journey ruleset gates all steps in this journey. Step progression is controlled only by progression policy.</div>`
   body += `</div>`
   body += `<div class="toolbar"><div></div><div style="display:flex; gap:8px"><button class="btn btn-primary-accent" type="submit">Save</button></div></div>`
   body += `</form>`
+  body += `<dialog id="journey-eligibility-dialog" style="max-width:860px; width:min(92vw, 860px); border:1px solid #444; border-radius:10px; padding:14px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px;">
+      <strong id="journey-eligibility-dialog-title">Eligibility Criteria</strong>
+      <button type="button" id="journey-eligibility-dialog-close" class="btn" aria-label="Close dialog" style="width:30px; min-width:30px; height:30px; padding:0; border-radius:999px; border:1px solid #000; background:#000; color:#fff; display:inline-flex; align-items:center; justify-content:center; font-size:16px; font-weight:900; line-height:1;">×</button>
+    </div>
+    <pre id="journey-eligibility-dialog-json" style="margin:0; max-height:60vh; overflow:auto; border:1px solid rgba(255,255,255,0.18); border-radius:8px; padding:10px; background:#0b0b0b; color:#fff; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px;"></pre>
+  </dialog>`
+  body += `<script>
+    (function () {
+      const toggles = document.querySelectorAll('.journey-section-toggle[data-target]');
+      const setExpanded = (btn, expanded) => {
+        btn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+        const chev = btn.querySelector('.journey-section-chevron');
+        if (chev) chev.textContent = expanded ? '▾' : '▸';
+      };
+      toggles.forEach((btn) => {
+        const targetId = btn.getAttribute('data-target');
+        if (!targetId) return;
+        const target = document.getElementById(targetId);
+        if (!target) return;
+        const expanded = btn.getAttribute('aria-expanded') === 'true';
+        setExpanded(btn, expanded);
+        target.style.display = expanded ? '' : 'none';
+        btn.addEventListener('click', () => {
+          const next = btn.getAttribute('aria-expanded') !== 'true';
+          setExpanded(btn, next);
+          target.style.display = next ? '' : 'none';
+        });
+      });
+
+      const rulesetCriteriaById = ${JSON.stringify(rulesetCriteriaById)};
+      const rulesetSelect = document.getElementById('journey-eligibility-select');
+      const rulesetViewBtn = document.getElementById('journey-eligibility-view');
+      const rulesetDialog = document.getElementById('journey-eligibility-dialog');
+      const rulesetDialogClose = document.getElementById('journey-eligibility-dialog-close');
+      const rulesetDialogTitle = document.getElementById('journey-eligibility-dialog-title');
+      const rulesetDialogJson = document.getElementById('journey-eligibility-dialog-json');
+      const syncRulesetButton = () => {
+        if (!rulesetViewBtn || !rulesetSelect) return;
+        const id = String(rulesetSelect.value || '').trim();
+        const enabled = !!id && !!rulesetCriteriaById[id];
+        rulesetViewBtn.disabled = !enabled;
+        rulesetViewBtn.style.opacity = enabled ? '1' : '0.4';
+        rulesetViewBtn.style.cursor = enabled ? 'pointer' : 'not-allowed';
+      };
+      if (rulesetSelect) rulesetSelect.addEventListener('change', syncRulesetButton);
+      syncRulesetButton();
+      if (rulesetViewBtn && rulesetSelect && rulesetDialog && rulesetDialogJson) {
+        rulesetViewBtn.addEventListener('click', () => {
+          const id = String(rulesetSelect.value || '').trim();
+          if (!id || !rulesetCriteriaById[id]) return;
+          const selectedOpt = rulesetSelect.options[rulesetSelect.selectedIndex];
+          if (rulesetDialogTitle) rulesetDialogTitle.textContent = 'Eligibility Criteria — ' + String((selectedOpt && selectedOpt.text) || ('#' + id));
+          rulesetDialogJson.textContent = JSON.stringify(rulesetCriteriaById[id], null, 2);
+          if (typeof rulesetDialog.showModal === 'function') rulesetDialog.showModal();
+        });
+        if (rulesetDialogClose) {
+          rulesetDialogClose.addEventListener('click', () => {
+            if (typeof rulesetDialog.close === 'function') rulesetDialog.close();
+          });
+        }
+        rulesetDialog.addEventListener('click', (ev) => {
+          const rect = rulesetDialog.getBoundingClientRect();
+          const x = ev.clientX;
+          const y = ev.clientY;
+          const outside = x < rect.left || x > rect.right || y < rect.top || y > rect.bottom;
+          if (outside && typeof rulesetDialog.close === 'function') rulesetDialog.close();
+        });
+      }
+    })();
+  </script>`
   return renderAdminPage({ title: opts.title, bodyHtml: body, active: 'message_journeys' })
 }
 
@@ -5974,7 +6060,12 @@ pagesRouter.get('/admin/message-journeys/new', async (req: any, res: any) => {
       action: '/admin/message-journeys',
       csrfToken,
       backHref: '/admin/message-journeys',
-      rulesetOptions: rulesets.map((r) => ({ id: Number(r.id), name: String((r as any).name || `Ruleset #${r.id}`) })),
+      rulesetOptions: rulesets.map((r) => ({
+        id: Number(r.id),
+        name: String((r as any).name || `Ruleset #${r.id}`),
+        status: String((r as any).status || ''),
+        criteria: ((r as any).criteria && typeof (r as any).criteria === 'object') ? (r as any).criteria : undefined,
+      })),
       surfaceTargetOptions,
       values: {
         journeyKey: '',
@@ -6008,7 +6099,12 @@ pagesRouter.post('/admin/message-journeys', async (req: any, res: any) => {
       action: '/admin/message-journeys',
       csrfToken,
       backHref: '/admin/message-journeys',
-      rulesetOptions: rulesets.map((r) => ({ id: Number(r.id), name: String((r as any).name || `Ruleset #${r.id}`) })),
+      rulesetOptions: rulesets.map((r) => ({
+        id: Number(r.id),
+        name: String((r as any).name || `Ruleset #${r.id}`),
+        status: String((r as any).status || ''),
+        criteria: ((r as any).criteria && typeof (r as any).criteria === 'object') ? (r as any).criteria : undefined,
+      })),
       surfaceTargetOptions,
       values: payload,
       error: String(err?.message || 'Failed to create message journey'),
@@ -6103,12 +6199,12 @@ pagesRouter.get('/admin/message-journeys/:id', async (req: any, res: any) => {
     let body = `<div class="journey-ui">`
     body += `<style>
       .journey-ui .journey-block-title {
-        font-size: 22px;
+        font-size: 18px;
         font-weight: 900;
         letter-spacing: 0.02em;
         text-transform: uppercase;
         opacity: 0.5;
-        margin: 18px 0 8px 0;
+        margin: 0;
       }
       .journey-ui .journey-card {
         background: linear-gradient(180deg, rgba(28,45,58,0.96) 0%, rgba(12,16,20,0.96) 100%);
@@ -6155,10 +6251,10 @@ pagesRouter.get('/admin/message-journeys/:id', async (req: any, res: any) => {
     if (notice) body += `<div class="notice">${escapeHtml(notice)}</div>`
     if (error) body += `<div class="error">${escapeHtml(error)}</div>`
 
-    body += `<div class="journey-block-title">JOURNEY</div>`
+    body += `<button type="button" class="journey-section-toggle" data-target="journey-section-identity" aria-expanded="false" style="width:100%; display:flex; align-items:center; gap:8px; border:0; background:transparent; color:#fff; text-align:left; padding:0; margin:10px 0 6px; cursor:pointer;"><span class="journey-section-chevron">▸</span><span class="journey-block-title">IDENTITY</span></button>`
     body += `<form method="post" action="/admin/message-journeys/${id}">`
     if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
-    body += `<div class="section journey-card">`
+    body += `<div id="journey-section-identity" class="section journey-card" style="display:none">`
     body += `<label>Journey Key<input type="text" name="journeyKey" maxlength="64" value="${escapeHtml(String(journey.journeyKey || ''))}" required /></label>`
     body += `<label>Name<input type="text" name="name" maxlength="120" value="${escapeHtml(String(journey.name || ''))}" required /></label>`
     const journeySurfaceValue = String((journey as any).appliesToSurface || 'global_feed')
@@ -6181,12 +6277,19 @@ pagesRouter.get('/admin/message-journeys/:id', async (req: any, res: any) => {
     const journeyGroupsTargeting = journeyTargetBySurface.get('group_feed') || { targetingMode: 'all' as const, targetIds: [] }
     const journeyChannelsTargeting = journeyTargetBySurface.get('channel_feed') || { targetingMode: 'all' as const, targetIds: [] }
     body += `<label>Description (optional)<input type="text" name="description" maxlength="500" value="${escapeHtml(String(journey.description || ''))}" /></label>`
+    body += `<label>Status<select name="status">`
+    for (const opt of MESSAGE_JOURNEY_STATUS_OPTIONS) {
+      body += `<option value="${escapeHtml(opt.value)}"${String(journey.status || 'draft') === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+    }
+    body += `</select></label>`
+    body += `</div>`
+
+    body += `<button type="button" class="journey-section-toggle" data-target="journey-section-surface" aria-expanded="false" style="width:100%; display:flex; align-items:center; gap:8px; border:0; background:transparent; color:#fff; text-align:left; padding:0; margin:10px 0 6px; cursor:pointer;"><span class="journey-section-chevron">▸</span><span class="journey-block-title">SURFACE TARGETING</span></button>`
+    body += `<div id="journey-section-surface" class="section journey-card" style="display:none">`
     body += `<input type="hidden" name="appliesToSurface" value="${escapeHtml(journeySurfaceValue)}" />`
-    body += `<div class="mini-field">`
-    body += `<div class="mini-field-label">Surfaces</div>`
     body += `<div style="display:grid; gap:10px; margin-top:6px">`
     body += `<label style="display:flex; align-items:center; justify-content:flex-start; gap:8px; font-weight:700; margin:0; white-space:nowrap"><input type="checkbox" name="surfaceGlobalFeed" value="1"${journeyGlobalChecked ? ' checked' : ''} /> Global Feed</label>`
-    body += `<div style="width:100%; border:1px solid rgba(255,255,255,0.14); border-radius:10px; padding:10px">`
+    body += `<div style="border:1px solid rgba(255,255,255,0.14); border-radius:10px; padding:10px; box-sizing:border-box">`
     body += `<label style="display:flex; align-items:center; justify-content:flex-start; gap:8px; font-weight:700; margin:0 0 8px 0; white-space:nowrap"><input type="checkbox" name="surfaceGroupFeed" value="1"${journeyTargetBySurface.has('group_feed') ? ' checked' : ''} /> Groups</label>`
     body += `<label style="margin:0 0 8px 0">Targeting<select name="surfaceGroupFeedMode"><option value="all"${journeyGroupsTargeting.targetingMode === 'all' ? ' selected' : ''}>All</option><option value="selected"${journeyGroupsTargeting.targetingMode === 'selected' ? ' selected' : ''}>Selected only</option></select></label>`
     body += `<label style="margin:0">Selected Groups<select name="surfaceGroupTargetIds" multiple size="6">`
@@ -6197,7 +6300,7 @@ pagesRouter.get('/admin/message-journeys/:id', async (req: any, res: any) => {
     }
     body += `</select></label>`
     body += `</div>`
-    body += `<div style="width:100%; border:1px solid rgba(255,255,255,0.14); border-radius:10px; padding:10px">`
+    body += `<div style="border:1px solid rgba(255,255,255,0.14); border-radius:10px; padding:10px; box-sizing:border-box">`
     body += `<label style="display:flex; align-items:center; justify-content:flex-start; gap:8px; font-weight:700; margin:0 0 8px 0; white-space:nowrap"><input type="checkbox" name="surfaceChannelFeed" value="1"${journeyTargetBySurface.has('channel_feed') ? ' checked' : ''} /> Channels</label>`
     body += `<label style="margin:0 0 8px 0">Targeting<select name="surfaceChannelFeedMode"><option value="all"${journeyChannelsTargeting.targetingMode === 'all' ? ' selected' : ''}>All</option><option value="selected"${journeyChannelsTargeting.targetingMode === 'selected' ? ' selected' : ''}>Selected only</option></select></label>`
     body += `<label style="margin:0">Selected Channels<select name="surfaceChannelTargetIds" multiple size="6">`
@@ -6210,27 +6313,33 @@ pagesRouter.get('/admin/message-journeys/:id', async (req: any, res: any) => {
     body += `</div>`
     body += `</div>`
     body += `</div>`
-    body += `<label>Eligibility Ruleset (optional)<select name="eligibilityRulesetId"><option value="">None</option>`
+
+    body += `<button type="button" class="journey-section-toggle" data-target="journey-section-eligibility" aria-expanded="false" style="width:100%; display:flex; align-items:center; gap:8px; border:0; background:transparent; color:#fff; text-align:left; padding:0; margin:10px 0 6px; cursor:pointer;"><span class="journey-section-chevron">▸</span><span class="journey-block-title">ELIGIBILITY</span></button>`
+    body += `<div id="journey-section-eligibility" class="section journey-card" style="display:none">`
+    body += `<label>Eligibility Ruleset (optional)</label>`
+    body += `<div class="picker-row" style="display:flex; align-items:center; gap:8px">`
+    body += `<select id="journey-eligibility-select" name="eligibilityRulesetId"><option value="">None</option>`
     for (const r of rulesets) {
       const rid = Number(r.id || 0)
       const rname = rulesetNameById.get(rid) || `Ruleset #${rid}`
-      body += `<option value="${rid}"${String(journey.eligibilityRulesetId || '') === String(rid) ? ' selected' : ''}>${escapeHtml(rname)} [#${rid}]</option>`
+      const rstatus = String((r as any).status || '').trim().toLowerCase()
+      const suffix = rstatus ? ` [${rstatus}]` : ''
+      body += `<option value="${rid}"${String(journey.eligibilityRulesetId || '') === String(rid) ? ' selected' : ''}>${escapeHtml(`${rname}${suffix} #${rid}`)}</option>`
     }
-    body += `</select></label>`
-    body += `<label>Status<select name="status">`
-    for (const opt of MESSAGE_JOURNEY_STATUS_OPTIONS) {
-      body += `<option value="${escapeHtml(opt.value)}"${String(journey.status || 'draft') === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
-    }
-    body += `</select></label>`
+    body += `</select>`
+    body += `<button type="button" id="journey-eligibility-view" class="btn" title="View ruleset criteria" style="width:40px; min-width:40px; height:40px; padding:0; display:inline-flex; align-items:center; justify-content:center; font-size:16px; line-height:1;">{}</button>`
+    body += `</div>`
     body += `<div class="field-hint">Journey ruleset gates all steps in this journey. Step progression is controlled only by progression policy.</div>`
+    body += `</div>`
+
     body += `<div class="toolbar" style="display:flex; justify-content:space-between; gap:10px; margin-top:12px">`
     body += `<button class="btn danger" type="submit" formaction="/admin/message-journeys/${id}/delete" formmethod="post" formnovalidate onclick="return confirm('Delete this journey?')">Delete</button>`
     body += `<button class="btn btn-primary-accent" type="submit">Save</button>`
     body += `</div>`
-    body += `</div>`
     body += `</form>`
 
-    body += `<div class="journey-block-title">STEPS</div>`
+    body += `<button type="button" class="journey-section-toggle" data-target="journey-section-steps" aria-expanded="false" style="width:100%; display:flex; align-items:center; gap:8px; border:0; background:transparent; color:#fff; text-align:left; padding:0; margin:10px 0 6px; cursor:pointer;"><span class="journey-section-chevron">▸</span><span class="journey-block-title">STEPS</span></button>`
+    body += `<div id="journey-section-steps" style="display:none">`
     if (!steps.length) {
       body += `<p>No steps yet.</p>`
     } else {
@@ -6317,8 +6426,79 @@ pagesRouter.get('/admin/message-journeys/:id', async (req: any, res: any) => {
       body += `<div class="toolbar" style="display:flex; justify-content:space-between; gap:10px"><a class="btn danger" href="/admin/message-journeys/${id}">Delete</a><button class="btn btn-primary-accent" type="submit">Save</button></div>`
       body += `</div></form>`
     }
+    body += `</div>`
+    body += `<dialog id="journey-eligibility-dialog" style="max-width:860px; width:min(92vw, 860px); border:1px solid #444; border-radius:10px; padding:14px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px;">
+        <strong id="journey-eligibility-dialog-title">Eligibility Criteria</strong>
+        <button type="button" id="journey-eligibility-dialog-close" class="btn" aria-label="Close dialog" style="width:30px; min-width:30px; height:30px; padding:0; border-radius:999px; border:1px solid #000; background:#000; color:#fff; display:inline-flex; align-items:center; justify-content:center; font-size:16px; font-weight:900; line-height:1;">×</button>
+      </div>
+      <pre id="journey-eligibility-dialog-json" style="margin:0; max-height:60vh; overflow:auto; border:1px solid rgba(255,255,255,0.18); border-radius:8px; padding:10px; background:#0b0b0b; color:#fff; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px;"></pre>
+    </dialog>`
     body += `<script>
       (function () {
+        const sectionToggles = document.querySelectorAll('.journey-section-toggle[data-target]');
+        const setExpanded = (btn, expanded) => {
+          btn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+          const chev = btn.querySelector('.journey-section-chevron');
+          if (chev) chev.textContent = expanded ? '▾' : '▸';
+        };
+        sectionToggles.forEach((btn) => {
+          const targetId = btn.getAttribute('data-target');
+          if (!targetId) return;
+          const target = document.getElementById(targetId);
+          if (!target) return;
+          const expanded = btn.getAttribute('aria-expanded') === 'true';
+          setExpanded(btn, expanded);
+          target.style.display = expanded ? '' : 'none';
+          btn.addEventListener('click', () => {
+            const next = btn.getAttribute('aria-expanded') !== 'true';
+            setExpanded(btn, next);
+            target.style.display = next ? '' : 'none';
+          });
+        });
+        const rulesetCriteriaById = ${JSON.stringify(
+          Object.fromEntries(
+            rulesets.map((r) => [String(Number((r as any).id || 0)), ((r as any).criteria && typeof (r as any).criteria === 'object') ? (r as any).criteria : { version: 1, inclusion: [], exclusion: [] }])
+          )
+        )};
+        const rulesetSelect = document.getElementById('journey-eligibility-select');
+        const rulesetViewBtn = document.getElementById('journey-eligibility-view');
+        const rulesetDialog = document.getElementById('journey-eligibility-dialog');
+        const rulesetDialogClose = document.getElementById('journey-eligibility-dialog-close');
+        const rulesetDialogTitle = document.getElementById('journey-eligibility-dialog-title');
+        const rulesetDialogJson = document.getElementById('journey-eligibility-dialog-json');
+        const syncRulesetButton = () => {
+          if (!rulesetViewBtn || !rulesetSelect) return;
+          const id = String(rulesetSelect.value || '').trim();
+          const enabled = !!id && !!rulesetCriteriaById[id];
+          rulesetViewBtn.disabled = !enabled;
+          rulesetViewBtn.style.opacity = enabled ? '1' : '0.4';
+          rulesetViewBtn.style.cursor = enabled ? 'pointer' : 'not-allowed';
+        };
+        if (rulesetSelect) rulesetSelect.addEventListener('change', syncRulesetButton);
+        syncRulesetButton();
+        if (rulesetViewBtn && rulesetSelect && rulesetDialog && rulesetDialogJson) {
+          rulesetViewBtn.addEventListener('click', () => {
+            const id = String(rulesetSelect.value || '').trim();
+            if (!id || !rulesetCriteriaById[id]) return;
+            const selectedOpt = rulesetSelect.options[rulesetSelect.selectedIndex];
+            if (rulesetDialogTitle) rulesetDialogTitle.textContent = 'Eligibility Criteria — ' + String((selectedOpt && selectedOpt.text) || ('#' + id));
+            rulesetDialogJson.textContent = JSON.stringify(rulesetCriteriaById[id], null, 2);
+            if (typeof rulesetDialog.showModal === 'function') rulesetDialog.showModal();
+          });
+          if (rulesetDialogClose) {
+            rulesetDialogClose.addEventListener('click', () => {
+              if (typeof rulesetDialog.close === 'function') rulesetDialog.close();
+            });
+          }
+          rulesetDialog.addEventListener('click', (ev) => {
+            const rect = rulesetDialog.getBoundingClientRect();
+            const x = ev.clientX;
+            const y = ev.clientY;
+            const outside = x < rect.left || x > rect.right || y < rect.top || y > rect.bottom;
+            if (outside && typeof rulesetDialog.close === 'function') rulesetDialog.close();
+          });
+        }
         const ctaOptionsByMessageId = ${JSON.stringify(messageCtaPickerOptionsByMessageId)};
         const query = new URLSearchParams(window.location.search || '');
         const hasCreateDraft =
