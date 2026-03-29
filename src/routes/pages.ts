@@ -6499,7 +6499,10 @@ pagesRouter.get('/admin/message-journeys/:id', async (req: any, res: any) => {
         body += `</details>`
         body += `<div class="toolbar" style="display:flex; justify-content:space-between; gap:10px">`
         body += `<button class="btn danger" type="submit" formaction="/admin/message-journeys/${id}/steps/${step.id}/delete" formmethod="post" formnovalidate onclick="return confirm('Delete this step?')">Delete</button>`
+        body += `<div style="display:flex; gap:8px; margin-left:auto">`
+        body += `<button class="btn" type="submit" formaction="/admin/message-journeys/${id}/steps/${step.id}/clone" formmethod="post" formnovalidate>Clone</button>`
         body += `<button class="btn" type="submit">Save</button>`
+        body += `</div>`
         body += `</div>`
         body += `</form>`
       }
@@ -6880,6 +6883,19 @@ pagesRouter.post('/admin/message-journeys/:id/steps/:stepId/delete', async (req:
     res.redirect(`/admin/message-journeys/${id}?notice=${encodeURIComponent('Step deleted.')}`)
   } catch (err: any) {
     res.redirect(`/admin/message-journeys/${id}?error=${encodeURIComponent(String(err?.message || 'Failed to delete step'))}`)
+  }
+})
+
+pagesRouter.post('/admin/message-journeys/:id/steps/:stepId/clone', async (req: any, res: any) => {
+  const id = Number(req.params.id)
+  const stepId = Number(req.params.stepId)
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).send('Bad journey id')
+  if (!Number.isFinite(stepId) || stepId <= 0) return res.status(400).send('Bad step id')
+  try {
+    const cloned = await messageJourneysSvc.cloneJourneyStepForAdmin(id, stepId, Number(req.user?.id || 0))
+    res.redirect(`/admin/message-journeys/${id}?notice=${encodeURIComponent(`Step cloned to position ${Number(cloned.stepOrder)}.`)}`)
+  } catch (err: any) {
+    res.redirect(`/admin/message-journeys/${id}?error=${encodeURIComponent(String(err?.message || 'Failed to clone step'))}`)
   }
 })
 

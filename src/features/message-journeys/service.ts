@@ -474,6 +474,40 @@ export async function deleteJourneyStepForAdmin(journeyIdRaw: number, stepIdRaw:
   if (!removed) throw new NotFoundError('message_journey_step_not_found')
 }
 
+export async function cloneJourneyStepForAdmin(journeyIdRaw: number, stepIdRaw: number, actorUserId: number): Promise<MessageJourneyStepDto> {
+  normalizeActorUserId(actorUserId)
+  const journeyId = normalizePositiveInt(journeyIdRaw, 'bad_id')
+  const stepId = normalizePositiveInt(stepIdRaw, 'bad_step_id')
+  const source = await repo.getStepById(stepId)
+  if (!source || Number(source.journey_id) !== journeyId) throw new NotFoundError('message_journey_step_not_found')
+
+  const sourceDto = toStepDto(source)
+  const insertOrder = Math.max(1, Number(sourceDto.stepOrder) + 1)
+  const existingSteps = await repo.listStepsByJourneyId(journeyId, { includeArchived: true })
+  const existingKeys = new Set(
+    existingSteps
+      .map((row) => String((row as any).step_key || '').trim().toLowerCase())
+      .filter(Boolean)
+  )
+  let nextStepKey = `step_${insertOrder}`
+  if (existingKeys.has(nextStepKey)) {
+    let suffix = 2
+    while (existingKeys.has(`${nextStepKey}_${suffix}`)) suffix += 1
+    nextStepKey = `${nextStepKey}_${suffix}`
+  }
+
+  await repo.shiftStepOrdersAtOrAfter(journeyId, insertOrder, 1)
+  const row = await repo.createStep({
+    journeyId,
+    stepKey: nextStepKey,
+    stepOrder: insertOrder,
+    messageId: Number(sourceDto.messageId),
+    status: normalizeStepStatus(sourceDto.status, 'draft'),
+    configJson: JSON.stringify(normalizeJourneyStepConfigForAdmin(sourceDto.config || {})),
+  })
+  return toStepDto(row)
+}
+
 export async function listJourneyStepRefsForMessage(messageIdRaw: number): Promise<Array<{
   journeyId: number
   journeyKey: string

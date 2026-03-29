@@ -476,6 +476,17 @@ export async function createStep(input: StepCreateInput): Promise<MessageJourney
   return row
 }
 
+export async function shiftStepOrdersAtOrAfter(journeyId: number, startOrder: number, delta: number): Promise<void> {
+  const db = getPool()
+  await db.query(
+    `UPDATE feed_message_journey_steps
+        SET step_order = step_order + ?
+      WHERE journey_id = ?
+        AND step_order >= ?`,
+    [delta, journeyId, startOrder]
+  )
+}
+
 export async function updateStep(id: number, patch: StepUpdateInput): Promise<MessageJourneyStepRow> {
   const db = getPool()
   const sets: string[] = []
