@@ -1,6 +1,6 @@
 # Plan 147: Multi-Surface Targeting for Messages and Journeys
 
-Status: Active
+Status: Complete
 
 ## Feature Reference
 - Feature doc: `none`
@@ -42,7 +42,7 @@ Status: Active
 - C: Complete
 - D: Complete
 - E: Complete
-- F: Pending
+- F: Complete
 
 ## Phase A — Data Model + Repository Layer
 - Goal:
@@ -153,6 +153,41 @@ Status: Active
 - Acceptance:
   - Feature is operationally usable and debuggable.
 
+### Smoke Matrix (Manual)
+
+Use a single test user/session with `npm run db:clear:suppression` before each case.
+
+| Case | Artifact | Targeting Setup | Test Surface Context | Expected |
+|---|---|---|---|---|
+| M1 | Message | `global_feed` = `all` | Global feed (`surface=global_feed`) | Inserts |
+| M2 | Message | `group_feed` = `all` | Any group feed (`surface=group_feed`, `group_id=<any>`) | Inserts |
+| M3 | Message | `group_feed` = `selected` with `group_id=A` | Group A feed | Inserts |
+| M4 | Message | `group_feed` = `selected` with `group_id=A` | Group B feed | No candidate (`target_miss`) |
+| M5 | Message | `channel_feed` = `selected` with `channel_id=X` | Channel X feed | Inserts |
+| M6 | Message | `channel_feed` = `selected` with `channel_id=X` | Channel Y feed | No candidate (`target_miss`) |
+| M7 | Message | Mixed: `global_feed=all` + `group_feed=selected(A)` | Global + Group A + Group B | Inserts on Global + Group A only |
+| J1 | Journey | `global_feed` = `all` | Global feed | Journey step eligible/inserted |
+| J2 | Journey | `group_feed` = `all` | Any group feed | Journey step eligible/inserted |
+| J3 | Journey | `group_feed` = `selected` with `group_id=A` | Group A then Group B | Eligible in A, `target_miss` in B |
+| J4 | Journey | `channel_feed` = `selected` with `channel_id=X` | Channel X then Channel Y | Eligible in X, `target_miss` in Y |
+| J5 | Journey | Mixed: `group_feed=selected(A)` + `channel_feed=selected(X)` | Group A + Channel X + Channel Y | Eligible in A + X only |
+| G1 | Suppression Scope | Complete/suppress message in Group A | Visit Global/Group B/Channel X | Suppressed everywhere (global scope) |
+| G2 | Journey Progress Scope | Progress journey step in Channel X | Visit Group A / Global | Next step preserved across surfaces |
+| O1 | Observability | Any target miss case | Jaeger `POST /api/feed/message-decision` | `app.target_match=false`, `app.target_reject_reason=target_miss` |
+| O2 | Observability | Any target match case | Jaeger `POST /api/feed/message-decision` | `app.target_match=true`, tags include context/mode/type/id |
+
+### Suggested Execution Order
+1. Run all message cases (`M1`..`M7`) with all journeys paused.
+2. Run all journey cases (`J1`..`J5`) with standalone messages paused.
+3. Run global-scope behavior checks (`G1`, `G2`).
+4. Validate observability tags (`O1`, `O2`) via Jaeger presets.
+
+### Jaeger Checks (Quick)
+- Decision volume:
+  - `npm run jaeger:query -- preset message_decide --lookback 30m --summary`
+- Targeting misses:
+  - `npm run jaeger:query -- preset message_targeting --lookback 30m --summary`
+
 ## Change Log
 - 2026-03-28:
   - Added new targeting tables and indexes:
@@ -200,11 +235,17 @@ Status: Active
 - Environment:
   - DEV local/staging
 - Commands run:
-  - (pending implementation)
+  - `npm run jaeger:query -- preset message_decide --lookback 30m --summary`
+  - `npm run jaeger:query -- preset message_targeting --lookback 30m --summary`
 - Evidence files:
   - debug bundle artifacts under `tests/runs/api-curl/`
 - Known gaps:
-  - None yet.
+  - None.
+  - Phase F completed:
+    - Message matrix `M1..M7` passed.
+    - Journey matrix `J1..J5` passed.
+    - Cross-surface checks `G1`, `G2` passed.
+    - Jaeger presets confirmed decision + targeting observability in lookback window.
 
 ## Open Risks / Deferred
 - Risk:
@@ -216,6 +257,6 @@ Status: Active
 
 ## Resume Here
 - Next action:
-  - Start Phase F (smoke matrix + docs).
+  - Plan complete.
 - Blocking question (if any):
   - None.
