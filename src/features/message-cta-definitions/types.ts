@@ -3,6 +3,7 @@ export type MessageCtaScopeType = 'global' | 'space'
 
 export type MessageCtaIntentKey =
   | 'support'
+  | 'defer'
   | 'login'
   | 'register'
   | 'donate'
@@ -18,6 +19,7 @@ export type MessageCtaExecutorType =
   | 'provider_checkout'
   | 'verification_flow'
   | 'api_action'
+  | 'advance_slide'
 
 export type MessageCtaCompletionContract =
   | 'on_click'
@@ -54,11 +56,16 @@ export type MessageCtaApiActionConfig = {
   successReturn?: string | null
 }
 
+export type MessageCtaAdvanceSlideConfig = {
+  mode?: 'next_slide'
+}
+
 export type MessageCtaDefinitionConfig =
   | MessageCtaInternalLinkConfig
   | MessageCtaProviderCheckoutConfig
   | MessageCtaVerificationFlowConfig
   | MessageCtaApiActionConfig
+  | MessageCtaAdvanceSlideConfig
 
 export type MessageCtaDefinitionRow = {
   id: number

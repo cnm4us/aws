@@ -3110,6 +3110,7 @@ const MESSAGE_CTA_SCOPE_OPTIONS: Array<{ value: string; label: string }> = [
 
 const MESSAGE_CTA_INTENT_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'support', label: 'Support Us' },
+  { value: 'defer', label: 'Defer / Not Now' },
   { value: 'visit_link', label: 'Visit Link' },
   { value: 'visit_sponsor', label: 'Visit Sponsor' },
   { value: 'login', label: 'Login' },
@@ -3124,6 +3125,7 @@ const MESSAGE_CTA_INTENT_OPTIONS: Array<{ value: string; label: string }> = [
 const MESSAGE_CTA_EXECUTOR_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'internal_link', label: 'Internal Link' },
   { value: 'api_action', label: 'API Action' },
+  { value: 'advance_slide', label: 'Advance Slide (No Navigation)' },
 ]
 
 const MESSAGE_CTA_COMPLETION_CONTRACT_OPTIONS: Array<{ value: string; label: string }> = [
@@ -4616,6 +4618,8 @@ function buildMessageCtaCreateOrUpdatePayload(body: any): any {
       httpMethod: String(body?.configApiHttpMethod || 'POST').trim().toUpperCase(),
       successReturn: String(body?.configApiSuccessReturn || '').trim() || null,
     }
+  } else if (executorType === 'advance_slide') {
+    config = { mode: 'next_slide' }
   }
 
   return {
@@ -4703,6 +4707,10 @@ function renderAdminMessageCtaForm(opts: {
   body += `<label>Success Return (optional)<input type="text" name="configApiSuccessReturn" value="${escapeHtml(String(config?.successReturn || ''))}" placeholder="/" /></label>`
   body += `</div></div>`
 
+  body += `<div class="section executor-config" data-executor="advance_slide"><div class="section-title">Advance Slide Config</div>`
+  body += `<div class="field-hint">This CTA records click/outcome analytics and advances to the next slide without navigation.</div>`
+  body += `</div>`
+
   body += `<div class="toolbar"><div></div><div style="display:flex; gap:8px"><button class="btn btn-primary-accent" type="submit">Save</button></div></div>`
   body += `</form>`
 
@@ -4771,6 +4779,9 @@ function renderAdminMessageCtaForm(opts: {
           level = 'warn';
         } else if (executor === 'api_action' && contract === 'on_verified') {
           text = 'Warning: API Action does not imply verified state unless your endpoint emits verified completion explicitly.';
+          level = 'warn';
+        } else if (executor === 'advance_slide' && contract === 'on_verified') {
+          text = 'Warning: Advance Slide does not emit verified completion. Use On Click, On Return, or None.';
           level = 'warn';
         } else {
           text = 'Completion contract controls when this CTA emits canonical completion (used by suppression and journey progression).';

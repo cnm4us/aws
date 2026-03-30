@@ -1017,8 +1017,8 @@ export async function ensureSchema(db: DB) {
               status ENUM('draft','active','archived') NOT NULL DEFAULT 'draft',
               scope_type ENUM('global','space') NOT NULL DEFAULT 'global',
               scope_space_id BIGINT UNSIGNED NULL,
-              intent_key ENUM('support','login','register','donate','subscribe','upgrade','verify_email','verify_phone','visit_sponsor','visit_link') NOT NULL DEFAULT 'visit_link',
-              executor_type ENUM('internal_link','provider_checkout','verification_flow','api_action') NOT NULL DEFAULT 'internal_link',
+              intent_key ENUM('support','defer','login','register','donate','subscribe','upgrade','verify_email','verify_phone','visit_sponsor','visit_link') NOT NULL DEFAULT 'visit_link',
+              executor_type ENUM('internal_link','provider_checkout','verification_flow','api_action','advance_slide') NOT NULL DEFAULT 'internal_link',
               completion_contract ENUM('on_click','on_return','on_verified','none') NOT NULL DEFAULT 'on_click',
               label_default VARCHAR(100) NOT NULL,
               config_json JSON NOT NULL,
@@ -1035,8 +1035,8 @@ export async function ensureSchema(db: DB) {
           await db.query(`ALTER TABLE feed_message_cta_definitions ADD COLUMN IF NOT EXISTS status ENUM('draft','active','archived') NOT NULL DEFAULT 'draft'`)
           await db.query(`ALTER TABLE feed_message_cta_definitions ADD COLUMN IF NOT EXISTS scope_type ENUM('global','space') NOT NULL DEFAULT 'global'`)
           await db.query(`ALTER TABLE feed_message_cta_definitions ADD COLUMN IF NOT EXISTS scope_space_id BIGINT UNSIGNED NULL`)
-          await db.query(`ALTER TABLE feed_message_cta_definitions ADD COLUMN IF NOT EXISTS intent_key ENUM('support','login','register','donate','subscribe','upgrade','verify_email','verify_phone','visit_sponsor','visit_link') NOT NULL DEFAULT 'visit_link'`)
-          await db.query(`ALTER TABLE feed_message_cta_definitions ADD COLUMN IF NOT EXISTS executor_type ENUM('internal_link','provider_checkout','verification_flow','api_action') NOT NULL DEFAULT 'internal_link'`)
+          await db.query(`ALTER TABLE feed_message_cta_definitions ADD COLUMN IF NOT EXISTS intent_key ENUM('support','defer','login','register','donate','subscribe','upgrade','verify_email','verify_phone','visit_sponsor','visit_link') NOT NULL DEFAULT 'visit_link'`)
+          await db.query(`ALTER TABLE feed_message_cta_definitions ADD COLUMN IF NOT EXISTS executor_type ENUM('internal_link','provider_checkout','verification_flow','api_action','advance_slide') NOT NULL DEFAULT 'internal_link'`)
           await db.query(`ALTER TABLE feed_message_cta_definitions ADD COLUMN IF NOT EXISTS completion_contract ENUM('on_click','on_return','on_verified','none') NOT NULL DEFAULT 'on_click'`)
           await db.query(`ALTER TABLE feed_message_cta_definitions ADD COLUMN IF NOT EXISTS label_default VARCHAR(100) NOT NULL`)
           await db.query(`ALTER TABLE feed_message_cta_definitions ADD COLUMN IF NOT EXISTS config_json JSON NULL`)
@@ -1047,14 +1047,14 @@ export async function ensureSchema(db: DB) {
           try {
             await db.query(
               `ALTER TABLE feed_message_cta_definitions
-                 MODIFY COLUMN intent_key ENUM('support','login','register','donate','subscribe','upgrade','verify_email','verify_phone','visit_sponsor','visit_link')
+                 MODIFY COLUMN intent_key ENUM('support','defer','login','register','donate','subscribe','upgrade','verify_email','verify_phone','visit_sponsor','visit_link')
                  NOT NULL DEFAULT 'visit_link'`
             )
           } catch {}
           try {
             await db.query(
               `ALTER TABLE feed_message_cta_definitions
-                 MODIFY COLUMN executor_type ENUM('internal_link','provider_checkout','verification_flow','api_action')
+                 MODIFY COLUMN executor_type ENUM('internal_link','provider_checkout','verification_flow','api_action','advance_slide')
                  NOT NULL DEFAULT 'internal_link'`
             )
           } catch {}

@@ -2538,6 +2538,16 @@ export default function Feed() {
     ctaExecutorType: string | null
   }
 
+  function isAdvanceSlideExecutor(executorType: string | null | undefined): boolean {
+    return String(executorType || '').trim().toLowerCase() === 'advance_slide'
+  }
+
+  function canInvokeMessageCta(action: MessageCtaAction | null | undefined): boolean {
+    if (!action) return false
+    if (String(action.href || '').trim()) return true
+    return isAdvanceSlideExecutor(action.ctaExecutorType)
+  }
+
   function createClientIntentId(): string {
     try {
       const g: any = typeof globalThis !== 'undefined' ? globalThis : null
@@ -2605,7 +2615,8 @@ export default function Feed() {
 
   const handleMessageCtaClick = useCallback(async (message: FeedMessagePayload, action: MessageCtaAction) => {
     const targetHref = String(action.href || '').trim()
-    if (!targetHref) return
+    const advanceOnly = !targetHref && isAdvanceSlideExecutor(action.ctaExecutorType)
+    if (!targetHref && !advanceOnly) return
     const activeExposure = activeMessageExposureRef.current
     const activeSequence = activeExposure?.messageId === Number(message.id)
       ? activeExposure.sequenceKey
@@ -2666,13 +2677,20 @@ export default function Feed() {
         messageSequenceKey: activeSequence || null,
       }, { sequenceEngineTag: feedSequenceEngineTag })
     }
+    await Promise.race([
+      clickEventPromise,
+      new Promise<void>((resolve) => window.setTimeout(() => resolve(), 120)),
+    ])
+    if (advanceOnly) {
+      if (activeSequenceIndex < items.length - 1) {
+        indexReasonRef.current = 'message-cta-advance'
+        navigateToIndex(activeSequenceIndex + 1, { reason: 'message-cta-advance' })
+      }
+      return
+    }
     try {
       const url = new URL(targetHref, window.location.origin)
       if (url.origin === window.location.origin) {
-        await Promise.race([
-          clickEventPromise,
-          new Promise<void>((resolve) => window.setTimeout(() => resolve(), 120)),
-        ])
         const returnPath = `${url.pathname}${url.search}${url.hash || ''}`
         if ((flow === 'donate' || flow === 'subscribe' || flow === 'upgrade') && String(action.ctaExecutorType || '').toLowerCase() === 'provider_checkout') {
           const support = new URL('/support', window.location.origin)
@@ -2707,12 +2725,8 @@ export default function Feed() {
         return
       }
     } catch {}
-    await Promise.race([
-      clickEventPromise,
-      new Promise<void>((resolve) => window.setTimeout(() => resolve(), 120)),
-    ])
     window.location.href = targetHref
-  }, [activeSequenceKey, messageSessionId, feedSequenceEngineTag, messageDecisionContext])
+  }, [activeSequenceKey, activeSequenceIndex, items.length, messageSessionId, feedSequenceEngineTag, messageDecisionContext])
 
   const closeFeedActivitySession = useCallback((reason: 'pagehide' | 'beforeunload' | 'unmount' | 'mode_change' | 'visibility_hidden') => {
     if (!feedActivityStartedRef.current) return
@@ -3653,7 +3667,7 @@ export default function Feed() {
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation()
-                              if (!ctaPrimaryTarget.href) return
+                              if (!canInvokeMessageCta(ctaPrimaryTarget)) return
                               handleMessageCtaClick(message, ctaPrimaryTarget)
                             }}
                             style={{
@@ -3670,11 +3684,11 @@ export default function Feed() {
                               whiteSpace: isCtaStacked ? 'normal' : 'nowrap',
                               lineHeight: isCtaStacked ? 1.25 : undefined,
                               wordBreak: isCtaStacked ? 'break-word' : undefined,
-                              cursor: ctaPrimaryTarget.href ? 'pointer' : 'not-allowed',
-                              opacity: ctaPrimaryTarget.href ? 1 : 0.6,
+                              cursor: canInvokeMessageCta(ctaPrimaryTarget) ? 'pointer' : 'not-allowed',
+                              opacity: canInvokeMessageCta(ctaPrimaryTarget) ? 1 : 0.6,
                               ...slotStyle(1),
                             }}
-                            disabled={!ctaPrimaryTarget.href}
+                            disabled={!canInvokeMessageCta(ctaPrimaryTarget)}
                           >
                             {ctaPrimaryLabel}
                           </button>
@@ -3683,7 +3697,7 @@ export default function Feed() {
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation()
-                                if (!ctaSecondaryTarget.href) return
+                                if (!canInvokeMessageCta(ctaSecondaryTarget)) return
                                 handleMessageCtaClick(message, ctaSecondaryTarget)
                               }}
                               style={{
@@ -3700,11 +3714,11 @@ export default function Feed() {
                                 whiteSpace: isCtaStacked ? 'normal' : 'nowrap',
                                 lineHeight: isCtaStacked ? 1.25 : undefined,
                                 wordBreak: isCtaStacked ? 'break-word' : undefined,
-                                cursor: ctaSecondaryTarget.href ? 'pointer' : 'not-allowed',
-                                opacity: ctaSecondaryTarget.href ? 1 : 0.6,
+                                cursor: canInvokeMessageCta(ctaSecondaryTarget) ? 'pointer' : 'not-allowed',
+                                opacity: canInvokeMessageCta(ctaSecondaryTarget) ? 1 : 0.6,
                                 ...slotStyle(2),
                               }}
-                              disabled={!ctaSecondaryTarget.href}
+                              disabled={!canInvokeMessageCta(ctaSecondaryTarget)}
                             >
                               {ctaSecondaryLabel}
                             </button>
@@ -3714,7 +3728,7 @@ export default function Feed() {
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation()
-                                if (!ctaTertiaryTarget.href) return
+                                if (!canInvokeMessageCta(ctaTertiaryTarget)) return
                                 handleMessageCtaClick(message, ctaTertiaryTarget)
                               }}
                               style={{
@@ -3731,11 +3745,11 @@ export default function Feed() {
                                 whiteSpace: isCtaStacked ? 'normal' : 'nowrap',
                                 lineHeight: isCtaStacked ? 1.25 : undefined,
                                 wordBreak: isCtaStacked ? 'break-word' : undefined,
-                                cursor: ctaTertiaryTarget.href ? 'pointer' : 'not-allowed',
-                                opacity: ctaTertiaryTarget.href ? 1 : 0.6,
+                                cursor: canInvokeMessageCta(ctaTertiaryTarget) ? 'pointer' : 'not-allowed',
+                                opacity: canInvokeMessageCta(ctaTertiaryTarget) ? 1 : 0.6,
                                 ...slotStyle(3),
                               }}
-                              disabled={!ctaTertiaryTarget.href}
+                              disabled={!canInvokeMessageCta(ctaTertiaryTarget)}
                             >
                               {ctaTertiaryLabel}
                             </button>

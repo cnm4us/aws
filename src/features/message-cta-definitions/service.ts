@@ -4,6 +4,7 @@ import { getLogger } from '../../lib/logger'
 import * as repo from './repo'
 import type {
   MessageCtaApiActionConfig,
+  MessageCtaAdvanceSlideConfig,
   MessageCtaCompletionContract,
   MessageCtaDefinitionConfig,
   MessageCtaDefinitionDto,
@@ -25,6 +26,7 @@ const STATUSES: readonly MessageCtaDefinitionStatus[] = ['draft', 'active', 'arc
 const SCOPE_TYPES: readonly MessageCtaScopeType[] = ['global', 'space']
 const INTENT_KEYS: readonly MessageCtaIntentKey[] = [
   'support',
+  'defer',
   'login',
   'register',
   'donate',
@@ -35,7 +37,7 @@ const INTENT_KEYS: readonly MessageCtaIntentKey[] = [
   'visit_sponsor',
   'visit_link',
 ]
-const EXECUTOR_TYPES: readonly MessageCtaExecutorType[] = ['internal_link', 'provider_checkout', 'verification_flow', 'api_action']
+const EXECUTOR_TYPES: readonly MessageCtaExecutorType[] = ['internal_link', 'provider_checkout', 'verification_flow', 'api_action', 'advance_slide']
 const COMPLETION_CONTRACTS: readonly MessageCtaCompletionContract[] = ['on_click', 'on_return', 'on_verified', 'none']
 const PROVIDERS: readonly MessageCtaProvider[] = ['mock', 'paypal', 'stripe', 'square']
 
@@ -154,29 +156,29 @@ function parseConfig(raw: unknown): Record<string, unknown> {
 }
 
 function validateIntentExecutor(intentKey: MessageCtaIntentKey, executorType: MessageCtaExecutorType): void {
-  if (intentKey === 'support') {
-    if (executorType !== 'internal_link') {
+  if (intentKey === 'support' || intentKey === 'defer') {
+    if (executorType !== 'internal_link' && executorType !== 'advance_slide') {
       throw new DomainError('invalid_intent_executor_pair', 'invalid_intent_executor_pair', 400)
     }
     return
   }
 
   if (intentKey === 'login' || intentKey === 'register') {
-    if (executorType !== 'internal_link' && executorType !== 'verification_flow') {
+    if (executorType !== 'internal_link' && executorType !== 'verification_flow' && executorType !== 'advance_slide') {
       throw new DomainError('invalid_intent_executor_pair', 'invalid_intent_executor_pair', 400)
     }
     return
   }
 
   if (intentKey === 'donate' || intentKey === 'subscribe' || intentKey === 'upgrade') {
-    if (executorType !== 'provider_checkout' && executorType !== 'internal_link') {
+    if (executorType !== 'provider_checkout' && executorType !== 'internal_link' && executorType !== 'advance_slide') {
       throw new DomainError('invalid_intent_executor_pair', 'invalid_intent_executor_pair', 400)
     }
     return
   }
 
   if (intentKey === 'verify_email' || intentKey === 'verify_phone') {
-    if (executorType !== 'verification_flow' && executorType !== 'api_action') {
+    if (executorType !== 'verification_flow' && executorType !== 'api_action' && executorType !== 'advance_slide') {
       throw new DomainError('invalid_intent_executor_pair', 'invalid_intent_executor_pair', 400)
     }
     return
@@ -249,6 +251,10 @@ function normalizeApiActionConfig(configRaw: Record<string, unknown>): MessageCt
   }
 }
 
+function normalizeAdvanceSlideConfig(_configRaw: Record<string, unknown>): MessageCtaAdvanceSlideConfig {
+  return { mode: 'next_slide' }
+}
+
 function normalizeConfigForExecutor(
   executorType: MessageCtaExecutorType,
   configRaw: Record<string, unknown>,
@@ -263,6 +269,8 @@ function normalizeConfigForExecutor(
       return normalizeVerificationFlowConfig(configRaw, intentKey)
     case 'api_action':
       return normalizeApiActionConfig(configRaw)
+    case 'advance_slide':
+      return normalizeAdvanceSlideConfig(configRaw)
     default:
       throw new DomainError('invalid_executor_type', 'invalid_executor_type', 400)
   }
