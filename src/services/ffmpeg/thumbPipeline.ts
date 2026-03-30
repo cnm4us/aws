@@ -22,10 +22,18 @@ export async function createUploadThumbJpeg(opts: {
     const metricsInput = await probeMediaInfo(videoPath)
     const longEdge = Math.max(64, Math.min(4096, Math.round(Number(opts.longEdgePx ?? 640))))
 
-    // Preserve aspect ratio and constrain the LONG edge to `longEdge`.
-    // - Landscape: scale=longEdge:-2
-    // - Portrait:  scale=-2:longEdge
-    const vf = `scale=w='if(gte(iw,ih),${longEdge},-2)':h='if(gte(iw,ih),-2,${longEdge})':flags=lanczos`
+    // Preserve display aspect ratio and constrain the LONG edge to `longEdge`.
+    //
+    // Important: some sources are anamorphic (non-square SAR), e.g. 1920x1080 with SAR 19:60
+    // (displayed as ~608x1080 portrait). If we scale directly from coded iw/ih, thumbnails look
+    // flattened/squished. Normalize SAR first, then apply long-edge scaling.
+    const vf = [
+      // Normalize to square pixels while preserving displayed geometry.
+      "scale=w='max(2,trunc(iw*sar/2)*2)':h='ih'",
+      'setsar=1',
+      // Then long-edge constrain on normalized dimensions.
+      `scale=w='if(gte(iw,ih),${longEdge},-2)':h='if(gte(iw,ih),-2,${longEdge})':flags=lanczos`,
+    ].join(',')
 
     const seekSeconds = Number.isFinite(Number(opts.seekSeconds)) && Number(opts.seekSeconds) >= 0 ? Number(opts.seekSeconds) : 0.2
     // Avoid black/empty first frames (common right at t=0); seek slightly in by default.
