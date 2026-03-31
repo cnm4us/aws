@@ -3144,6 +3144,7 @@ const MESSAGE_RULESET_STATUS_OPTIONS: Array<{ value: string; label: string }> = 
 const MESSAGE_JOURNEY_STATUS_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'draft', label: 'Draft' },
   { value: 'active', label: 'Active' },
+  { value: 'paused', label: 'Paused' },
   { value: 'archived', label: 'Archived' },
 ]
 
@@ -7741,16 +7742,19 @@ pagesRouter.get('/admin/analytics', async (req: any, res: any) => {
 
 pagesRouter.get('/admin/message-analytics', async (req: any, res: any) => {
   try {
-    const report = await messageAnalyticsSvc.getMessageAnalyticsReportForAdmin({
-      fromDate: req.query?.from,
-      toDate: req.query?.to,
-      surface: req.query?.surface,
-      messageId: req.query?.message_id,
-      messageType: req.query?.message_type,
-      messageCampaignKey: req.query?.message_campaign_key,
-      messageCampaignCategory: req.query?.message_campaign_category,
-      viewerState: req.query?.viewer_state,
-    })
+    const [report, campaignCategoryOptions] = await Promise.all([
+      messageAnalyticsSvc.getMessageAnalyticsReportForAdmin({
+        fromDate: req.query?.from,
+        toDate: req.query?.to,
+        surface: req.query?.surface,
+        messageId: req.query?.message_id,
+        messageType: req.query?.message_type,
+        messageCampaignKey: req.query?.message_campaign_key,
+        messageCampaignCategory: req.query?.message_campaign_category,
+        viewerState: req.query?.viewer_state,
+      }),
+      loadCampaignCategoryOptionsForEditor(),
+    ])
 
     if (String(req.query?.format || '').toLowerCase() === 'csv') {
       const csv = messageAnalyticsSvc.buildMessageAnalyticsCsv(report)
@@ -7792,7 +7796,12 @@ pagesRouter.get('/admin/message-analytics', async (req: any, res: any) => {
     }
     body += `</select></label>`
     body += `<label>Campaign Key<input type="text" name="message_campaign_key" value="${escapeHtml(report.range.messageCampaignKey || '')}" /></label>`
-    body += `<label>Campaign Category<input type="text" name="message_campaign_category" value="${escapeHtml(report.range.messageCampaignCategory || '')}" /></label>`
+    body += `<label>Campaign Category<input type="text" name="message_campaign_category" list="message-analytics-campaign-category-options" value="${escapeHtml(report.range.messageCampaignCategory || '')}" /></label>`
+    body += `<datalist id="message-analytics-campaign-category-options">`
+    for (const category of campaignCategoryOptions) {
+      body += `<option value="${escapeHtml(category)}"></option>`
+    }
+    body += `</datalist>`
     body += `</div>`
     body += `<div style="display:flex; gap:10px; margin-top:10px; flex-wrap:wrap">`
     body += `<button class="btn" type="submit">Apply</button>`
