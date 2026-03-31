@@ -5749,6 +5749,9 @@ function buildMessageJourneyCreateOrUpdatePayload(body: any): any {
   const appliesToSurface = surfaceTargeting.find((item) => item.surface === 'global_feed')
     ? 'global_feed'
     : (surfaceTargeting[0]?.surface || appliesToSurfaceRaw)
+  const configRaw = String(body?.configJson ?? body?.config_json ?? '').trim()
+  const parsedConfig = parseConfigJsonObjectLoose(configRaw)
+  const config = parsedConfig.ok ? JSON.stringify(parsedConfig.value) : configRaw
   return {
     journeyKey: String(body?.journeyKey || body?.journey_key || '').trim().toLowerCase(),
     campaignCategory: String(body?.campaignCategory || body?.campaign_category || '').trim().toLowerCase() || null,
@@ -5758,6 +5761,8 @@ function buildMessageJourneyCreateOrUpdatePayload(body: any): any {
     surfaceTargeting,
     status: String(body?.status || 'draft').trim().toLowerCase(),
     description: String(body?.description || '').trim() || null,
+    config,
+    config_json: config,
     eligibilityRulesetId: /^\d+$/.test(rulesetIdRaw) ? Number(rulesetIdRaw) : null,
   }
 }
@@ -6040,6 +6045,13 @@ function renderAdminMessageJourneyForm(opts: {
   body += `</datalist></label>`
   body += `<label>Name<input type="text" name="name" maxlength="120" value="${escapeHtml(String(values?.name || ''))}" required /></label>`
   body += `<label>Description (optional)<input type="text" name="description" maxlength="500" value="${escapeHtml(String(values?.description || ''))}" /></label>`
+  body += `<details style="margin-top:6px"><summary style="cursor:pointer; user-select:none">JSON Config</summary>`
+  body += `<label style="margin-top:8px">Config JSON<textarea name="configJson" rows="6" style="font-family: ui-monospace,SFMono-Regular,Menlo,monospace;">${escapeHtml(
+    typeof values?.config === 'string'
+      ? String(values.config)
+      : JSON.stringify((values?.config && typeof values.config === 'object') ? values.config : {}, null, 2)
+  )}</textarea></label>`
+  body += `</details>`
   body += `<label>Status<select name="status">`
   for (const opt of MESSAGE_JOURNEY_STATUS_OPTIONS) {
     body += `<option value="${escapeHtml(opt.value)}"${String(values?.status || 'draft') === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
@@ -6258,6 +6270,7 @@ pagesRouter.get('/admin/message-journeys/new', async (req: any, res: any) => {
         journeyKey: '',
         name: '',
         description: '',
+        config: {},
         appliesToSurface: 'global_feed',
         surfaceTargeting: [{ surface: 'global_feed', targetingMode: 'all', targetIds: [] }],
         status: 'draft',
@@ -6526,6 +6539,9 @@ pagesRouter.get('/admin/message-journeys/:id', async (req: any, res: any) => {
     const journeyGroupsTargeting = journeyTargetBySurface.get('group_feed') || { targetingMode: 'all' as const, targetIds: [] }
     const journeyChannelsTargeting = journeyTargetBySurface.get('channel_feed') || { targetingMode: 'all' as const, targetIds: [] }
     body += `<label>Description (optional)<input type="text" name="description" maxlength="500" value="${escapeHtml(String(journey.description || ''))}" /></label>`
+    body += `<details style="margin-top:6px"><summary style="cursor:pointer; user-select:none">JSON Config</summary>`
+    body += `<label style="margin-top:8px">Config JSON<textarea name="configJson" rows="6" style="font-family: ui-monospace,SFMono-Regular,Menlo,monospace;">${escapeHtml(JSON.stringify((journey as any).config || {}, null, 2))}</textarea></label>`
+    body += `</details>`
     body += `<label>Status<select name="status">`
     for (const opt of MESSAGE_JOURNEY_STATUS_OPTIONS) {
       body += `<option value="${escapeHtml(opt.value)}"${String(journey.status || 'draft') === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
@@ -8259,6 +8275,11 @@ pagesRouter.get('/admin/dev-tools', async (req: any, res: any) => {
   body += `<button class="btn" type="submit" style="background:#5a1d1d;border-color:#8a2d2d">Clear Journey Progress (All)</button>`
   body += `<div class="field-hint" style="margin-top:6px">Clears <code>feed_user_message_journey_progress</code> and <code>feed_anon_message_journey_progress</code>.</div>`
   body += `</form>`
+  body += `<form method="post" action="/admin/dev-tools/clear-journey-state" style="margin:10px 0 0 0" onsubmit="return confirm('Clear full journey state (instances, progress, suppressions, decision sessions)?')">`
+  body += addCsrf
+  body += `<button class="btn" type="submit" style="background:#5a1d1d;border-color:#8a2d2d">Clear Journey State (All)</button>`
+  body += `<div class="field-hint" style="margin-top:6px">Clears <code>feed_message_journey_instances</code>, journey progress tables, <code>feed_message_user_suppressions</code>, and <code>message_decision_sessions</code>.</div>`
+  body += `</form>`
   body += `</div>`
 
   const doc = renderAdminPage({ title: 'Dev Tools', bodyHtml: body, active: 'dev_tools' })
@@ -8291,6 +8312,26 @@ pagesRouter.post('/admin/dev-tools/clear-journey-progress', async (_req: any, re
     return res.redirect(`/admin/dev-tools?notice=${encodeURIComponent(`Cleared journey_progress users=${users}, anonymous=${anonymous}`)}`)
   } catch (err: any) {
     return res.redirect(`/admin/dev-tools?error=${encodeURIComponent(String(err?.message || 'clear_journey_progress_failed'))}`)
+  }
+})
+
+pagesRouter.post('/admin/dev-tools/clear-journey-state', async (_req: any, res: any) => {
+  if (!isAdminDevToolsEnabled()) return res.status(404).send('Not found')
+  const db = getPool()
+  try {
+    const [instancesResult] = await db.query(`DELETE FROM feed_message_journey_instances`)
+    const [userProgressResult] = await db.query(`DELETE FROM feed_user_message_journey_progress`)
+    const [anonProgressResult] = await db.query(`DELETE FROM feed_anon_message_journey_progress`)
+    const [suppressionResult] = await db.query(`DELETE FROM feed_message_user_suppressions`)
+    const [sessionsResult] = await db.query(`DELETE FROM message_decision_sessions`)
+    const instances = Number((instancesResult as any)?.affectedRows || 0)
+    const userProgress = Number((userProgressResult as any)?.affectedRows || 0)
+    const anonProgress = Number((anonProgressResult as any)?.affectedRows || 0)
+    const suppressions = Number((suppressionResult as any)?.affectedRows || 0)
+    const sessions = Number((sessionsResult as any)?.affectedRows || 0)
+    return res.redirect(`/admin/dev-tools?notice=${encodeURIComponent(`Cleared journey_state instances=${instances}, user_progress=${userProgress}, anon_progress=${anonProgress}, suppressions=${suppressions}, decision_sessions=${sessions}`)}`)
+  } catch (err: any) {
+    return res.redirect(`/admin/dev-tools?error=${encodeURIComponent(String(err?.message || 'clear_journey_state_failed'))}`)
   }
 })
 

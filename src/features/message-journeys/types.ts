@@ -8,6 +8,7 @@ export type MessageJourneyRow = {
   applies_to_surface: 'global_feed' | 'group_feed' | 'channel_feed'
   status: MessageJourneyStatus
   description: string | null
+  config_json: string
   eligibility_ruleset_id: number | null
   created_by: number
   updated_by: number
@@ -30,11 +31,31 @@ export type MessageJourneyStepRow = {
 }
 
 export type MessageJourneyProgressState = 'eligible' | 'shown' | 'clicked' | 'completed' | 'skipped' | 'expired' | 'suppressed'
+export type MessageJourneyInstanceIdentityType = 'user' | 'anon'
+export type MessageJourneyInstanceState = 'active' | 'completed' | 'abandoned' | 'expired'
+
+export type MessageJourneyInstanceRow = {
+  id: number
+  journey_id: number
+  identity_type: MessageJourneyInstanceIdentityType
+  identity_key: string
+  state: MessageJourneyInstanceState
+  current_step_id: number | null
+  completed_reason: string | null
+  completed_event_key: string | null
+  first_seen_at: string | null
+  last_seen_at: string | null
+  completed_at: string | null
+  metadata_json: string
+  created_at: string
+  updated_at: string
+}
 
 export type MessageJourneyProgressRow = {
   id: number
   user_id: number
   journey_id: number
+  journey_instance_id: number | null
   step_id: number
   state: MessageJourneyProgressState
   first_seen_at: string | null
@@ -51,6 +72,7 @@ export type MessageJourneyAnonProgressRow = {
   id: number
   anon_visitor_id: string
   journey_id: number
+  journey_instance_id: number | null
   step_id: number
   state: MessageJourneyProgressState
   first_seen_at: string | null
@@ -76,6 +98,7 @@ export type MessageJourneyDto = {
   }>
   status: MessageJourneyStatus
   description: string | null
+  config: Record<string, any>
   eligibilityRulesetId: number | null
   createdBy: number
   updatedBy: number
@@ -91,6 +114,23 @@ export type MessageJourneyStepDto = {
   messageId: number
   status: MessageJourneyStepStatus
   config: Record<string, any>
+  createdAt: string
+  updatedAt: string
+}
+
+export type MessageJourneyInstanceDto = {
+  id: number
+  journeyId: number
+  identityType: MessageJourneyInstanceIdentityType
+  identityKey: string
+  state: MessageJourneyInstanceState
+  currentStepId: number | null
+  completedReason: string | null
+  completedEventKey: string | null
+  firstSeenAt: string | null
+  lastSeenAt: string | null
+  completedAt: string | null
+  metadata: Record<string, any>
   createdAt: string
   updatedAt: string
 }

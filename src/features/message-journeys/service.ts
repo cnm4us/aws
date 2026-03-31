@@ -2,9 +2,15 @@ import * as repo from './repo'
 import { DomainError, ForbiddenError, NotFoundError } from '../../core/errors'
 import { getPool } from '../../db'
 import type {
+  MessageJourneyAnonProgressRow,
+  MessageJourneyInstanceDto,
+  MessageJourneyInstanceIdentityType,
+  MessageJourneyInstanceRow,
+  MessageJourneyInstanceState,
   MessageJourneyDto,
   MessageJourneyProgressState,
   MessageJourneyRow,
+  MessageJourneyProgressRow,
   MessageJourneyStatus,
   MessageJourneyStepDto,
   MessageJourneyStepRow,
@@ -21,11 +27,25 @@ type MessageJourneySignalEvent =
   | 'subscription_complete'
   | 'upgrade_complete'
 
+type JourneyGoalEventKey =
+  | 'auth.register_complete'
+  | 'auth.login_complete'
+  | 'support.subscribe_complete'
+  | 'support.donate_complete'
+
 const JOURNEY_STATUS_VALUES: readonly MessageJourneyStatus[] = ['draft', 'active', 'paused', 'archived']
 const STEP_STATUS_VALUES: readonly MessageJourneyStepStatus[] = ['draft', 'active', 'archived']
+const JOURNEY_INSTANCE_STATE_VALUES: readonly MessageJourneyInstanceState[] = ['active', 'completed', 'abandoned', 'expired']
+const JOURNEY_INSTANCE_IDENTITY_TYPE_VALUES: readonly MessageJourneyInstanceIdentityType[] = ['user', 'anon']
 const JOURNEY_SURFACE_VALUES = ['global_feed', 'group_feed', 'channel_feed'] as const
 type JourneySurface = (typeof JOURNEY_SURFACE_VALUES)[number]
 const TARGETING_MODE_VALUES = ['all', 'selected'] as const
+const JOURNEY_GOAL_EVENT_KEYS: readonly JourneyGoalEventKey[] = [
+  'auth.register_complete',
+  'auth.login_complete',
+  'support.subscribe_complete',
+  'support.donate_complete',
+]
 
 function isEnumValue<T extends string>(value: any, allowed: readonly T[]): value is T {
   return typeof value === 'string' && (allowed as readonly string[]).includes(value)
@@ -88,6 +108,45 @@ function normalizeStepStatus(raw: any, fallback: MessageJourneyStepStatus = 'dra
   const value = String(raw ?? '').trim().toLowerCase()
   if (!value) return fallback
   if (!isEnumValue(value, STEP_STATUS_VALUES)) throw new DomainError('invalid_step_status', 'invalid_step_status', 400)
+  return value
+}
+
+function normalizeJourneyInstanceState(raw: any, fallback: MessageJourneyInstanceState = 'active'): MessageJourneyInstanceState {
+  const value = String(raw ?? '').trim().toLowerCase()
+  if (!value) return fallback
+  if (!isEnumValue(value, JOURNEY_INSTANCE_STATE_VALUES)) {
+    throw new DomainError('invalid_journey_instance_state', 'invalid_journey_instance_state', 400)
+  }
+  return value
+}
+
+function normalizeJourneyInstanceIdentityType(raw: any): MessageJourneyInstanceIdentityType {
+  const value = String(raw ?? '').trim().toLowerCase()
+  if (!isEnumValue(value, JOURNEY_INSTANCE_IDENTITY_TYPE_VALUES)) {
+    throw new DomainError('invalid_journey_identity_type', 'invalid_journey_identity_type', 400)
+  }
+  return value
+}
+
+function normalizeJourneyIdentityKey(raw: any): string {
+  const value = String(raw ?? '').trim()
+  if (!value) throw new DomainError('invalid_journey_identity_key', 'invalid_journey_identity_key', 400)
+  if (value.length > 120) throw new DomainError('invalid_journey_identity_key', 'invalid_journey_identity_key', 400)
+  return value
+}
+
+function normalizeJourneyCompletedReason(raw: any): string | null {
+  const value = String(raw ?? '').trim()
+  if (!value) return null
+  if (value.length > 120) throw new DomainError('invalid_journey_completed_reason', 'invalid_journey_completed_reason', 400)
+  return value
+}
+
+function normalizeJourneyCompletedEventKey(raw: any): string | null {
+  const value = String(raw ?? '').trim().toLowerCase()
+  if (!value) return null
+  if (value.length > 120) throw new DomainError('invalid_journey_completed_event_key', 'invalid_journey_completed_event_key', 400)
+  if (!/^[a-z0-9_:-]+$/.test(value)) throw new DomainError('invalid_journey_completed_event_key', 'invalid_journey_completed_event_key', 400)
   return value
 }
 
@@ -204,6 +263,42 @@ function parseConfig(raw: any): Record<string, any> {
   throw new DomainError('invalid_config_json', 'invalid_config_json', 400)
 }
 
+function normalizeJourneyConfigForAdmin(rawConfig: Record<string, any>): Record<string, any> {
+  const cfg: Record<string, any> = { ...rawConfig }
+  const goalsRaw = (cfg as any).goal_rules
+  if (goalsRaw == null) {
+    delete (cfg as any).goal_rules
+    return cfg
+  }
+  if (!goalsRaw || typeof goalsRaw !== 'object' || Array.isArray(goalsRaw)) {
+    throw new DomainError('invalid_goal_rules', 'invalid_goal_rules', 400)
+  }
+  const anyOfRaw = (goalsRaw as any).any_of
+  if (anyOfRaw == null) {
+    (cfg as any).goal_rules = { any_of: [] }
+    return cfg
+  }
+  if (!Array.isArray(anyOfRaw)) {
+    throw new DomainError('invalid_goal_rules', 'invalid_goal_rules', 400)
+  }
+  const normalized = Array.from(new Set(
+    anyOfRaw
+      .map((v) => String(v || '').trim().toLowerCase())
+      .filter((v) => (JOURNEY_GOAL_EVENT_KEYS as readonly string[]).includes(v))
+  )) as JourneyGoalEventKey[]
+  ;(cfg as any).goal_rules = { any_of: normalized }
+  return cfg
+}
+
+function evaluateJourneyGoalCompletion(config: Record<string, any>, eventKey: string | null): boolean {
+  const key = String(eventKey || '').trim().toLowerCase()
+  if (!key) return false
+  const goals = (config as any)?.goal_rules
+  const anyOf = Array.isArray(goals?.any_of) ? goals.any_of : []
+  if (!anyOf.length) return false
+  return anyOf.map((v: any) => String(v || '').trim().toLowerCase()).includes(key)
+}
+
 function normalizeJourneyStepConfigForAdmin(rawConfig: Record<string, any>): Record<string, any> {
   const config: Record<string, any> = { ...rawConfig }
   const policyRaw = String(config.progression_policy || config.progressionPolicy || '').trim().toLowerCase()
@@ -278,6 +373,11 @@ function toJourneyDto(
 ): MessageJourneyDto {
   const appliesToSurface = normalizeJourneySurface((row as any).applies_to_surface, 'global_feed')
   const surfaceTargeting = targetingMap?.get(Number(row.id)) || [{ surface: appliesToSurface, targetingMode: 'all' as const, targetIds: [] }]
+  let config: Record<string, any> = {}
+  try {
+    const parsed = JSON.parse(String((row as any).config_json || '{}'))
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) config = normalizeJourneyConfigForAdmin(parsed as Record<string, any>)
+  } catch {}
   return {
     id: Number(row.id),
     journeyKey: String(row.journey_key || ''),
@@ -287,6 +387,7 @@ function toJourneyDto(
     surfaceTargeting,
     status: normalizeJourneyStatus(row.status),
     description: row.description == null ? null : String(row.description),
+    config,
     eligibilityRulesetId: row.eligibility_ruleset_id == null ? null : Number(row.eligibility_ruleset_id),
     createdBy: Number(row.created_by || 0),
     updatedBy: Number(row.updated_by || 0),
@@ -309,6 +410,30 @@ function toStepDto(row: MessageJourneyStepRow): MessageJourneyStepDto {
     messageId: Number(row.message_id || 0),
     status: normalizeStepStatus(row.status),
     config,
+    createdAt: String(row.created_at || ''),
+    updatedAt: String(row.updated_at || ''),
+  }
+}
+
+function toJourneyInstanceDto(row: MessageJourneyInstanceRow): MessageJourneyInstanceDto {
+  let metadata: Record<string, any> = {}
+  try {
+    const parsed = JSON.parse(String(row.metadata_json || '{}'))
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) metadata = parsed
+  } catch {}
+  return {
+    id: Number(row.id),
+    journeyId: Number(row.journey_id),
+    identityType: normalizeJourneyInstanceIdentityType(row.identity_type),
+    identityKey: String(row.identity_key || ''),
+    state: normalizeJourneyInstanceState(row.state),
+    currentStepId: row.current_step_id == null ? null : Number(row.current_step_id),
+    completedReason: row.completed_reason == null ? null : String(row.completed_reason),
+    completedEventKey: row.completed_event_key == null ? null : String(row.completed_event_key),
+    firstSeenAt: row.first_seen_at == null ? null : String(row.first_seen_at),
+    lastSeenAt: row.last_seen_at == null ? null : String(row.last_seen_at),
+    completedAt: row.completed_at == null ? null : String(row.completed_at),
+    metadata,
     createdAt: String(row.created_at || ''),
     updatedAt: String(row.updated_at || ''),
   }
@@ -353,6 +478,7 @@ export async function createJourneyForAdmin(input: any, actorUserId: number): Pr
       surfaceTargeting,
       status: normalizeJourneyStatus(input?.status, 'draft'),
       description: normalizeDescription(input?.description),
+      configJson: JSON.stringify(normalizeJourneyConfigForAdmin(parseConfig(input?.config ?? input?.config_json))),
       eligibilityRulesetId: normalizeNullablePositiveInt(input?.eligibilityRulesetId ?? input?.eligibility_ruleset_id, 'invalid_ruleset_id'),
       createdBy: userId,
       updatedBy: userId,
@@ -403,6 +529,10 @@ export async function updateJourneyForAdmin(id: number, patch: any, actorUserId:
       surfaceTargeting: nextSurfaceTargeting,
       status: patch?.status !== undefined ? normalizeJourneyStatus(patch?.status, existingDto.status) : existingDto.status,
       description: patch?.description !== undefined ? normalizeDescription(patch?.description) : existingDto.description,
+      configJson:
+        patch?.config !== undefined || patch?.config_json !== undefined
+          ? JSON.stringify(normalizeJourneyConfigForAdmin(parseConfig(patch?.config ?? patch?.config_json)))
+          : JSON.stringify(normalizeJourneyConfigForAdmin(existingDto.config || {})),
       eligibilityRulesetId:
         patch?.eligibilityRulesetId !== undefined || patch?.eligibility_ruleset_id !== undefined
           ? normalizeNullablePositiveInt(patch?.eligibilityRulesetId ?? patch?.eligibility_ruleset_id, 'invalid_ruleset_id')
@@ -568,6 +698,114 @@ export async function listJourneyStepRefsForMessage(messageIdRaw: number): Promi
   }))
 }
 
+export async function getJourneyInstanceForIdentity(input: {
+  journeyId: any
+  identityType: any
+  identityKey: any
+}): Promise<MessageJourneyInstanceDto | null> {
+  const journeyId = normalizePositiveInt(input?.journeyId, 'bad_journey_id')
+  const identityType = normalizeJourneyInstanceIdentityType(input?.identityType)
+  const identityKey = normalizeJourneyIdentityKey(input?.identityKey)
+  const row = await repo.getJourneyInstanceByIdentity({ journeyId, identityType, identityKey })
+  return row ? toJourneyInstanceDto(row) : null
+}
+
+export async function listJourneyInstancesForIdentity(input: {
+  identityType: any
+  identityKey: any
+  state?: any
+}): Promise<MessageJourneyInstanceDto[]> {
+  const identityType = normalizeJourneyInstanceIdentityType(input?.identityType)
+  const identityKey = normalizeJourneyIdentityKey(input?.identityKey)
+  const state = input?.state == null || input?.state === '' ? null : normalizeJourneyInstanceState(input?.state)
+  const rows = await repo.listJourneyInstancesByIdentity({ identityType, identityKey, state })
+  return rows.map((row) => toJourneyInstanceDto(row))
+}
+
+export async function upsertJourneyInstanceForIdentity(input: {
+  journeyId: any
+  identityType: any
+  identityKey: any
+  state: any
+  currentStepId?: any
+  completedReason?: any
+  completedEventKey?: any
+  firstSeenAt?: any
+  lastSeenAt?: any
+  completedAt?: any
+  metadata?: Record<string, any> | null
+}): Promise<MessageJourneyInstanceDto> {
+  const journeyId = normalizePositiveInt(input?.journeyId, 'bad_journey_id')
+  const identityType = normalizeJourneyInstanceIdentityType(input?.identityType)
+  const identityKey = normalizeJourneyIdentityKey(input?.identityKey)
+  const state = normalizeJourneyInstanceState(input?.state)
+  const currentStepId = normalizeNullablePositiveInt(input?.currentStepId, 'invalid_current_step_id')
+  const firstSeenAt = normalizeOptionalDateTime(input?.firstSeenAt, 'invalid_first_seen_at')
+  const lastSeenAt = normalizeOptionalDateTime(input?.lastSeenAt, 'invalid_last_seen_at')
+  const completedAt = normalizeOptionalDateTime(input?.completedAt, 'invalid_completed_at')
+  const completedReason = normalizeJourneyCompletedReason(input?.completedReason)
+  const completedEventKey = normalizeJourneyCompletedEventKey(input?.completedEventKey)
+  const metadataJson = JSON.stringify(
+    input?.metadata && typeof input.metadata === 'object' && !Array.isArray(input.metadata)
+      ? input.metadata
+      : {}
+  )
+  const row = await repo.upsertJourneyInstance({
+    journeyId,
+    identityType,
+    identityKey,
+    state,
+    currentStepId,
+    completedReason,
+    completedEventKey,
+    firstSeenAt,
+    lastSeenAt,
+    completedAt,
+    metadataJson,
+  })
+  return toJourneyInstanceDto(row)
+}
+
+export async function updateJourneyInstanceById(input: {
+  id: any
+  state?: any
+  currentStepId?: any
+  completedReason?: any
+  completedEventKey?: any
+  firstSeenAt?: any
+  lastSeenAt?: any
+  completedAt?: any
+  metadata?: Record<string, any> | null
+}): Promise<MessageJourneyInstanceDto> {
+  const id = normalizePositiveInt(input?.id, 'bad_id')
+  const patch: {
+    state?: MessageJourneyInstanceState
+    currentStepId?: number | null
+    completedReason?: string | null
+    completedEventKey?: string | null
+    firstSeenAt?: string | null
+    lastSeenAt?: string | null
+    completedAt?: string | null
+    metadataJson?: string
+  } = {}
+  if (input?.state !== undefined) patch.state = normalizeJourneyInstanceState(input.state)
+  if (input?.currentStepId !== undefined) patch.currentStepId = normalizeNullablePositiveInt(input.currentStepId, 'invalid_current_step_id')
+  if (input?.completedReason !== undefined) patch.completedReason = normalizeJourneyCompletedReason(input.completedReason)
+  if (input?.completedEventKey !== undefined) patch.completedEventKey = normalizeJourneyCompletedEventKey(input.completedEventKey)
+  if (input?.firstSeenAt !== undefined) patch.firstSeenAt = normalizeOptionalDateTime(input.firstSeenAt, 'invalid_first_seen_at')
+  if (input?.lastSeenAt !== undefined) patch.lastSeenAt = normalizeOptionalDateTime(input.lastSeenAt, 'invalid_last_seen_at')
+  if (input?.completedAt !== undefined) patch.completedAt = normalizeOptionalDateTime(input.completedAt, 'invalid_completed_at')
+  if (input?.metadata !== undefined) {
+    patch.metadataJson = JSON.stringify(
+      input?.metadata && typeof input.metadata === 'object' && !Array.isArray(input.metadata)
+        ? input.metadata
+        : {}
+    )
+  }
+  const row = await repo.updateJourneyInstanceById(id, patch)
+  return toJourneyInstanceDto(row)
+}
+
 function eventToState(event: MessageJourneySignalEvent): MessageJourneyProgressState {
   if (event === 'impression') return 'shown'
   if (event === 'click') return 'clicked'
@@ -605,6 +843,66 @@ function toUtcDateTimeString(date: Date): string {
   const mm = String(date.getUTCMinutes()).padStart(2, '0')
   const ss = String(date.getUTCSeconds()).padStart(2, '0')
   return `${y}-${m}-${d} ${hh}:${mm}:${ss}`
+}
+
+function parseMetadata(raw: string | null | undefined): Record<string, any> {
+  try {
+    const parsed = JSON.parse(String(raw || '{}'))
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed as Record<string, any>
+  } catch {}
+  return {}
+}
+
+function mergeInstanceStateByPrecedence(
+  a: MessageJourneyInstanceState,
+  b: MessageJourneyInstanceState
+): MessageJourneyInstanceState {
+  const rank = (value: MessageJourneyInstanceState): number => {
+    if (value === 'completed') return 4
+    if (value === 'expired') return 3
+    if (value === 'abandoned') return 2
+    return 1
+  }
+  return rank(a) >= rank(b) ? a : b
+}
+
+function progressStateRank(value: MessageJourneyProgressState): number {
+  if (value === 'completed') return 7
+  if (value === 'clicked') return 5
+  if (value === 'skipped') return 4
+  if (value === 'suppressed') return 4
+  if (value === 'expired') return 4
+  if (value === 'shown') return 3
+  return 2
+}
+
+function maxDateTime(a: string | null, b: string | null): string | null {
+  if (!a) return b || null
+  if (!b) return a
+  return a >= b ? a : b
+}
+
+function minDateTime(a: string | null, b: string | null): string | null {
+  if (!a) return b || null
+  if (!b) return a
+  return a <= b ? a : b
+}
+
+function preferredProgressState(
+  anonRow: MessageJourneyAnonProgressRow,
+  userRow: MessageJourneyProgressRow | null
+): MessageJourneyProgressState {
+  if (!userRow) return anonRow.state
+  const anonRank = progressStateRank(anonRow.state)
+  const userRank = progressStateRank(userRow.state)
+  return anonRank > userRank ? anonRow.state : userRow.state
+}
+
+function normalizeOptionalDateTime(raw: any, code: string): string | null {
+  if (raw == null || raw === '') return null
+  const date = new Date(String(raw))
+  if (!Number.isFinite(date.getTime())) throw new DomainError(code, code, 400)
+  return toUtcDateTimeString(date)
 }
 
 type StepProgressionPolicy =
@@ -646,6 +944,70 @@ function policyQualifiesCompletion(policy: StepProgressionPolicy, input: {
   return false
 }
 
+function mapGoalEventKeyFromCtaOutcome(input: {
+  ctaIntentKey?: string | null
+  outcomeType: string
+  outcomeStatus: string
+  completed: boolean
+}): JourneyGoalEventKey | null {
+  if (!input.completed) return null
+  if (String(input.outcomeStatus || '').toLowerCase() !== 'success') return null
+  const intent = String(input.ctaIntentKey || '').trim().toLowerCase()
+  if (intent === 'register') return 'auth.register_complete'
+  if (intent === 'login') return 'auth.login_complete'
+  if (intent === 'subscribe') return 'support.subscribe_complete'
+  if (intent === 'donate') return 'support.donate_complete'
+  return null
+}
+
+async function ensureActiveJourneyInstanceIdForStep(input: {
+  journeyId: number
+  stepId: number
+  userId: number
+  anonVisitorId: string
+  occurredAtTs: string
+  source: 'message_event' | 'cta_outcome'
+  sourceMessageId: number
+}): Promise<number | null> {
+  const journeyId = Number(input.journeyId || 0)
+  const stepId = Number(input.stepId || 0)
+  if (!Number.isFinite(journeyId) || journeyId <= 0) return null
+  if (!Number.isFinite(stepId) || stepId <= 0) return null
+  const userId = Number(input.userId || 0)
+  const anonVisitorId = String(input.anonVisitorId || '').trim()
+  if ((!Number.isFinite(userId) || userId <= 0) && !anonVisitorId) return null
+
+  const identityType = userId > 0 ? 'user' : 'anon'
+  const identityKey = userId > 0 ? String(Math.round(userId)) : anonVisitorId
+  const active = await repo.getActiveJourneyInstanceByIdentity({
+    journeyId,
+    identityType,
+    identityKey,
+  })
+  if (active && Number(active.id || 0) > 0) return Number(active.id)
+
+  const created = await repo.createJourneyInstance({
+    journeyId,
+    identityType,
+    identityKey,
+    state: 'active',
+    currentStepId: stepId,
+    firstSeenAt: input.occurredAtTs,
+    lastSeenAt: input.occurredAtTs,
+    completedAt: null,
+    completedReason: null,
+    completedEventKey: null,
+    metadataJson: JSON.stringify({
+      source: input.source,
+      source_message_id: input.sourceMessageId,
+      created_for: 'step_progress',
+      created_at: new Date().toISOString(),
+      last_event_at: input.occurredAtTs,
+    }),
+  })
+  return Number(created.id || 0) || null
+}
+
 export async function recordJourneySignalFromMessageEvent(input: {
   userId: number | null
   anonVisitorId?: string | null
@@ -674,9 +1036,18 @@ export async function recordJourneySignalFromMessageEvent(input: {
   let ignored = 0
 
   for (const step of steps) {
+    const journeyInstanceId = await ensureActiveJourneyInstanceIdForStep({
+      journeyId: Number(step.journey_id),
+      stepId: Number(step.id),
+      userId,
+      anonVisitorId,
+      occurredAtTs: ts,
+      source: 'message_event',
+      sourceMessageId: messageId,
+    })
     const existing = userId > 0
-      ? await repo.getProgressByUserStep(userId, Number(step.id))
-      : await repo.getAnonProgressByVisitorStep(anonVisitorId, Number(step.id))
+      ? await repo.getProgressByUserInstanceStep(userId, Number(journeyInstanceId || 0), Number(step.id))
+      : await repo.getAnonProgressByVisitorInstanceStep(anonVisitorId, Number(journeyInstanceId || 0), Number(step.id))
     if (!existing) {
       const metadata = JSON.stringify({
         source: 'message_event',
@@ -688,6 +1059,7 @@ export async function recordJourneySignalFromMessageEvent(input: {
         await repo.upsertProgress({
           userId,
           journeyId: Number(step.journey_id),
+          journeyInstanceId,
           stepId: Number(step.id),
           state: eventState,
           firstSeenAt: eventState === 'shown' ? ts : null,
@@ -700,6 +1072,7 @@ export async function recordJourneySignalFromMessageEvent(input: {
         await repo.upsertAnonProgress({
           anonVisitorId,
           journeyId: Number(step.journey_id),
+          journeyInstanceId,
           stepId: Number(step.id),
           state: eventState,
           firstSeenAt: eventState === 'shown' ? ts : null,
@@ -779,10 +1152,25 @@ export async function recordJourneySignalFromCtaOutcome(input: {
   if (!steps.length) return { stepsMatched: 0, progressed: 0, ignored: 0 }
 
   const ts = toUtcDateTimeString(input.occurredAt instanceof Date && Number.isFinite(input.occurredAt.getTime()) ? input.occurredAt : new Date())
+  const goalEventKey = mapGoalEventKeyFromCtaOutcome({
+    ctaIntentKey: input.ctaIntentKey,
+    outcomeType: input.outcomeType,
+    outcomeStatus: input.outcomeStatus,
+    completed: input.completed,
+  })
   let progressed = 0
   let ignored = 0
 
   for (const step of steps) {
+    const journeyInstanceId = await ensureActiveJourneyInstanceIdForStep({
+      journeyId: Number(step.journey_id),
+      stepId: Number(step.id),
+      userId,
+      anonVisitorId,
+      occurredAtTs: ts,
+      source: 'cta_outcome',
+      sourceMessageId: messageId,
+    })
     const config = parseStepConfig((() => {
       try { return JSON.parse(String((step as any).config_json || '{}')) } catch { return {} }
     })())
@@ -800,14 +1188,46 @@ export async function recordJourneySignalFromCtaOutcome(input: {
         ? 'completed'
         : (input.outcomeType === 'click' && input.outcomeStatus === 'success' ? 'clicked' : null)
 
+    if (goalEventKey && evaluateJourneyGoalCompletion(
+      normalizeJourneyConfigForAdmin(
+        (() => {
+          try { return JSON.parse(String((step as any).journey_config_json || '{}')) } catch { return {} }
+        })()
+      ),
+      goalEventKey
+    )) {
+      await repo.upsertJourneyInstance({
+        journeyId: Number(step.journey_id),
+        identityType: userId > 0 ? 'user' : 'anon',
+        identityKey: userId > 0 ? String(userId) : anonVisitorId,
+        state: 'completed',
+        currentStepId: Number(step.id),
+        completedReason: 'goal_rule_matched',
+        completedEventKey: goalEventKey,
+        firstSeenAt: null,
+        lastSeenAt: ts,
+        completedAt: ts,
+        metadataJson: JSON.stringify({
+          source: 'cta_outcome',
+          source_message_id: messageId,
+          cta_slot: input.ctaSlot ?? null,
+          cta_intent_key: input.ctaIntentKey || null,
+          outcome_type: input.outcomeType,
+          outcome_status: input.outcomeStatus,
+          goal_event_key: goalEventKey,
+          last_event_at: ts,
+        }),
+      })
+    }
+
     if (!nextState) {
       ignored += 1
       continue
     }
 
     const existing = userId > 0
-      ? await repo.getProgressByUserStep(userId, Number(step.id))
-      : await repo.getAnonProgressByVisitorStep(anonVisitorId, Number(step.id))
+      ? await repo.getProgressByUserInstanceStep(userId, Number(journeyInstanceId || 0), Number(step.id))
+      : await repo.getAnonProgressByVisitorInstanceStep(anonVisitorId, Number(journeyInstanceId || 0), Number(step.id))
     if (!existing) {
       const metadataJson = JSON.stringify({
         source: 'cta_outcome',
@@ -826,6 +1246,7 @@ export async function recordJourneySignalFromCtaOutcome(input: {
         await repo.upsertProgress({
           userId,
           journeyId: Number(step.journey_id),
+          journeyInstanceId,
           stepId: Number(step.id),
           state: nextState,
           firstSeenAt: null,
@@ -839,6 +1260,7 @@ export async function recordJourneySignalFromCtaOutcome(input: {
         await repo.upsertAnonProgress({
           anonVisitorId,
           journeyId: Number(step.journey_id),
+          journeyInstanceId,
           stepId: Number(step.id),
           state: nextState,
           firstSeenAt: null,
@@ -896,4 +1318,174 @@ export async function recordJourneySignalFromCtaOutcome(input: {
   }
 
   return { stepsMatched: steps.length, progressed, ignored }
+}
+
+export async function mergeAnonJourneyStateIntoUserOnAuth(input: {
+  userId: any
+  anonVisitorId: any
+}): Promise<{
+  mergedJourneys: number
+  mergedProgressRows: number
+  skipped: boolean
+}> {
+  const userId = normalizePositiveInt(input?.userId, 'bad_user_id')
+  const anonVisitorId = String(input?.anonVisitorId || '').trim()
+  if (!anonVisitorId) return { mergedJourneys: 0, mergedProgressRows: 0, skipped: true }
+
+  const now = toUtcDateTimeString(new Date())
+  const mergedAtIso = new Date().toISOString()
+  const userKey = String(userId)
+
+  const [anonInstances, userInstances, anonProgressRows, userProgressRows] = await Promise.all([
+    repo.listJourneyInstancesByIdentity({ identityType: 'anon', identityKey: anonVisitorId }),
+    repo.listJourneyInstancesByIdentity({ identityType: 'user', identityKey: userKey }),
+    repo.listAnonProgressByVisitor(anonVisitorId),
+    repo.listProgressByUser(userId),
+  ])
+
+  const userInstanceByJourney = new Map<number, MessageJourneyInstanceRow>()
+  for (const row of userInstances) {
+    const journeyId = Number(row.journey_id || 0)
+    if (!Number.isFinite(journeyId) || journeyId <= 0) continue
+    if (!userInstanceByJourney.has(journeyId)) userInstanceByJourney.set(journeyId, row)
+  }
+
+  const anonInstanceByJourney = new Map<number, MessageJourneyInstanceRow>()
+  for (const row of anonInstances) {
+    const journeyId = Number(row.journey_id || 0)
+    if (!Number.isFinite(journeyId) || journeyId <= 0) continue
+    if (!anonInstanceByJourney.has(journeyId)) anonInstanceByJourney.set(journeyId, row)
+  }
+
+  const anonProgressByJourney = new Map<number, MessageJourneyAnonProgressRow[]>()
+  for (const row of anonProgressRows) {
+    const journeyId = Number(row.journey_id || 0)
+    if (!Number.isFinite(journeyId) || journeyId <= 0) continue
+    if (!anonProgressByJourney.has(journeyId)) anonProgressByJourney.set(journeyId, [])
+    anonProgressByJourney.get(journeyId)!.push(row)
+  }
+
+  const userProgressByStep = new Map<number, MessageJourneyProgressRow>()
+  for (const row of userProgressRows) {
+    const stepId = Number(row.step_id || 0)
+    if (!Number.isFinite(stepId) || stepId <= 0) continue
+    if (!userProgressByStep.has(stepId)) userProgressByStep.set(stepId, row)
+  }
+
+  const journeyIds = new Set<number>([
+    ...Array.from(anonInstanceByJourney.keys()),
+    ...Array.from(anonProgressByJourney.keys()),
+  ])
+  const mergedUserInstanceIdByJourney = new Map<number, number>()
+
+  let mergedJourneys = 0
+  for (const journeyId of journeyIds) {
+    const sourceInstance = anonInstanceByJourney.get(journeyId) || null
+    const existingUserInstance = userInstanceByJourney.get(journeyId) || null
+    const mergedState = existingUserInstance
+      ? mergeInstanceStateByPrecedence(existingUserInstance.state, sourceInstance?.state || 'active')
+      : (sourceInstance?.state || 'active')
+
+    const mergedMetadata = {
+      ...parseMetadata(existingUserInstance?.metadata_json),
+      ...(sourceInstance ? parseMetadata(sourceInstance.metadata_json) : {}),
+      merged_from_anon: true,
+      merged_from_anon_key: anonVisitorId,
+      merged_to_user_id: userId,
+      merged_at: mergedAtIso,
+      source: 'auth_merge',
+    }
+
+    const mergedUserInstance = await repo.upsertJourneyInstance({
+      journeyId,
+      identityType: 'user',
+      identityKey: userKey,
+      state: mergedState,
+      currentStepId: existingUserInstance?.current_step_id ?? sourceInstance?.current_step_id ?? null,
+      completedReason:
+        existingUserInstance?.completed_reason ??
+        sourceInstance?.completed_reason ??
+        (mergedState === 'completed' ? 'auth_merge' : null),
+      completedEventKey:
+        existingUserInstance?.completed_event_key ??
+        sourceInstance?.completed_event_key ??
+        null,
+      firstSeenAt: minDateTime(existingUserInstance?.first_seen_at || null, sourceInstance?.first_seen_at || null),
+      lastSeenAt: maxDateTime(existingUserInstance?.last_seen_at || null, sourceInstance?.last_seen_at || now),
+      completedAt: maxDateTime(existingUserInstance?.completed_at || null, sourceInstance?.completed_at || null),
+      metadataJson: JSON.stringify(mergedMetadata),
+    })
+    if (Number(mergedUserInstance.id || 0) > 0) {
+      mergedUserInstanceIdByJourney.set(journeyId, Number(mergedUserInstance.id))
+    }
+
+    await repo.upsertJourneyInstance({
+      journeyId,
+      identityType: 'anon',
+      identityKey: anonVisitorId,
+      state: 'abandoned',
+      currentStepId: sourceInstance?.current_step_id ?? null,
+      completedReason: sourceInstance?.completed_reason || 'merged_to_user',
+      completedEventKey: sourceInstance?.completed_event_key || null,
+      firstSeenAt: sourceInstance?.first_seen_at || null,
+      lastSeenAt: now,
+      completedAt: sourceInstance?.completed_at || now,
+      metadataJson: JSON.stringify({
+        ...parseMetadata(sourceInstance?.metadata_json),
+        merged_to_user_id: userId,
+        merged_at: mergedAtIso,
+        source: 'auth_merge',
+      }),
+    })
+    mergedJourneys += 1
+  }
+
+  let mergedProgressRows = 0
+  for (const anonRow of anonProgressRows) {
+    const stepId = Number(anonRow.step_id || 0)
+    const journeyId = Number(anonRow.journey_id || 0)
+    if (!Number.isFinite(stepId) || stepId <= 0) continue
+    if (!Number.isFinite(journeyId) || journeyId <= 0) continue
+
+    const userRow = userProgressByStep.get(stepId) || null
+    const mergedState = preferredProgressState(anonRow, userRow)
+    const mergedMetadata = {
+      ...parseMetadata(userRow?.metadata_json),
+      ...parseMetadata(anonRow.metadata_json),
+      merged_from_anon: true,
+      merged_from_anon_key: anonVisitorId,
+      merged_to_user_id: userId,
+      merged_at: mergedAtIso,
+      source: 'auth_merge',
+    }
+
+    const upserted = await repo.upsertProgress({
+      userId,
+      journeyId,
+      journeyInstanceId:
+        mergedUserInstanceIdByJourney.get(journeyId) ||
+        (userRow?.journey_instance_id != null ? Number(userRow.journey_instance_id) : null),
+      stepId,
+      state: mergedState,
+      firstSeenAt: minDateTime(userRow?.first_seen_at || null, anonRow.first_seen_at || null),
+      lastSeenAt: maxDateTime(userRow?.last_seen_at || null, anonRow.last_seen_at || now),
+      completedAt: maxDateTime(userRow?.completed_at || null, anonRow.completed_at || null),
+      completedByOutcomeId: userRow?.completed_by_outcome_id ?? anonRow.completed_by_outcome_id ?? null,
+      sessionId: userRow?.session_id ?? anonRow.session_id ?? null,
+      metadataJson: JSON.stringify(mergedMetadata),
+    })
+    userProgressByStep.set(stepId, upserted)
+
+    await repo.updateAnonProgressById(Number(anonRow.id), {
+      metadataJson: JSON.stringify({
+        ...parseMetadata(anonRow.metadata_json),
+        merged_to_user_id: userId,
+        merged_at: mergedAtIso,
+        source: 'auth_merge',
+      }),
+    })
+    mergedProgressRows += 1
+  }
+
+  return { mergedJourneys, mergedProgressRows, skipped: false }
 }

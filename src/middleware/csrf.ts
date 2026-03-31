@@ -12,6 +12,9 @@ export function csrfProtect(req: Request, res: Response, next: NextFunction) {
   if (req.path === '/api/feed/message-decision') return next();
   // In-feed message telemetry endpoint accepts both anonymous and authenticated events.
   if (req.path === '/api/feed/message-events') return next();
+  // In-feed auth intent endpoint must work for both anonymous and authenticated viewers.
+  // It issues correlation ids used later to attribute auth completion and journey goal completion.
+  if (req.path === '/api/feed/message-auth-intent') return next();
   // Feed activity telemetry endpoint accepts both anonymous and authenticated events.
   if (req.path === '/api/feed/activity-events') return next();
   if (!req.session || !req.user) return next();

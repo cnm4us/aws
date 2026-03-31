@@ -232,6 +232,8 @@ async function handleDecision(req: any, res: any, next: any) {
         candidate_count: Number(selectionDebug.candidateCount || 0),
         candidate_count_before_ruleset: Number(selectionDebug.candidateCountBeforeRuleset || 0),
         candidate_count_before_journey: Number(selectionDebug.candidateCountBeforeJourney || 0),
+        suppression_applied_count: Number(selectionDebug.suppressionAppliedCount || 0),
+        suppression_bypassed_journey_count: Number(selectionDebug.suppressionBypassedJourneyCount || 0),
         ruleset_rejected_count: Number(selectionDebug.rulesetRejectedCount || 0),
         journey_rejected_count: Number(selectionDebug.journeyRejectedCount || 0),
         message_ruleset_result: selectionDebug.rulesetResult || 'none',
@@ -300,6 +302,11 @@ async function handleDecision(req: any, res: any, next: any) {
       span.setAttribute('app.decision_reason', decision.reasonCode)
       span.setAttribute('app.outcome', decision.shouldInsert ? 'shown' : 'blocked')
       const userSuppressedCount = Number((decision.debug as any)?.selection?.userSuppressedCount || 0)
+      const suppressionAppliedCount = Number((decision.debug as any)?.selection?.suppressionAppliedCount || 0)
+      const suppressionBypassedJourneyCount = Number((decision.debug as any)?.selection?.suppressionBypassedJourneyCount || 0)
+      if (suppressionAppliedCount > 0) span.setAttribute('app.suppression_applied', 'true')
+      else span.setAttribute('app.suppression_applied', 'false')
+      if (suppressionBypassedJourneyCount > 0) span.setAttribute('app.suppression_bypass_reason', 'journey_delivery')
       if (userSuppressedCount > 0) {
         span.setAttribute('app.suppression_scope', 'campaign_or_message')
         span.setAttribute('app.suppression_reason', 'completion')

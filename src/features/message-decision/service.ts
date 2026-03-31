@@ -252,6 +252,14 @@ type SupportProfile = {
   donationEvents: Array<{ occurredAtMs: number; amountCents: number }>
 }
 
+type JourneyReentryPolicy = 'never_reenter' | 'reenter_after_days' | 'allow_restart'
+type JourneyRuntimePolicy = {
+  reentryPolicy: JourneyReentryPolicy
+  reentryCooldownDays: number
+  journeyExpiresAfterDays: number | null
+  stepExpiresAfterDays: number | null
+}
+
 function toUtcDateTimeFromMs(ms: number): string {
   const d = new Date(ms)
   const y = d.getUTCFullYear()
@@ -447,6 +455,62 @@ function dateToMs(raw: string | null): number | null {
   return date.getTime()
 }
 
+function parseJourneyRuntimePolicyFromConfigRaw(raw: any): JourneyRuntimePolicy {
+  let cfg: Record<string, any> = {}
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw || '{}') : raw
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) cfg = parsed as Record<string, any>
+  } catch {}
+
+  const reentryPolicyRaw = String(cfg.reentry_policy || cfg.reentryPolicy || '').trim().toLowerCase()
+  const reentryPolicy: JourneyReentryPolicy =
+    reentryPolicyRaw === 'allow_restart'
+      ? 'allow_restart'
+      : (reentryPolicyRaw === 'reenter_after_days' ? 'reenter_after_days' : 'never_reenter')
+
+  const cooldownNum = Number(cfg.reentry_cooldown_days ?? cfg.reentryCooldownDays ?? 0)
+  const reentryCooldownDays = Number.isFinite(cooldownNum) && cooldownNum > 0 ? Math.round(cooldownNum) : 0
+
+  const journeyExpNum = Number(cfg.journey_expires_after_days ?? cfg.journeyExpiresAfterDays ?? 0)
+  const journeyExpiresAfterDays =
+    Number.isFinite(journeyExpNum) && journeyExpNum > 0 ? Math.round(journeyExpNum) : null
+
+  const stepExpNum = Number(cfg.step_expires_after_days ?? cfg.stepExpiresAfterDays ?? 0)
+  const stepExpiresAfterDays =
+    Number.isFinite(stepExpNum) && stepExpNum > 0 ? Math.round(stepExpNum) : null
+
+  return {
+    reentryPolicy,
+    reentryCooldownDays,
+    journeyExpiresAfterDays,
+    stepExpiresAfterDays,
+  }
+}
+
+function isJourneyTerminalState(stateRaw: any): boolean {
+  const state = String(stateRaw || '').trim().toLowerCase()
+  return state === 'completed' || state === 'abandoned' || state === 'expired'
+}
+
+function parseJourneyPolicyMap(
+  steps: Array<any>
+): Map<number, JourneyRuntimePolicy> {
+  const out = new Map<number, JourneyRuntimePolicy>()
+  for (const step of steps) {
+    const journeyId = Number((step as any).journey_id || 0)
+    if (!Number.isFinite(journeyId) || journeyId <= 0) continue
+    if (out.has(journeyId)) continue
+    out.set(journeyId, parseJourneyRuntimePolicyFromConfigRaw((step as any).journey_config_json))
+  }
+  return out
+}
+
+function isPastDays(referenceMs: number | null, days: number): boolean {
+  if (!referenceMs || !Number.isFinite(referenceMs)) return false
+  if (!Number.isFinite(days) || days <= 0) return false
+  return nowMs() >= (referenceMs + (days * 24 * 60 * 60 * 1000))
+}
+
 async function applyJourneyGating(params: {
   userId: number | null
   anonVisitorId?: string | null
@@ -463,8 +527,8 @@ async function applyJourneyGating(params: {
     return { eligible: [], rejectedCount: 0, dropReasons: [] }
   }
 
-  const steps = await messageJourneysRepo.listActiveStepsByMessageIds(inputCandidates.map((c) => c.messageId))
-  if (!steps.length) {
+  const candidateAttachedSteps = await messageJourneysRepo.listActiveStepsByMessageIds(inputCandidates.map((c) => c.messageId))
+  if (!candidateAttachedSteps.length) {
     const eligible = inputCandidates
       .filter((c) => c.deliveryScope !== 'journey_only')
       .map((c) => ({ ...c, deliveryContext: 'standalone' as const }))
@@ -476,6 +540,13 @@ async function applyJourneyGating(params: {
           .map((c) => ({ messageId: c.messageId, reason: 'journey_only_message' }))
       : []
     return { eligible, rejectedCount: rejected, dropReasons }
+  }
+  const attachedJourneyIds = Array.from(
+    new Set(candidateAttachedSteps.map((step) => Number((step as any).journey_id || 0)).filter((n) => Number.isFinite(n) && n > 0))
+  )
+  const steps = await messageJourneysRepo.listActiveStepsByJourneyIds(attachedJourneyIds)
+  if (!steps.length) {
+    return { eligible: [], rejectedCount: inputCandidates.length, dropReasons: inputCandidates.slice(0, 40).map((c) => ({ messageId: c.messageId, reason: 'journey_not_active' })) }
   }
 
   const stepsByMessage = new Map<number, typeof steps>()
@@ -489,6 +560,8 @@ async function applyJourneyGating(params: {
     stepsByJourney.get(journeyId)!.push(step)
   }
   const journeyTargetingMap = await messageJourneysRepo.listSurfaceTargetingByJourneyIds(Array.from(stepsByJourney.keys()))
+  const journeyIds = Array.from(stepsByJourney.keys())
+  const journeyPolicyMap = parseJourneyPolicyMap(steps as any[])
 
   const dropReasons: CandidateDropReason[] = []
   const eligible: EligibleMessageCandidate[] = []
@@ -499,10 +572,111 @@ async function applyJourneyGating(params: {
     : null
   const anonVisitorId = userId == null ? String(params.anonVisitorId || '').trim() : ''
   if (userId == null) {
+    const terminalJourneys = new Set<number>()
+    const restartJourneys = new Set<number>()
+    const activeInstanceByJourney = new Map<number, any>()
+    if (anonVisitorId) {
+      const instanceRows = await messageJourneysRepo.listJourneyInstancesByAnonJourneyIds(anonVisitorId, journeyIds)
+      for (const row of instanceRows as any[]) {
+        const journeyId = Number(row?.journey_id || 0)
+        if (!Number.isFinite(journeyId) || journeyId <= 0) continue
+        const policy = journeyPolicyMap.get(journeyId) || {
+          reentryPolicy: 'never_reenter' as JourneyReentryPolicy,
+          reentryCooldownDays: 0,
+          journeyExpiresAfterDays: null,
+          stepExpiresAfterDays: null,
+        }
+
+        let state = String(row?.state || '').trim().toLowerCase()
+        if (state === 'active' && policy.journeyExpiresAfterDays && policy.journeyExpiresAfterDays > 0) {
+          const refMs =
+            dateToMs((row as any).first_seen_at || null) ??
+            dateToMs((row as any).last_seen_at || null) ??
+            dateToMs((row as any).updated_at || null) ??
+            dateToMs((row as any).created_at || null)
+          if (isPastDays(refMs, policy.journeyExpiresAfterDays)) {
+            state = 'expired'
+            try {
+              await messageJourneysRepo.updateJourneyInstanceById(Number((row as any).id), {
+                state: 'expired',
+                completedReason: String((row as any).completed_reason || 'journey_expired'),
+                completedAt: toUtcDateTimeFromMs(nowMs()),
+                lastSeenAt: toUtcDateTimeFromMs(nowMs()),
+              })
+            } catch {}
+          }
+        }
+
+        if (!isJourneyTerminalState(state)) {
+          if (state === 'active' && !activeInstanceByJourney.has(journeyId)) {
+            activeInstanceByJourney.set(journeyId, row)
+          }
+          continue
+        }
+        if (activeInstanceByJourney.has(journeyId)) continue
+        if (policy.reentryPolicy === 'allow_restart') {
+          try {
+            const created = await messageJourneysRepo.createJourneyInstance({
+              journeyId,
+              identityType: 'anon',
+              identityKey: anonVisitorId,
+              state: 'active',
+              currentStepId: null,
+              firstSeenAt: null,
+              lastSeenAt: toUtcDateTimeFromMs(nowMs()),
+              metadataJson: JSON.stringify({
+                source: 'reentry',
+                previous_instance_id: Number((row as any).id || 0),
+                previous_state: String((row as any).state || ''),
+                restarted_at: new Date().toISOString(),
+              }),
+            })
+            activeInstanceByJourney.set(journeyId, created)
+            restartJourneys.add(journeyId)
+          } catch {}
+          continue
+        }
+        if (policy.reentryPolicy === 'reenter_after_days' && policy.reentryCooldownDays > 0) {
+          const refMs =
+            dateToMs((row as any).completed_at || null) ??
+            dateToMs((row as any).last_seen_at || null) ??
+            dateToMs((row as any).updated_at || null)
+          if (isPastDays(refMs, policy.reentryCooldownDays)) {
+            try {
+              const created = await messageJourneysRepo.createJourneyInstance({
+                journeyId,
+                identityType: 'anon',
+                identityKey: anonVisitorId,
+                state: 'active',
+                currentStepId: null,
+                firstSeenAt: null,
+                lastSeenAt: toUtcDateTimeFromMs(nowMs()),
+                metadataJson: JSON.stringify({
+                  source: 'reentry',
+                  previous_instance_id: Number((row as any).id || 0),
+                  previous_state: String((row as any).state || ''),
+                  restarted_at: new Date().toISOString(),
+                }),
+              })
+              activeInstanceByJourney.set(journeyId, created)
+              restartJourneys.add(journeyId)
+            } catch {}
+            continue
+          }
+        }
+        terminalJourneys.add(journeyId)
+      }
+    }
     const completedByJourneyStep = new Set<string>()
     if (anonVisitorId) {
-      const anonProgressRows = await messageJourneysRepo.listAnonProgressByVisitorJourneyIds(anonVisitorId, Array.from(stepsByJourney.keys()))
+      const activeInstanceIds = Array.from(activeInstanceByJourney.values())
+        .map((row: any) => Number(row?.id || 0))
+        .filter((id) => Number.isFinite(id) && id > 0)
+      const anonProgressRows = activeInstanceIds.length
+        ? await messageJourneysRepo.listAnonProgressByVisitorInstanceIds(anonVisitorId, activeInstanceIds)
+        : []
       for (const row of anonProgressRows) {
+        if (restartJourneys.has(Number((row as any).journey_id || 0))) continue
         if (String((row as any).state || '') !== 'completed') continue
         completedByJourneyStep.add(`${Number((row as any).journey_id)}:${Number((row as any).step_id)}`)
       }
@@ -512,7 +686,8 @@ async function applyJourneyGating(params: {
       const sorted = journeySteps
         .slice()
         .sort((a, b) => Number(a.step_order) - Number(b.step_order) || Number(a.id) - Number(b.id))
-      const next = sorted.find((step) => !completedByJourneyStep.has(`${journeyId}:${Number(step.id)}`))
+      let next = sorted.find((step) => !completedByJourneyStep.has(`${journeyId}:${Number(step.id)}`))
+      if (!next && restartJourneys.has(journeyId)) next = sorted[0]
       if (next) activeStepByJourney.set(journeyId, next)
     }
 
@@ -546,7 +721,13 @@ async function applyJourneyGating(params: {
         if (dropReasons.length < 40) dropReasons.push({ messageId: c.messageId, reason: 'journey_scope_conflict' })
         continue
       }
+      if (attached.every((step) => terminalJourneys.has(Number((step as any).journey_id || 0)))) {
+        rejectedCount += 1
+        if (dropReasons.length < 40) dropReasons.push({ messageId: c.messageId, reason: 'journey_terminal_state' })
+        continue
+      }
       const matchingSurface = attached.some((step) => {
+        if (terminalJourneys.has(Number((step as any).journey_id || 0))) return false
         const journeyId = Number((step as any).journey_id || 0)
         const targeting = journeyTargetingMap.get(journeyId)
         if (targeting && targeting.length) {
@@ -566,6 +747,7 @@ async function applyJourneyGating(params: {
       }
       const matches = attached
         .filter((step) => {
+          if (terminalJourneys.has(Number(step.journey_id))) return false
           const active = activeStepByJourney.get(Number(step.journey_id))
           return !!active && Number(active.id) === Number(step.id)
         })
@@ -593,9 +775,110 @@ async function applyJourneyGating(params: {
     return { eligible, rejectedCount, dropReasons }
   }
 
-  const progressRows = await messageJourneysRepo.listProgressByUserJourneyIds(userId, Array.from(stepsByJourney.keys()))
+  const terminalJourneys = new Set<number>()
+  const restartJourneys = new Set<number>()
+  const activeInstanceByJourney = new Map<number, any>()
+  {
+    const instanceRows = await messageJourneysRepo.listJourneyInstancesByUserJourneyIds(userId, journeyIds)
+    for (const row of instanceRows as any[]) {
+      const journeyId = Number(row?.journey_id || 0)
+      if (!Number.isFinite(journeyId) || journeyId <= 0) continue
+      const policy = journeyPolicyMap.get(journeyId) || {
+        reentryPolicy: 'never_reenter' as JourneyReentryPolicy,
+        reentryCooldownDays: 0,
+        journeyExpiresAfterDays: null,
+        stepExpiresAfterDays: null,
+      }
+
+      let state = String(row?.state || '').trim().toLowerCase()
+      if (state === 'active' && policy.journeyExpiresAfterDays && policy.journeyExpiresAfterDays > 0) {
+        const refMs =
+          dateToMs((row as any).first_seen_at || null) ??
+          dateToMs((row as any).last_seen_at || null) ??
+          dateToMs((row as any).updated_at || null) ??
+          dateToMs((row as any).created_at || null)
+        if (isPastDays(refMs, policy.journeyExpiresAfterDays)) {
+          state = 'expired'
+          try {
+            await messageJourneysRepo.updateJourneyInstanceById(Number((row as any).id), {
+              state: 'expired',
+              completedReason: String((row as any).completed_reason || 'journey_expired'),
+              completedAt: toUtcDateTimeFromMs(nowMs()),
+              lastSeenAt: toUtcDateTimeFromMs(nowMs()),
+            })
+          } catch {}
+        }
+      }
+
+      if (!isJourneyTerminalState(state)) {
+        if (state === 'active' && !activeInstanceByJourney.has(journeyId)) {
+          activeInstanceByJourney.set(journeyId, row)
+        }
+        continue
+      }
+      if (activeInstanceByJourney.has(journeyId)) continue
+      if (policy.reentryPolicy === 'allow_restart') {
+        try {
+          const created = await messageJourneysRepo.createJourneyInstance({
+            journeyId,
+            identityType: 'user',
+            identityKey: String(userId),
+            state: 'active',
+            currentStepId: null,
+            firstSeenAt: null,
+            lastSeenAt: toUtcDateTimeFromMs(nowMs()),
+            metadataJson: JSON.stringify({
+              source: 'reentry',
+              previous_instance_id: Number((row as any).id || 0),
+              previous_state: String((row as any).state || ''),
+              restarted_at: new Date().toISOString(),
+            }),
+          })
+          activeInstanceByJourney.set(journeyId, created)
+          restartJourneys.add(journeyId)
+        } catch {}
+        continue
+      }
+      if (policy.reentryPolicy === 'reenter_after_days' && policy.reentryCooldownDays > 0) {
+        const refMs =
+          dateToMs((row as any).completed_at || null) ??
+          dateToMs((row as any).last_seen_at || null) ??
+          dateToMs((row as any).updated_at || null)
+        if (isPastDays(refMs, policy.reentryCooldownDays)) {
+          try {
+            const created = await messageJourneysRepo.createJourneyInstance({
+              journeyId,
+              identityType: 'user',
+              identityKey: String(userId),
+              state: 'active',
+              currentStepId: null,
+              firstSeenAt: null,
+              lastSeenAt: toUtcDateTimeFromMs(nowMs()),
+              metadataJson: JSON.stringify({
+                source: 'reentry',
+                previous_instance_id: Number((row as any).id || 0),
+                previous_state: String((row as any).state || ''),
+                restarted_at: new Date().toISOString(),
+              }),
+            })
+            activeInstanceByJourney.set(journeyId, created)
+            restartJourneys.add(journeyId)
+          } catch {}
+          continue
+        }
+      }
+      terminalJourneys.add(journeyId)
+    }
+  }
+  const activeInstanceIds = Array.from(activeInstanceByJourney.values())
+    .map((row: any) => Number(row?.id || 0))
+    .filter((id) => Number.isFinite(id) && id > 0)
+  const progressRows = activeInstanceIds.length
+    ? await messageJourneysRepo.listProgressByUserInstanceIds(userId, activeInstanceIds)
+    : []
   const completedByJourneyStep = new Set<string>()
   for (const row of progressRows) {
+    if (restartJourneys.has(Number((row as any).journey_id || 0))) continue
     if (String(row.state) !== 'completed') continue
     completedByJourneyStep.add(`${Number(row.journey_id)}:${Number(row.step_id)}`)
   }
@@ -605,7 +888,8 @@ async function applyJourneyGating(params: {
     const sorted = journeySteps
       .slice()
       .sort((a, b) => Number(a.step_order) - Number(b.step_order) || Number(a.id) - Number(b.id))
-    const next = sorted.find((step) => !completedByJourneyStep.has(`${journeyId}:${Number(step.id)}`))
+    let next = sorted.find((step) => !completedByJourneyStep.has(`${journeyId}:${Number(step.id)}`))
+    if (!next && restartJourneys.has(journeyId)) next = sorted[0]
     if (next) activeStepByJourney.set(journeyId, next)
   }
 
@@ -639,7 +923,13 @@ async function applyJourneyGating(params: {
       if (dropReasons.length < 40) dropReasons.push({ messageId: c.messageId, reason: 'journey_scope_conflict' })
       continue
     }
+    if (attached.every((step) => terminalJourneys.has(Number((step as any).journey_id || 0)))) {
+      rejectedCount += 1
+      if (dropReasons.length < 40) dropReasons.push({ messageId: c.messageId, reason: 'journey_terminal_state' })
+      continue
+    }
     const attachedOnSurface = attached.filter((step) => {
+      if (terminalJourneys.has(Number((step as any).journey_id || 0))) return false
       const journeyId = Number((step as any).journey_id || 0)
       const targeting = journeyTargetingMap.get(journeyId)
       if (targeting && targeting.length) {
@@ -659,6 +949,7 @@ async function applyJourneyGating(params: {
     }
     const matches = attachedOnSurface
       .filter((step) => {
+        if (terminalJourneys.has(Number(step.journey_id))) return false
         const active = activeStepByJourney.get(Number(step.journey_id))
         return !!active && Number(active.id) === Number(step.id)
       })
@@ -776,6 +1067,8 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
   let candidateCount = 0
   let candidateCountBeforeRuleset = 0
   let userSuppressedCount = 0
+  let suppressionAppliedCount = 0
+  let suppressionBypassedJourneyCount = 0
   let rulesetRejectedCount = 0
   let journeyRejectedCount = 0
   let candidateCountBeforeJourney = 0
@@ -895,23 +1188,6 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
           return matched
         })
 
-        if (input.userId != null && input.userId > 0 && eligible.length > 0) {
-          const filtered: EligibleMessageCandidate[] = []
-          for (const c of eligible) {
-            const suppressed = await messageAttributionSvc.isUserSuppressed({
-              userId: input.userId,
-              messageId: c.messageId,
-              campaignKey: c.campaignKey,
-            })
-            if (suppressed) {
-              userSuppressedCount += 1
-              continue
-            }
-            filtered.push(c)
-          }
-          eligible = filtered
-        }
-
         candidateCountBeforeJourney = eligible.length
         if (eligible.length > 0) {
           const gated = await applyJourneyGating({
@@ -929,6 +1205,30 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
             }
           }
           eligible = gated.eligible
+        }
+
+        if (input.userId != null && input.userId > 0 && eligible.length > 0) {
+          const filtered: EligibleMessageCandidate[] = []
+          for (const c of eligible) {
+            const deliveryContext = String((c as any).deliveryContext || '').trim().toLowerCase()
+            if (deliveryContext === 'journey') {
+              suppressionBypassedJourneyCount += 1
+              filtered.push(c)
+              continue
+            }
+            suppressionAppliedCount += 1
+            const suppressed = await messageAttributionSvc.isUserSuppressed({
+              userId: input.userId,
+              messageId: c.messageId,
+              campaignKey: c.campaignKey,
+            })
+            if (suppressed) {
+              userSuppressedCount += 1
+              continue
+            }
+            filtered.push(c)
+          }
+          eligible = filtered
         }
 
         candidateCountBeforeRuleset = eligible.length
@@ -1058,6 +1358,8 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
         candidateCountBeforeRuleset,
         candidateCountBeforeJourney,
         userSuppressedCount,
+        suppressionAppliedCount,
+        suppressionBypassedJourneyCount,
         rulesetRejectedCount,
         journeyRejectedCount,
         rulesetResult,

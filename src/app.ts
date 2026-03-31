@@ -47,6 +47,9 @@ import { domainErrorMiddleware } from './core/http';
 import { getLogger, logError } from './lib/logger';
 import * as messageAnalyticsSvc from './features/message-analytics/service'
 import * as messageAttributionSvc from './features/message-attribution/service'
+import * as messageJourneysSvc from './features/message-journeys/service'
+import { parseCookies } from './utils/cookies'
+import { ANON_SESSION_COOKIE } from './features/message-decision/service'
 
 const appLogger = getLogger({ component: 'app' })
 
@@ -375,6 +378,23 @@ export function buildServer(): express.Application {
     }
   }
 
+  async function mergeAnonJourneyStateOnAuth(req: any, userId: number) {
+    const numericUserId = Number(userId || 0)
+    if (!Number.isFinite(numericUserId) || numericUserId <= 0) return
+    try {
+      const cookies = parseCookies(req?.headers?.cookie)
+      const anonVisitorId = String(cookies?.[ANON_SESSION_COOKIE] || '').trim()
+      if (!anonVisitorId) return
+      await messageJourneysSvc.mergeAnonJourneyStateIntoUserOnAuth({
+        userId: numericUserId,
+        anonVisitorId,
+      })
+    } catch (err) {
+      const log = req.log || appLogger
+      log.warn({ err, path: req.path, user_id: numericUserId }, 'message_journey_auth_merge_failed')
+    }
+  }
+
   app.post('/api/register', async (req, res) => {
     try {
       const { email, password, displayName, phone } = (req.body || {}) as any;
@@ -413,6 +433,7 @@ export function buildServer(): express.Application {
       // Assign default roles using new catalog
       await db.query(`INSERT IGNORE INTO user_roles (user_id, role_id) SELECT ?, id FROM roles WHERE name IN ('site_member')`, [userId]);
       await db.query(`INSERT IGNORE INTO user_space_roles (user_id, space_id, role_id) SELECT ?, ?, id FROM roles WHERE name IN ('space_member','space_poster')`, [userId, spaceId]);
+      await mergeAnonJourneyStateOnAuth(req, userId)
       await trackMessageAuthComplete(req, userId)
       res.json({ ok: true, userId, space: { id: spaceId, slug } });
     } catch (err: any) {
@@ -471,6 +492,7 @@ export function buildServer(): express.Application {
         maxAge,
         path: '/',
       });
+      await mergeAnonJourneyStateOnAuth(req, Number(row.id))
       await trackMessageAuthComplete(req, Number(row.id))
       res.json({ ok: true, userId: row.id });
     } catch (err) {
