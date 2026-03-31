@@ -15,6 +15,12 @@ Current priority: front burner next, after current cleanup/modification work com
 ## Working Rule
 Update these docs before changing event instrumentation or reporting logic.
 
+## Campaign Conventions
+- `message_campaign_key`: per-run message identifier (unique among non-null message keys).
+- `journey_key`: per-run journey identifier (unique).
+- `message_campaign_category` / `journey_campaign_category`: stable cross-run family label used for aggregate reporting.
+- Recommended format: lowercase slug with `_` or `-` (e.g., `donation_drive`, `onboarding_q2`).
+
 Moderation analytics follows a two-layer policy model:
 - `global_floor` (sitewide non-negotiables)
 - `space_culture` (group/channel-specific norms)

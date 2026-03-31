@@ -29,7 +29,19 @@ Canonical field definitions for analytics events.
 | `slide_type` | string | event-dependent | `content`, `message`, `sponsor`, `fund_drive` | internal | future-safe enum; legacy rows may still use `prompt` |
 | `message_id` | int | message events | positive int | internal | in-feed message id |
 | `message_campaign_key` | string | no | slug-like key | internal | message campaign grouping key |
+| `message_campaign_category` | string | no | slug-like category | internal | cross-run campaign family grouping |
+| `delivery_context` | string | no | `standalone`, `journey` | internal | where the message was delivered from |
+| `journey_id` | int | no | positive int | internal | journey context id |
+| `journey_key` | string | no | slug-like key | internal | journey run key |
+| `journey_step_id` | int | no | positive int | internal | current journey step id |
+| `journey_step_order` | int | no | positive int | internal | current journey step order |
+| `journey_step_key` | string | no | slug-like key | internal | current journey step key |
+| `journey_campaign_category` | string | no | slug-like category | internal | journey cross-run family grouping |
 | `cta_kind` | string | no | `primary`, `secondary` | internal | click events only |
+| `message_cta_slot` | int | no | `1`, `2`, `3` | internal | selected CTA slot index |
+| `message_cta_definition_id` | int | no | positive int | internal | CTA definition used at click/outcome time |
+| `message_cta_intent_key` | string | no | slug-like key | internal | CTA intent (e.g., `defer`, `donate`) |
+| `message_cta_executor_type` | string | no | executor enum | internal | CTA execution path (`internal_link`, `advance_slide`, etc.) |
 | `milestone_pct` | int | milestone only | `25`, `50`, `75`, `95` | internal | watch milestone |
 | `watch_seconds` | int | some events | >=0 | internal | rounded seconds |
 

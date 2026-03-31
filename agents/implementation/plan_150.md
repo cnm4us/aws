@@ -1,6 +1,6 @@
 # Plan 150: Campaign Keys + Categories (Messages & Journeys)
 
-Status: In Progress
+Status: Completed
 
 ## Context
 - We want deliberate campaign operations with strong key hygiene and cleaner analytics rollups.
@@ -31,7 +31,7 @@ Status: In Progress
 - B: Completed
 - C: Completed
 - D: Completed
-- E: Pending
+- E: Completed
 
 ## Phase A — Schema + Data Safety
 - Goal:
@@ -87,7 +87,7 @@ Status: In Progress
 - [x] Smoke: duplicate key helper + manual key override.
 - [x] Smoke: category persisted on message and journey edit/save.
 - [x] Smoke: analytics filter/group by category returns expected rows.
-- [ ] Update agent docs with key/category conventions.
+- [x] Update agent docs with key/category conventions.
 - Acceptance:
   - Feature is operational and documented.
 
@@ -103,5 +103,4 @@ Status: In Progress
   - Recommendation: yes, same helper behavior as message key.
 
 ## Resume Here
-- Next action:
-  - Implement Phase E.
+- Plan complete.
