@@ -214,6 +214,7 @@ function nowMs(): number {
 type EligibleMessageCandidate = {
   messageId: number
   campaignKey: string | null
+  campaignCategory: string | null
   messageType: string
   priority: number
   deliveryScope: 'standalone_only' | 'journey_only' | 'both'
@@ -223,6 +224,7 @@ type EligibleMessageCandidate = {
   journeyStepOrder?: number | null
   journeyStepKey?: string | null
   journeyRulesetId?: number | null
+  journeyCampaignCategory?: string | null
   deliveryContext?: 'standalone' | 'journey'
   surfaceTargeting?: Array<{
     surface: MessageDecisionSurface
@@ -581,6 +583,10 @@ async function applyJourneyGating(params: {
         journeyStepOrder: Number(step.step_order || 0),
         journeyStepKey: String(step.step_key || ''),
         journeyRulesetId: step.journey_ruleset_id == null ? null : Number(step.journey_ruleset_id),
+        journeyCampaignCategory:
+          step.journey_campaign_category == null || String(step.journey_campaign_category).trim() === ''
+            ? null
+            : String(step.journey_campaign_category).trim().toLowerCase(),
         deliveryContext: 'journey',
       })
     }
@@ -672,6 +678,10 @@ async function applyJourneyGating(params: {
       journeyStepOrder: Number(step.step_order),
       journeyStepKey: String(step.step_key || ''),
       journeyRulesetId: step.journey_ruleset_id == null ? null : Number(step.journey_ruleset_id),
+      journeyCampaignCategory:
+        step.journey_campaign_category == null || String(step.journey_campaign_category).trim() === ''
+          ? null
+          : String(step.journey_campaign_category).trim().toLowerCase(),
       deliveryContext: 'journey',
     })
   }
@@ -770,12 +780,15 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
   let journeyRejectedCount = 0
   let candidateCountBeforeJourney = 0
   let selectedPriority: number | null = null
+  let selectedCampaignKey: string | null = null
+  let selectedCampaignCategory: string | null = null
   let selectedRulesetId: number | null = null
   let selectedJourneyId: number | null = null
   let selectedJourneyStepId: number | null = null
   let selectedJourneyStepOrder: number | null = null
   let selectedJourneyStepKey: string | null = null
   let selectedJourneyRulesetId: number | null = null
+  let selectedJourneyCampaignCategory: string | null = null
   let selectedDeliveryContext: 'standalone' | 'journey' | null = null
   let selectedTargetingMode: 'all' | 'selected' | null = null
   const selectedTargetType: 'global_feed' | 'group_feed' | 'channel_feed' = resolveTargetTypeForSurface(input.surface)
@@ -844,6 +857,10 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
           candidates.push({
             messageId: candidateId,
             campaignKey: (message as any).campaignKey == null ? null : String((message as any).campaignKey),
+            campaignCategory:
+              (message as any).campaignCategory == null || String((message as any).campaignCategory).trim() === ''
+                ? null
+                : String((message as any).campaignCategory).trim().toLowerCase(),
             messageType: String(message.type || 'register_login'),
             priority: Number(message.priority || 0),
             deliveryScope:
@@ -967,12 +984,24 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
             reasonCode = 'eligible'
             messageId = selected.messageId
             selectedPriority = selected.priority
+            selectedCampaignKey =
+              selected.campaignKey == null || String(selected.campaignKey).trim() === ''
+                ? null
+                : String(selected.campaignKey).trim().toLowerCase()
+            selectedCampaignCategory =
+              selected.campaignCategory == null || String(selected.campaignCategory).trim() === ''
+                ? null
+                : String(selected.campaignCategory).trim().toLowerCase()
             selectedRulesetId = resolveCandidateRulesetId(selected)
             selectedJourneyId = selected.journeyId == null ? null : Number(selected.journeyId)
             selectedJourneyStepId = selected.journeyStepId == null ? null : Number(selected.journeyStepId)
             selectedJourneyStepOrder = selected.journeyStepOrder == null ? null : Number(selected.journeyStepOrder)
             selectedJourneyStepKey = selected.journeyStepKey == null ? null : String(selected.journeyStepKey)
             selectedJourneyRulesetId = selected.journeyRulesetId == null ? null : Number(selected.journeyRulesetId)
+            selectedJourneyCampaignCategory =
+              selected.journeyCampaignCategory == null || String(selected.journeyCampaignCategory).trim() === ''
+                ? null
+                : String(selected.journeyCampaignCategory).trim().toLowerCase()
             selectedDeliveryContext = selected.deliveryContext === 'journey' ? 'journey' : 'standalone'
             selectedTargetingMode = resolveSurfaceTargetingMode(selected.surfaceTargeting || [], input.surface)
             selectedTargetMatch = true
@@ -1034,11 +1063,13 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
         rulesetResult,
         rulesetReason,
         selectedRulesetId,
+        selectedCampaignCategory,
         selectedJourneyId,
         selectedJourneyStepId,
         selectedJourneyStepOrder,
         selectedJourneyStepKey,
         selectedJourneyRulesetId,
+        selectedJourneyCampaignCategory,
         selectedDeliveryContext,
         surfaceContext: input.surface,
         targetType: selectedTargetType,
@@ -1048,6 +1079,7 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
         targetRejectedCount,
         rejectedRulesetId,
         selectedPriority,
+        selectedCampaignKey,
         candidateDropReasons,
       },
       reasonCode,

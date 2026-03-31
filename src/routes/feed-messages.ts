@@ -240,6 +240,14 @@ async function handleDecision(req: any, res: any, next: any) {
           selectionDebug.selectedRulesetId != null
             ? Number(selectionDebug.selectedRulesetId)
             : (selectionDebug.rejectedRulesetId != null ? Number(selectionDebug.rejectedRulesetId) : null),
+        message_campaign_key:
+          selectionDebug.selectedCampaignKey != null && String(selectionDebug.selectedCampaignKey).trim() !== ''
+            ? String(selectionDebug.selectedCampaignKey).trim().toLowerCase()
+            : null,
+        message_campaign_category:
+          selectionDebug.selectedCampaignCategory != null && String(selectionDebug.selectedCampaignCategory).trim() !== ''
+            ? String(selectionDebug.selectedCampaignCategory).trim().toLowerCase()
+            : null,
         message_journey_id:
           selectionDebug.selectedJourneyId != null && Number.isFinite(Number(selectionDebug.selectedJourneyId))
             ? Number(selectionDebug.selectedJourneyId)
@@ -256,6 +264,10 @@ async function handleDecision(req: any, res: any, next: any) {
         message_journey_ruleset_id:
           selectionDebug.selectedJourneyRulesetId != null && Number.isFinite(Number(selectionDebug.selectedJourneyRulesetId))
             ? Number(selectionDebug.selectedJourneyRulesetId)
+            : null,
+        message_journey_campaign_category:
+          selectionDebug.selectedJourneyCampaignCategory != null && String(selectionDebug.selectedJourneyCampaignCategory).trim() !== ''
+            ? String(selectionDebug.selectedJourneyCampaignCategory).trim().toLowerCase()
             : null,
         message_delivery_context:
           selectionDebug.selectedDeliveryContext === 'journey'
@@ -294,16 +306,25 @@ async function handleDecision(req: any, res: any, next: any) {
         span.setAttribute('app.suppressed_candidates', String(userSuppressedCount))
       }
       if (decision.messageId != null) span.setAttribute('app.message_id', String(decision.messageId))
+      const messageCampaignKeyRaw = (decision.debug as any)?.selection?.selectedCampaignKey
+      const messageCampaignCategoryRaw = (decision.debug as any)?.selection?.selectedCampaignCategory
       const journeyIdRaw = (decision.debug as any)?.selection?.selectedJourneyId
       const journeyStepIdRaw = (decision.debug as any)?.selection?.selectedJourneyStepId
       const journeyStepOrderRaw = (decision.debug as any)?.selection?.selectedJourneyStepOrder
       const journeyStepKeyRaw = (decision.debug as any)?.selection?.selectedJourneyStepKey
       const journeyRulesetIdRaw = (decision.debug as any)?.selection?.selectedJourneyRulesetId
+      const journeyCampaignCategoryRaw = (decision.debug as any)?.selection?.selectedJourneyCampaignCategory
       const deliveryContextRaw = String((decision.debug as any)?.selection?.selectedDeliveryContext || '').trim().toLowerCase()
       const journeyRejectedCount = Number((decision.debug as any)?.selection?.journeyRejectedCount || 0)
       const candidateCountBeforeJourney = Number((decision.debug as any)?.selection?.candidateCountBeforeJourney || 0)
       span.setAttribute('app.journey_rejected_count', String(journeyRejectedCount))
       span.setAttribute('app.journey_candidate_count_before', String(candidateCountBeforeJourney))
+      if (messageCampaignKeyRaw != null && String(messageCampaignKeyRaw).trim() !== '') {
+        span.setAttribute('app.message_campaign_key', String(messageCampaignKeyRaw).trim().toLowerCase())
+      }
+      if (messageCampaignCategoryRaw != null && String(messageCampaignCategoryRaw).trim() !== '') {
+        span.setAttribute('app.message_campaign_category', String(messageCampaignCategoryRaw).trim().toLowerCase())
+      }
       if (journeyIdRaw != null && Number.isFinite(Number(journeyIdRaw)) && Number(journeyIdRaw) > 0) {
         span.setAttribute('app.journey_id', String(Math.round(Number(journeyIdRaw))))
       }
@@ -318,6 +339,9 @@ async function handleDecision(req: any, res: any, next: any) {
       }
       if (journeyRulesetIdRaw != null && Number.isFinite(Number(journeyRulesetIdRaw)) && Number(journeyRulesetIdRaw) > 0) {
         span.setAttribute('app.journey_ruleset_id', String(Math.round(Number(journeyRulesetIdRaw))))
+      }
+      if (journeyCampaignCategoryRaw != null && String(journeyCampaignCategoryRaw).trim() !== '') {
+        span.setAttribute('app.journey_campaign_category', String(journeyCampaignCategoryRaw).trim().toLowerCase())
       }
       if (deliveryContextRaw === 'journey' || deliveryContextRaw === 'standalone') {
         span.setAttribute('app.delivery_context', deliveryContextRaw)
