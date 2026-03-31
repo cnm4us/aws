@@ -1,8 +1,9 @@
-export type MessageJourneyStatus = 'draft' | 'active' | 'archived'
+export type MessageJourneyStatus = 'draft' | 'active' | 'paused' | 'archived'
 
 export type MessageJourneyRow = {
   id: number
   journey_key: string
+  campaign_category: string | null
   name: string
   applies_to_surface: 'global_feed' | 'group_feed' | 'channel_feed'
   status: MessageJourneyStatus
@@ -65,6 +66,7 @@ export type MessageJourneyAnonProgressRow = {
 export type MessageJourneyDto = {
   id: number
   journeyKey: string
+  campaignCategory: string | null
   name: string
   appliesToSurface: 'global_feed' | 'group_feed' | 'channel_feed'
   surfaceTargeting: Array<{

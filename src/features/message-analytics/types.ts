@@ -78,6 +78,7 @@ export type MessageAnalyticsMessageRow = {
   messageName: string | null
   messageType: string | null
   messageCampaignKey: string | null
+  messageCampaignCategory: string | null
   totals: {
     impressions: number
     clicksPrimary: number
@@ -128,6 +129,7 @@ export type MessageAnalyticsReport = {
     messageId: number | null
     messageType: string | null
     messageCampaignKey: string | null
+    messageCampaignCategory: string | null
     viewerState: MessageAnalyticsViewerState | null
   }
   kpis: MessageAnalyticsKpis

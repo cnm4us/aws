@@ -21,7 +21,7 @@ type MessageJourneySignalEvent =
   | 'subscription_complete'
   | 'upgrade_complete'
 
-const JOURNEY_STATUS_VALUES: readonly MessageJourneyStatus[] = ['draft', 'active', 'archived']
+const JOURNEY_STATUS_VALUES: readonly MessageJourneyStatus[] = ['draft', 'active', 'paused', 'archived']
 const STEP_STATUS_VALUES: readonly MessageJourneyStepStatus[] = ['draft', 'active', 'archived']
 const JOURNEY_SURFACE_VALUES = ['global_feed', 'group_feed', 'channel_feed'] as const
 type JourneySurface = (typeof JOURNEY_SURFACE_VALUES)[number]
@@ -43,6 +43,24 @@ function normalizeJourneyKey(raw: any): string {
   if (!value) throw new DomainError('invalid_journey_key', 'invalid_journey_key', 400)
   if (!/^[a-z0-9_:-]{1,64}$/.test(value)) throw new DomainError('invalid_journey_key', 'invalid_journey_key', 400)
   return value
+}
+
+function normalizeCampaignCategory(raw: any): string | null {
+  const value = String(raw ?? '').trim().toLowerCase()
+  if (!value) return null
+  if (value.length > 64) throw new DomainError('invalid_campaign_category', 'invalid_campaign_category', 400)
+  if (!/^[a-z0-9_-]+$/.test(value)) throw new DomainError('invalid_campaign_category', 'invalid_campaign_category', 400)
+  return value
+}
+
+function isDuplicateJourneyKeyError(err: any): boolean {
+  const code = String(err?.code || '')
+  const errno = Number(err?.errno || 0)
+  const msg = String(err?.sqlMessage || err?.message || '').toLowerCase()
+  if (code === 'ER_DUP_ENTRY' || errno === 1062) {
+    return msg.includes('uniq_feed_message_journeys_key') || msg.includes('journey_key')
+  }
+  return false
 }
 
 function normalizeStepKey(raw: any): string {
@@ -263,6 +281,7 @@ function toJourneyDto(
   return {
     id: Number(row.id),
     journeyKey: String(row.journey_key || ''),
+    campaignCategory: row.campaign_category == null || String(row.campaign_category).trim() === '' ? null : String(row.campaign_category),
     name: String(row.name || ''),
     appliesToSurface,
     surfaceTargeting,
@@ -324,17 +343,26 @@ export async function createJourneyForAdmin(input: any, actorUserId: number): Pr
   const surfaceTargeting = normalizeJourneySurfaceTargeting(input?.surfaceTargeting ?? input?.surface_targeting, appliesToSurface)
   await assertJourneySurfaceTargetingTargetIds(surfaceTargeting)
 
-  const row = await repo.createJourney({
-    journeyKey: normalizeJourneyKey(input?.journeyKey ?? input?.journey_key),
-    name: normalizeJourneyName(input?.name),
-    appliesToSurface,
-    surfaceTargeting,
-    status: normalizeJourneyStatus(input?.status, 'draft'),
-    description: normalizeDescription(input?.description),
-    eligibilityRulesetId: normalizeNullablePositiveInt(input?.eligibilityRulesetId ?? input?.eligibility_ruleset_id, 'invalid_ruleset_id'),
-    createdBy: userId,
-    updatedBy: userId,
-  })
+  let row: MessageJourneyRow
+  try {
+    row = await repo.createJourney({
+      journeyKey: normalizeJourneyKey(input?.journeyKey ?? input?.journey_key),
+      campaignCategory: normalizeCampaignCategory(input?.campaignCategory ?? input?.campaign_category),
+      name: normalizeJourneyName(input?.name),
+      appliesToSurface,
+      surfaceTargeting,
+      status: normalizeJourneyStatus(input?.status, 'draft'),
+      description: normalizeDescription(input?.description),
+      eligibilityRulesetId: normalizeNullablePositiveInt(input?.eligibilityRulesetId ?? input?.eligibility_ruleset_id, 'invalid_ruleset_id'),
+      createdBy: userId,
+      updatedBy: userId,
+    })
+  } catch (err: any) {
+    if (isDuplicateJourneyKeyError(err)) {
+      throw new DomainError('duplicate_journey_key', 'duplicate_journey_key', 409)
+    }
+    throw err
+  }
   const targetingMap = await repo.listSurfaceTargetingByJourneyIds([Number(row.id)])
   return toJourneyDto(row, targetingMap)
 }
@@ -359,22 +387,34 @@ export async function updateJourneyForAdmin(id: number, patch: any, actorUserId:
       : undefined
   if (nextSurfaceTargeting) await assertJourneySurfaceTargetingTargetIds(nextSurfaceTargeting)
 
-  const row = await repo.updateJourney(journeyId, {
-    journeyKey:
-      patch?.journeyKey !== undefined || patch?.journey_key !== undefined
-        ? normalizeJourneyKey(patch?.journeyKey ?? patch?.journey_key)
-        : existingDto.journeyKey,
-    name: patch?.name !== undefined ? normalizeJourneyName(patch?.name) : existingDto.name,
-    appliesToSurface: nextAppliesToSurface,
-    surfaceTargeting: nextSurfaceTargeting,
-    status: patch?.status !== undefined ? normalizeJourneyStatus(patch?.status, existingDto.status) : existingDto.status,
-    description: patch?.description !== undefined ? normalizeDescription(patch?.description) : existingDto.description,
-    eligibilityRulesetId:
-      patch?.eligibilityRulesetId !== undefined || patch?.eligibility_ruleset_id !== undefined
-        ? normalizeNullablePositiveInt(patch?.eligibilityRulesetId ?? patch?.eligibility_ruleset_id, 'invalid_ruleset_id')
-        : existingDto.eligibilityRulesetId,
-    updatedBy: userId,
-  })
+  let row: MessageJourneyRow
+  try {
+    row = await repo.updateJourney(journeyId, {
+      journeyKey:
+        patch?.journeyKey !== undefined || patch?.journey_key !== undefined
+          ? normalizeJourneyKey(patch?.journeyKey ?? patch?.journey_key)
+          : existingDto.journeyKey,
+      campaignCategory:
+        patch?.campaignCategory !== undefined || patch?.campaign_category !== undefined
+          ? normalizeCampaignCategory(patch?.campaignCategory ?? patch?.campaign_category)
+          : existingDto.campaignCategory,
+      name: patch?.name !== undefined ? normalizeJourneyName(patch?.name) : existingDto.name,
+      appliesToSurface: nextAppliesToSurface,
+      surfaceTargeting: nextSurfaceTargeting,
+      status: patch?.status !== undefined ? normalizeJourneyStatus(patch?.status, existingDto.status) : existingDto.status,
+      description: patch?.description !== undefined ? normalizeDescription(patch?.description) : existingDto.description,
+      eligibilityRulesetId:
+        patch?.eligibilityRulesetId !== undefined || patch?.eligibility_ruleset_id !== undefined
+          ? normalizeNullablePositiveInt(patch?.eligibilityRulesetId ?? patch?.eligibility_ruleset_id, 'invalid_ruleset_id')
+          : existingDto.eligibilityRulesetId,
+      updatedBy: userId,
+    })
+  } catch (err: any) {
+    if (isDuplicateJourneyKeyError(err)) {
+      throw new DomainError('duplicate_journey_key', 'duplicate_journey_key', 409)
+    }
+    throw err
+  }
   const targetingMap = await repo.listSurfaceTargetingByJourneyIds([Number(row.id)])
   return toJourneyDto(row, targetingMap)
 }

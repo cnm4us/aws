@@ -84,6 +84,25 @@ async function renameTableIfNeeded(db: DB, oldName: string, newName: string): Pr
   }
 }
 
+async function assertNoDuplicateMessageCampaignKeys(db: DB): Promise<void> {
+  const [rows] = await db.query(
+    `
+      SELECT campaign_key, COUNT(*) AS cnt
+      FROM feed_messages
+      WHERE campaign_key IS NOT NULL
+        AND TRIM(campaign_key) <> ''
+      GROUP BY campaign_key
+      HAVING COUNT(*) > 1
+      ORDER BY cnt DESC, campaign_key ASC
+      LIMIT 25
+    `
+  )
+  const dupes = Array.isArray(rows) ? (rows as any[]) : []
+  if (!dupes.length) return
+  const sample = dupes.map((r) => `${String(r.campaign_key)}(${Number(r.cnt)})`).join(', ')
+  throw new Error(`duplicate_message_campaign_keys:${sample}`)
+}
+
 async function reconcileLegacyPromptNamedTables(db: DB): Promise<void> {
   const oldMessagesExists = await tableExists(db, 'feed_prompts')
   const newMessagesExists = await tableExists(db, 'feed_messages')
@@ -848,6 +867,7 @@ export async function ensureSchema(db: DB) {
               tie_break_strategy ENUM('first','round_robin','weighted_random') NOT NULL DEFAULT 'round_robin',
               delivery_scope ENUM('standalone_only','journey_only','both') NOT NULL DEFAULT 'both',
               campaign_key VARCHAR(64) NULL,
+              campaign_category VARCHAR(64) NULL,
               priority INT NOT NULL DEFAULT 100,
               status ENUM('draft','active','paused','archived') NOT NULL DEFAULT 'draft',
               starts_at DATETIME NULL,
@@ -888,6 +908,7 @@ export async function ensureSchema(db: DB) {
           await db.query(`ALTER TABLE feed_messages ADD COLUMN IF NOT EXISTS tie_break_strategy ENUM('first','round_robin','weighted_random') NOT NULL DEFAULT 'round_robin'`)
           await db.query(`ALTER TABLE feed_messages ADD COLUMN IF NOT EXISTS delivery_scope ENUM('standalone_only','journey_only','both') NOT NULL DEFAULT 'both'`)
           await db.query(`ALTER TABLE feed_messages ADD COLUMN IF NOT EXISTS campaign_key VARCHAR(64) NULL`)
+          await db.query(`ALTER TABLE feed_messages ADD COLUMN IF NOT EXISTS campaign_category VARCHAR(64) NULL`)
           await db.query(`ALTER TABLE feed_messages ADD COLUMN IF NOT EXISTS eligibility_ruleset_id BIGINT UNSIGNED NULL`)
           await db.query(`ALTER TABLE feed_messages ADD COLUMN IF NOT EXISTS priority INT NOT NULL DEFAULT 100`)
           await db.query(`ALTER TABLE feed_messages ADD COLUMN IF NOT EXISTS status ENUM('draft','active','paused','archived') NOT NULL DEFAULT 'draft'`)
@@ -932,6 +953,9 @@ export async function ensureSchema(db: DB) {
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_messages_surface_type_active ON feed_messages (applies_to_surface, status, type, starts_at, ends_at, priority, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_messages_ruleset_id ON feed_messages (eligibility_ruleset_id, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_messages_delivery_scope ON feed_messages (delivery_scope, status, id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_messages_campaign_category ON feed_messages (campaign_category, status, id)`); } catch {}
+          await assertNoDuplicateMessageCampaignKeys(db)
+          try { await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_feed_messages_campaign_key ON feed_messages (campaign_key)`); } catch {}
 
           // --- Message multi-surface targeting (plan_147A) ---
           await db.query(`
@@ -1075,9 +1099,10 @@ export async function ensureSchema(db: DB) {
             CREATE TABLE IF NOT EXISTS feed_message_journeys (
               id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
               journey_key VARCHAR(64) NOT NULL,
+              campaign_category VARCHAR(64) NULL,
               name VARCHAR(120) NOT NULL,
               applies_to_surface ENUM('global_feed','group_feed','channel_feed') NOT NULL DEFAULT 'global_feed',
-              status ENUM('draft','active','archived') NOT NULL DEFAULT 'draft',
+              status ENUM('draft','active','paused','archived') NOT NULL DEFAULT 'draft',
               description VARCHAR(500) NULL,
               eligibility_ruleset_id BIGINT UNSIGNED NULL,
               created_by BIGINT UNSIGNED NOT NULL DEFAULT 0,
@@ -1091,14 +1116,17 @@ export async function ensureSchema(db: DB) {
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
           `)
           await db.query(`ALTER TABLE feed_message_journeys ADD COLUMN IF NOT EXISTS journey_key VARCHAR(64) NOT NULL`)
+          await db.query(`ALTER TABLE feed_message_journeys ADD COLUMN IF NOT EXISTS campaign_category VARCHAR(64) NULL`)
           await db.query(`ALTER TABLE feed_message_journeys ADD COLUMN IF NOT EXISTS name VARCHAR(120) NOT NULL`)
           await db.query(`ALTER TABLE feed_message_journeys ADD COLUMN IF NOT EXISTS applies_to_surface ENUM('global_feed','group_feed','channel_feed') NOT NULL DEFAULT 'global_feed'`)
-          await db.query(`ALTER TABLE feed_message_journeys ADD COLUMN IF NOT EXISTS status ENUM('draft','active','archived') NOT NULL DEFAULT 'draft'`)
+          await db.query(`ALTER TABLE feed_message_journeys ADD COLUMN IF NOT EXISTS status ENUM('draft','active','paused','archived') NOT NULL DEFAULT 'draft'`)
+          await db.query(`ALTER TABLE feed_message_journeys MODIFY COLUMN status ENUM('draft','active','paused','archived') NOT NULL DEFAULT 'draft'`)
           await db.query(`ALTER TABLE feed_message_journeys ADD COLUMN IF NOT EXISTS description VARCHAR(500) NULL`)
           await db.query(`ALTER TABLE feed_message_journeys ADD COLUMN IF NOT EXISTS eligibility_ruleset_id BIGINT UNSIGNED NULL`)
           await db.query(`ALTER TABLE feed_message_journeys ADD COLUMN IF NOT EXISTS created_by BIGINT UNSIGNED NOT NULL DEFAULT 0`)
           await db.query(`ALTER TABLE feed_message_journeys ADD COLUMN IF NOT EXISTS updated_by BIGINT UNSIGNED NOT NULL DEFAULT 0`)
           try { await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_feed_message_journeys_key ON feed_message_journeys (journey_key)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_journeys_campaign_category ON feed_message_journeys (campaign_category, status, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_journeys_status ON feed_message_journeys (status, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_journeys_name ON feed_message_journeys (name, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_journeys_ruleset ON feed_message_journeys (eligibility_ruleset_id, id)`); } catch {}

@@ -30,6 +30,7 @@ const MESSAGE_SELECT_SQL = `
     tie_break_strategy,
     delivery_scope,
     campaign_key,
+    campaign_category,
     eligibility_ruleset_id,
     priority,
     status,
@@ -57,6 +58,7 @@ type MessageCreateInput = {
   tieBreakStrategy: string
   deliveryScope: string
   campaignKey: string | null
+  campaignCategory: string | null
   eligibilityRulesetId: number | null
   priority: number
   status: string
@@ -222,12 +224,12 @@ export async function create(input: MessageCreateInput): Promise<MessageRow> {
         name, headline, body,
         cta_primary_label, cta_primary_href,
         cta_secondary_label, cta_secondary_href,
-        media_upload_id, creative_json, type, applies_to_surface, tie_break_strategy, campaign_key, priority, status,
+        media_upload_id, creative_json, type, applies_to_surface, tie_break_strategy, campaign_key, campaign_category, priority, status,
         delivery_scope,
         eligibility_ruleset_id,
         starts_at, ends_at, created_by, updated_by
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.name,
       input.headline,
@@ -242,6 +244,7 @@ export async function create(input: MessageCreateInput): Promise<MessageRow> {
       input.appliesToSurface,
       input.tieBreakStrategy,
       input.campaignKey,
+      input.campaignCategory,
       input.priority,
       input.status,
       input.deliveryScope,
@@ -279,6 +282,7 @@ export async function update(id: number, patch: MessageUpdateInput): Promise<Mes
   if (patch.tieBreakStrategy !== undefined) { sets.push('tie_break_strategy = ?'); args.push(patch.tieBreakStrategy) }
   if (patch.deliveryScope !== undefined) { sets.push('delivery_scope = ?'); args.push(patch.deliveryScope) }
   if (patch.campaignKey !== undefined) { sets.push('campaign_key = ?'); args.push(patch.campaignKey) }
+  if (patch.campaignCategory !== undefined) { sets.push('campaign_category = ?'); args.push(patch.campaignCategory) }
   if (patch.eligibilityRulesetId !== undefined) { sets.push('eligibility_ruleset_id = ?'); args.push(patch.eligibilityRulesetId) }
   if (patch.priority !== undefined) { sets.push('priority = ?'); args.push(patch.priority) }
   if (patch.status !== undefined) { sets.push('status = ?'); args.push(patch.status) }

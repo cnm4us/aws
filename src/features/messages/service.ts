@@ -148,6 +148,24 @@ function normalizeCampaignKey(raw: any): string | null {
   return value
 }
 
+function normalizeCampaignCategory(raw: any): string | null {
+  const value = String(raw ?? '').trim().toLowerCase()
+  if (!value) return null
+  if (value.length > 64) throw new DomainError('invalid_campaign_category', 'invalid_campaign_category', 400)
+  if (!/^[a-z0-9_-]+$/.test(value)) throw new DomainError('invalid_campaign_category', 'invalid_campaign_category', 400)
+  return value
+}
+
+function isDuplicateCampaignKeyError(err: any): boolean {
+  const code = String(err?.code || '')
+  const errno = Number(err?.errno || 0)
+  const msg = String(err?.sqlMessage || err?.message || '').toLowerCase()
+  if (code === 'ER_DUP_ENTRY' || errno === 1062) {
+    return msg.includes('uniq_feed_messages_campaign_key') || msg.includes('campaign_key')
+  }
+  return false
+}
+
 function normalizeMessageType(raw: any, fallback: MessageType = 'register_login'): MessageType {
   const value = String(raw ?? '').trim().toLowerCase()
   if (!value) return fallback
@@ -716,6 +734,7 @@ function mapRow(
     tieBreakStrategy: normalizeTieBreakStrategy((row as any).tie_break_strategy, 'round_robin'),
     deliveryScope: normalizeDeliveryScope((row as any).delivery_scope, 'both'),
     campaignKey: row.campaign_key == null || String(row.campaign_key).trim() === '' ? null : String(row.campaign_key),
+    campaignCategory: row.campaign_category == null || String(row.campaign_category).trim() === '' ? null : String(row.campaign_category),
     eligibilityRulesetId: row.eligibility_ruleset_id == null ? null : Number(row.eligibility_ruleset_id),
     priority: Number(row.priority || 0),
     status: row.status,
@@ -795,6 +814,7 @@ export async function createForAdmin(input: any, actorUserId: number): Promise<M
   })
   await assertCreativeCtaSlotsResolvable(creative, actorUserId)
   const campaignKey = normalizeCampaignKey(input?.campaignKey ?? input?.campaign_key)
+  const campaignCategory = normalizeCampaignCategory(input?.campaignCategory ?? input?.campaign_category)
   const deliveryScope = normalizeDeliveryScope(input?.deliveryScope ?? input?.delivery_scope, 'both')
   const eligibilityRulesetId = normalizeOptionalPositiveId(
     input?.eligibilityRulesetId ?? input?.eligibility_ruleset_id,
@@ -806,30 +826,39 @@ export async function createForAdmin(input: any, actorUserId: number): Promise<M
   const status = normalizeStatus(input?.status, 'draft')
   const { startsAt, endsAt } = normalizeDateWindow(input?.startsAt ?? input?.starts_at, input?.endsAt ?? input?.ends_at)
 
-  const row = await repo.create({
-    name,
-    headline,
-    body,
-    ctaPrimaryLabel,
-    ctaPrimaryHref,
-    ctaSecondaryLabel,
-    ctaSecondaryHref,
-    mediaUploadId,
-    creativeJson: JSON.stringify(creative),
-    messageType,
-    appliesToSurface,
-    tieBreakStrategy,
-    surfaceTargeting,
-    deliveryScope,
-    campaignKey,
-    eligibilityRulesetId,
-    priority,
-    status,
-    startsAt,
-    endsAt,
-    createdBy: actorUserId,
-    updatedBy: actorUserId,
-  })
+  let row: MessageRow
+  try {
+    row = await repo.create({
+      name,
+      headline,
+      body,
+      ctaPrimaryLabel,
+      ctaPrimaryHref,
+      ctaSecondaryLabel,
+      ctaSecondaryHref,
+      mediaUploadId,
+      creativeJson: JSON.stringify(creative),
+      messageType,
+      appliesToSurface,
+      tieBreakStrategy,
+      surfaceTargeting,
+      deliveryScope,
+      campaignKey,
+      campaignCategory,
+      eligibilityRulesetId,
+      priority,
+      status,
+      startsAt,
+      endsAt,
+      createdBy: actorUserId,
+      updatedBy: actorUserId,
+    })
+  } catch (err: any) {
+    if (isDuplicateCampaignKeyError(err)) {
+      throw new DomainError('duplicate_campaign_key', 'duplicate_campaign_key', 409)
+    }
+    throw err
+  }
 
   annotateAdminMessageWrite(row, 'admin.messages.create', actorUserId)
   const targetingMap = await repo.listSurfaceTargetingByMessageIds([Number(row.id)])
@@ -917,6 +946,10 @@ export async function updateForAdmin(id: number, patch: any, actorUserId: number
     patch?.campaignKey !== undefined || patch?.campaign_key !== undefined
       ? normalizeCampaignKey(patch?.campaignKey ?? patch?.campaign_key)
       : (existing.campaign_key == null || String(existing.campaign_key).trim() === '' ? null : String(existing.campaign_key))
+  const nextCampaignCategory =
+    patch?.campaignCategory !== undefined || patch?.campaign_category !== undefined
+      ? normalizeCampaignCategory(patch?.campaignCategory ?? patch?.campaign_category)
+      : (existing.campaign_category == null || String(existing.campaign_category).trim() === '' ? null : String(existing.campaign_category))
   const nextDeliveryScope =
     patch?.deliveryScope !== undefined || patch?.delivery_scope !== undefined
       ? normalizeDeliveryScope(patch?.deliveryScope ?? patch?.delivery_scope, 'both')
@@ -950,29 +983,38 @@ export async function updateForAdmin(id: number, patch: any, actorUserId: number
     throw new DomainError('invalid_date_window', 'invalid_date_window', 400)
   }
 
-  const row = await repo.update(id, {
-    name: nextName,
-    headline: nextHeadline,
-    body: nextBody,
-    ctaPrimaryLabel: nextCtaPrimaryLabel,
-    ctaPrimaryHref: nextCtaPrimaryHref,
-    ctaSecondaryLabel: nextCtaSecondaryLabel,
-    ctaSecondaryHref: nextCtaSecondaryHref,
-    mediaUploadId: nextMediaUploadId,
-    creativeJson: nextCreativeJson,
-    messageType: nextMessageType,
-    appliesToSurface: nextAppliesToSurface,
-    tieBreakStrategy: nextTieBreakStrategy,
-    surfaceTargeting: nextSurfaceTargeting,
-    deliveryScope: nextDeliveryScope,
-    campaignKey: nextCampaignKey,
-    eligibilityRulesetId: nextEligibilityRulesetId,
-    priority: nextPriority,
-    status: nextStatus,
-    startsAt: nextStartsAt,
-    endsAt: nextEndsAt,
-    updatedBy: actorUserId,
-  })
+  let row: MessageRow
+  try {
+    row = await repo.update(id, {
+      name: nextName,
+      headline: nextHeadline,
+      body: nextBody,
+      ctaPrimaryLabel: nextCtaPrimaryLabel,
+      ctaPrimaryHref: nextCtaPrimaryHref,
+      ctaSecondaryLabel: nextCtaSecondaryLabel,
+      ctaSecondaryHref: nextCtaSecondaryHref,
+      mediaUploadId: nextMediaUploadId,
+      creativeJson: nextCreativeJson,
+      messageType: nextMessageType,
+      appliesToSurface: nextAppliesToSurface,
+      tieBreakStrategy: nextTieBreakStrategy,
+      surfaceTargeting: nextSurfaceTargeting,
+      deliveryScope: nextDeliveryScope,
+      campaignKey: nextCampaignKey,
+      campaignCategory: nextCampaignCategory,
+      eligibilityRulesetId: nextEligibilityRulesetId,
+      priority: nextPriority,
+      status: nextStatus,
+      startsAt: nextStartsAt,
+      endsAt: nextEndsAt,
+      updatedBy: actorUserId,
+    })
+  } catch (err: any) {
+    if (isDuplicateCampaignKeyError(err)) {
+      throw new DomainError('duplicate_campaign_key', 'duplicate_campaign_key', 409)
+    }
+    throw err
+  }
 
   annotateAdminMessageWrite(row, 'admin.messages.update', actorUserId)
   const targetingMap = await repo.listSurfaceTargetingByMessageIds([Number(row.id)])
@@ -984,30 +1026,39 @@ export async function cloneForAdmin(id: number, actorUserId: number): Promise<Me
   const existing = await repo.getById(id)
   if (!existing) throw new NotFoundError('message_not_found')
 
-  const row = await repo.create({
-    name: `${String(existing.name || 'Message')} (Copy)`,
-    headline: existing.headline,
-    body: existing.body == null ? null : String(existing.body),
-    ctaPrimaryLabel: String(existing.cta_primary_label || ''),
-    ctaPrimaryHref: String(existing.cta_primary_href || ''),
-    ctaSecondaryLabel: existing.cta_secondary_label == null ? null : String(existing.cta_secondary_label),
-    ctaSecondaryHref: existing.cta_secondary_href == null ? null : String(existing.cta_secondary_href),
-    mediaUploadId: existing.media_upload_id == null ? null : Number(existing.media_upload_id),
-    creativeJson: (existing as any).creative_json == null ? null : String((existing as any).creative_json),
-    messageType: normalizeMessageType((existing as any).type, 'register_login'),
-    appliesToSurface: normalizeSurface((existing as any).applies_to_surface, 'global_feed'),
-    tieBreakStrategy: normalizeTieBreakStrategy((existing as any).tie_break_strategy, 'round_robin'),
-    surfaceTargeting: normalizeSurfaceTargeting((existing as any).surfaceTargeting ?? (existing as any).surface_targeting, normalizeSurface((existing as any).applies_to_surface, 'global_feed')),
-    deliveryScope: normalizeDeliveryScope((existing as any).delivery_scope, 'both'),
-    campaignKey: existing.campaign_key == null || String(existing.campaign_key).trim() === '' ? null : String(existing.campaign_key),
-    eligibilityRulesetId: existing.eligibility_ruleset_id == null ? null : Number(existing.eligibility_ruleset_id),
-    priority: Number(existing.priority || 100),
-    status: 'draft',
-    startsAt: existing.starts_at == null ? null : String(existing.starts_at),
-    endsAt: existing.ends_at == null ? null : String(existing.ends_at),
-    createdBy: actorUserId,
-    updatedBy: actorUserId,
-  })
+  let row: MessageRow
+  try {
+    row = await repo.create({
+      name: `${String(existing.name || 'Message')} (Copy)`,
+      headline: existing.headline,
+      body: existing.body == null ? null : String(existing.body),
+      ctaPrimaryLabel: String(existing.cta_primary_label || ''),
+      ctaPrimaryHref: String(existing.cta_primary_href || ''),
+      ctaSecondaryLabel: existing.cta_secondary_label == null ? null : String(existing.cta_secondary_label),
+      ctaSecondaryHref: existing.cta_secondary_href == null ? null : String(existing.cta_secondary_href),
+      mediaUploadId: existing.media_upload_id == null ? null : Number(existing.media_upload_id),
+      creativeJson: (existing as any).creative_json == null ? null : String((existing as any).creative_json),
+      messageType: normalizeMessageType((existing as any).type, 'register_login'),
+      appliesToSurface: normalizeSurface((existing as any).applies_to_surface, 'global_feed'),
+      tieBreakStrategy: normalizeTieBreakStrategy((existing as any).tie_break_strategy, 'round_robin'),
+      surfaceTargeting: normalizeSurfaceTargeting((existing as any).surfaceTargeting ?? (existing as any).surface_targeting, normalizeSurface((existing as any).applies_to_surface, 'global_feed')),
+      deliveryScope: normalizeDeliveryScope((existing as any).delivery_scope, 'both'),
+      campaignKey: existing.campaign_key == null || String(existing.campaign_key).trim() === '' ? null : String(existing.campaign_key),
+      campaignCategory: existing.campaign_category == null || String(existing.campaign_category).trim() === '' ? null : String(existing.campaign_category),
+      eligibilityRulesetId: existing.eligibility_ruleset_id == null ? null : Number(existing.eligibility_ruleset_id),
+      priority: Number(existing.priority || 100),
+      status: 'draft',
+      startsAt: existing.starts_at == null ? null : String(existing.starts_at),
+      endsAt: existing.ends_at == null ? null : String(existing.ends_at),
+      createdBy: actorUserId,
+      updatedBy: actorUserId,
+    })
+  } catch (err: any) {
+    if (isDuplicateCampaignKeyError(err)) {
+      throw new DomainError('duplicate_campaign_key', 'duplicate_campaign_key', 409)
+    }
+    throw err
+  }
 
   annotateAdminMessageWrite(row, 'admin.messages.clone', actorUserId, { cloned_from_message_id: id })
   const targetingMap = await repo.listSurfaceTargetingByMessageIds([Number(row.id)])

@@ -25,6 +25,7 @@ const JOURNEY_SELECT_SQL = `
   SELECT
     id,
     journey_key,
+    campaign_category,
     name,
     applies_to_surface,
     status,
@@ -103,6 +104,7 @@ async function getStepJourneyId(stepId: number): Promise<number | null> {
 
 type JourneyCreateInput = {
   journeyKey: string
+  campaignCategory: string | null
   name: string
   appliesToSurface: 'global_feed' | 'group_feed' | 'channel_feed'
   status: MessageJourneyStatus
@@ -293,6 +295,7 @@ export async function createJourney(input: JourneyCreateInput): Promise<MessageJ
   const [result] = await db.query(
     `INSERT INTO feed_message_journeys (
       journey_key,
+      campaign_category,
       name,
       applies_to_surface,
       status,
@@ -300,9 +303,10 @@ export async function createJourney(input: JourneyCreateInput): Promise<MessageJ
       eligibility_ruleset_id,
       created_by,
       updated_by
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.journeyKey,
+      input.campaignCategory,
       input.name,
       input.appliesToSurface,
       input.status,
@@ -331,6 +335,7 @@ export async function updateJourney(id: number, patch: JourneyUpdateInput): Prom
   const args: any[] = []
 
   if (patch.journeyKey !== undefined) { sets.push('journey_key = ?'); args.push(patch.journeyKey) }
+  if (patch.campaignCategory !== undefined) { sets.push('campaign_category = ?'); args.push(patch.campaignCategory) }
   if (patch.name !== undefined) { sets.push('name = ?'); args.push(patch.name) }
   if (patch.appliesToSurface !== undefined) { sets.push('applies_to_surface = ?'); args.push(patch.appliesToSurface) }
   if (patch.status !== undefined) { sets.push('status = ?'); args.push(patch.status) }
@@ -396,7 +401,8 @@ export async function listActiveStepsByMessageId(messageId: number): Promise<Arr
        s.updated_at,
        j.status AS journey_status,
        j.eligibility_ruleset_id AS journey_ruleset_id,
-       j.applies_to_surface AS journey_surface
+       j.applies_to_surface AS journey_surface,
+       j.campaign_category AS journey_campaign_category
      FROM feed_message_journey_steps s
      JOIN feed_message_journeys j
        ON j.id = s.journey_id
@@ -406,10 +412,10 @@ export async function listActiveStepsByMessageId(messageId: number): Promise<Arr
     ORDER BY s.step_order ASC, s.id ASC`,
     [messageId]
   )
-  return rows as Array<MessageJourneyStepRow & { journey_status: MessageJourneyStatus; journey_ruleset_id: number | null; journey_surface: string }>
+  return rows as Array<MessageJourneyStepRow & { journey_status: MessageJourneyStatus; journey_ruleset_id: number | null; journey_surface: string; journey_campaign_category: string | null }>
 }
 
-export async function listActiveStepsByMessageIds(messageIds: number[]): Promise<Array<MessageJourneyStepRow & { journey_status: MessageJourneyStatus; journey_ruleset_id: number | null; journey_surface: string }>> {
+export async function listActiveStepsByMessageIds(messageIds: number[]): Promise<Array<MessageJourneyStepRow & { journey_status: MessageJourneyStatus; journey_ruleset_id: number | null; journey_surface: string; journey_campaign_category: string | null }>> {
   const uniq = Array.from(new Set(messageIds.filter((id) => Number.isFinite(id) && id > 0).map((id) => Math.round(id))))
   if (!uniq.length) return []
   const placeholders = uniq.map(() => '?').join(',')
@@ -427,7 +433,8 @@ export async function listActiveStepsByMessageIds(messageIds: number[]): Promise
        s.updated_at,
        j.status AS journey_status,
        j.eligibility_ruleset_id AS journey_ruleset_id,
-       j.applies_to_surface AS journey_surface
+       j.applies_to_surface AS journey_surface,
+       j.campaign_category AS journey_campaign_category
      FROM feed_message_journey_steps s
      JOIN feed_message_journeys j
        ON j.id = s.journey_id
@@ -437,7 +444,7 @@ export async function listActiveStepsByMessageIds(messageIds: number[]): Promise
     ORDER BY s.journey_id ASC, s.step_order ASC, s.id ASC`,
     uniq
   )
-  return rows as Array<MessageJourneyStepRow & { journey_status: MessageJourneyStatus; journey_ruleset_id: number | null; journey_surface: string }>
+  return rows as Array<MessageJourneyStepRow & { journey_status: MessageJourneyStatus; journey_ruleset_id: number | null; journey_surface: string; journey_campaign_category: string | null }>
 }
 
 export async function listJourneyStepRefsByMessageId(messageId: number): Promise<Array<{

@@ -84,6 +84,14 @@ function normalizeCampaignKey(raw: any): string | null {
   return v
 }
 
+function normalizeCampaignCategory(raw: any): string | null {
+  if (raw == null || raw === '') return null
+  const v = String(raw).trim().toLowerCase()
+  if (!v) return null
+  if (!/^[a-z0-9_-]{1,64}$/.test(v)) throw new DomainError('invalid_message_campaign_category', 'invalid_message_campaign_category', 400)
+  return v
+}
+
 function normalizeSessionId(raw: any): string | null {
   if (raw == null || raw === '') return null
   const v = String(raw).trim()
@@ -472,6 +480,7 @@ function normalizeReportRange(input: {
   messageId?: any
   messageType?: any
   messageCampaignKey?: any
+  messageCampaignCategory?: any
   viewerState?: any
 }): {
   fromDate: string
@@ -482,6 +491,7 @@ function normalizeReportRange(input: {
   messageId: number | null
   messageType: string | null
   messageCampaignKey: string | null
+  messageCampaignCategory: string | null
   viewerState: MessageAnalyticsViewerState | null
 } {
   const now = new Date()
@@ -510,6 +520,7 @@ function normalizeReportRange(input: {
     messageId: normalizeMessageId(input.messageId),
     messageType: normalizeMessageType(input.messageType),
     messageCampaignKey: normalizeCampaignKey(input.messageCampaignKey),
+    messageCampaignCategory: normalizeCampaignCategory(input.messageCampaignCategory),
     viewerState: normalizeViewerState(input.viewerState),
   }
 }
@@ -568,6 +579,7 @@ export async function getMessageAnalyticsReportForAdmin(input: {
   messageId?: any
   messageType?: any
   messageCampaignKey?: any
+  messageCampaignCategory?: any
   viewerState?: any
 }): Promise<MessageAnalyticsReport> {
   return tracer.startActiveSpan('message.analytics.query', { attributes: { 'app.operation': 'analytics.query', 'app.operation_detail': 'message.analytics.query' } }, async (span) => {
@@ -623,6 +635,7 @@ export async function getMessageAnalyticsReportForAdmin(input: {
           messageName: (row as any).message_name ? String((row as any).message_name) : null,
           messageType: (row as any).message_type ? String((row as any).message_type) : null,
           messageCampaignKey: (row as any).message_campaign_key ? String((row as any).message_campaign_key) : null,
+          messageCampaignCategory: (row as any).message_campaign_category ? String((row as any).message_campaign_category) : null,
           totals: {
             impressions,
             clicksPrimary,
@@ -678,6 +691,7 @@ export async function getMessageAnalyticsReportForAdmin(input: {
         ...(range.messageId != null ? { 'app.message_id': String(range.messageId) } : {}),
         ...(range.messageType ? { 'app.message_type': range.messageType } : {}),
         ...(range.messageCampaignKey ? { 'app.message_campaign_key': range.messageCampaignKey } : {}),
+        ...(range.messageCampaignCategory ? { 'app.message_campaign_category': range.messageCampaignCategory } : {}),
         ...(range.viewerState ? { 'message.analytics.viewer_state': range.viewerState } : {}),
         'message.analytics.result_rows': byMessage.length,
         'app.outcome': 'success',
@@ -692,6 +706,7 @@ export async function getMessageAnalyticsReportForAdmin(input: {
           app_message_id: range.messageId,
           app_message_type: range.messageType,
           app_message_campaign_key: range.messageCampaignKey,
+          app_message_campaign_category: range.messageCampaignCategory,
           viewer_state: range.viewerState,
           range_from_date: range.fromDate,
           range_to_date: range.toDate,
@@ -708,6 +723,7 @@ export async function getMessageAnalyticsReportForAdmin(input: {
           messageId: range.messageId,
           messageType: range.messageType,
           messageCampaignKey: range.messageCampaignKey,
+          messageCampaignCategory: range.messageCampaignCategory,
           viewerState: range.viewerState,
         },
         kpis,
@@ -731,6 +747,7 @@ export function buildMessageAnalyticsCsv(report: MessageAnalyticsReport): string
     'message_name',
     'message_type',
     'message_campaign_key',
+    'message_campaign_category',
     'impressions',
     'clicks_primary',
     'clicks_secondary',
@@ -757,6 +774,7 @@ export function buildMessageAnalyticsCsv(report: MessageAnalyticsReport): string
       row.messageName || '',
       row.messageType || '',
       row.messageCampaignKey || '',
+      row.messageCampaignCategory || '',
       String(row.totals.impressions),
       String(row.totals.clicksPrimary),
       String(row.totals.clicksSecondary),

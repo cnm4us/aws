@@ -115,6 +115,7 @@ export type MessageRow = {
   tie_break_strategy: MessageTieBreakStrategy
   delivery_scope: MessageDeliveryScope
   campaign_key: string | null
+  campaign_category: string | null
   eligibility_ruleset_id: number | null
   priority: number
   status: MessageStatus
@@ -147,6 +148,7 @@ export type MessageDto = {
   tieBreakStrategy: MessageTieBreakStrategy
   deliveryScope: MessageDeliveryScope
   campaignKey: string | null
+  campaignCategory: string | null
   eligibilityRulesetId: number | null
   priority: number
   status: MessageStatus

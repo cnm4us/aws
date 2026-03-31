@@ -19,6 +19,7 @@ adminMessageAnalyticsRouter.get(adminMessageAnalyticsPaths, async (req, res, nex
       messageId: req.query?.message_id,
       messageType: req.query?.message_type,
       messageCampaignKey: req.query?.message_campaign_key,
+      messageCampaignCategory: req.query?.message_campaign_category,
       viewerState: req.query?.viewer_state,
     })
     const span = trace.getSpan(context.active())
@@ -43,6 +44,7 @@ adminMessageAnalyticsRouter.get(adminMessageAnalyticsCsvPaths, async (req, res, 
       messageId: req.query?.message_id,
       messageType: req.query?.message_type,
       messageCampaignKey: req.query?.message_campaign_key,
+      messageCampaignCategory: req.query?.message_campaign_category,
       viewerState: req.query?.viewer_state,
     })
     const csv = messageAnalyticsSvc.buildMessageAnalyticsCsv(report)
