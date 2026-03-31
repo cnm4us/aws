@@ -15,6 +15,7 @@ export type MessageAnalyticsQueryFilter = {
   messageId: number | null
   messageType: string | null
   messageCampaignKey: string | null
+  messageCampaignCategory: string | null
   viewerState: MessageAnalyticsViewerState | null
 }
 
@@ -169,6 +170,10 @@ function buildDailyWhere(filter: MessageAnalyticsQueryFilter): { whereSql: strin
     where.push('message_campaign_key = ?')
     args.push(filter.messageCampaignKey)
   }
+  if (filter.messageCampaignCategory) {
+    where.push(`EXISTS (SELECT 1 FROM feed_messages p_filter WHERE p_filter.id = message_id AND p_filter.campaign_category = ?)`)
+    args.push(filter.messageCampaignCategory)
+  }
   if (filter.viewerState) {
     where.push('viewer_state = ?')
     args.push(filter.viewerState)
@@ -194,6 +199,10 @@ function buildRawWhere(filter: MessageAnalyticsQueryFilter): { whereSql: string;
   if (filter.messageCampaignKey) {
     where.push('message_campaign_key = ?')
     args.push(filter.messageCampaignKey)
+  }
+  if (filter.messageCampaignCategory) {
+    where.push(`EXISTS (SELECT 1 FROM feed_messages p_filter WHERE p_filter.id = message_id AND p_filter.campaign_category = ?)`)
+    args.push(filter.messageCampaignCategory)
   }
   if (filter.viewerState) {
     where.push('viewer_state = ?')
@@ -228,6 +237,7 @@ export async function getByMessageFromDaily(filter: MessageAnalyticsQueryFilter)
         s.message_id AS message_id,
         MAX(p.type) AS message_type,
         MAX(NULLIF(s.message_campaign_key, '')) AS message_campaign_key,
+        MAX(NULLIF(p.campaign_category, '')) AS message_campaign_category,
         MAX(p.name) AS message_name,
         COALESCE(SUM(CASE WHEN s.event_type = 'message_impression' THEN s.total_events ELSE 0 END), 0) AS impressions,
         COALESCE(SUM(CASE WHEN s.event_type = 'message_click' THEN s.total_events ELSE 0 END), 0) AS clicks_primary,
@@ -239,7 +249,7 @@ export async function getByMessageFromDaily(filter: MessageAnalyticsQueryFilter)
       LEFT JOIN feed_messages p ON p.id = s.message_id
       WHERE ${whereSql}
       GROUP BY s.message_id
-      ORDER BY impressions DESC, (clicks_primary + clicks_secondary) DESC, s.message_id DESC
+      ORDER BY impressions DESC, clicks_primary DESC, s.message_id DESC
       LIMIT 1000`,
     args
   )
