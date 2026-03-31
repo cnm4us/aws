@@ -3406,6 +3406,7 @@ function buildMessageCreateOrUpdatePayload(body: any): any {
   const tieBreakStrategy = String(body?.tieBreakStrategy ?? body?.tie_break_strategy ?? 'round_robin').trim().toLowerCase() || 'round_robin'
   const deliveryScope = String(body?.deliveryScope ?? body?.delivery_scope ?? 'both').trim().toLowerCase() || 'both'
   const campaignKey = String(body?.campaignKey ?? body?.campaign_key ?? '').trim().toLowerCase()
+  const campaignCategory = String(body?.campaignCategory ?? body?.campaign_category ?? '').trim().toLowerCase()
   const eligibilityRulesetIdRaw = String(body?.eligibilityRulesetId ?? body?.eligibility_ruleset_id ?? '').trim()
   const eligibilityRulesetIdParsed = /^\d+$/.test(eligibilityRulesetIdRaw) ? Number(eligibilityRulesetIdRaw) : null
   const eligibilityRulesetId = deliveryScope === 'journey_only' ? null : eligibilityRulesetIdParsed
@@ -3452,6 +3453,7 @@ function buildMessageCreateOrUpdatePayload(body: any): any {
     surfaceTargeting,
     deliveryScope,
     campaignKey: campaignKey || null,
+    campaignCategory: campaignCategory || null,
     eligibilityRulesetId,
     mediaUploadId: mediaUploadId || null,
     startsAt: normalizedStartsAt,
@@ -3548,6 +3550,7 @@ function renderAdminMessageForm(opts: {
     status: string
     criteria: Record<string, any>
   }>
+  campaignCategoryOptions?: string[]
   journeyStepRefs?: Array<{
     journeyId: number
     journeyKey: string
@@ -3568,6 +3571,7 @@ function renderAdminMessageForm(opts: {
   const values = opts.values || {}
   const ctaDefinitionOptions = Array.isArray(opts.ctaDefinitionOptions) ? opts.ctaDefinitionOptions : []
   const eligibilityRulesetOptions = Array.isArray(opts.eligibilityRulesetOptions) ? opts.eligibilityRulesetOptions : []
+  const campaignCategoryOptions = Array.isArray(opts.campaignCategoryOptions) ? opts.campaignCategoryOptions : []
   const journeyStepRefs = Array.isArray(opts.journeyStepRefs) ? opts.journeyStepRefs : []
   const surfaceTargetOptions = opts.surfaceTargetOptions || { groups: [], channels: [] }
   const id = values.id ? Number(values.id) : null
@@ -3790,6 +3794,12 @@ function renderAdminMessageForm(opts: {
       color: #fff;
       cursor: pointer;
     }
+    #message-editor-form #message-campaign-key-suffix {
+      border-radius: 999px;
+      border: 1px solid rgba(96,165,250,0.95);
+      background: rgba(37,99,235,0.95);
+      color: #fff;
+    }
     #message-editor-form .btn {
       border: 1px solid rgba(255,255,255,0.18);
       background: rgba(255,255,255,0.06);
@@ -3823,6 +3833,8 @@ function renderAdminMessageForm(opts: {
     deliveryScopeOptions.unshift({ value: deliveryScopeValue, label: `Custom (${deliveryScopeValue})` })
   }
   const campaignKeyValue = String(values.campaignKey || values.campaign_key || '').trim().toLowerCase()
+  const campaignCategoryValue = String(values.campaignCategory || values.campaign_category || '').trim().toLowerCase()
+  const duplicateCampaignKeyError = String(opts.error || '').trim().toLowerCase() === 'duplicate_campaign_key'
   const eligibilityRulesetIdValue = String(values.eligibilityRulesetId ?? values.eligibility_ruleset_id ?? '').trim()
   const rawSurfaceTargeting = Array.isArray(values.surfaceTargeting)
     ? values.surfaceTargeting
@@ -3849,12 +3861,17 @@ function renderAdminMessageForm(opts: {
   body += `<div id="message-section-identity" class="section" style="display:none">`
   body += `<label>Name<input type="text" name="name" value="${escapeHtml(String(values.name || ''))}" required maxlength="120" /></label>`
   body += `<div style="display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px; margin-top:10px">`
-  body += `<div class="mini-field"><div class="mini-field-label">Type</div><select name="type">`
+  body += `<div class="mini-field" style="grid-column:1 / -1"><div class="mini-field-label">Type</div><select name="type">`
   for (const opt of messageTypeOptions) {
     body += `<option value="${escapeHtml(opt.value)}"${opt.value === messageTypeValue ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
   }
   body += `</select></div>`
-  body += `<div class="mini-field"><div class="mini-field-label">Campaign Key</div><input type="text" name="campaignKey" value="${escapeHtml(campaignKeyValue)}" maxlength="64" placeholder="spring_2026_drive" /></div>`
+  body += `<div class="mini-field" style="grid-column:1 / -1"><div class="mini-field-label">Campaign Key</div><div class="picker-row"><input type="text" name="campaignKey" value="${escapeHtml(campaignKeyValue)}" maxlength="64" placeholder="spring_2026_drive" /><button type="button" id="message-campaign-key-suffix" class="btn" title="Append -yyyy-mm-dd" style="width:40px; min-width:40px; height:40px; padding:0; display:inline-flex; align-items:center; justify-content:center;">+D</button></div>${duplicateCampaignKeyError ? `<div class="field-hint" style="color:#fda4af">Campaign key is already in use. Choose a unique key.</div>` : ''}</div>`
+  body += `<div class="mini-field" style="grid-column:1 / -1"><div class="mini-field-label">Campaign Category</div><input type="text" name="campaignCategory" list="message-campaign-category-options" value="${escapeHtml(campaignCategoryValue)}" maxlength="64" placeholder="donation_drive" /><datalist id="message-campaign-category-options">`
+  for (const category of campaignCategoryOptions) {
+    body += `<option value="${escapeHtml(String(category || '').trim().toLowerCase())}"></option>`
+  }
+  body += `</datalist></div>`
   body += `<div class="mini-field" style="grid-column:1 / -1"><div class="mini-field-label">Delivery Scope</div><select name="deliveryScope" id="message-delivery-scope">`
   for (const opt of deliveryScopeOptions) {
     body += `<option value="${escapeHtml(opt.value)}"${opt.value === deliveryScopeValue ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
@@ -4229,6 +4246,7 @@ function renderAdminMessageForm(opts: {
       const sectionToggles = form.querySelectorAll('.section-toggle[data-target]');
       const pickImageBtn = document.getElementById('message-pick-bg-image');
       const pickVideoBtn = document.getElementById('message-pick-bg-video');
+      const campaignKeySuffixBtn = document.getElementById('message-campaign-key-suffix');
       if (!preview.device || !preview.message || !preview.cta) return;
       let lastBgMode = String(v('creativeBgMode', 'none')).toLowerCase();
 
@@ -4264,6 +4282,19 @@ function renderAdminMessageForm(opts: {
           });
         });
         syncCollapsibleSections();
+      }
+
+      function appendDateSuffixToCampaignKey() {
+        const keyInput = q('campaignKey');
+        if (!keyInput) return;
+        const now = new Date();
+        const yyyy = String(now.getUTCFullYear());
+        const mm = String(now.getUTCMonth() + 1).padStart(2, '0');
+        const dd = String(now.getUTCDate()).padStart(2, '0');
+        const suffix = '-' + yyyy + '-' + mm + '-' + dd;
+        const base = String(keyInput.value || '').trim();
+        keyInput.value = (base ? base : 'campaign') + suffix;
+        try { keyInput.focus(); } catch {}
       }
 
       function syncWidgetEditorState() {
@@ -4533,6 +4564,7 @@ function renderAdminMessageForm(opts: {
 
       if (pickImageBtn) pickImageBtn.addEventListener('click', function () { openAssetPicker('image'); });
       if (pickVideoBtn) pickVideoBtn.addEventListener('click', function () { openAssetPicker('video'); });
+      if (campaignKeySuffixBtn) campaignKeySuffixBtn.addEventListener('click', appendDateSuffixToCampaignKey);
       updatePreview();
     })();
   </script>`
@@ -4895,6 +4927,31 @@ async function loadSurfaceTargetOptionsForEditor(): Promise<{
   return { groups, channels }
 }
 
+async function loadCampaignCategoryOptionsForEditor(): Promise<string[]> {
+  const db = getPool()
+  const [rows] = await db.query(
+    `SELECT category
+       FROM (
+         SELECT DISTINCT LOWER(TRIM(campaign_category)) AS category
+           FROM feed_messages
+          WHERE campaign_category IS NOT NULL
+            AND TRIM(campaign_category) <> ''
+         UNION
+         SELECT DISTINCT LOWER(TRIM(campaign_category)) AS category
+           FROM feed_message_journeys
+          WHERE campaign_category IS NOT NULL
+            AND TRIM(campaign_category) <> ''
+       ) t
+      WHERE category IS NOT NULL
+        AND category <> ''
+      ORDER BY category ASC
+      LIMIT 500`
+  )
+  return (rows as any[])
+    .map((r) => String(r.category || '').trim().toLowerCase())
+    .filter((v) => !!v)
+}
+
 function parseStringListField(raw: any): string[] {
   if (raw == null || raw === '') return []
   if (Array.isArray(raw)) return raw.map((v) => String(v || '').trim()).filter(Boolean)
@@ -5093,6 +5150,7 @@ pagesRouter.get('/admin/messages/new', async (req: any, res: any) => {
     const csrfToken = cookies['csrf'] || ''
     const ctaDefinitionOptions = await loadMessageCtaOptionsForEditor(Number(req.user?.id || 0))
     const eligibilityRulesetOptions = await loadMessageEligibilityRulesetOptionsForEditor()
+    const campaignCategoryOptions = await loadCampaignCategoryOptionsForEditor()
     const surfaceTargetOptions = await loadSurfaceTargetOptionsForEditor()
     const doc = renderAdminMessageForm({
       title: 'New Message',
@@ -5101,6 +5159,7 @@ pagesRouter.get('/admin/messages/new', async (req: any, res: any) => {
       backHref: '/admin/messages',
       ctaDefinitionOptions,
       eligibilityRulesetOptions,
+      campaignCategoryOptions,
       surfaceTargetOptions,
       values: {
         name: '',
@@ -5154,10 +5213,12 @@ pagesRouter.post('/admin/messages', async (req: any, res: any) => {
   const payload = buildMessageCreateOrUpdatePayload(req.body || {})
   let ctaDefinitionOptions: Awaited<ReturnType<typeof loadMessageCtaOptionsForEditor>> = []
   let eligibilityRulesetOptions: Awaited<ReturnType<typeof loadMessageEligibilityRulesetOptionsForEditor>> = []
+  let campaignCategoryOptions: Awaited<ReturnType<typeof loadCampaignCategoryOptionsForEditor>> = []
   let surfaceTargetOptions: Awaited<ReturnType<typeof loadSurfaceTargetOptionsForEditor>> = { groups: [], channels: [] }
   try {
     ctaDefinitionOptions = await loadMessageCtaOptionsForEditor(Number(req.user?.id || 0))
     eligibilityRulesetOptions = await loadMessageEligibilityRulesetOptionsForEditor()
+    campaignCategoryOptions = await loadCampaignCategoryOptionsForEditor()
     surfaceTargetOptions = await loadSurfaceTargetOptionsForEditor()
     const created = await messagesSvc.createMessageForAdmin(payload, Number(req.user?.id || 0))
     res.redirect(`/admin/messages/${created.id}?notice=${encodeURIComponent('Message created.')}`)
@@ -5169,6 +5230,7 @@ pagesRouter.post('/admin/messages', async (req: any, res: any) => {
       backHref: '/admin/messages',
       ctaDefinitionOptions,
       eligibilityRulesetOptions,
+      campaignCategoryOptions,
       surfaceTargetOptions,
       values: payload,
       error: String(err?.message || 'Failed to create message'),
@@ -5189,6 +5251,7 @@ pagesRouter.get('/admin/messages/:id', async (req: any, res: any) => {
     const csrfToken = cookies['csrf'] || ''
     const ctaDefinitionOptions = await loadMessageCtaOptionsForEditor(Number(req.user?.id || 0))
     const eligibilityRulesetOptions = await loadMessageEligibilityRulesetOptionsForEditor()
+    const campaignCategoryOptions = await loadCampaignCategoryOptionsForEditor()
     const surfaceTargetOptions = await loadSurfaceTargetOptionsForEditor()
     const doc = renderAdminMessageForm({
       title: `Edit Message #${id}`,
@@ -5197,6 +5260,7 @@ pagesRouter.get('/admin/messages/:id', async (req: any, res: any) => {
       backHref: '/admin/messages',
       ctaDefinitionOptions,
       eligibilityRulesetOptions,
+      campaignCategoryOptions,
       surfaceTargetOptions,
       journeyStepRefs,
       values: message,
@@ -5220,10 +5284,12 @@ pagesRouter.post('/admin/messages/:id', async (req: any, res: any) => {
   const payload = buildMessageCreateOrUpdatePayload(req.body || {})
   let ctaDefinitionOptions: Awaited<ReturnType<typeof loadMessageCtaOptionsForEditor>> = []
   let eligibilityRulesetOptions: Awaited<ReturnType<typeof loadMessageEligibilityRulesetOptionsForEditor>> = []
+  let campaignCategoryOptions: Awaited<ReturnType<typeof loadCampaignCategoryOptionsForEditor>> = []
   let surfaceTargetOptions: Awaited<ReturnType<typeof loadSurfaceTargetOptionsForEditor>> = { groups: [], channels: [] }
   try {
     ctaDefinitionOptions = await loadMessageCtaOptionsForEditor(Number(req.user?.id || 0))
     eligibilityRulesetOptions = await loadMessageEligibilityRulesetOptionsForEditor()
+    campaignCategoryOptions = await loadCampaignCategoryOptionsForEditor()
     surfaceTargetOptions = await loadSurfaceTargetOptionsForEditor()
     await messagesSvc.updateMessageForAdmin(id, payload, Number(req.user?.id || 0))
     res.redirect(`/admin/messages/${id}?notice=${encodeURIComponent('Saved.')}`)
@@ -5235,6 +5301,7 @@ pagesRouter.post('/admin/messages/:id', async (req: any, res: any) => {
       backHref: '/admin/messages',
       ctaDefinitionOptions,
       eligibilityRulesetOptions,
+      campaignCategoryOptions,
       surfaceTargetOptions,
       values: { ...payload, id },
       error: String(err?.message || 'Failed to save message'),
@@ -5668,6 +5735,7 @@ function buildMessageJourneyCreateOrUpdatePayload(body: any): any {
     : (surfaceTargeting[0]?.surface || appliesToSurfaceRaw)
   return {
     journeyKey: String(body?.journeyKey || body?.journey_key || '').trim().toLowerCase(),
+    campaignCategory: String(body?.campaignCategory || body?.campaign_category || '').trim().toLowerCase() || null,
     name: String(body?.name || '').trim(),
     appliesToSurface,
     applies_to_surface: appliesToSurface,
@@ -5900,6 +5968,7 @@ function renderAdminMessageJourneyForm(opts: {
   backHref: string
   values: any
   rulesetOptions?: Array<{ id: number; name: string; status?: string; criteria?: Record<string, any> }>
+  campaignCategoryOptions?: string[]
   surfaceTargetOptions?: {
     groups: Array<{ id: number; name: string; slug: string }>
     channels: Array<{ id: number; name: string; slug: string }>
@@ -5910,6 +5979,7 @@ function renderAdminMessageJourneyForm(opts: {
   const csrfToken = opts.csrfToken ? String(opts.csrfToken) : ''
   const values = opts.values || {}
   const rulesetOptions = Array.isArray(opts.rulesetOptions) ? opts.rulesetOptions : []
+  const campaignCategoryOptions = Array.isArray(opts.campaignCategoryOptions) ? opts.campaignCategoryOptions : []
   const rulesetCriteriaById = Object.fromEntries(
     rulesetOptions.map((r) => [String(Number((r as any).id || 0)), (r as any).criteria || { version: 1, inclusion: [], exclusion: [] }])
   )
@@ -5935,6 +6005,8 @@ function renderAdminMessageJourneyForm(opts: {
   const journeyGlobalChecked = journeyTargetBySurface.has('global_feed')
   const journeyGroupsTargeting = journeyTargetBySurface.get('group_feed') || { targetingMode: 'all' as const, targetIds: [] }
   const journeyChannelsTargeting = journeyTargetBySurface.get('channel_feed') || { targetingMode: 'all' as const, targetIds: [] }
+  const journeyCampaignCategoryValue = String(values?.campaignCategory || values?.campaign_category || '').trim().toLowerCase()
+  const duplicateJourneyKeyError = String(opts.error || '').trim().toLowerCase() === 'duplicate_journey_key'
 
   let body = `<h1>${escapeHtml(opts.title)}</h1>`
   body += `<div class="toolbar"><div><a href="${escapeHtml(opts.backHref)}">← Back to message journeys</a></div><div></div></div>`
@@ -5944,7 +6016,12 @@ function renderAdminMessageJourneyForm(opts: {
   if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
   body += `<button type="button" class="journey-section-toggle" data-target="journey-new-section-identity" aria-expanded="false" style="width:100%; display:flex; align-items:center; gap:8px; border:0; background:transparent; color:#fff; font-size:18px; font-weight:900; text-align:left; padding:0; margin:10px 0 6px; cursor:pointer;"><span class="journey-section-chevron">▸</span><span style="opacity:0.5">IDENTITY</span></button>`
   body += `<div id="journey-new-section-identity" class="section" style="display:none">`
-  body += `<label>Journey Key<input type="text" name="journeyKey" maxlength="64" value="${escapeHtml(String(values?.journeyKey || ''))}" required /></label>`
+  body += `<label>Journey Key<div style="display:flex; align-items:center; gap:8px; width:100%"><input type="text" name="journeyKey" maxlength="64" value="${escapeHtml(String(values?.journeyKey || ''))}" required style="flex:1 1 auto; min-width:0" /><button type="button" id="journey-key-suffix" class="btn" title="Append -yyyy-mm-dd" style="width:40px; min-width:40px; height:40px; padding:0; display:inline-flex; align-items:center; justify-content:center;">+D</button></div>${duplicateJourneyKeyError ? `<div class="field-hint" style="color:#fda4af">Journey key is already in use. Choose a unique key.</div>` : ''}</label>`
+  body += `<label>Campaign Category<input type="text" name="campaignCategory" list="journey-campaign-category-options" maxlength="64" value="${escapeHtml(journeyCampaignCategoryValue)}" placeholder="donation_drive" /><datalist id="journey-campaign-category-options">`
+  for (const category of campaignCategoryOptions) {
+    body += `<option value="${escapeHtml(String(category || '').trim().toLowerCase())}"></option>`
+  }
+  body += `</datalist></label>`
   body += `<label>Name<input type="text" name="name" maxlength="120" value="${escapeHtml(String(values?.name || ''))}" required /></label>`
   body += `<label>Description (optional)<input type="text" name="description" maxlength="500" value="${escapeHtml(String(values?.description || ''))}" /></label>`
   body += `<label>Status<select name="status">`
@@ -5982,7 +6059,6 @@ function renderAdminMessageJourneyForm(opts: {
   body += `</div>`
   body += `</div>`
   body += `</div>`
-  body += `</div>`
   body += `<button type="button" class="journey-section-toggle" data-target="journey-new-section-eligibility" aria-expanded="false" style="width:100%; display:flex; align-items:center; gap:8px; border:0; background:transparent; color:#fff; font-size:18px; font-weight:900; text-align:left; padding:0; margin:10px 0 6px; cursor:pointer;"><span class="journey-section-chevron">▸</span><span style="opacity:0.5">ELIGIBILITY</span></button>`
   body += `<div id="journey-new-section-eligibility" class="section" style="display:none">`
   body += `<label>Eligibility Ruleset (optional)</label>`
@@ -6013,6 +6089,20 @@ function renderAdminMessageJourneyForm(opts: {
   body += `<script>
     (function () {
       const toggles = document.querySelectorAll('.journey-section-toggle[data-target]');
+      const journeyKeySuffixBtn = document.getElementById('journey-key-suffix');
+      const journeyKeyInput = document.querySelector('input[name="journeyKey"]');
+      const appendJourneyDateSuffix = () => {
+        if (!journeyKeyInput) return;
+        const now = new Date();
+        const yyyy = String(now.getUTCFullYear());
+        const mm = String(now.getUTCMonth() + 1).padStart(2, '0');
+        const dd = String(now.getUTCDate()).padStart(2, '0');
+        const suffix = '-' + yyyy + '-' + mm + '-' + dd;
+        const base = String(journeyKeyInput.value || '').trim();
+        journeyKeyInput.value = (base ? base : 'journey') + suffix;
+        try { journeyKeyInput.focus(); } catch {}
+      };
+      if (journeyKeySuffixBtn) journeyKeySuffixBtn.addEventListener('click', appendJourneyDateSuffix);
       const setExpanded = (btn, expanded) => {
         btn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
         const chev = btn.querySelector('.journey-section-chevron');
@@ -6133,6 +6223,7 @@ pagesRouter.get('/admin/message-journeys/new', async (req: any, res: any) => {
     const cookies = parseCookies(req.headers.cookie)
     const csrfToken = cookies['csrf'] || ''
     const rulesets = await messageRulesetsSvc.listRulesetsForAdmin({ includeArchived: false, limit: 500 })
+    const campaignCategoryOptions = await loadCampaignCategoryOptionsForEditor()
     const surfaceTargetOptions = await loadSurfaceTargetOptionsForEditor()
     const doc = renderAdminMessageJourneyForm({
       title: 'New Message Journey',
@@ -6145,6 +6236,7 @@ pagesRouter.get('/admin/message-journeys/new', async (req: any, res: any) => {
         status: String((r as any).status || ''),
         criteria: ((r as any).criteria && typeof (r as any).criteria === 'object') ? (r as any).criteria : undefined,
       })),
+      campaignCategoryOptions,
       surfaceTargetOptions,
       values: {
         journeyKey: '',
@@ -6172,6 +6264,7 @@ pagesRouter.post('/admin/message-journeys', async (req: any, res: any) => {
     res.redirect(`/admin/message-journeys/${created.id}?notice=${encodeURIComponent('Message journey created.')}`)
   } catch (err: any) {
     const rulesets = await messageRulesetsSvc.listRulesetsForAdmin({ includeArchived: false, limit: 500 })
+    const campaignCategoryOptions = await loadCampaignCategoryOptionsForEditor()
     const surfaceTargetOptions = await loadSurfaceTargetOptionsForEditor()
     const doc = renderAdminMessageJourneyForm({
       title: 'New Message Journey',
@@ -6184,6 +6277,7 @@ pagesRouter.post('/admin/message-journeys', async (req: any, res: any) => {
         status: String((r as any).status || ''),
         criteria: ((r as any).criteria && typeof (r as any).criteria === 'object') ? (r as any).criteria : undefined,
       })),
+      campaignCategoryOptions,
       surfaceTargetOptions,
       values: payload,
       error: String(err?.message || 'Failed to create message journey'),
@@ -6196,7 +6290,7 @@ pagesRouter.get('/admin/message-journeys/:id', async (req: any, res: any) => {
   const id = Number(req.params.id)
   if (!Number.isFinite(id) || id <= 0) return res.status(400).send('Bad journey id')
   try {
-    const [journey, steps, messages, rulesets, ctaDefinitions, surfaceTargetOptions] = await Promise.all([
+    const [journey, steps, messages, rulesets, ctaDefinitions, surfaceTargetOptions, campaignCategoryOptions] = await Promise.all([
       messageJourneysSvc.getJourneyForAdmin(id),
       messageJourneysSvc.listJourneyStepsForAdmin(id, { includeArchived: true }),
       messagesSvc.listForAdmin({ includeArchived: false, limit: 500 }),
@@ -6207,6 +6301,7 @@ pagesRouter.get('/admin/message-journeys/:id', async (req: any, res: any) => {
         limit: 500,
       }),
       loadSurfaceTargetOptionsForEditor(),
+      loadCampaignCategoryOptionsForEditor(),
     ])
     const messageNameById = new Map<number, string>()
     for (const m of messages) {
@@ -6389,6 +6484,11 @@ pagesRouter.get('/admin/message-journeys/:id', async (req: any, res: any) => {
     if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
     body += `<div id="journey-section-identity" class="section journey-card" style="display:none">`
     body += `<label>Journey Key<input type="text" name="journeyKey" maxlength="64" value="${escapeHtml(String(journey.journeyKey || ''))}" required /></label>`
+    body += `<label>Campaign Category<input type="text" name="campaignCategory" list="journey-campaign-category-options" maxlength="64" value="${escapeHtml(String((journey as any).campaignCategory || ''))}" placeholder="donation_drive" /><datalist id="journey-campaign-category-options">`
+    for (const category of campaignCategoryOptions) {
+      body += `<option value="${escapeHtml(String(category || '').trim().toLowerCase())}"></option>`
+    }
+    body += `</datalist></label>`
     body += `<label>Name<input type="text" name="name" maxlength="120" value="${escapeHtml(String(journey.name || ''))}" required /></label>`
     const journeySurfaceValue = String((journey as any).appliesToSurface || 'global_feed')
     const rawJourneySurfaceTargeting = Array.isArray((journey as any).surfaceTargeting) ? (journey as any).surfaceTargeting : []
@@ -6608,6 +6708,20 @@ pagesRouter.get('/admin/message-journeys/:id', async (req: any, res: any) => {
       ${sharedMessagePreviewRendererScript()}
       (function () {
         const sectionToggles = document.querySelectorAll('.journey-section-toggle[data-target]');
+        const journeyKeySuffixBtn = document.getElementById('journey-key-suffix');
+        const journeyKeyInput = document.querySelector('input[name="journeyKey"]');
+        const appendJourneyDateSuffix = () => {
+          if (!journeyKeyInput) return;
+          const now = new Date();
+          const yyyy = String(now.getUTCFullYear());
+          const mm = String(now.getUTCMonth() + 1).padStart(2, '0');
+          const dd = String(now.getUTCDate()).padStart(2, '0');
+          const suffix = '-' + yyyy + '-' + mm + '-' + dd;
+          const base = String(journeyKeyInput.value || '').trim();
+          journeyKeyInput.value = (base ? base : 'journey') + suffix;
+          try { journeyKeyInput.focus(); } catch {}
+        };
+        if (journeyKeySuffixBtn) journeyKeySuffixBtn.addEventListener('click', appendJourneyDateSuffix);
         const setExpanded = (btn, expanded) => {
           btn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
           const chev = btn.querySelector('.journey-section-chevron');
@@ -7634,6 +7748,7 @@ pagesRouter.get('/admin/message-analytics', async (req: any, res: any) => {
       messageId: req.query?.message_id,
       messageType: req.query?.message_type,
       messageCampaignKey: req.query?.message_campaign_key,
+      messageCampaignCategory: req.query?.message_campaign_category,
       viewerState: req.query?.viewer_state,
     })
 
@@ -7652,6 +7767,7 @@ pagesRouter.get('/admin/message-analytics', async (req: any, res: any) => {
     if (report.range.messageId != null) q.set('message_id', String(report.range.messageId))
     if (report.range.messageType) q.set('message_type', report.range.messageType)
     if (report.range.messageCampaignKey) q.set('message_campaign_key', report.range.messageCampaignKey)
+    if (report.range.messageCampaignCategory) q.set('message_campaign_category', report.range.messageCampaignCategory)
     if (report.range.viewerState) q.set('viewer_state', report.range.viewerState)
 
     let body = '<h1>Message Analytics</h1>'
@@ -7676,6 +7792,7 @@ pagesRouter.get('/admin/message-analytics', async (req: any, res: any) => {
     }
     body += `</select></label>`
     body += `<label>Campaign Key<input type="text" name="message_campaign_key" value="${escapeHtml(report.range.messageCampaignKey || '')}" /></label>`
+    body += `<label>Campaign Category<input type="text" name="message_campaign_category" value="${escapeHtml(report.range.messageCampaignCategory || '')}" /></label>`
     body += `</div>`
     body += `<div style="display:flex; gap:10px; margin-top:10px; flex-wrap:wrap">`
     body += `<button class="btn" type="submit">Apply</button>`
@@ -7694,7 +7811,7 @@ pagesRouter.get('/admin/message-analytics', async (req: any, res: any) => {
     if (!report.byMessage.length) {
       body += '<p>No message analytics events found in this range.</p>'
     } else {
-      body += '<table><thead><tr><th>Message</th><th>Type</th><th>Campaign Key</th><th>Impressions</th><th>Clicks</th><th>CTR</th><th>Pass-through</th><th>Pass-through Rate</th><th>Auth Start</th><th>Auth Complete</th><th>Auth Completion Rate</th><th>Status</th></tr></thead><tbody>'
+      body += '<table><thead><tr><th>Message</th><th>Type</th><th>Campaign Key</th><th>Category</th><th>Impressions</th><th>Clicks</th><th>CTR</th><th>Pass-through</th><th>Pass-through Rate</th><th>Auth Start</th><th>Auth Complete</th><th>Auth Completion Rate</th><th>Status</th></tr></thead><tbody>'
       for (const row of report.byMessage) {
         const status = row.rates.dismissRate >= 0.5 && row.rates.authCompletionRate < 0.01 ? 'Overexposed' : 'Healthy'
         const label = row.messageName ? `${row.messageName} (#${row.messageId})` : `#${row.messageId}`
@@ -7702,6 +7819,7 @@ pagesRouter.get('/admin/message-analytics', async (req: any, res: any) => {
           <td>${escapeHtml(label)}</td>
           <td>${escapeHtml(row.messageType || '—')}</td>
           <td>${escapeHtml(row.messageCampaignKey || '—')}</td>
+          <td>${escapeHtml(row.messageCampaignCategory || '—')}</td>
           <td>${row.totals.impressions} <span class="field-hint">(u:${row.uniqueSessions.impressions})</span></td>
           <td>${row.totals.clicksTotal} <span class="field-hint">(u:${row.uniqueSessions.clicksTotal})</span></td>
           <td>${pctText(row.rates.ctr)}</td>
@@ -7714,6 +7832,34 @@ pagesRouter.get('/admin/message-analytics', async (req: any, res: any) => {
         </tr>`
       }
       body += '</tbody></table>'
+
+      const byCategory = new Map<string, { impressions: number; clicks: number; authComplete: number }>()
+      for (const row of report.byMessage) {
+        const key = row.messageCampaignCategory || '(uncategorized)'
+        const current = byCategory.get(key) || { impressions: 0, clicks: 0, authComplete: 0 }
+        current.impressions += Number(row.totals.impressions || 0)
+        current.clicks += Number(row.totals.clicksTotal || 0)
+        current.authComplete += Number(row.totals.authComplete || 0)
+        byCategory.set(key, current)
+      }
+      if (byCategory.size) {
+        body += '<div class="section" style="margin-top:12px"><div class="section-title">By Campaign Category</div>'
+        body += '<table><thead><tr><th>Category</th><th>Impressions</th><th>Clicks</th><th>CTR</th><th>Auth Complete</th><th>Auth Completion Rate</th></tr></thead><tbody>'
+        const rows = Array.from(byCategory.entries()).sort((a, b) => b[1].impressions - a[1].impressions || a[0].localeCompare(b[0]))
+        for (const [category, totals] of rows) {
+          const ctr = totals.impressions > 0 ? totals.clicks / totals.impressions : 0
+          const completionRate = totals.impressions > 0 ? totals.authComplete / totals.impressions : 0
+          body += `<tr>
+            <td>${escapeHtml(category)}</td>
+            <td>${totals.impressions}</td>
+            <td>${totals.clicks}</td>
+            <td>${pctText(ctr)}</td>
+            <td>${totals.authComplete}</td>
+            <td>${pctText(completionRate)}</td>
+          </tr>`
+        }
+        body += '</tbody></table></div>'
+      }
     }
 
     if (report.byDay.length) {
