@@ -4953,6 +4953,21 @@ async function loadCampaignCategoryOptionsForEditor(): Promise<string[]> {
     .filter((v) => !!v)
 }
 
+async function loadMessageCampaignKeyOptionsForAnalytics(): Promise<string[]> {
+  const db = getPool()
+  const [rows] = await db.query(
+    `SELECT DISTINCT LOWER(TRIM(campaign_key)) AS campaign_key
+       FROM feed_messages
+      WHERE campaign_key IS NOT NULL
+        AND TRIM(campaign_key) <> ''
+      ORDER BY campaign_key ASC
+      LIMIT 1000`
+  )
+  return (rows as any[])
+    .map((r) => String(r.campaign_key || '').trim().toLowerCase())
+    .filter((v) => !!v)
+}
+
 function parseStringListField(raw: any): string[] {
   if (raw == null || raw === '') return []
   if (Array.isArray(raw)) return raw.map((v) => String(v || '').trim()).filter(Boolean)
@@ -7742,7 +7757,7 @@ pagesRouter.get('/admin/analytics', async (req: any, res: any) => {
 
 pagesRouter.get('/admin/message-analytics', async (req: any, res: any) => {
   try {
-    const [report, campaignCategoryOptions] = await Promise.all([
+    const [report, campaignCategoryOptions, campaignKeyOptions] = await Promise.all([
       messageAnalyticsSvc.getMessageAnalyticsReportForAdmin({
         fromDate: req.query?.from,
         toDate: req.query?.to,
@@ -7754,6 +7769,7 @@ pagesRouter.get('/admin/message-analytics', async (req: any, res: any) => {
         viewerState: req.query?.viewer_state,
       }),
       loadCampaignCategoryOptionsForEditor(),
+      loadMessageCampaignKeyOptionsForAnalytics(),
     ])
 
     if (String(req.query?.format || '').toLowerCase() === 'csv') {
@@ -7795,7 +7811,12 @@ pagesRouter.get('/admin/message-analytics', async (req: any, res: any) => {
       body += `<option value="${escapeHtml(opt.value)}"${report.range.messageType === opt.value ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
     }
     body += `</select></label>`
-    body += `<label>Campaign Key<input type="text" name="message_campaign_key" value="${escapeHtml(report.range.messageCampaignKey || '')}" /></label>`
+    body += `<label>Campaign Key<input type="text" name="message_campaign_key" list="message-analytics-campaign-key-options" value="${escapeHtml(report.range.messageCampaignKey || '')}" /></label>`
+    body += `<datalist id="message-analytics-campaign-key-options">`
+    for (const key of campaignKeyOptions) {
+      body += `<option value="${escapeHtml(key)}"></option>`
+    }
+    body += `</datalist>`
     body += `<label>Campaign Category<input type="text" name="message_campaign_category" list="message-analytics-campaign-category-options" value="${escapeHtml(report.range.messageCampaignCategory || '')}" /></label>`
     body += `<datalist id="message-analytics-campaign-category-options">`
     for (const category of campaignCategoryOptions) {
