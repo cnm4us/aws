@@ -7199,8 +7199,30 @@ pagesRouter.get('/admin/journey-inspector', async (req: any, res: any) => {
     }
 
     const hasQuery = Boolean(userEmail || resolvedUserId > 0 || anonKey || journeyKey || resolvedJourneyId > 0)
-    let body = '<h1>Journey Inspector</h1>'
+    let body = '<h1>Journey Inspector</h1><div class="ji-wrap">'
     body += `<style>
+      .ji-wrap .section {
+        border: 1px solid rgba(96,165,250,0.95);
+        border-radius: 14px;
+        background: linear-gradient(180deg, rgba(28,45,58,0.96) 0%, rgba(12,16,20,0.96) 100%);
+        padding: 16px;
+        box-sizing: border-box;
+      }
+      .ji-wrap .section-title { font-size: 0.9rem; font-weight: 900; letter-spacing: 0.08em; opacity: 0.92; margin: 0 0 10px; }
+      .ji-wrap label { display:grid; gap:6px; min-width:0; font-weight:800; color:#fff; }
+      .ji-wrap input, .ji-wrap select, .ji-wrap textarea {
+        width:100%; max-width:100%; box-sizing:border-box;
+        background:#0b0b0b; color:#fff; border:1px solid rgba(255,255,255,0.18);
+        border-radius:10px; padding:10px 12px; font-size:14px; font-weight:900;
+      }
+      .ji-wrap .btn {
+        border:1px solid rgba(96,165,250,0.95);
+        background:rgba(96,165,250,0.14);
+        color:#fff; font-weight:900;
+      }
+      .ji-grid-3 { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; align-items:start; }
+      .ji-table-wrap { overflow-x:auto; }
+      .ji-table-wrap table { min-width: 980px; }
       .ji-summary-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; }
       .ji-summary-item { border:1px solid rgba(255,255,255,0.14); border-radius:12px; background:rgba(255,255,255,0.03); padding:10px; }
       .ji-summary-label { color:#bbb; font-size:12px; font-weight:800; margin-bottom:4px; }
@@ -7208,18 +7230,19 @@ pagesRouter.get('/admin/journey-inspector', async (req: any, res: any) => {
       .ji-metadata details { border:1px solid rgba(255,255,255,0.14); border-radius:10px; background:rgba(255,255,255,0.03); padding:8px 10px; }
       .ji-metadata summary { cursor:pointer; font-weight:800; color:#fff; }
       .ji-metadata pre { margin:8px 0 0 0; max-height:180px; overflow:auto; white-space:pre-wrap; word-break:break-word; }
+      @media (max-width: 900px) { .ji-grid-3 { grid-template-columns:minmax(0,1fr); } }
       @media (max-width: 1000px) { .ji-summary-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
       @media (max-width: 640px) { .ji-summary-grid { grid-template-columns:minmax(0,1fr); } }
     </style>`
     body += '<div class="toolbar"><div><span class="pill">Run-Level Journey Diagnostics</span></div><div></div></div>'
     body += `<form method="get" action="/admin/journey-inspector" class="section" style="margin:12px 0">
       <div class="section-title">Lookup</div>
-      <div style="display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px">
+      <div class="ji-grid-3">
         <label>User Email<input type="text" name="user_email" value="${escapeHtml(userEmail)}" placeholder="user@example.com" /></label>
         <label>User ID<input type="number" name="user_id" min="1" value="${resolvedUserId > 0 ? escapeHtml(String(resolvedUserId)) : ''}" /></label>
         <label>Anon Key<input type="text" name="anon_key" value="${escapeHtml(anonKey)}" placeholder="anon uuid/key" /></label>
       </div>
-      <div style="display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin-top:10px">
+      <div class="ji-grid-3" style="margin-top:10px">
         <label>Journey Key<input type="text" name="journey_key" value="${escapeHtml(journeyKey)}" /></label>
         <label>Journey ID<input type="number" name="journey_id" min="1" value="${resolvedJourneyId > 0 ? escapeHtml(String(resolvedJourneyId)) : ''}" /></label>
         <label>Limit<input type="number" name="limit" min="1" max="200" value="${escapeHtml(String(limit))}" /></label>
@@ -7265,7 +7288,7 @@ pagesRouter.get('/admin/journey-inspector', async (req: any, res: any) => {
       }
       body += `</div>`
 
-      body += `<div class="section"><div class="section-title">Journey Instances</div>`
+      body += `<div class="section"><div class="section-title">Journey Instances</div><div class="ji-table-wrap">`
       body += `<table><thead><tr>
         <th>ID</th><th>Journey</th><th>Identity</th><th>State</th><th>Current Step</th><th>Completed</th><th>Metadata</th><th>Updated</th><th></th>
       </tr></thead><tbody>`
@@ -7297,7 +7320,7 @@ pagesRouter.get('/admin/journey-inspector', async (req: any, res: any) => {
           </tr>`
         }
       }
-      body += `</tbody></table></div>`
+      body += `</tbody></table></div></div>`
 
       body += `<div class="section"><div class="section-title">Step Progress (Selected Run)</div>`
       if (!selectedInstanceId) {
@@ -7306,7 +7329,7 @@ pagesRouter.get('/admin/journey-inspector', async (req: any, res: any) => {
         body += `<div class="field-hint">run_id=${escapeHtml(String(selectedInstanceId))}`
         if (selectedInstance) body += ` • state=${escapeHtml(String(selectedInstance.state || ''))}`
         body += `</div>`
-        body += `<table><thead><tr>
+        body += `<div class="ji-table-wrap"><table><thead><tr>
           <th>Step</th><th>Message</th><th>State</th><th>Completed At</th><th>Updated At</th><th>Source</th>
         </tr></thead><tbody>`
         if (stepProgressRows.length === 0) {
@@ -7323,13 +7346,14 @@ pagesRouter.get('/admin/journey-inspector', async (req: any, res: any) => {
             </tr>`
           }
         }
-        body += `</tbody></table>`
+        body += `</tbody></table></div>`
       }
       body += `</div>`
     } else if (!hasQuery) {
       body += `<div class="section"><div class="field-hint">Enter user email/user id or anon key, then apply filters.</div></div>`
     }
 
+    body += `</div>`
     const doc = renderAdminPage({ title: 'Journey Inspector', bodyHtml: body, active: 'journey_inspector' })
     res.set('Content-Type', 'text/html; charset=utf-8')
     return res.send(doc)
