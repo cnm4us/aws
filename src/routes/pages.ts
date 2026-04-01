@@ -8318,6 +8318,25 @@ pagesRouter.get('/admin/dev-tools', async (req: any, res: any) => {
   body += `<button class="btn" type="submit" style="background:#5a1d1d;border-color:#8a2d2d">Clear Journey State (All)</button>`
   body += `<div class="field-hint" style="margin-top:6px">Clears <code>feed_message_journey_instances</code>, journey progress tables, <code>feed_message_user_suppressions</code>, and <code>message_decision_sessions</code>.</div>`
   body += `</form>`
+  body += `<form method="post" action="/admin/dev-tools/clear-journey-state-user" style="margin:10px 0 0 0" onsubmit="return confirm('Clear journey state for one journey + user?')">`
+  body += addCsrf
+  body += `<div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-bottom:8px">`
+  body += `<label>Journey ID<input type="number" name="journey_id" min="1" required /></label>`
+  body += `<label>User ID<input type="number" name="user_id" min="1" required /></label>`
+  body += `</div>`
+  body += `<button class="btn" type="submit" style="background:#5a1d1d;border-color:#8a2d2d">Clear Journey State (Journey + User)</button>`
+  body += `<div class="field-hint" style="margin-top:6px">Clears instances/progress for the selected journey+user and clears suppressions for messages used by that journey.</div>`
+  body += `</form>`
+  body += `<form method="post" action="/admin/dev-tools/force-journey-reentry" style="margin:10px 0 0 0" onsubmit="return confirm('Force a new active journey run for this identity?')">`
+  body += addCsrf
+  body += `<div style="display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin-bottom:8px">`
+  body += `<label>Journey ID<input type="number" name="journey_id" min="1" required /></label>`
+  body += `<label>Identity Type<select name="identity_type"><option value="user">user</option><option value="anon">anon</option></select></label>`
+  body += `<label>Identity Key<input type="text" name="identity_key" maxlength="120" required placeholder="user id or anon key" /></label>`
+  body += `</div>`
+  body += `<button class="btn" type="submit" style="background:#5a1d1d;border-color:#8a2d2d">Force Re-entry (Create Active Run)</button>`
+  body += `<div class="field-hint" style="margin-top:6px">Marks any current active run as abandoned, then creates a new active run.</div>`
+  body += `</form>`
   body += `</div>`
 
   const doc = renderAdminPage({ title: 'Dev Tools', bodyHtml: body, active: 'dev_tools' })
@@ -8370,6 +8389,83 @@ pagesRouter.post('/admin/dev-tools/clear-journey-state', async (_req: any, res: 
     return res.redirect(`/admin/dev-tools?notice=${encodeURIComponent(`Cleared journey_state instances=${instances}, user_progress=${userProgress}, anon_progress=${anonProgress}, suppressions=${suppressions}, decision_sessions=${sessions}`)}`)
   } catch (err: any) {
     return res.redirect(`/admin/dev-tools?error=${encodeURIComponent(String(err?.message || 'clear_journey_state_failed'))}`)
+  }
+})
+
+pagesRouter.post('/admin/dev-tools/clear-journey-state-user', async (req: any, res: any) => {
+  if (!isAdminDevToolsEnabled()) return res.status(404).send('Not found')
+  const db = getPool()
+  const journeyId = Number(req.body?.journey_id || 0)
+  const userId = Number(req.body?.user_id || 0)
+  if (!Number.isFinite(journeyId) || journeyId <= 0) return res.redirect('/admin/dev-tools?error=invalid_journey_id')
+  if (!Number.isFinite(userId) || userId <= 0) return res.redirect('/admin/dev-tools?error=invalid_user_id')
+  try {
+    const [instanceResult] = await db.query(
+      `DELETE FROM feed_message_journey_instances WHERE journey_id = ? AND identity_type = 'user' AND identity_key = ?`,
+      [Math.round(journeyId), String(Math.round(userId))]
+    )
+    const [userProgressResult] = await db.query(
+      `DELETE FROM feed_user_message_journey_progress WHERE journey_id = ? AND user_id = ?`,
+      [Math.round(journeyId), Math.round(userId)]
+    )
+    const [suppressionsResult] = await db.query(
+      `DELETE s
+         FROM feed_message_user_suppressions s
+         WHERE s.user_id = ?
+           AND s.campaign_key IN (
+             SELECT DISTINCT m.campaign_key
+               FROM feed_message_journey_steps st
+               JOIN feed_messages m ON m.id = st.message_id
+              WHERE st.journey_id = ?
+                AND m.campaign_key IS NOT NULL
+                AND m.campaign_key <> ''
+           )`,
+      [Math.round(userId), Math.round(journeyId)]
+    )
+    const instances = Number((instanceResult as any)?.affectedRows || 0)
+    const progress = Number((userProgressResult as any)?.affectedRows || 0)
+    const suppressions = Number((suppressionsResult as any)?.affectedRows || 0)
+    return res.redirect(`/admin/dev-tools?notice=${encodeURIComponent(`Cleared journey+user state instances=${instances}, progress=${progress}, suppressions=${suppressions}`)}`)
+  } catch (err: any) {
+    return res.redirect(`/admin/dev-tools?error=${encodeURIComponent(String(err?.message || 'clear_journey_state_user_failed'))}`)
+  }
+})
+
+pagesRouter.post('/admin/dev-tools/force-journey-reentry', async (req: any, res: any) => {
+  if (!isAdminDevToolsEnabled()) return res.status(404).send('Not found')
+  const db = getPool()
+  const journeyId = Number(req.body?.journey_id || 0)
+  const identityTypeRaw = String(req.body?.identity_type || '').trim().toLowerCase()
+  const identityType = identityTypeRaw === 'user' ? 'user' : (identityTypeRaw === 'anon' ? 'anon' : '')
+  const identityKey = String(req.body?.identity_key || '').trim()
+  if (!Number.isFinite(journeyId) || journeyId <= 0) return res.redirect('/admin/dev-tools?error=invalid_journey_id')
+  if (!identityType) return res.redirect('/admin/dev-tools?error=invalid_identity_type')
+  if (!identityKey) return res.redirect('/admin/dev-tools?error=invalid_identity_key')
+  try {
+    const [abandonResult] = await db.query(
+      `UPDATE feed_message_journey_instances
+          SET state = 'abandoned',
+              completed_reason = COALESCE(completed_reason, 'force_reentry'),
+              completed_at = COALESCE(completed_at, UTC_TIMESTAMP()),
+              last_seen_at = UTC_TIMESTAMP(),
+              updated_at = CURRENT_TIMESTAMP
+        WHERE journey_id = ?
+          AND identity_type = ?
+          AND identity_key = ?
+          AND state = 'active'`,
+      [Math.round(journeyId), identityType, identityKey]
+    )
+    const [insertResult]: any = await db.query(
+      `INSERT INTO feed_message_journey_instances
+        (journey_id, identity_type, identity_key, state, current_step_id, completed_reason, completed_event_key, first_seen_at, last_seen_at, completed_at, metadata_json)
+       VALUES (?, ?, ?, 'active', NULL, NULL, NULL, UTC_TIMESTAMP(), UTC_TIMESTAMP(), NULL, JSON_OBJECT('source','dev_tool_force_reentry','created_at',UTC_TIMESTAMP()))`,
+      [Math.round(journeyId), identityType, identityKey]
+    )
+    const abandoned = Number((abandonResult as any)?.affectedRows || 0)
+    const newId = Number(insertResult?.insertId || 0)
+    return res.redirect(`/admin/dev-tools?notice=${encodeURIComponent(`Forced re-entry abandoned_active=${abandoned}, new_instance_id=${newId}`)}`)
+  } catch (err: any) {
+    return res.redirect(`/admin/dev-tools?error=${encodeURIComponent(String(err?.message || 'force_journey_reentry_failed'))}`)
   }
 })
 

@@ -58,6 +58,7 @@
     "e2e:ui": "cross-env HEADLESS=false playwright test --config=e2e/playwright.config.ts --ui",
     "e2e:install": "playwright install --with-deps",
     "payments:smoke": "bash scripts/smoke-payments.sh",
+    "journeys:smoke:reentry": "bash scripts/smoke-journey-reentry.sh",
     "db:query:donations": "ts-node scripts/db-query-donations.ts",
     "db:query:subscriptions": "ts-node scripts/db-query-subscriptions.ts",
     "db:backfill:donation-amounts": "ts-node scripts/db-backfill-donation-amounts.ts",
