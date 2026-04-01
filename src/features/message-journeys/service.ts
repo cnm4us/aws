@@ -426,6 +426,7 @@ function toJourneyInstanceDto(row: MessageJourneyInstanceRow): MessageJourneyIns
     journeyId: Number(row.journey_id),
     identityType: normalizeJourneyInstanceIdentityType(row.identity_type),
     identityKey: String(row.identity_key || ''),
+    journeySubjectId: row.journey_subject_id == null ? null : String(row.journey_subject_id),
     state: normalizeJourneyInstanceState(row.state),
     currentStepId: row.current_step_id == null ? null : Number(row.current_step_id),
     completedReason: row.completed_reason == null ? null : String(row.completed_reason),
@@ -968,6 +969,14 @@ function mapGoalEventKeyFromCtaOutcome(input: {
   return null
 }
 
+function journeySubjectForIdentity(input: { userId?: number | null; anonVisitorId?: string | null }): string | null {
+  const userId = Number(input.userId || 0)
+  if (Number.isFinite(userId) && userId > 0) return `user:${Math.round(userId)}`
+  const anon = String(input.anonVisitorId || '').trim()
+  if (anon) return `anon:${anon}`
+  return null
+}
+
 async function ensureActiveJourneyInstanceIdForStep(input: {
   journeyId: number
   stepId: number
@@ -987,17 +996,26 @@ async function ensureActiveJourneyInstanceIdForStep(input: {
 
   const identityType = userId > 0 ? 'user' : 'anon'
   const identityKey = userId > 0 ? String(Math.round(userId)) : anonVisitorId
-  const active = await repo.getActiveJourneyInstanceByIdentity({
-    journeyId,
-    identityType,
-    identityKey,
-  })
+  const journeySubjectId = journeySubjectForIdentity({ userId, anonVisitorId })
+  let active = null as MessageJourneyInstanceRow | null
+  if (journeySubjectId) {
+    const bySubject = await repo.listJourneyInstancesBySubjectJourneyIds(journeySubjectId, [journeyId])
+    active = bySubject.find((row) => String(row.state || '').toLowerCase() === 'active') || null
+  }
+  if (!active) {
+    active = await repo.getActiveJourneyInstanceByIdentity({
+      journeyId,
+      identityType,
+      identityKey,
+    })
+  }
   if (active && Number(active.id || 0) > 0) return Number(active.id)
 
   const created = await repo.createJourneyInstance({
     journeyId,
     identityType,
     identityKey,
+    journeySubjectId,
     state: 'active',
     currentStepId: stepId,
     firstSeenAt: input.occurredAtTs,
@@ -1068,6 +1086,7 @@ export async function recordJourneySignalFromMessageEvent(input: {
           userId,
           journeyId: Number(step.journey_id),
           journeyInstanceId,
+          journeySubjectId: journeySubjectForIdentity({ userId, anonVisitorId: null }),
           stepId: Number(step.id),
           state: eventState,
           firstSeenAt: eventState === 'shown' ? ts : null,
@@ -1081,6 +1100,7 @@ export async function recordJourneySignalFromMessageEvent(input: {
           anonVisitorId,
           journeyId: Number(step.journey_id),
           journeyInstanceId,
+          journeySubjectId: journeySubjectForIdentity({ userId: null, anonVisitorId }),
           stepId: Number(step.id),
           state: eventState,
           firstSeenAt: eventState === 'shown' ? ts : null,
@@ -1208,6 +1228,7 @@ export async function recordJourneySignalFromCtaOutcome(input: {
         journeyId: Number(step.journey_id),
         identityType: userId > 0 ? 'user' : 'anon',
         identityKey: userId > 0 ? String(userId) : anonVisitorId,
+        journeySubjectId: journeySubjectForIdentity({ userId: userId > 0 ? userId : null, anonVisitorId: userId > 0 ? null : anonVisitorId }),
         state: 'completed',
         currentStepId: Number(step.id),
         completedReason: 'goal_rule_matched',
@@ -1255,6 +1276,7 @@ export async function recordJourneySignalFromCtaOutcome(input: {
           userId,
           journeyId: Number(step.journey_id),
           journeyInstanceId,
+          journeySubjectId: journeySubjectForIdentity({ userId, anonVisitorId: null }),
           stepId: Number(step.id),
           state: nextState,
           firstSeenAt: null,
@@ -1269,6 +1291,7 @@ export async function recordJourneySignalFromCtaOutcome(input: {
           anonVisitorId,
           journeyId: Number(step.journey_id),
           journeyInstanceId,
+          journeySubjectId: journeySubjectForIdentity({ userId: null, anonVisitorId }),
           stepId: Number(step.id),
           state: nextState,
           firstSeenAt: null,
@@ -1433,6 +1456,7 @@ export async function mergeAnonJourneyStateIntoUserOnAuth(input: {
       journeyId,
       identityType: 'user',
       identityKey: userKey,
+      journeySubjectId: journeySubjectForIdentity({ userId, anonVisitorId: null }),
       state: mergedState,
       currentStepId: existingUserInstance?.current_step_id ?? sourceInstance?.current_step_id ?? null,
       completedReason:
@@ -1456,6 +1480,7 @@ export async function mergeAnonJourneyStateIntoUserOnAuth(input: {
       journeyId,
       identityType: 'anon',
       identityKey: anonVisitorId,
+      journeySubjectId: journeySubjectForIdentity({ userId: null, anonVisitorId }),
       state: 'abandoned',
       currentStepId: sourceInstance?.current_step_id ?? null,
       completedReason: sourceInstance?.completed_reason || 'merged_to_user',
@@ -1498,6 +1523,7 @@ export async function mergeAnonJourneyStateIntoUserOnAuth(input: {
       journeyInstanceId:
         mergedUserInstanceIdByJourney.get(journeyId) ||
         (userRow?.journey_instance_id != null ? Number(userRow.journey_instance_id) : null),
+      journeySubjectId: journeySubjectForIdentity({ userId, anonVisitorId: null }),
       stepId,
       state: mergedState,
       firstSeenAt: minDateTime(userRow?.first_seen_at || null, anonRow.first_seen_at || null),

@@ -596,12 +596,19 @@ async function applyJourneyGating(params: {
     ? Math.round(Number(params.userId))
     : null
   const anonVisitorId = userId == null ? String(params.anonVisitorId || '').trim() : ''
+  const journeySubjectId = toJourneySubjectId({ userId, anonKey: anonVisitorId || null })
   if (userId == null) {
     const terminalJourneys = new Set<number>()
     const restartJourneys = new Set<number>()
     const activeInstanceByJourney = new Map<number, any>()
     if (anonVisitorId) {
-      const instanceRows = await messageJourneysRepo.listJourneyInstancesByAnonJourneyIds(anonVisitorId, journeyIds)
+      let instanceRows: any[] = []
+      if (journeySubjectId) {
+        instanceRows = await messageJourneysRepo.listJourneyInstancesBySubjectJourneyIds(journeySubjectId, journeyIds)
+      }
+      if (!instanceRows.length) {
+        instanceRows = await messageJourneysRepo.listJourneyInstancesByAnonJourneyIds(anonVisitorId, journeyIds)
+      }
       for (const row of instanceRows as any[]) {
         const journeyId = Number(row?.journey_id || 0)
         if (!Number.isFinite(journeyId) || journeyId <= 0) continue
@@ -851,7 +858,13 @@ async function applyJourneyGating(params: {
   const restartJourneys = new Set<number>()
   const activeInstanceByJourney = new Map<number, any>()
   {
-    const instanceRows = await messageJourneysRepo.listJourneyInstancesByUserJourneyIds(userId, journeyIds)
+    let instanceRows: any[] = []
+    if (journeySubjectId) {
+      instanceRows = await messageJourneysRepo.listJourneyInstancesBySubjectJourneyIds(journeySubjectId, journeyIds)
+    }
+    if (!instanceRows.length) {
+      instanceRows = await messageJourneysRepo.listJourneyInstancesByUserJourneyIds(userId, journeyIds)
+    }
     for (const row of instanceRows as any[]) {
       const journeyId = Number(row?.journey_id || 0)
       if (!Number.isFinite(journeyId) || journeyId <= 0) continue

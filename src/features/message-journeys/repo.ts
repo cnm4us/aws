@@ -62,6 +62,7 @@ const PROGRESS_SELECT_SQL = `
     user_id,
     journey_id,
     journey_instance_id,
+    journey_subject_id,
     step_id,
     state,
     first_seen_at,
@@ -81,6 +82,7 @@ const ANON_PROGRESS_SELECT_SQL = `
     anon_visitor_id,
     journey_id,
     journey_instance_id,
+    journey_subject_id,
     step_id,
     state,
     first_seen_at,
@@ -100,6 +102,7 @@ const INSTANCE_SELECT_SQL = `
     journey_id,
     identity_type,
     identity_key,
+    journey_subject_id,
     state,
     current_step_id,
     completed_reason,
@@ -125,6 +128,16 @@ async function getStepJourneyId(stepId: number): Promise<number | null> {
   const row = (rows as any[])[0]
   if (!row) return null
   return Number(row.journey_id)
+}
+
+function deriveJourneySubjectId(identityType: MessageJourneyInstanceIdentityType, identityKey: string): string {
+  return `${identityType}:${identityKey}`
+}
+
+function normalizeJourneySubjectId(raw: any): string | null {
+  const value = String(raw || '').trim()
+  if (!value) return null
+  return value
 }
 
 type JourneyCreateInput = {
@@ -249,6 +262,7 @@ type ProgressUpsertInput = {
   userId: number
   journeyId: number
   journeyInstanceId?: number | null
+  journeySubjectId?: string | null
   stepId: number
   state: MessageJourneyProgressState
   firstSeenAt?: string | null
@@ -265,6 +279,7 @@ type AnonProgressUpsertInput = {
   anonVisitorId: string
   journeyId: number
   journeyInstanceId?: number | null
+  journeySubjectId?: string | null
   stepId: number
   state: MessageJourneyProgressState
   firstSeenAt?: string | null
@@ -281,6 +296,7 @@ type JourneyInstanceUpsertInput = {
   journeyId: number
   identityType: MessageJourneyInstanceIdentityType
   identityKey: string
+  journeySubjectId?: string | null
   state: MessageJourneyInstanceState
   currentStepId?: number | null
   completedReason?: string | null
@@ -733,11 +749,13 @@ export async function upsertProgress(input: ProgressUpsertInput): Promise<Messag
 
   const db = getPool()
   const metadataJson = input.metadataJson ?? '{}'
+  const journeySubjectId = normalizeJourneySubjectId(input.journeySubjectId) || `user:${Math.round(Number(input.userId))}`
   await db.query(
     `INSERT INTO feed_user_message_journey_progress (
       user_id,
       journey_id,
       journey_instance_id,
+      journey_subject_id,
       step_id,
       state,
       first_seen_at,
@@ -746,10 +764,11 @@ export async function upsertProgress(input: ProgressUpsertInput): Promise<Messag
       completed_by_outcome_id,
       session_id,
       metadata_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON DUPLICATE KEY UPDATE
       journey_id = VALUES(journey_id),
       journey_instance_id = COALESCE(VALUES(journey_instance_id), feed_user_message_journey_progress.journey_instance_id),
+      journey_subject_id = COALESCE(feed_user_message_journey_progress.journey_subject_id, VALUES(journey_subject_id)),
       state = VALUES(state),
       first_seen_at = COALESCE(feed_user_message_journey_progress.first_seen_at, VALUES(first_seen_at)),
       last_seen_at = VALUES(last_seen_at),
@@ -762,6 +781,7 @@ export async function upsertProgress(input: ProgressUpsertInput): Promise<Messag
       input.userId,
       input.journeyId,
       journeyInstanceId,
+      journeySubjectId,
       input.stepId,
       input.state,
       input.firstSeenAt ?? null,
@@ -902,11 +922,13 @@ export async function upsertAnonProgress(input: AnonProgressUpsertInput): Promis
 
   const db = getPool()
   const metadataJson = input.metadataJson ?? '{}'
+  const journeySubjectId = normalizeJourneySubjectId(input.journeySubjectId) || `anon:${anonVisitorId}`
   await db.query(
     `INSERT INTO feed_anon_message_journey_progress (
       anon_visitor_id,
       journey_id,
       journey_instance_id,
+      journey_subject_id,
       step_id,
       state,
       first_seen_at,
@@ -915,10 +937,11 @@ export async function upsertAnonProgress(input: AnonProgressUpsertInput): Promis
       completed_by_outcome_id,
       session_id,
       metadata_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON DUPLICATE KEY UPDATE
       journey_id = VALUES(journey_id),
       journey_instance_id = COALESCE(VALUES(journey_instance_id), feed_anon_message_journey_progress.journey_instance_id),
+      journey_subject_id = COALESCE(feed_anon_message_journey_progress.journey_subject_id, VALUES(journey_subject_id)),
       state = VALUES(state),
       first_seen_at = COALESCE(feed_anon_message_journey_progress.first_seen_at, VALUES(first_seen_at)),
       last_seen_at = VALUES(last_seen_at),
@@ -931,6 +954,7 @@ export async function upsertAnonProgress(input: AnonProgressUpsertInput): Promis
       anonVisitorId,
       input.journeyId,
       journeyInstanceId,
+      journeySubjectId,
       input.stepId,
       input.state,
       input.firstSeenAt ?? null,
@@ -1065,6 +1089,23 @@ export async function listJourneyInstancesByUserJourneyIds(userId: number, journ
   return rows as MessageJourneyInstanceRow[]
 }
 
+export async function listJourneyInstancesBySubjectJourneyIds(journeySubjectId: string, journeyIds: number[]): Promise<MessageJourneyInstanceRow[]> {
+  const subject = String(journeySubjectId || '').trim()
+  if (!subject) return []
+  const uniq = Array.from(new Set(journeyIds.filter((id) => Number.isFinite(id) && id > 0).map((id) => Math.round(id))))
+  if (!uniq.length) return []
+  const db = getPool()
+  const placeholders = uniq.map(() => '?').join(',')
+  const [rows] = await db.query(
+    `${INSTANCE_SELECT_SQL}
+      WHERE journey_subject_id = ?
+        AND journey_id IN (${placeholders})
+      ORDER BY updated_at DESC, id DESC`,
+    [subject, ...uniq]
+  )
+  return rows as MessageJourneyInstanceRow[]
+}
+
 export async function listJourneyInstancesByAnonJourneyIds(anonVisitorId: string, journeyIds: number[]): Promise<MessageJourneyInstanceRow[]> {
   const anon = String(anonVisitorId || '').trim()
   if (!anon) return []
@@ -1107,6 +1148,7 @@ export async function upsertJourneyInstance(input: JourneyInstanceUpsertInput): 
   const db = getPool()
   const metadataJson = input.metadataJson ?? '{}'
   const journeyId = Math.round(Number(input.journeyId))
+  const journeySubjectId = normalizeJourneySubjectId(input.journeySubjectId) || deriveJourneySubjectId(identityType as MessageJourneyInstanceIdentityType, identityKey)
   const existing = await getActiveJourneyInstanceByIdentity({
     journeyId,
     identityType: identityType as MessageJourneyInstanceIdentityType,
@@ -1123,6 +1165,7 @@ export async function upsertJourneyInstance(input: JourneyInstanceUpsertInput): 
         journey_id,
         identity_type,
         identity_key,
+        journey_subject_id,
         state,
         current_step_id,
         completed_reason,
@@ -1131,11 +1174,12 @@ export async function upsertJourneyInstance(input: JourneyInstanceUpsertInput): 
         last_seen_at,
         completed_at,
         metadata_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         journeyId,
         identityType,
         identityKey,
+        journeySubjectId,
         state,
         currentStepId == null ? null : Math.round(currentStepId),
         input.completedReason ?? null,
@@ -1156,6 +1200,7 @@ export async function upsertJourneyInstance(input: JourneyInstanceUpsertInput): 
 
   return await updateJourneyInstanceById(Number(existing.id), {
     state,
+    journeySubjectId,
     currentStepId: currentStepId == null ? null : Math.round(currentStepId),
     completedReason: input.completedReason ?? existing.completed_reason ?? null,
     completedEventKey: input.completedEventKey ?? existing.completed_event_key ?? null,
@@ -1181,12 +1226,14 @@ export async function createJourneyInstance(input: JourneyInstanceUpsertInput): 
     if (stepJourneyId == null) throw new Error('invalid_current_step_id')
     if (stepJourneyId !== Number(input.journeyId)) throw new Error('step_journey_mismatch')
   }
+  const journeySubjectId = normalizeJourneySubjectId(input.journeySubjectId) || deriveJourneySubjectId(identityType as MessageJourneyInstanceIdentityType, identityKey)
   const db = getPool()
   const [result]: any = await db.query(
     `INSERT INTO feed_message_journey_instances (
       journey_id,
       identity_type,
       identity_key,
+      journey_subject_id,
       state,
       current_step_id,
       completed_reason,
@@ -1195,11 +1242,12 @@ export async function createJourneyInstance(input: JourneyInstanceUpsertInput): 
       last_seen_at,
       completed_at,
       metadata_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       Math.round(Number(input.journeyId)),
       identityType,
       identityKey,
+      journeySubjectId,
       state,
       currentStepId == null ? null : Math.round(currentStepId),
       input.completedReason ?? null,
@@ -1224,6 +1272,7 @@ export async function updateJourneyInstanceById(id: number, patch: JourneyInstan
   const args: any[] = []
 
   if (patch.state !== undefined) { sets.push('state = ?'); args.push(patch.state) }
+  if (patch.journeySubjectId !== undefined) { sets.push('journey_subject_id = ?'); args.push(patch.journeySubjectId) }
   if (patch.currentStepId !== undefined) { sets.push('current_step_id = ?'); args.push(patch.currentStepId) }
   if (patch.completedReason !== undefined) { sets.push('completed_reason = ?'); args.push(patch.completedReason) }
   if (patch.completedEventKey !== undefined) { sets.push('completed_event_key = ?'); args.push(patch.completedEventKey) }

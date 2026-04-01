@@ -39,6 +39,7 @@ export type MessageJourneyInstanceRow = {
   journey_id: number
   identity_type: MessageJourneyInstanceIdentityType
   identity_key: string
+  journey_subject_id: string | null
   state: MessageJourneyInstanceState
   current_step_id: number | null
   completed_reason: string | null
@@ -56,6 +57,7 @@ export type MessageJourneyProgressRow = {
   user_id: number
   journey_id: number
   journey_instance_id: number | null
+  journey_subject_id: string | null
   step_id: number
   state: MessageJourneyProgressState
   first_seen_at: string | null
@@ -73,6 +75,7 @@ export type MessageJourneyAnonProgressRow = {
   anon_visitor_id: string
   journey_id: number
   journey_instance_id: number | null
+  journey_subject_id: string | null
   step_id: number
   state: MessageJourneyProgressState
   first_seen_at: string | null
@@ -123,6 +126,7 @@ export type MessageJourneyInstanceDto = {
   journeyId: number
   identityType: MessageJourneyInstanceIdentityType
   identityKey: string
+  journeySubjectId: string | null
   state: MessageJourneyInstanceState
   currentStepId: number | null
   completedReason: string | null

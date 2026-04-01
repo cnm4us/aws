@@ -1241,6 +1241,7 @@ export async function ensureSchema(db: DB) {
           await db.query(`ALTER TABLE feed_user_message_journey_progress ADD COLUMN IF NOT EXISTS user_id BIGINT UNSIGNED NOT NULL`)
           await db.query(`ALTER TABLE feed_user_message_journey_progress ADD COLUMN IF NOT EXISTS journey_id BIGINT UNSIGNED NOT NULL`)
           await db.query(`ALTER TABLE feed_user_message_journey_progress ADD COLUMN IF NOT EXISTS journey_instance_id BIGINT UNSIGNED NULL`)
+          await db.query(`ALTER TABLE feed_user_message_journey_progress ADD COLUMN IF NOT EXISTS journey_subject_id VARCHAR(160) NULL`)
           await db.query(`ALTER TABLE feed_user_message_journey_progress ADD COLUMN IF NOT EXISTS step_id BIGINT UNSIGNED NOT NULL`)
           await db.query(`ALTER TABLE feed_user_message_journey_progress ADD COLUMN IF NOT EXISTS state ENUM('eligible','shown','clicked','completed','skipped','expired','suppressed') NOT NULL DEFAULT 'eligible'`)
           await db.query(`ALTER TABLE feed_user_message_journey_progress ADD COLUMN IF NOT EXISTS first_seen_at DATETIME NULL`)
@@ -1252,6 +1253,14 @@ export async function ensureSchema(db: DB) {
           try { await db.query(`UPDATE feed_user_message_journey_progress SET metadata_json = JSON_OBJECT() WHERE metadata_json IS NULL`) } catch {}
           try { await db.query(`ALTER TABLE feed_user_message_journey_progress MODIFY COLUMN metadata_json JSON NOT NULL`) } catch {}
           try { await db.query(`DROP INDEX uniq_feed_user_message_journey_progress_user_step ON feed_user_message_journey_progress`) } catch {}
+          try {
+            await db.query(`
+              UPDATE feed_user_message_journey_progress
+              SET journey_subject_id = CONCAT('user:', CAST(user_id AS CHAR))
+              WHERE (journey_subject_id IS NULL OR journey_subject_id = '')
+                AND user_id IS NOT NULL
+            `)
+          } catch {}
           try {
             await db.query(`
               UPDATE feed_user_message_journey_progress p
@@ -1268,6 +1277,7 @@ export async function ensureSchema(db: DB) {
           try { await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_feed_user_message_journey_progress_user_instance_step ON feed_user_message_journey_progress (user_id, journey_instance_id, step_id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_user_message_journey_progress_user_journey ON feed_user_message_journey_progress (user_id, journey_id, state, updated_at, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_user_message_journey_progress_instance_state ON feed_user_message_journey_progress (journey_instance_id, state, updated_at, id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_user_message_journey_progress_instance_subject ON feed_user_message_journey_progress (journey_instance_id, journey_subject_id, state, updated_at, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_user_message_journey_progress_journey_step ON feed_user_message_journey_progress (journey_id, step_id, state, updated_at, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_user_message_journey_progress_session ON feed_user_message_journey_progress (session_id, updated_at, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_user_message_journey_progress_completed_outcome ON feed_user_message_journey_progress (completed_by_outcome_id, updated_at, id)`); } catch {}
@@ -1296,6 +1306,7 @@ export async function ensureSchema(db: DB) {
           await db.query(`ALTER TABLE feed_anon_message_journey_progress ADD COLUMN IF NOT EXISTS anon_visitor_id VARCHAR(120) NOT NULL`)
           await db.query(`ALTER TABLE feed_anon_message_journey_progress ADD COLUMN IF NOT EXISTS journey_id BIGINT UNSIGNED NOT NULL`)
           await db.query(`ALTER TABLE feed_anon_message_journey_progress ADD COLUMN IF NOT EXISTS journey_instance_id BIGINT UNSIGNED NULL`)
+          await db.query(`ALTER TABLE feed_anon_message_journey_progress ADD COLUMN IF NOT EXISTS journey_subject_id VARCHAR(160) NULL`)
           await db.query(`ALTER TABLE feed_anon_message_journey_progress ADD COLUMN IF NOT EXISTS step_id BIGINT UNSIGNED NOT NULL`)
           await db.query(`ALTER TABLE feed_anon_message_journey_progress ADD COLUMN IF NOT EXISTS state ENUM('eligible','shown','clicked','completed','skipped','expired','suppressed') NOT NULL DEFAULT 'eligible'`)
           await db.query(`ALTER TABLE feed_anon_message_journey_progress ADD COLUMN IF NOT EXISTS first_seen_at DATETIME NULL`)
@@ -1307,6 +1318,15 @@ export async function ensureSchema(db: DB) {
           try { await db.query(`UPDATE feed_anon_message_journey_progress SET metadata_json = JSON_OBJECT() WHERE metadata_json IS NULL`) } catch {}
           try { await db.query(`ALTER TABLE feed_anon_message_journey_progress MODIFY COLUMN metadata_json JSON NOT NULL`) } catch {}
           try { await db.query(`DROP INDEX uniq_feed_anon_message_journey_progress_visitor_step ON feed_anon_message_journey_progress`) } catch {}
+          try {
+            await db.query(`
+              UPDATE feed_anon_message_journey_progress
+              SET journey_subject_id = CONCAT('anon:', anon_visitor_id)
+              WHERE (journey_subject_id IS NULL OR journey_subject_id = '')
+                AND anon_visitor_id IS NOT NULL
+                AND anon_visitor_id <> ''
+            `)
+          } catch {}
           try {
             await db.query(`
               UPDATE feed_anon_message_journey_progress p
@@ -1323,6 +1343,7 @@ export async function ensureSchema(db: DB) {
           try { await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_feed_anon_message_journey_progress_visitor_instance_step ON feed_anon_message_journey_progress (anon_visitor_id, journey_instance_id, step_id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_anon_message_journey_progress_visitor_journey ON feed_anon_message_journey_progress (anon_visitor_id, journey_id, state, updated_at, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_anon_message_journey_progress_instance_state ON feed_anon_message_journey_progress (journey_instance_id, state, updated_at, id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_anon_message_journey_progress_instance_subject ON feed_anon_message_journey_progress (journey_instance_id, journey_subject_id, state, updated_at, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_anon_message_journey_progress_journey_step ON feed_anon_message_journey_progress (journey_id, step_id, state, updated_at, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_anon_message_journey_progress_session ON feed_anon_message_journey_progress (session_id, updated_at, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_anon_message_journey_progress_completed_outcome ON feed_anon_message_journey_progress (completed_by_outcome_id, updated_at, id)`); } catch {}
@@ -1353,6 +1374,7 @@ export async function ensureSchema(db: DB) {
           await db.query(`ALTER TABLE feed_message_journey_instances ADD COLUMN IF NOT EXISTS journey_id BIGINT UNSIGNED NOT NULL`)
           await db.query(`ALTER TABLE feed_message_journey_instances ADD COLUMN IF NOT EXISTS identity_type ENUM('user','anon') NOT NULL DEFAULT 'anon'`)
           await db.query(`ALTER TABLE feed_message_journey_instances ADD COLUMN IF NOT EXISTS identity_key VARCHAR(120) NOT NULL`)
+          await db.query(`ALTER TABLE feed_message_journey_instances ADD COLUMN IF NOT EXISTS journey_subject_id VARCHAR(160) NULL`)
           await db.query(`ALTER TABLE feed_message_journey_instances ADD COLUMN IF NOT EXISTS state ENUM('active','completed','abandoned','expired') NOT NULL DEFAULT 'active'`)
           await db.query(`ALTER TABLE feed_message_journey_instances ADD COLUMN IF NOT EXISTS current_step_id BIGINT UNSIGNED NULL`)
           await db.query(`ALTER TABLE feed_message_journey_instances ADD COLUMN IF NOT EXISTS completed_reason VARCHAR(120) NULL`)
@@ -1363,9 +1385,22 @@ export async function ensureSchema(db: DB) {
           await db.query(`ALTER TABLE feed_message_journey_instances ADD COLUMN IF NOT EXISTS metadata_json JSON NULL`)
           try { await db.query(`UPDATE feed_message_journey_instances SET metadata_json = JSON_OBJECT() WHERE metadata_json IS NULL`) } catch {}
           try { await db.query(`ALTER TABLE feed_message_journey_instances MODIFY COLUMN metadata_json JSON NOT NULL`) } catch {}
+          try {
+            await db.query(`
+              UPDATE feed_message_journey_instances
+              SET journey_subject_id = CASE
+                WHEN identity_type = 'user' THEN CONCAT('user:', identity_key)
+                ELSE CONCAT('anon:', identity_key)
+              END
+              WHERE (journey_subject_id IS NULL OR journey_subject_id = '')
+                AND identity_key IS NOT NULL
+                AND identity_key <> ''
+            `)
+          } catch {}
           try { await db.query(`DROP INDEX uniq_feed_message_journey_instances_identity ON feed_message_journey_instances`) } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_journey_instances_identity_lookup ON feed_message_journey_instances (identity_type, identity_key, state, updated_at, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_journey_instances_journey_state ON feed_message_journey_instances (journey_id, state, updated_at, id)`); } catch {}
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_journey_instances_journey_subject_state ON feed_message_journey_instances (journey_id, journey_subject_id, state, updated_at, id)`); } catch {}
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_feed_message_journey_instances_current_step ON feed_message_journey_instances (current_step_id, updated_at, id)`); } catch {}
 
           // --- Canonical CTA outcomes (plan_145A) ---
