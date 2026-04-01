@@ -669,6 +669,7 @@ type AdminNavKey =
   | 'message_ctas'
   | 'message_rulesets'
   | 'message_journeys'
+  | 'journey_inspector'
   | 'payment_providers'
   | 'payment_catalog'
   | 'analytics'
@@ -699,6 +700,7 @@ const ADMIN_NAV_ITEMS: Array<{ key: AdminNavKey; label: string; href: string }> 
   { key: 'message_ctas', label: 'Message CTAs', href: '/admin/message-ctas' },
   { key: 'message_rulesets', label: 'Message Rulesets', href: '/admin/message-rulesets' },
   { key: 'message_journeys', label: 'Message Journeys', href: '/admin/message-journeys' },
+  { key: 'journey_inspector', label: 'Journey Inspector', href: '/admin/journey-inspector' },
   { key: 'payment_providers', label: 'Payment Providers', href: '/admin/payments/providers' },
   { key: 'payment_catalog', label: 'Payment Catalog', href: '/admin/payments/catalog' },
   { key: 'analytics', label: 'Analytics', href: '/admin/analytics' },
@@ -7063,6 +7065,276 @@ pagesRouter.post('/admin/message-journeys/:id/steps/:stepId/clone', async (req: 
     res.redirect(`/admin/message-journeys/${id}?notice=${encodeURIComponent(`Step cloned to position ${Number(cloned.stepOrder)}.`)}`)
   } catch (err: any) {
     res.redirect(`/admin/message-journeys/${id}?error=${encodeURIComponent(String(err?.message || 'Failed to clone step'))}`)
+  }
+})
+
+pagesRouter.get('/admin/journey-inspector', async (req: any, res: any) => {
+  const db = getPool()
+  const q = req.query || {}
+  const userEmail = String(q.user_email || '').trim()
+  const anonKey = String(q.anon_key || '').trim()
+  const journeyKey = String(q.journey_key || '').trim()
+  const journeyIdRaw = Number(q.journey_id || 0)
+  const userIdRaw = Number(q.user_id || 0)
+  const selectedInstanceIdRaw = Number(q.instance_id || 0)
+  const limitRaw = Number(q.limit || 50)
+  const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(Math.max(Math.round(limitRaw), 1), 200) : 50
+
+  let resolvedUserId = Number.isFinite(userIdRaw) && userIdRaw > 0 ? Math.round(userIdRaw) : 0
+  let resolvedUserEmail = userEmail
+  let resolvedJourneyId = Number.isFinite(journeyIdRaw) && journeyIdRaw > 0 ? Math.round(journeyIdRaw) : 0
+  let resolvedJourneyKey = journeyKey
+  let journeyName = ''
+  const errors: string[] = []
+  const explainError = (code: string): string => {
+    const key = String(code || '').trim().toLowerCase()
+    if (key === 'user_email_not_found') return 'User email was not found.'
+    if (key === 'journey_key_not_found') return 'Journey key was not found.'
+    if (key === 'journey_id_key_mismatch') return 'Journey ID and Journey Key do not match.'
+    if (key === 'journey_id_not_found') return 'Journey ID was not found.'
+    return code
+  }
+
+  try {
+    if (userEmail) {
+      const [userRows]: any = await db.query(
+        `SELECT id, email FROM users WHERE LOWER(email) = LOWER(?) ORDER BY id ASC LIMIT 1`,
+        [userEmail]
+      )
+      if ((userRows || []).length === 0) {
+        errors.push('user_email_not_found')
+      } else {
+        resolvedUserId = Number(userRows[0].id || 0)
+        resolvedUserEmail = String(userRows[0].email || userEmail)
+      }
+    }
+
+    if (journeyKey && !resolvedJourneyId) {
+      const [jRows]: any = await db.query(
+        `SELECT id, journey_key, name FROM feed_message_journeys WHERE journey_key = ? ORDER BY id DESC LIMIT 1`,
+        [journeyKey]
+      )
+      if ((jRows || []).length === 0) {
+        errors.push('journey_key_not_found')
+      } else {
+        resolvedJourneyId = Number(jRows[0].id || 0)
+        resolvedJourneyKey = String(jRows[0].journey_key || journeyKey)
+        journeyName = String(jRows[0].name || '')
+      }
+    } else if (resolvedJourneyId) {
+      const [jRows]: any = await db.query(
+        `SELECT id, journey_key, name FROM feed_message_journeys WHERE id = ? LIMIT 1`,
+        [resolvedJourneyId]
+      )
+      if ((jRows || []).length > 0) {
+        const foundKey = String(jRows[0].journey_key || '')
+        if (journeyKey && foundKey && foundKey !== journeyKey) errors.push('journey_id_key_mismatch')
+        resolvedJourneyKey = foundKey || journeyKey
+        journeyName = String(jRows[0].name || '')
+      } else {
+        errors.push('journey_id_not_found')
+      }
+    }
+
+    const identityFilters: Array<{ type: 'user' | 'anon'; key: string }> = []
+    if (resolvedUserId > 0) identityFilters.push({ type: 'user', key: String(resolvedUserId) })
+    if (anonKey) identityFilters.push({ type: 'anon', key: anonKey })
+
+    let instances: any[] = []
+    if (identityFilters.length > 0) {
+      const where: string[] = []
+      const params: any[] = []
+      const idClauses: string[] = []
+      for (const idf of identityFilters) {
+        idClauses.push(`(i.identity_type = ? AND i.identity_key = ?)`)
+        params.push(idf.type, idf.key)
+      }
+      where.push(`(${idClauses.join(' OR ')})`)
+      if (resolvedJourneyId > 0) {
+        where.push(`i.journey_id = ?`)
+        params.push(resolvedJourneyId)
+      }
+      params.push(limit)
+      const [rows]: any = await db.query(
+        `SELECT i.id, i.journey_id, i.identity_type, i.identity_key, i.state, i.current_step_id,
+                i.completed_reason, i.completed_event_key, i.first_seen_at, i.last_seen_at, i.completed_at,
+                i.metadata_json, i.created_at, i.updated_at,
+                j.journey_key, j.name AS journey_name, j.status AS journey_status
+           FROM feed_message_journey_instances i
+           LEFT JOIN feed_message_journeys j ON j.id = i.journey_id
+          WHERE ${where.join(' AND ')}
+          ORDER BY i.updated_at DESC, i.id DESC
+          LIMIT ?`,
+        params
+      )
+      instances = rows || []
+    }
+
+    let selectedInstanceId = Number.isFinite(selectedInstanceIdRaw) && selectedInstanceIdRaw > 0 ? Math.round(selectedInstanceIdRaw) : 0
+    if (!selectedInstanceId && instances.length > 0) selectedInstanceId = Number(instances[0].id || 0)
+    const selectedInstance = instances.find((r) => Number(r.id || 0) === selectedInstanceId) || null
+
+    let stepProgressRows: any[] = []
+    if (selectedInstanceId > 0) {
+      const [progressRows]: any = await db.query(
+        `SELECT p.id, p.journey_instance_id, p.state, p.completed_at, p.updated_at,
+                st.id AS step_id, st.step_key, st.step_order, st.message_id,
+                m.name AS message_name, 'user' AS progress_source
+           FROM feed_user_message_journey_progress p
+           LEFT JOIN feed_message_journey_steps st ON st.id = p.step_id
+           LEFT JOIN feed_messages m ON m.id = st.message_id
+          WHERE p.journey_instance_id = ?
+          UNION ALL
+         SELECT p.id, p.journey_instance_id, p.state, p.completed_at, p.updated_at,
+                st.id AS step_id, st.step_key, st.step_order, st.message_id,
+                m.name AS message_name, 'anon' AS progress_source
+           FROM feed_anon_message_journey_progress p
+           LEFT JOIN feed_message_journey_steps st ON st.id = p.step_id
+           LEFT JOIN feed_messages m ON m.id = st.message_id
+          WHERE p.journey_instance_id = ?
+          ORDER BY step_order ASC, id ASC`,
+        [selectedInstanceId, selectedInstanceId]
+      )
+      stepProgressRows = progressRows || []
+    }
+
+    const hasQuery = Boolean(userEmail || resolvedUserId > 0 || anonKey || journeyKey || resolvedJourneyId > 0)
+    let body = '<h1>Journey Inspector</h1>'
+    body += `<style>
+      .ji-summary-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; }
+      .ji-summary-item { border:1px solid rgba(255,255,255,0.14); border-radius:12px; background:rgba(255,255,255,0.03); padding:10px; }
+      .ji-summary-label { color:#bbb; font-size:12px; font-weight:800; margin-bottom:4px; }
+      .ji-summary-value { color:#fff; font-size:18px; font-weight:900; line-height:1.2; word-break:break-word; }
+      .ji-metadata details { border:1px solid rgba(255,255,255,0.14); border-radius:10px; background:rgba(255,255,255,0.03); padding:8px 10px; }
+      .ji-metadata summary { cursor:pointer; font-weight:800; color:#fff; }
+      .ji-metadata pre { margin:8px 0 0 0; max-height:180px; overflow:auto; white-space:pre-wrap; word-break:break-word; }
+      @media (max-width: 1000px) { .ji-summary-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+      @media (max-width: 640px) { .ji-summary-grid { grid-template-columns:minmax(0,1fr); } }
+    </style>`
+    body += '<div class="toolbar"><div><span class="pill">Run-Level Journey Diagnostics</span></div><div></div></div>'
+    body += `<form method="get" action="/admin/journey-inspector" class="section" style="margin:12px 0">
+      <div class="section-title">Lookup</div>
+      <div style="display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px">
+        <label>User Email<input type="text" name="user_email" value="${escapeHtml(userEmail)}" placeholder="user@example.com" /></label>
+        <label>User ID<input type="number" name="user_id" min="1" value="${resolvedUserId > 0 ? escapeHtml(String(resolvedUserId)) : ''}" /></label>
+        <label>Anon Key<input type="text" name="anon_key" value="${escapeHtml(anonKey)}" placeholder="anon uuid/key" /></label>
+      </div>
+      <div style="display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin-top:10px">
+        <label>Journey Key<input type="text" name="journey_key" value="${escapeHtml(journeyKey)}" /></label>
+        <label>Journey ID<input type="number" name="journey_id" min="1" value="${resolvedJourneyId > 0 ? escapeHtml(String(resolvedJourneyId)) : ''}" /></label>
+        <label>Limit<input type="number" name="limit" min="1" max="200" value="${escapeHtml(String(limit))}" /></label>
+      </div>
+      <div style="display:flex; gap:8px; margin-top:10px">
+        <button class="btn" type="submit">Apply</button>
+        <a class="btn" href="/admin/journey-inspector">Reset</a>
+      </div>
+      <div class="field-hint" style="margin-top:6px">Use user or anon identity to inspect journey runs and run-scoped step progress.</div>
+    </form>`
+
+    if (errors.length > 0) {
+      body += `<div class="error">${escapeHtml(errors.map(explainError).join(' '))}</div>`
+    }
+
+    if (hasQuery && errors.length === 0) {
+      body += `<div class="section"><div class="section-title">Resolved</div>`
+      body += `<div class="field-hint">user_id=${resolvedUserId > 0 ? escapeHtml(String(resolvedUserId)) : 'none'}`
+      if (resolvedUserEmail) body += ` (${escapeHtml(resolvedUserEmail)})`
+      body += ` • anon_key=${anonKey ? escapeHtml(anonKey) : 'none'}`
+      body += ` • journey_id=${resolvedJourneyId > 0 ? escapeHtml(String(resolvedJourneyId)) : 'any'}`
+      body += ` • journey_key=${resolvedJourneyKey ? escapeHtml(resolvedJourneyKey) : 'any'}`
+      if (journeyName) body += ` (${escapeHtml(journeyName)})`
+      body += `</div></div>`
+
+      body += `<div class="section"><div class="section-title">Selected Run Summary</div>`
+      if (!selectedInstanceId || !selectedInstance) {
+        body += `<div class="field-hint">No run selected.</div>`
+      } else {
+        const terminal = ['completed', 'abandoned', 'expired'].includes(String(selectedInstance.state || '').toLowerCase())
+        const summaryReason = String(selectedInstance.completed_reason || '')
+        const summaryEvent = String(selectedInstance.completed_event_key || '')
+        body += `<div class="ji-summary-grid">`
+        body += `<div class="ji-summary-item"><div class="ji-summary-label">Run ID</div><div class="ji-summary-value">${escapeHtml(String(selectedInstance.id || ''))}</div></div>`
+        body += `<div class="ji-summary-item"><div class="ji-summary-label">Journey</div><div class="ji-summary-value">#${escapeHtml(String(selectedInstance.journey_id || ''))} ${escapeHtml(String(selectedInstance.journey_key || ''))}</div></div>`
+        body += `<div class="ji-summary-item"><div class="ji-summary-label">State</div><div class="ji-summary-value">${escapeHtml(String(selectedInstance.state || ''))}</div></div>`
+        body += `<div class="ji-summary-item"><div class="ji-summary-label">Current Step</div><div class="ji-summary-value">${escapeHtml(String(selectedInstance.current_step_id || '-'))}</div></div>`
+        body += `<div class="ji-summary-item"><div class="ji-summary-label">Terminal</div><div class="ji-summary-value">${terminal ? 'yes' : 'no'}</div></div>`
+        body += `<div class="ji-summary-item"><div class="ji-summary-label">Completion Reason</div><div class="ji-summary-value">${escapeHtml(summaryReason || '-')}</div></div>`
+        body += `<div class="ji-summary-item"><div class="ji-summary-label">Completion Event</div><div class="ji-summary-value">${escapeHtml(summaryEvent || '-')}</div></div>`
+        body += `<div class="ji-summary-item"><div class="ji-summary-label">Completed At</div><div class="ji-summary-value">${escapeHtml(String(selectedInstance.completed_at || '-'))}</div></div>`
+        body += `</div>`
+      }
+      body += `</div>`
+
+      body += `<div class="section"><div class="section-title">Journey Instances</div>`
+      body += `<table><thead><tr>
+        <th>ID</th><th>Journey</th><th>Identity</th><th>State</th><th>Current Step</th><th>Completed</th><th>Metadata</th><th>Updated</th><th></th>
+      </tr></thead><tbody>`
+      if (instances.length === 0) {
+        body += `<tr><td colspan="9" class="field-hint">No instances found.</td></tr>`
+      } else {
+        for (const row of instances) {
+          const query = new URLSearchParams()
+          if (userEmail) query.set('user_email', userEmail)
+          if (resolvedUserId > 0) query.set('user_id', String(resolvedUserId))
+          if (anonKey) query.set('anon_key', anonKey)
+          if (resolvedJourneyId > 0) query.set('journey_id', String(resolvedJourneyId))
+          if (resolvedJourneyKey) query.set('journey_key', resolvedJourneyKey)
+          query.set('limit', String(limit))
+          query.set('instance_id', String(row.id))
+          const completedLabel = [String(row.completed_reason || ''), String(row.completed_event_key || ''), String(row.completed_at || '')].filter(Boolean).join(' / ')
+          let metadataStr = '{}'
+          try { metadataStr = JSON.stringify((row as any).metadata_json || {}, null, 2) } catch {}
+          body += `<tr>
+            <td>${escapeHtml(String(row.id))}</td>
+            <td>#${escapeHtml(String(row.journey_id || ''))} ${escapeHtml(String(row.journey_key || ''))}</td>
+            <td>${escapeHtml(String(row.identity_type || ''))}:${escapeHtml(String(row.identity_key || ''))}</td>
+            <td>${escapeHtml(String(row.state || ''))}</td>
+            <td>${escapeHtml(String(row.current_step_id || ''))}</td>
+            <td>${escapeHtml(completedLabel || '-')}</td>
+            <td class="ji-metadata"><details><summary>View JSON</summary><pre>${escapeHtml(metadataStr)}</pre></details></td>
+            <td>${escapeHtml(String(row.updated_at || ''))}</td>
+            <td><a href="/admin/journey-inspector?${escapeHtml(query.toString())}">Inspect</a></td>
+          </tr>`
+        }
+      }
+      body += `</tbody></table></div>`
+
+      body += `<div class="section"><div class="section-title">Step Progress (Selected Run)</div>`
+      if (!selectedInstanceId) {
+        body += `<div class="field-hint">No run selected.</div>`
+      } else {
+        body += `<div class="field-hint">run_id=${escapeHtml(String(selectedInstanceId))}`
+        if (selectedInstance) body += ` • state=${escapeHtml(String(selectedInstance.state || ''))}`
+        body += `</div>`
+        body += `<table><thead><tr>
+          <th>Step</th><th>Message</th><th>State</th><th>Completed At</th><th>Updated At</th><th>Source</th>
+        </tr></thead><tbody>`
+        if (stepProgressRows.length === 0) {
+          body += `<tr><td colspan="6" class="field-hint">No run-scoped step progress rows found for this run.</td></tr>`
+        } else {
+          for (const p of stepProgressRows) {
+            body += `<tr>
+              <td>#${escapeHtml(String(p.step_id || ''))} ${escapeHtml(String(p.step_key || ''))} (order ${escapeHtml(String(p.step_order || ''))})</td>
+              <td>#${escapeHtml(String(p.message_id || ''))} ${escapeHtml(String(p.message_name || ''))}</td>
+              <td>${escapeHtml(String(p.state || ''))}</td>
+              <td>${escapeHtml(String(p.completed_at || ''))}</td>
+              <td>${escapeHtml(String(p.updated_at || ''))}</td>
+              <td>${escapeHtml(String(p.progress_source || ''))}</td>
+            </tr>`
+          }
+        }
+        body += `</tbody></table>`
+      }
+      body += `</div>`
+    } else if (!hasQuery) {
+      body += `<div class="section"><div class="field-hint">Enter user email/user id or anon key, then apply filters.</div></div>`
+    }
+
+    const doc = renderAdminPage({ title: 'Journey Inspector', bodyHtml: body, active: 'journey_inspector' })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    return res.send(doc)
+  } catch (err: any) {
+    return res.status(500).send(`Failed to load journey inspector: ${escapeHtml(String(err?.message || err))}`)
   }
 })
 
