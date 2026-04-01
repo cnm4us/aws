@@ -8282,6 +8282,68 @@ pagesRouter.get('/admin/dev-tools', async (req: any, res: any) => {
   const error = req.query?.error ? String(req.query.error) : ''
 
   let body = '<h1>Dev Tools</h1>'
+  body += `<style>
+    .dev-tools-wrap .dt-card {
+      border: 1px solid rgba(96,165,250,0.95);
+      border-radius: 14px;
+      padding: 16px;
+      margin: 10px 0;
+      background: linear-gradient(180deg, rgba(28,45,58,0.96) 0%, rgba(12,16,20,0.96) 100%);
+      box-sizing: border-box;
+    }
+    .dev-tools-wrap .dt-title {
+      font-size: 0.95rem;
+      font-weight: 900;
+      margin: 0 0 10px;
+      color: #fff;
+    }
+    .dev-tools-wrap label { display: grid; gap: 6px; min-width: 0; color: #fff; font-weight: 800; }
+    .dev-tools-wrap input,
+    .dev-tools-wrap select,
+    .dev-tools-wrap textarea {
+      width: 100%;
+      max-width: 100%;
+      box-sizing: border-box;
+      background: #0b0b0b;
+      color: #fff;
+      border: 1px solid rgba(255,255,255,0.18);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 14px;
+      font-weight: 900;
+    }
+    .dev-tools-wrap .dt-btn-primary {
+      border: 1px solid rgba(96,165,250,0.95);
+      background: rgba(96,165,250,0.14);
+      color: #fff;
+      font-weight: 900;
+    }
+    .dev-tools-wrap .dt-btn-danger {
+      border: 1px solid #8a2d2d;
+      background: #5a1d1d;
+      color: #fff;
+      font-weight: 900;
+    }
+    .dev-tools-wrap .dt-grid-2 {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 10px;
+      margin-bottom: 8px;
+      align-items: start;
+    }
+    .dev-tools-wrap .dt-grid-3 {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+      gap: 10px;
+      margin-bottom: 8px;
+      align-items: start;
+    }
+    @media (max-width: 860px) {
+      .dev-tools-wrap .dt-grid-2,
+      .dev-tools-wrap .dt-grid-3 { grid-template-columns: minmax(0, 1fr); }
+    }
+  </style>`
+  body += `<div class="dev-tools-wrap">`
   body += '<div class="toolbar"><div><span class="pill">Development Reset Actions</span></div><div></div></div>'
   body += '<p class="field-hint">Use these while testing. These actions are destructive and intended for development only.</p>'
   if (notice) body += `<div class="notice">${escapeHtml(notice)}</div>`
@@ -8289,54 +8351,77 @@ pagesRouter.get('/admin/dev-tools', async (req: any, res: any) => {
 
   const addCsrf = csrfToken ? `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />` : ''
 
-  body += `<div class="section"><div class="section-title">Safe Reset</div>`
-  body += `<form method="post" action="/admin/dev-tools/clear-my-journey-progress" style="margin:0 0 10px 0">`
-  body += addCsrf
-  body += `<button class="btn" type="submit">Clear My Journey Progress</button>`
-  body += `<div class="field-hint" style="margin-top:6px">Resets only the logged-in admin user journey progress.</div>`
-  body += `</form>`
-  body += `<form method="post" action="/admin/dev-tools/clear-decision-sessions" style="margin:0">`
-  body += addCsrf
-  body += `<button class="btn" type="submit">Clear Decision Sessions</button>`
-  body += `<div class="field-hint" style="margin-top:6px">Resets cadence/session state used by the decision engine.</div>`
-  body += `</form>`
-  body += `</div>`
+  const toolCard = (title: string, inner: string) => {
+    body += `<div class="dt-card"><div class="dt-title">${escapeHtml(title)}</div>${inner}</div>`
+  }
+  body += `<div class="section-title" style="margin:14px 0 8px 0">Safe Reset</div>`
+  toolCard(
+    'Clear My Journey Progress',
+    `<form method="post" action="/admin/dev-tools/clear-my-journey-progress" style="margin:0">
+      ${addCsrf}
+      <button class="btn dt-btn-primary" type="submit">Run</button>
+      <div class="field-hint" style="margin-top:6px">Resets only the logged-in admin user journey progress.</div>
+    </form>`
+  )
+  toolCard(
+    'Clear Decision Sessions',
+    `<form method="post" action="/admin/dev-tools/clear-decision-sessions" style="margin:0">
+      ${addCsrf}
+      <button class="btn dt-btn-primary" type="submit">Run</button>
+      <div class="field-hint" style="margin-top:6px">Resets cadence/session state used by the decision engine.</div>
+    </form>`
+  )
 
-  body += `<div class="section"><div class="section-title">Destructive Reset</div>`
-  body += `<form method="post" action="/admin/dev-tools/clear-suppressions" style="margin:0 0 10px 0" onsubmit="return confirm('Clear all suppressions and decision sessions?')">`
-  body += addCsrf
-  body += `<button class="btn" type="submit" style="background:#5a1d1d;border-color:#8a2d2d">Clear Suppressions</button>`
-  body += `<div class="field-hint" style="margin-top:6px">Clears <code>feed_message_user_suppressions</code> and <code>message_decision_sessions</code>.</div>`
-  body += `</form>`
-  body += `<form method="post" action="/admin/dev-tools/clear-journey-progress" style="margin:0" onsubmit="return confirm('Clear all user and anonymous journey progress?')">`
-  body += addCsrf
-  body += `<button class="btn" type="submit" style="background:#5a1d1d;border-color:#8a2d2d">Clear Journey Progress (All)</button>`
-  body += `<div class="field-hint" style="margin-top:6px">Clears <code>feed_user_message_journey_progress</code> and <code>feed_anon_message_journey_progress</code>.</div>`
-  body += `</form>`
-  body += `<form method="post" action="/admin/dev-tools/clear-journey-state" style="margin:10px 0 0 0" onsubmit="return confirm('Clear full journey state (instances, progress, suppressions, decision sessions)?')">`
-  body += addCsrf
-  body += `<button class="btn" type="submit" style="background:#5a1d1d;border-color:#8a2d2d">Clear Journey State (All)</button>`
-  body += `<div class="field-hint" style="margin-top:6px">Clears <code>feed_message_journey_instances</code>, journey progress tables, <code>feed_message_user_suppressions</code>, and <code>message_decision_sessions</code>.</div>`
-  body += `</form>`
-  body += `<form method="post" action="/admin/dev-tools/clear-journey-state-user" style="margin:10px 0 0 0" onsubmit="return confirm('Clear journey state for one journey + user?')">`
-  body += addCsrf
-  body += `<div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-bottom:8px">`
-  body += `<label>Journey ID<input type="number" name="journey_id" min="1" required /></label>`
-  body += `<label>User ID<input type="number" name="user_id" min="1" required /></label>`
-  body += `</div>`
-  body += `<button class="btn" type="submit" style="background:#5a1d1d;border-color:#8a2d2d">Clear Journey State (Journey + User)</button>`
-  body += `<div class="field-hint" style="margin-top:6px">Clears instances/progress for the selected journey+user and clears suppressions for messages used by that journey.</div>`
-  body += `</form>`
-  body += `<form method="post" action="/admin/dev-tools/force-journey-reentry" style="margin:10px 0 0 0" onsubmit="return confirm('Force a new active journey run for this identity?')">`
-  body += addCsrf
-  body += `<div style="display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin-bottom:8px">`
-  body += `<label>Journey ID<input type="number" name="journey_id" min="1" required /></label>`
-  body += `<label>Identity Type<select name="identity_type"><option value="user">user</option><option value="anon">anon</option></select></label>`
-  body += `<label>Identity Key<input type="text" name="identity_key" maxlength="120" required placeholder="user id or anon key" /></label>`
-  body += `</div>`
-  body += `<button class="btn" type="submit" style="background:#5a1d1d;border-color:#8a2d2d">Force Re-entry (Create Active Run)</button>`
-  body += `<div class="field-hint" style="margin-top:6px">Marks any current active run as abandoned, then creates a new active run.</div>`
-  body += `</form>`
+  body += `<div class="section-title" style="margin:14px 0 8px 0">Destructive Reset</div>`
+  toolCard(
+    'Clear Suppressions',
+    `<form method="post" action="/admin/dev-tools/clear-suppressions" style="margin:0" onsubmit="return confirm('Clear all suppressions and decision sessions?')">
+      ${addCsrf}
+      <button class="btn dt-btn-danger" type="submit">Run</button>
+      <div class="field-hint" style="margin-top:6px">Clears <code>feed_message_user_suppressions</code> and <code>message_decision_sessions</code>.</div>
+    </form>`
+  )
+  toolCard(
+    'Clear Journey Progress (All)',
+    `<form method="post" action="/admin/dev-tools/clear-journey-progress" style="margin:0" onsubmit="return confirm('Clear all user and anonymous journey progress?')">
+      ${addCsrf}
+      <button class="btn dt-btn-danger" type="submit">Run</button>
+      <div class="field-hint" style="margin-top:6px">Clears <code>feed_user_message_journey_progress</code> and <code>feed_anon_message_journey_progress</code>.</div>
+    </form>`
+  )
+  toolCard(
+    'Clear Journey State (All)',
+    `<form method="post" action="/admin/dev-tools/clear-journey-state" style="margin:0" onsubmit="return confirm('Clear full journey state (instances, progress, suppressions, decision sessions)?')">
+      ${addCsrf}
+      <button class="btn dt-btn-danger" type="submit">Run</button>
+      <div class="field-hint" style="margin-top:6px">Clears <code>feed_message_journey_instances</code>, journey progress tables, <code>feed_message_user_suppressions</code>, and <code>message_decision_sessions</code>.</div>
+    </form>`
+  )
+  toolCard(
+    'Clear Journey State (Journey + User)',
+    `<form method="post" action="/admin/dev-tools/clear-journey-state-user" style="margin:0" onsubmit="return confirm('Clear journey state for one journey + user?')">
+      ${addCsrf}
+      <div class="dt-grid-2">
+        <label>Journey ID<input type="number" name="journey_id" min="1" required /></label>
+        <label>User ID<input type="number" name="user_id" min="1" required /></label>
+      </div>
+      <button class="btn dt-btn-danger" type="submit">Run</button>
+      <div class="field-hint" style="margin-top:6px">Clears instances/progress for the selected journey+user and clears suppressions for messages used by that journey.</div>
+    </form>`
+  )
+  toolCard(
+    'Force Re-entry (Create Active Run)',
+    `<form method="post" action="/admin/dev-tools/force-journey-reentry" style="margin:0" onsubmit="return confirm('Force a new active journey run for this identity?')">
+      ${addCsrf}
+      <div class="dt-grid-3">
+        <label>Journey ID<input type="number" name="journey_id" min="1" required /></label>
+        <label>Identity Type<select name="identity_type"><option value="user">user</option><option value="anon">anon</option></select></label>
+        <label>Identity Key<input type="text" name="identity_key" maxlength="120" required placeholder="user id or anon key" /></label>
+      </div>
+      <button class="btn dt-btn-danger" type="submit">Run</button>
+      <div class="field-hint" style="margin-top:6px">Marks any current active run as abandoned, then creates a new active run.</div>
+    </form>`
+  )
   body += `</div>`
 
   const doc = renderAdminPage({ title: 'Dev Tools', bodyHtml: body, active: 'dev_tools' })
