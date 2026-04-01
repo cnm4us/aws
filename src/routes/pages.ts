@@ -7073,6 +7073,7 @@ pagesRouter.get('/admin/journey-inspector', async (req: any, res: any) => {
   const q = req.query || {}
   const userEmail = String(q.user_email || '').trim()
   const anonKey = String(q.anon_key || '').trim()
+  const journeySubjectId = String(q.journey_subject_id || '').trim()
   const journeyKey = String(q.journey_key || '').trim()
   const journeyIdRaw = Number(q.journey_id || 0)
   const userIdRaw = Number(q.user_id || 0)
@@ -7141,22 +7142,27 @@ pagesRouter.get('/admin/journey-inspector', async (req: any, res: any) => {
     if (anonKey) identityFilters.push({ type: 'anon', key: anonKey })
 
     let instances: any[] = []
-    if (identityFilters.length > 0) {
+    if (identityFilters.length > 0 || journeySubjectId) {
       const where: string[] = []
       const params: any[] = []
-      const idClauses: string[] = []
-      for (const idf of identityFilters) {
-        idClauses.push(`(i.identity_type = ? AND i.identity_key = ?)`)
-        params.push(idf.type, idf.key)
+      if (journeySubjectId) {
+        where.push(`i.journey_subject_id = ?`)
+        params.push(journeySubjectId)
+      } else {
+        const idClauses: string[] = []
+        for (const idf of identityFilters) {
+          idClauses.push(`(i.identity_type = ? AND i.identity_key = ?)`)
+          params.push(idf.type, idf.key)
+        }
+        where.push(`(${idClauses.join(' OR ')})`)
       }
-      where.push(`(${idClauses.join(' OR ')})`)
       if (resolvedJourneyId > 0) {
         where.push(`i.journey_id = ?`)
         params.push(resolvedJourneyId)
       }
       params.push(limit)
       const [rows]: any = await db.query(
-        `SELECT i.id, i.journey_id, i.identity_type, i.identity_key, i.state, i.current_step_id,
+        `SELECT i.id, i.journey_id, i.identity_type, i.identity_key, i.journey_subject_id, i.state, i.current_step_id,
                 i.completed_reason, i.completed_event_key, i.first_seen_at, i.last_seen_at, i.completed_at,
                 i.metadata_json, i.created_at, i.updated_at,
                 j.journey_key, j.name AS journey_name, j.status AS journey_status,
@@ -7212,7 +7218,7 @@ pagesRouter.get('/admin/journey-inspector', async (req: any, res: any) => {
       }
     }
 
-    const hasQuery = Boolean(userEmail || resolvedUserId > 0 || anonKey || journeyKey || resolvedJourneyId > 0)
+    const hasQuery = Boolean(userEmail || resolvedUserId > 0 || anonKey || journeySubjectId || journeyKey || resolvedJourneyId > 0)
     let body = '<h1>Journey Inspector</h1><div class="ji-wrap">'
     body += `<style>
       .ji-wrap .section {
@@ -7221,8 +7227,22 @@ pagesRouter.get('/admin/journey-inspector', async (req: any, res: any) => {
         background: linear-gradient(180deg, rgba(28,45,58,0.96) 0%, rgba(12,16,20,0.96) 100%);
         padding: 16px;
         box-sizing: border-box;
+        position: relative;
       }
       .ji-wrap .section-title { font-size: 0.9rem; font-weight: 900; letter-spacing: 0.08em; opacity: 0.92; margin: 0 0 10px; }
+      .ji-wrap .ji-section-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin:0 0 10px; }
+      .ji-wrap .ji-section-head .section-title { margin:0; }
+      .ji-wrap .ji-copy-btn {
+        border:1px solid rgba(96,165,250,0.95);
+        background:rgba(96,165,250,0.14);
+        color:#fff;
+        font-weight:900;
+        border-radius:10px;
+        padding:6px 10px;
+        line-height:1;
+        cursor:pointer;
+      }
+      .ji-wrap .ji-copy-btn:disabled { opacity:0.6; cursor:default; }
       .ji-wrap label { display:grid; gap:6px; min-width:0; font-weight:800; color:#fff; }
       .ji-wrap input, .ji-wrap select, .ji-wrap textarea {
         width:100%; max-width:100%; box-sizing:border-box;
@@ -7257,6 +7277,11 @@ pagesRouter.get('/admin/journey-inspector', async (req: any, res: any) => {
         <label>Anon Key<input type="text" name="anon_key" value="${escapeHtml(anonKey)}" placeholder="anon uuid/key" /></label>
       </div>
       <div class="ji-grid-3" style="margin-top:10px">
+        <label>Journey Subject ID<input type="text" name="journey_subject_id" value="${escapeHtml(journeySubjectId)}" placeholder="user:8 or anon:uuid" /></label>
+        <div></div>
+        <div></div>
+      </div>
+      <div class="ji-grid-3" style="margin-top:10px">
         <label>Journey Key<input type="text" name="journey_key" value="${escapeHtml(journeyKey)}" /></label>
         <label>Journey ID<input type="number" name="journey_id" min="1" value="${resolvedJourneyId > 0 ? escapeHtml(String(resolvedJourneyId)) : ''}" /></label>
         <label>Limit<input type="number" name="limit" min="1" max="200" value="${escapeHtml(String(limit))}" /></label>
@@ -7265,7 +7290,7 @@ pagesRouter.get('/admin/journey-inspector', async (req: any, res: any) => {
         <button class="btn" type="submit">Apply</button>
         <a class="btn" href="/admin/journey-inspector">Reset</a>
       </div>
-      <div class="field-hint" style="margin-top:6px">Use user or anon identity to inspect journey runs and run-scoped step progress.</div>
+      <div class="field-hint" style="margin-top:6px">Use user/anon identity or normalized journey subject id to inspect journey runs and run-scoped step progress.</div>
     </form>`
 
     if (errors.length > 0) {
@@ -7273,16 +7298,17 @@ pagesRouter.get('/admin/journey-inspector', async (req: any, res: any) => {
     }
 
     if (hasQuery && errors.length === 0) {
-      body += `<div class="section"><div class="section-title">Resolved</div>`
+      body += `<div class="section" id="ji-section-resolved"><div class="ji-section-head"><div class="section-title">Resolved</div><button type="button" class="ji-copy-btn" data-copy-section="resolved" title="Copy section">⧉</button></div>`
       body += `<div class="field-hint">user_id=${resolvedUserId > 0 ? escapeHtml(String(resolvedUserId)) : 'none'}`
       if (resolvedUserEmail) body += ` (${escapeHtml(resolvedUserEmail)})`
       body += ` • anon_key=${anonKey ? escapeHtml(anonKey) : 'none'}`
+      body += ` • journey_subject_id=${journeySubjectId ? escapeHtml(journeySubjectId) : 'none'}`
       body += ` • journey_id=${resolvedJourneyId > 0 ? escapeHtml(String(resolvedJourneyId)) : 'any'}`
       body += ` • journey_key=${resolvedJourneyKey ? escapeHtml(resolvedJourneyKey) : 'any'}`
       if (journeyName) body += ` (${escapeHtml(journeyName)})`
       body += `</div></div>`
 
-      body += `<div class="section"><div class="section-title">Selected Run Summary</div>`
+      body += `<div class="section" id="ji-section-summary"><div class="ji-section-head"><div class="section-title">Selected Run Summary</div><button type="button" class="ji-copy-btn" data-copy-section="summary" title="Copy section">⧉</button></div>`
       if (!selectedInstanceId || !selectedInstance) {
         body += `<div class="field-hint">No run selected.</div>`
       } else {
@@ -7293,6 +7319,7 @@ pagesRouter.get('/admin/journey-inspector', async (req: any, res: any) => {
         body += `<div class="ji-summary-item"><div class="ji-summary-label">Run ID</div><div class="ji-summary-value">${escapeHtml(String(selectedInstance.id || ''))}</div></div>`
         body += `<div class="ji-summary-item"><div class="ji-summary-label">Journey</div><div class="ji-summary-value">#${escapeHtml(String(selectedInstance.journey_id || ''))} ${escapeHtml(String(selectedInstance.journey_key || ''))}</div></div>`
         body += `<div class="ji-summary-item"><div class="ji-summary-label">State</div><div class="ji-summary-value">${escapeHtml(String(selectedInstance.state || ''))}</div></div>`
+        body += `<div class="ji-summary-item"><div class="ji-summary-label">Subject</div><div class="ji-summary-value">${escapeHtml(String(selectedInstance.journey_subject_id || '-'))}</div></div>`
         const selectedCurrentStepOrder = Number(selectedInstance.current_step_order || 0)
         let selectedCurrentStepLabel = selectedCurrentStepOrder > 0 ? `STEP ${selectedCurrentStepOrder}` : '-'
         if (selectedCurrentStepOrder <= 0 && selectedJourneyActiveSteps.length > 0) {
@@ -7322,18 +7349,19 @@ pagesRouter.get('/admin/journey-inspector', async (req: any, res: any) => {
       }
       body += `</div>`
 
-      body += `<div class="section"><div class="section-title">Journey Instances</div><div class="ji-table-wrap">`
+      body += `<div class="section" id="ji-section-instances"><div class="ji-section-head"><div class="section-title">Journey Instances</div><button type="button" class="ji-copy-btn" data-copy-section="instances" title="Copy section">⧉</button></div><div class="ji-table-wrap">`
       body += `<table><thead><tr>
-        <th>ID</th><th>Journey</th><th>Identity</th><th>State</th><th>Current Step</th><th>Completed</th><th>Metadata</th><th>Updated</th><th></th>
+        <th>ID</th><th>Journey</th><th>Identity</th><th>Subject</th><th>State</th><th>Current Step</th><th>Completed</th><th>Metadata</th><th>Updated</th><th></th>
       </tr></thead><tbody>`
       if (instances.length === 0) {
-        body += `<tr><td colspan="9" class="field-hint">No instances found.</td></tr>`
+        body += `<tr><td colspan="10" class="field-hint">No instances found.</td></tr>`
       } else {
         for (const row of instances) {
           const query = new URLSearchParams()
           if (userEmail) query.set('user_email', userEmail)
           if (resolvedUserId > 0) query.set('user_id', String(resolvedUserId))
           if (anonKey) query.set('anon_key', anonKey)
+          if (journeySubjectId) query.set('journey_subject_id', journeySubjectId)
           if (resolvedJourneyId > 0) query.set('journey_id', String(resolvedJourneyId))
           if (resolvedJourneyKey) query.set('journey_key', resolvedJourneyKey)
           query.set('limit', String(limit))
@@ -7345,6 +7373,7 @@ pagesRouter.get('/admin/journey-inspector', async (req: any, res: any) => {
             <td>${escapeHtml(String(row.id))}</td>
             <td>#${escapeHtml(String(row.journey_id || ''))} ${escapeHtml(String(row.journey_key || ''))}</td>
             <td>${escapeHtml(String(row.identity_type || ''))}:${escapeHtml(String(row.identity_key || ''))}</td>
+            <td>${escapeHtml(String(row.journey_subject_id || '-'))}</td>
             <td>${escapeHtml(String(row.state || ''))}</td>
             <td>${Number(row.current_step_order || 0) > 0 ? `STEP ${escapeHtml(String(row.current_step_order))}` : '-'}</td>
             <td>${escapeHtml(completedLabel || '-')}</td>
@@ -7356,7 +7385,7 @@ pagesRouter.get('/admin/journey-inspector', async (req: any, res: any) => {
       }
       body += `</tbody></table></div></div>`
 
-      body += `<div class="section"><div class="section-title">Step Progress (Selected Run)</div>`
+      body += `<div class="section" id="ji-section-progress"><div class="ji-section-head"><div class="section-title">Step Progress (Selected Run)</div><button type="button" class="ji-copy-btn" data-copy-section="progress" title="Copy section">⧉</button></div>`
       if (!selectedInstanceId) {
         body += `<div class="field-hint">No run selected.</div>`
       } else {
@@ -7384,10 +7413,79 @@ pagesRouter.get('/admin/journey-inspector', async (req: any, res: any) => {
       }
       body += `</div>`
     } else if (!hasQuery) {
-      body += `<div class="section"><div class="field-hint">Enter user email/user id or anon key, then apply filters.</div></div>`
+      body += `<div class="section"><div class="field-hint">Enter user email/user id, anon key, or journey subject id, then apply filters.</div></div>`
     }
 
-    body += `</div>`
+    body += `<script>
+      (function () {
+        function t(el) { return String((el && el.textContent) || '').trim(); }
+        function sectionByKey(key) {
+          var map = { resolved: 'ji-section-resolved', summary: 'ji-section-summary', instances: 'ji-section-instances', progress: 'ji-section-progress' };
+          return document.getElementById(map[key] || '');
+        }
+        function linesFromSection(section) {
+          var lines = [];
+          var titleEl = section.querySelector('.section-title');
+          if (titleEl) lines.push(t(titleEl));
+          var summaryItems = section.querySelectorAll('.ji-summary-item');
+          summaryItems.forEach(function (item) {
+            var label = t(item.querySelector('.ji-summary-label'));
+            var value = t(item.querySelector('.ji-summary-value'));
+            if (label) lines.push(label + ': ' + (value || '-'));
+          });
+          var hints = section.querySelectorAll('.field-hint');
+          hints.forEach(function (h) {
+            var text = t(h);
+            if (text) lines.push(text);
+          });
+          var tables = section.querySelectorAll('table');
+          tables.forEach(function (table) {
+            var headers = Array.prototype.map.call(table.querySelectorAll('thead th'), function (th) { return t(th); });
+            var rows = table.querySelectorAll('tbody tr');
+            rows.forEach(function (row) {
+              var cells = row.querySelectorAll('td');
+              if (!cells.length) return;
+              var pairs = [];
+              for (var i = 0; i < cells.length; i += 1) {
+                var h = headers[i] || ('col_' + (i + 1));
+                var v = t(cells[i]);
+                if (h) pairs.push(h + ': ' + (v || '-'));
+              }
+              if (pairs.length) lines.push(pairs.join(' | '));
+            });
+          });
+          return lines.filter(Boolean).join('\\n');
+        }
+        async function copySection(key, btn) {
+          var section = sectionByKey(key);
+          if (!section) return;
+          var payload = linesFromSection(section);
+          if (!payload) return;
+          var prev = btn ? btn.textContent : '';
+          try {
+            await navigator.clipboard.writeText(payload);
+            if (btn) { btn.textContent = '✓'; setTimeout(function () { btn.textContent = prev; }, 900); }
+          } catch (_) {
+            var ta = document.createElement('textarea');
+            ta.value = payload;
+            ta.style.position = 'fixed';
+            ta.style.left = '-10000px';
+            document.body.appendChild(ta);
+            ta.focus();
+            ta.select();
+            try { document.execCommand('copy'); } catch (_) {}
+            document.body.removeChild(ta);
+            if (btn) { btn.textContent = '✓'; setTimeout(function () { btn.textContent = prev; }, 900); }
+          }
+        }
+        document.querySelectorAll('.ji-copy-btn[data-copy-section]').forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            var key = btn.getAttribute('data-copy-section') || '';
+            copySection(key, btn);
+          });
+        });
+      })();
+    </script></div>`
     const doc = renderAdminPage({ title: 'Journey Inspector', bodyHtml: body, active: 'journey_inspector' })
     res.set('Content-Type', 'text/html; charset=utf-8')
     return res.send(doc)
@@ -8740,6 +8838,18 @@ pagesRouter.get('/admin/dev-tools', async (req: any, res: any) => {
     </form>`
   )
   toolCard(
+    'Clear Journey State (Journey + Subject)',
+    `<form method="post" action="/admin/dev-tools/clear-journey-state-subject" style="margin:0" onsubmit="return confirm('Clear journey state for one journey + journey_subject_id?')">
+      ${addCsrf}
+      <div class="dt-grid-2">
+        <label>Journey ID<input type="number" name="journey_id" min="1" required /></label>
+        <label>Journey Subject ID<input type="text" name="journey_subject_id" maxlength="160" required placeholder="user:8 or anon:uuid" /></label>
+      </div>
+      <button class="btn dt-btn-danger" type="submit">Run</button>
+      <div class="field-hint" style="margin-top:6px">Clears instances/progress by normalized subject id. For user subjects, also clears suppressions for messages used by that journey.</div>
+    </form>`
+  )
+  toolCard(
     'Force Re-entry (Create Active Run)',
     `<form method="post" action="/admin/dev-tools/force-journey-reentry" style="margin:0" onsubmit="return confirm('Force a new active journey run for this identity?')">
       ${addCsrf}
@@ -8846,6 +8956,57 @@ pagesRouter.post('/admin/dev-tools/clear-journey-state-user', async (req: any, r
   }
 })
 
+pagesRouter.post('/admin/dev-tools/clear-journey-state-subject', async (req: any, res: any) => {
+  if (!isAdminDevToolsEnabled()) return res.status(404).send('Not found')
+  const db = getPool()
+  const journeyId = Number(req.body?.journey_id || 0)
+  const journeySubjectId = String(req.body?.journey_subject_id || '').trim()
+  if (!Number.isFinite(journeyId) || journeyId <= 0) return res.redirect('/admin/dev-tools?error=invalid_journey_id')
+  if (!journeySubjectId) return res.redirect('/admin/dev-tools?error=invalid_journey_subject_id')
+  try {
+    const [instanceResult] = await db.query(
+      `DELETE FROM feed_message_journey_instances WHERE journey_id = ? AND journey_subject_id = ?`,
+      [Math.round(journeyId), journeySubjectId]
+    )
+    const [userProgressResult] = await db.query(
+      `DELETE FROM feed_user_message_journey_progress WHERE journey_id = ? AND journey_subject_id = ?`,
+      [Math.round(journeyId), journeySubjectId]
+    )
+    const [anonProgressResult] = await db.query(
+      `DELETE FROM feed_anon_message_journey_progress WHERE journey_id = ? AND journey_subject_id = ?`,
+      [Math.round(journeyId), journeySubjectId]
+    )
+    let suppressions = 0
+    const m = /^user:(\d+)$/i.exec(journeySubjectId)
+    if (m) {
+      const userId = Number(m[1] || 0)
+      if (Number.isFinite(userId) && userId > 0) {
+        const [suppressionsResult] = await db.query(
+          `DELETE s
+             FROM feed_message_user_suppressions s
+            WHERE s.user_id = ?
+              AND s.campaign_key IN (
+                SELECT DISTINCT m.campaign_key
+                  FROM feed_message_journey_steps st
+                  JOIN feed_messages m ON m.id = st.message_id
+                 WHERE st.journey_id = ?
+                   AND m.campaign_key IS NOT NULL
+                   AND m.campaign_key <> ''
+              )`,
+          [Math.round(userId), Math.round(journeyId)]
+        )
+        suppressions = Number((suppressionsResult as any)?.affectedRows || 0)
+      }
+    }
+    const instances = Number((instanceResult as any)?.affectedRows || 0)
+    const userProgress = Number((userProgressResult as any)?.affectedRows || 0)
+    const anonProgress = Number((anonProgressResult as any)?.affectedRows || 0)
+    return res.redirect(`/admin/dev-tools?notice=${encodeURIComponent(`Cleared journey+subject state instances=${instances}, user_progress=${userProgress}, anon_progress=${anonProgress}, suppressions=${suppressions}`)}`)
+  } catch (err: any) {
+    return res.redirect(`/admin/dev-tools?error=${encodeURIComponent(String(err?.message || 'clear_journey_state_subject_failed'))}`)
+  }
+})
+
 pagesRouter.post('/admin/dev-tools/force-journey-reentry', async (req: any, res: any) => {
   if (!isAdminDevToolsEnabled()) return res.status(404).send('Not found')
   const db = getPool()
@@ -8856,6 +9017,7 @@ pagesRouter.post('/admin/dev-tools/force-journey-reentry', async (req: any, res:
   if (!Number.isFinite(journeyId) || journeyId <= 0) return res.redirect('/admin/dev-tools?error=invalid_journey_id')
   if (!identityType) return res.redirect('/admin/dev-tools?error=invalid_identity_type')
   if (!identityKey) return res.redirect('/admin/dev-tools?error=invalid_identity_key')
+  const journeySubjectId = `${identityType}:${identityKey}`
   try {
     const [abandonResult] = await db.query(
       `UPDATE feed_message_journey_instances
@@ -8872,9 +9034,9 @@ pagesRouter.post('/admin/dev-tools/force-journey-reentry', async (req: any, res:
     )
     const [insertResult]: any = await db.query(
       `INSERT INTO feed_message_journey_instances
-        (journey_id, identity_type, identity_key, state, current_step_id, completed_reason, completed_event_key, first_seen_at, last_seen_at, completed_at, metadata_json)
-       VALUES (?, ?, ?, 'active', NULL, NULL, NULL, UTC_TIMESTAMP(), UTC_TIMESTAMP(), NULL, JSON_OBJECT('source','dev_tool_force_reentry','created_at',UTC_TIMESTAMP()))`,
-      [Math.round(journeyId), identityType, identityKey]
+        (journey_id, identity_type, identity_key, journey_subject_id, state, current_step_id, completed_reason, completed_event_key, first_seen_at, last_seen_at, completed_at, metadata_json)
+       VALUES (?, ?, ?, ?, 'active', NULL, NULL, NULL, UTC_TIMESTAMP(), UTC_TIMESTAMP(), NULL, JSON_OBJECT('source','dev_tool_force_reentry','journey_subject_id',?, 'created_at',UTC_TIMESTAMP()))`,
+      [Math.round(journeyId), identityType, identityKey, journeySubjectId, journeySubjectId]
     )
     const abandoned = Number((abandonResult as any)?.affectedRows || 0)
     const newId = Number(insertResult?.insertId || 0)
