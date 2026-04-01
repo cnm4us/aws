@@ -25,6 +25,11 @@ import { getLogger } from '../lib/logger'
 export const feedMessagesRouter = Router()
 const feedMessagesLogger = getLogger({ component: 'routes.feed_messages' })
 const MESSAGE_DEBUG_ENABLED = String(process.env.MESSAGE_DEBUG || '0') === '1'
+const ANON_SESSION_SLIDING_ENABLED = (() => {
+  const raw = String(process.env.ANON_SESSION_SLIDING || '').trim().toLowerCase()
+  if (raw) return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on'
+  return String(process.env.NODE_ENV || '').toLowerCase() !== 'production'
+})()
 const feedMessageDecisionPaths = ['/api/feed/message-decision']
 const feedMessageFetchPaths = ['/api/feed/messages/:id']
 const feedMessageEventPaths = ['/api/feed/message-events']
@@ -165,7 +170,14 @@ async function handleDecision(req: any, res: any, next: any) {
       userId: req.user?.id ? Number(req.user.id) : null,
     })
 
-    if (viewerState === 'anonymous' && (createdSessionId || !cookieSessionId || cookieSessionId !== input.sessionId)) {
+    const shouldSetAnonCookie = viewerState === 'anonymous' && (
+      createdSessionId ||
+      !cookieSessionId ||
+      cookieSessionId !== input.sessionId ||
+      (ANON_SESSION_SLIDING_ENABLED && cookieSessionId === input.sessionId)
+    )
+
+    if (shouldSetAnonCookie) {
       const protoHeader = String(req.headers['x-forwarded-proto'] || '')
       const secure = protoHeader.toLowerCase() === 'https' || req.secure
       res.cookie(ANON_SESSION_COOKIE, input.sessionId, {
