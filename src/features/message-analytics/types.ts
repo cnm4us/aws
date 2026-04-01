@@ -135,4 +135,27 @@ export type MessageAnalyticsReport = {
   kpis: MessageAnalyticsKpis
   byMessage: MessageAnalyticsMessageRow[]
   byDay: MessageAnalyticsDayRow[]
+  journeyRuns?: {
+    totals: {
+      starts: number
+      completed: number
+      abandoned: number
+      expired: number
+    }
+    byJourney: Array<{
+      journeyId: number
+      journeyKey: string
+      starts: number
+      completed: number
+      abandoned: number
+      expired: number
+    }>
+    stepFunnel: Array<{
+      journeyId: number
+      journeyKey: string
+      stepOrder: number
+      stepKey: string
+      completedRuns: number
+    }>
+  }
 }

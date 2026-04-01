@@ -585,12 +585,15 @@ export async function getMessageAnalyticsReportForAdmin(input: {
   return tracer.startActiveSpan('message.analytics.query', { attributes: { 'app.operation': 'analytics.query', 'app.operation_detail': 'message.analytics.query' } }, async (span) => {
     try {
       const range = normalizeReportRange(input)
-      const [totalsRaw, byMessageRaw, byDayRaw, uniqueTotalsRaw, uniqueByMessageRaw] = await Promise.all([
+      const [totalsRaw, byMessageRaw, byDayRaw, uniqueTotalsRaw, uniqueByMessageRaw, journeyRunTotalsRaw, journeyRunByJourneyRaw, journeyStepFunnelRaw] = await Promise.all([
         repo.getTotalsFromDaily(range),
         repo.getByMessageFromDaily(range),
         repo.getByDayFromDaily(range),
         repo.getUniqueTotalsFromRaw(range),
         repo.getUniqueByMessageFromRaw(range),
+        repo.getJourneyRunTotals(range),
+        repo.getJourneyRunByJourney(range),
+        repo.getJourneyStepFunnel(range),
       ])
 
       const uniqueByMessage = new Map<number, any>()
@@ -686,6 +689,30 @@ export async function getMessageAnalyticsReportForAdmin(input: {
         }
       })
 
+      const journeyRuns = {
+        totals: {
+          starts: coerceInt((journeyRunTotalsRaw as any).starts),
+          completed: coerceInt((journeyRunTotalsRaw as any).completed),
+          abandoned: coerceInt((journeyRunTotalsRaw as any).abandoned),
+          expired: coerceInt((journeyRunTotalsRaw as any).expired),
+        },
+        byJourney: (journeyRunByJourneyRaw || []).map((row: any) => ({
+          journeyId: coerceInt(row.journey_id),
+          journeyKey: row.journey_key ? String(row.journey_key) : '',
+          starts: coerceInt(row.starts),
+          completed: coerceInt(row.completed),
+          abandoned: coerceInt(row.abandoned),
+          expired: coerceInt(row.expired),
+        })),
+        stepFunnel: (journeyStepFunnelRaw || []).map((row: any) => ({
+          journeyId: coerceInt(row.journey_id),
+          journeyKey: row.journey_key ? String(row.journey_key) : '',
+          stepOrder: coerceInt(row.step_order),
+          stepKey: row.step_key ? String(row.step_key) : '',
+          completedRuns: coerceInt(row.completed_runs),
+        })),
+      }
+
       span.setAttributes({
         ...(range.surface ? { 'app.surface': range.surface } : {}),
         ...(range.messageId != null ? { 'app.message_id': String(range.messageId) } : {}),
@@ -694,6 +721,8 @@ export async function getMessageAnalyticsReportForAdmin(input: {
         ...(range.messageCampaignCategory ? { 'app.message_campaign_category': range.messageCampaignCategory } : {}),
         ...(range.viewerState ? { 'message.analytics.viewer_state': range.viewerState } : {}),
         'message.analytics.result_rows': byMessage.length,
+        'journey.analytics.by_journey_rows': journeyRuns.byJourney.length,
+        'journey.analytics.step_funnel_rows': journeyRuns.stepFunnel.length,
         'app.outcome': 'success',
       })
       span.setStatus({ code: SpanStatusCode.OK })
@@ -711,6 +740,8 @@ export async function getMessageAnalyticsReportForAdmin(input: {
           range_from_date: range.fromDate,
           range_to_date: range.toDate,
           result_rows: byMessage.length,
+          journey_run_rows: journeyRuns.byJourney.length,
+          journey_funnel_rows: journeyRuns.stepFunnel.length,
         },
         'message.analytics.query'
       )
@@ -729,6 +760,7 @@ export async function getMessageAnalyticsReportForAdmin(input: {
         kpis,
         byMessage,
         byDay,
+        journeyRuns,
       }
     } catch (err: any) {
       span.recordException(err)

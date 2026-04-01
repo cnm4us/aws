@@ -225,6 +225,10 @@ type EligibleMessageCandidate = {
   journeyStepKey?: string | null
   journeyRulesetId?: number | null
   journeyCampaignCategory?: string | null
+  journeyInstanceId?: number | null
+  journeyRunState?: 'active' | 'completed' | 'abandoned' | 'expired' | null
+  journeyReentryPolicy?: JourneyReentryPolicy | null
+  journeyReentryTriggered?: boolean
   deliveryContext?: 'standalone' | 'journey'
   surfaceTargeting?: Array<{
     surface: MessageDecisionSurface
@@ -683,12 +687,33 @@ async function applyJourneyGating(params: {
     }
     const activeStepByJourney = new Map<number, (typeof steps)[number]>()
     for (const [journeyId, journeySteps] of stepsByJourney.entries()) {
+      if (terminalJourneys.has(journeyId) && !restartJourneys.has(journeyId)) continue
       const sorted = journeySteps
         .slice()
         .sort((a, b) => Number(a.step_order) - Number(b.step_order) || Number(a.id) - Number(b.id))
       let next = sorted.find((step) => !completedByJourneyStep.has(`${journeyId}:${Number(step.id)}`))
       if (!next && restartJourneys.has(journeyId)) next = sorted[0]
       if (next) activeStepByJourney.set(journeyId, next)
+    }
+    for (const [journeyId, step] of activeStepByJourney.entries()) {
+      if (activeInstanceByJourney.has(journeyId)) continue
+      try {
+        const created = await messageJourneysRepo.createJourneyInstance({
+          journeyId,
+          identityType: 'anon',
+          identityKey: anonVisitorId,
+          state: 'active',
+          currentStepId: Number(step.id),
+          firstSeenAt: toUtcDateTimeFromMs(nowMs()),
+          lastSeenAt: toUtcDateTimeFromMs(nowMs()),
+          metadataJson: JSON.stringify({
+            source: 'journey_decision',
+            reason: 'ensure_active_instance',
+            created_at: new Date().toISOString(),
+          }),
+        })
+        activeInstanceByJourney.set(journeyId, created)
+      } catch {}
     }
 
     for (const c of inputCandidates) {
@@ -758,9 +783,12 @@ async function applyJourneyGating(params: {
         continue
       }
       const step = matches[0] as any
+      const journeyId = Number(step.journey_id)
+      const activeInstance = activeInstanceByJourney.get(journeyId) || null
+      const policy = journeyPolicyMap.get(journeyId) || null
       eligible.push({
         ...c,
-        journeyId: Number(step.journey_id),
+        journeyId,
         journeyStepId: Number(step.id),
         journeyStepOrder: Number(step.step_order || 0),
         journeyStepKey: String(step.step_key || ''),
@@ -769,6 +797,16 @@ async function applyJourneyGating(params: {
           step.journey_campaign_category == null || String(step.journey_campaign_category).trim() === ''
             ? null
             : String(step.journey_campaign_category).trim().toLowerCase(),
+        journeyInstanceId:
+          activeInstance && Number.isFinite(Number((activeInstance as any).id)) && Number((activeInstance as any).id) > 0
+            ? Number((activeInstance as any).id)
+            : null,
+        journeyRunState:
+          activeInstance && String((activeInstance as any).state || '').trim()
+            ? (String((activeInstance as any).state).trim().toLowerCase() as any)
+            : 'active',
+        journeyReentryPolicy: policy?.reentryPolicy || null,
+        journeyReentryTriggered: restartJourneys.has(journeyId),
         deliveryContext: 'journey',
       })
     }
@@ -885,12 +923,33 @@ async function applyJourneyGating(params: {
 
   const activeStepByJourney = new Map<number, (typeof steps)[number]>()
   for (const [journeyId, journeySteps] of stepsByJourney.entries()) {
+    if (terminalJourneys.has(journeyId) && !restartJourneys.has(journeyId)) continue
     const sorted = journeySteps
       .slice()
       .sort((a, b) => Number(a.step_order) - Number(b.step_order) || Number(a.id) - Number(b.id))
     let next = sorted.find((step) => !completedByJourneyStep.has(`${journeyId}:${Number(step.id)}`))
     if (!next && restartJourneys.has(journeyId)) next = sorted[0]
     if (next) activeStepByJourney.set(journeyId, next)
+  }
+  for (const [journeyId, step] of activeStepByJourney.entries()) {
+    if (activeInstanceByJourney.has(journeyId)) continue
+    try {
+      const created = await messageJourneysRepo.createJourneyInstance({
+        journeyId,
+        identityType: 'user',
+        identityKey: String(userId),
+        state: 'active',
+        currentStepId: Number(step.id),
+        firstSeenAt: toUtcDateTimeFromMs(nowMs()),
+        lastSeenAt: toUtcDateTimeFromMs(nowMs()),
+        metadataJson: JSON.stringify({
+          source: 'journey_decision',
+          reason: 'ensure_active_instance',
+          created_at: new Date().toISOString(),
+        }),
+      })
+      activeInstanceByJourney.set(journeyId, created)
+    } catch {}
   }
 
   for (const c of inputCandidates) {
@@ -962,9 +1021,12 @@ async function applyJourneyGating(params: {
     }
 
     const step = matches[0]
+    const journeyId = Number((step as any).journey_id)
+    const activeInstance = activeInstanceByJourney.get(journeyId) || null
+    const policy = journeyPolicyMap.get(journeyId) || null
     eligible.push({
       ...c,
-      journeyId: Number(step.journey_id),
+      journeyId,
       journeyStepId: Number(step.id),
       journeyStepOrder: Number(step.step_order),
       journeyStepKey: String(step.step_key || ''),
@@ -973,6 +1035,16 @@ async function applyJourneyGating(params: {
         step.journey_campaign_category == null || String(step.journey_campaign_category).trim() === ''
           ? null
           : String(step.journey_campaign_category).trim().toLowerCase(),
+      journeyInstanceId:
+        activeInstance && Number.isFinite(Number((activeInstance as any).id)) && Number((activeInstance as any).id) > 0
+          ? Number((activeInstance as any).id)
+          : null,
+      journeyRunState:
+        activeInstance && String((activeInstance as any).state || '').trim()
+          ? (String((activeInstance as any).state).trim().toLowerCase() as any)
+          : 'active',
+      journeyReentryPolicy: policy?.reentryPolicy || null,
+      journeyReentryTriggered: restartJourneys.has(journeyId),
       deliveryContext: 'journey',
     })
   }
@@ -1082,6 +1154,10 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
   let selectedJourneyStepKey: string | null = null
   let selectedJourneyRulesetId: number | null = null
   let selectedJourneyCampaignCategory: string | null = null
+  let selectedJourneyInstanceId: number | null = null
+  let selectedJourneyRunState: 'active' | 'completed' | 'abandoned' | 'expired' | null = null
+  let selectedJourneyReentryPolicy: JourneyReentryPolicy | null = null
+  let selectedJourneyReentryTriggered = false
   let selectedDeliveryContext: 'standalone' | 'journey' | null = null
   let selectedTargetingMode: 'all' | 'selected' | null = null
   const selectedTargetType: 'global_feed' | 'group_feed' | 'channel_feed' = resolveTargetTypeForSurface(input.surface)
@@ -1302,6 +1378,19 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
               selected.journeyCampaignCategory == null || String(selected.journeyCampaignCategory).trim() === ''
                 ? null
                 : String(selected.journeyCampaignCategory).trim().toLowerCase()
+            selectedJourneyInstanceId =
+              selected.journeyInstanceId == null || !Number.isFinite(Number(selected.journeyInstanceId))
+                ? null
+                : Number(selected.journeyInstanceId)
+            selectedJourneyRunState =
+              selected.journeyRunState == null
+                ? null
+                : (String(selected.journeyRunState).trim().toLowerCase() as any)
+            selectedJourneyReentryPolicy =
+              selected.journeyReentryPolicy == null
+                ? null
+                : (String(selected.journeyReentryPolicy).trim().toLowerCase() as JourneyReentryPolicy)
+            selectedJourneyReentryTriggered = !!selected.journeyReentryTriggered
             selectedDeliveryContext = selected.deliveryContext === 'journey' ? 'journey' : 'standalone'
             selectedTargetingMode = resolveSurfaceTargetingMode(selected.surfaceTargeting || [], input.surface)
             selectedTargetMatch = true
@@ -1372,6 +1461,10 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
         selectedJourneyStepKey,
         selectedJourneyRulesetId,
         selectedJourneyCampaignCategory,
+        selectedJourneyInstanceId,
+        selectedJourneyRunState,
+        selectedJourneyReentryPolicy,
+        selectedJourneyReentryTriggered,
         selectedDeliveryContext,
         surfaceContext: input.surface,
         targetType: selectedTargetType,

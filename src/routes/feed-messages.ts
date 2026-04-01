@@ -271,6 +271,19 @@ async function handleDecision(req: any, res: any, next: any) {
           selectionDebug.selectedJourneyCampaignCategory != null && String(selectionDebug.selectedJourneyCampaignCategory).trim() !== ''
             ? String(selectionDebug.selectedJourneyCampaignCategory).trim().toLowerCase()
             : null,
+        message_journey_instance_id:
+          selectionDebug.selectedJourneyInstanceId != null && Number.isFinite(Number(selectionDebug.selectedJourneyInstanceId))
+            ? Number(selectionDebug.selectedJourneyInstanceId)
+            : null,
+        message_journey_run_state:
+          selectionDebug.selectedJourneyRunState != null && String(selectionDebug.selectedJourneyRunState).trim() !== ''
+            ? String(selectionDebug.selectedJourneyRunState).trim().toLowerCase()
+            : null,
+        message_journey_reentry_policy:
+          selectionDebug.selectedJourneyReentryPolicy != null && String(selectionDebug.selectedJourneyReentryPolicy).trim() !== ''
+            ? String(selectionDebug.selectedJourneyReentryPolicy).trim().toLowerCase()
+            : null,
+        message_journey_reentry_triggered: !!selectionDebug.selectedJourneyReentryTriggered,
         message_delivery_context:
           selectionDebug.selectedDeliveryContext === 'journey'
             ? 'journey'
@@ -321,6 +334,10 @@ async function handleDecision(req: any, res: any, next: any) {
       const journeyStepKeyRaw = (decision.debug as any)?.selection?.selectedJourneyStepKey
       const journeyRulesetIdRaw = (decision.debug as any)?.selection?.selectedJourneyRulesetId
       const journeyCampaignCategoryRaw = (decision.debug as any)?.selection?.selectedJourneyCampaignCategory
+      const journeyInstanceIdRaw = (decision.debug as any)?.selection?.selectedJourneyInstanceId
+      const journeyRunStateRaw = (decision.debug as any)?.selection?.selectedJourneyRunState
+      const journeyReentryPolicyRaw = (decision.debug as any)?.selection?.selectedJourneyReentryPolicy
+      const journeyReentryTriggeredRaw = !!(decision.debug as any)?.selection?.selectedJourneyReentryTriggered
       const deliveryContextRaw = String((decision.debug as any)?.selection?.selectedDeliveryContext || '').trim().toLowerCase()
       const journeyRejectedCount = Number((decision.debug as any)?.selection?.journeyRejectedCount || 0)
       const candidateCountBeforeJourney = Number((decision.debug as any)?.selection?.candidateCountBeforeJourney || 0)
@@ -350,6 +367,16 @@ async function handleDecision(req: any, res: any, next: any) {
       if (journeyCampaignCategoryRaw != null && String(journeyCampaignCategoryRaw).trim() !== '') {
         span.setAttribute('app.journey_campaign_category', String(journeyCampaignCategoryRaw).trim().toLowerCase())
       }
+      if (journeyInstanceIdRaw != null && Number.isFinite(Number(journeyInstanceIdRaw)) && Number(journeyInstanceIdRaw) > 0) {
+        span.setAttribute('app.journey_instance_id', String(Math.round(Number(journeyInstanceIdRaw))))
+      }
+      if (journeyRunStateRaw != null && String(journeyRunStateRaw).trim() !== '') {
+        span.setAttribute('app.journey_run_state', String(journeyRunStateRaw).trim().toLowerCase())
+      }
+      if (journeyReentryPolicyRaw != null && String(journeyReentryPolicyRaw).trim() !== '') {
+        span.setAttribute('app.journey_reentry_policy', String(journeyReentryPolicyRaw).trim().toLowerCase())
+      }
+      span.setAttribute('app.journey_reentry_triggered', journeyReentryTriggeredRaw ? 'true' : 'false')
       if (deliveryContextRaw === 'journey' || deliveryContextRaw === 'standalone') {
         span.setAttribute('app.delivery_context', deliveryContextRaw)
       }

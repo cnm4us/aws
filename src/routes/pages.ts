@@ -7925,6 +7925,44 @@ pagesRouter.get('/admin/message-analytics', async (req: any, res: any) => {
       body += '</tbody></table></div>'
     }
 
+    if ((report as any).journeyRuns) {
+      const jr = (report as any).journeyRuns
+      body += '<div class="section" style="margin-top:12px"><div class="section-title">Journey Runs</div>'
+      body += `<div style="display:flex; flex-wrap:wrap; gap:12px">
+        <div class="pill">Starts: ${Number(jr?.totals?.starts || 0)}</div>
+        <div class="pill">Completed: ${Number(jr?.totals?.completed || 0)}</div>
+        <div class="pill">Abandoned: ${Number(jr?.totals?.abandoned || 0)}</div>
+        <div class="pill">Expired: ${Number(jr?.totals?.expired || 0)}</div>
+      </div>`
+      body += '</div>'
+      if (Array.isArray(jr.byJourney) && jr.byJourney.length) {
+        body += '<div class="section" style="margin-top:12px"><div class="section-title">Journey Runs By Journey</div>'
+        body += '<table><thead><tr><th>Journey</th><th>Starts</th><th>Completed</th><th>Abandoned</th><th>Expired</th></tr></thead><tbody>'
+        for (const row of jr.byJourney) {
+          body += `<tr>
+            <td>${escapeHtml(`${String(row.journeyKey || '')} [#${Number(row.journeyId || 0)}]`)}</td>
+            <td>${Number(row.starts || 0)}</td>
+            <td>${Number(row.completed || 0)}</td>
+            <td>${Number(row.abandoned || 0)}</td>
+            <td>${Number(row.expired || 0)}</td>
+          </tr>`
+        }
+        body += '</tbody></table></div>'
+      }
+      if (Array.isArray(jr.stepFunnel) && jr.stepFunnel.length) {
+        body += '<div class="section" style="margin-top:12px"><div class="section-title">Journey Step Funnel (Completed Runs)</div>'
+        body += '<table><thead><tr><th>Journey</th><th>Step</th><th>Completed Runs</th></tr></thead><tbody>'
+        for (const row of jr.stepFunnel) {
+          body += `<tr>
+            <td>${escapeHtml(`${String(row.journeyKey || '')} [#${Number(row.journeyId || 0)}]`)}</td>
+            <td>${escapeHtml(`${Number(row.stepOrder || 0)} — ${String(row.stepKey || '')}`)}</td>
+            <td>${Number(row.completedRuns || 0)}</td>
+          </tr>`
+        }
+        body += '</tbody></table></div>'
+      }
+    }
+
     const doc = renderAdminPage({ title: 'Message Analytics', bodyHtml: body, active: 'message_analytics' })
     res.set('Content-Type', 'text/html; charset=utf-8')
     return res.send(doc)

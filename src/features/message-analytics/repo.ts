@@ -322,3 +322,125 @@ export async function purgeExpiredData(input?: { rawRetentionDays?: number; roll
   await db.query(`DELETE FROM feed_message_events WHERE occurred_at < (UTC_TIMESTAMP() - INTERVAL ? DAY)`, [rawDays])
   await db.query(`DELETE FROM feed_message_daily_stats WHERE date_utc < (UTC_DATE() - INTERVAL ? DAY)`, [rollupDays])
 }
+
+export async function getJourneyRunTotals(filter: MessageAnalyticsQueryFilter): Promise<any> {
+  const db = getPool()
+  const where: string[] = ['1=1']
+  const args: any[] = []
+  if (filter.surface) {
+    where.push('j.applies_to_surface = ?')
+    args.push(filter.surface)
+  }
+  if (filter.messageCampaignCategory) {
+    where.push('j.campaign_category = ?')
+    args.push(filter.messageCampaignCategory)
+  }
+  if (filter.viewerState === 'anonymous') where.push(`i.identity_type = 'anon'`)
+  if (filter.viewerState === 'authenticated') where.push(`i.identity_type = 'user'`)
+  const [rows] = await db.query(
+    `SELECT
+        COALESCE(SUM(CASE WHEN i.created_at >= ? AND i.created_at < ? THEN 1 ELSE 0 END), 0) AS starts,
+        COALESCE(SUM(CASE WHEN i.state = 'completed' AND i.completed_at >= ? AND i.completed_at < ? THEN 1 ELSE 0 END), 0) AS completed,
+        COALESCE(SUM(CASE WHEN i.state = 'abandoned' AND i.completed_at >= ? AND i.completed_at < ? THEN 1 ELSE 0 END), 0) AS abandoned,
+        COALESCE(SUM(CASE WHEN i.state = 'expired' AND i.completed_at >= ? AND i.completed_at < ? THEN 1 ELSE 0 END), 0) AS expired
+      FROM feed_message_journey_instances i
+      INNER JOIN feed_message_journeys j ON j.id = i.journey_id
+      WHERE ${where.join(' AND ')}`,
+    [
+      filter.fromDateTime, filter.toDateTimeExclusive,
+      filter.fromDateTime, filter.toDateTimeExclusive,
+      filter.fromDateTime, filter.toDateTimeExclusive,
+      filter.fromDateTime, filter.toDateTimeExclusive,
+      ...args,
+    ]
+  )
+  return (rows as any[])[0] || {}
+}
+
+export async function getJourneyRunByJourney(filter: MessageAnalyticsQueryFilter): Promise<any[]> {
+  const db = getPool()
+  const where: string[] = ['1=1']
+  const args: any[] = []
+  if (filter.surface) {
+    where.push('j.applies_to_surface = ?')
+    args.push(filter.surface)
+  }
+  if (filter.messageCampaignCategory) {
+    where.push('j.campaign_category = ?')
+    args.push(filter.messageCampaignCategory)
+  }
+  if (filter.viewerState === 'anonymous') where.push(`i.identity_type = 'anon'`)
+  if (filter.viewerState === 'authenticated') where.push(`i.identity_type = 'user'`)
+  const [rows] = await db.query(
+    `SELECT
+        i.journey_id AS journey_id,
+        MAX(j.journey_key) AS journey_key,
+        COALESCE(SUM(CASE WHEN i.created_at >= ? AND i.created_at < ? THEN 1 ELSE 0 END), 0) AS starts,
+        COALESCE(SUM(CASE WHEN i.state = 'completed' AND i.completed_at >= ? AND i.completed_at < ? THEN 1 ELSE 0 END), 0) AS completed,
+        COALESCE(SUM(CASE WHEN i.state = 'abandoned' AND i.completed_at >= ? AND i.completed_at < ? THEN 1 ELSE 0 END), 0) AS abandoned,
+        COALESCE(SUM(CASE WHEN i.state = 'expired' AND i.completed_at >= ? AND i.completed_at < ? THEN 1 ELSE 0 END), 0) AS expired
+      FROM feed_message_journey_instances i
+      INNER JOIN feed_message_journeys j ON j.id = i.journey_id
+      WHERE ${where.join(' AND ')}
+      GROUP BY i.journey_id
+      HAVING starts > 0 OR completed > 0 OR abandoned > 0 OR expired > 0
+      ORDER BY starts DESC, completed DESC, i.journey_id DESC`,
+    [
+      filter.fromDateTime, filter.toDateTimeExclusive,
+      filter.fromDateTime, filter.toDateTimeExclusive,
+      filter.fromDateTime, filter.toDateTimeExclusive,
+      filter.fromDateTime, filter.toDateTimeExclusive,
+      ...args,
+    ]
+  )
+  return rows as any[]
+}
+
+export async function getJourneyStepFunnel(filter: MessageAnalyticsQueryFilter): Promise<any[]> {
+  const db = getPool()
+  const where: string[] = ['1=1']
+  const args: any[] = []
+  if (filter.surface) {
+    where.push('j.applies_to_surface = ?')
+    args.push(filter.surface)
+  }
+  if (filter.messageCampaignCategory) {
+    where.push('j.campaign_category = ?')
+    args.push(filter.messageCampaignCategory)
+  }
+  if (filter.viewerState === 'anonymous') where.push(`i.identity_type = 'anon'`)
+  if (filter.viewerState === 'authenticated') where.push(`i.identity_type = 'user'`)
+  const [rows] = await db.query(
+    `SELECT
+        p.journey_id AS journey_id,
+        MAX(j.journey_key) AS journey_key,
+        s.step_order AS step_order,
+        MAX(s.step_key) AS step_key,
+        COUNT(DISTINCT p.journey_instance_id) AS completed_runs
+      FROM (
+        SELECT journey_id, journey_instance_id, step_id, completed_at
+        FROM feed_user_message_journey_progress
+        WHERE state = 'completed'
+          AND journey_instance_id IS NOT NULL
+          AND completed_at >= ? AND completed_at < ?
+        UNION ALL
+        SELECT journey_id, journey_instance_id, step_id, completed_at
+        FROM feed_anon_message_journey_progress
+        WHERE state = 'completed'
+          AND journey_instance_id IS NOT NULL
+          AND completed_at >= ? AND completed_at < ?
+      ) p
+      INNER JOIN feed_message_journey_instances i ON i.id = p.journey_instance_id
+      INNER JOIN feed_message_journeys j ON j.id = p.journey_id
+      INNER JOIN feed_message_journey_steps s ON s.id = p.step_id
+      WHERE ${where.join(' AND ')}
+      GROUP BY p.journey_id, s.step_order
+      ORDER BY p.journey_id DESC, s.step_order ASC`,
+    [
+      filter.fromDateTime, filter.toDateTimeExclusive,
+      filter.fromDateTime, filter.toDateTimeExclusive,
+      ...args,
+    ]
+  )
+  return rows as any[]
+}
