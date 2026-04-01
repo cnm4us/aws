@@ -311,6 +311,12 @@ async function handleDecision(req: any, res: any, next: any) {
       span.setAttribute('app.surface_context', String((decision.debug as any)?.selection?.surfaceContext || input.surface))
       span.setAttribute('app.operation', 'feed.message.decide')
       span.setAttribute('app.viewer_state', viewerState)
+      const journeySubjectIdRaw = String((decision.debug as any)?.input?.journeySubjectId || '').trim()
+      const journeySubjectTypeRaw = String((decision.debug as any)?.input?.journeySubjectType || '').trim().toLowerCase()
+      if (journeySubjectIdRaw) span.setAttribute('app.journey_subject_id', journeySubjectIdRaw)
+      if (journeySubjectTypeRaw === 'user' || journeySubjectTypeRaw === 'anon') {
+        span.setAttribute('app.journey_subject_type', journeySubjectTypeRaw)
+      }
       span.setAttribute('app.targeting_model', 'ruleset_only')
       span.setAttribute('app.decision_reason', decision.reasonCode)
       span.setAttribute('app.outcome', decision.shouldInsert ? 'shown' : 'blocked')

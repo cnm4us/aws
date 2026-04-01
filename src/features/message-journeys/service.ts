@@ -860,8 +860,8 @@ function mergeInstanceStateByPrecedence(
   const rank = (value: MessageJourneyInstanceState): number => {
     if (value === 'completed') return 4
     if (value === 'expired') return 3
-    if (value === 'abandoned') return 2
-    return 1
+    if (value === 'active') return 2
+    return 1 // abandoned
   }
   return rank(a) >= rank(b) ? a : b
 }
@@ -886,6 +886,14 @@ function minDateTime(a: string | null, b: string | null): string | null {
   if (!a) return b || null
   if (!b) return a
   return a <= b ? a : b
+}
+
+function toMs(value: string | null | undefined): number | null {
+  const v = String(value || '').trim()
+  if (!v) return null
+  const ms = Date.parse(v.includes('T') ? v : `${v.replace(' ', 'T')}Z`)
+  if (!Number.isFinite(ms)) return null
+  return ms
 }
 
 function preferredProgressState(
@@ -1382,6 +1390,31 @@ export async function mergeAnonJourneyStateIntoUserOnAuth(input: {
   for (const journeyId of journeyIds) {
     const sourceInstance = anonInstanceByJourney.get(journeyId) || null
     const existingUserInstance = userInstanceByJourney.get(journeyId) || null
+    const anonJourneyProgress = anonProgressByJourney.get(journeyId) || []
+
+    // Skip churn merges: if anon state/progress was already merged to this user and
+    // there is no anon activity newer than the last merge marker, do nothing.
+    if (sourceInstance && existingUserInstance) {
+      const sourceMeta = parseMetadata(sourceInstance.metadata_json)
+      const mergedToUser = Number(sourceMeta.merged_to_user_id || 0)
+      const mergedAtMs = toMs(sourceMeta.merged_at)
+      if (mergedToUser === userId && mergedAtMs != null) {
+        const sourceUpdatedMs = toMs(sourceInstance.updated_at)
+        let hasPostMergeProgress = false
+        for (const row of anonJourneyProgress) {
+          const meta = parseMetadata((row as any).metadata_json)
+          const rowMergedUser = Number(meta.merged_to_user_id || 0)
+          if (rowMergedUser !== userId) { hasPostMergeProgress = true; break }
+          const rowUpdatedMs = toMs((row as any).updated_at)
+          if (rowUpdatedMs != null && rowUpdatedMs > mergedAtMs) { hasPostMergeProgress = true; break }
+        }
+        const sourceHasNewActivity = sourceUpdatedMs != null && sourceUpdatedMs > mergedAtMs
+        if (!sourceHasNewActivity && !hasPostMergeProgress) {
+          continue
+        }
+      }
+    }
+
     const mergedState = existingUserInstance
       ? mergeInstanceStateByPrecedence(existingUserInstance.state, sourceInstance?.state || 'active')
       : (sourceInstance?.state || 'active')

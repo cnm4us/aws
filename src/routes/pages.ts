@@ -7159,9 +7159,11 @@ pagesRouter.get('/admin/journey-inspector', async (req: any, res: any) => {
         `SELECT i.id, i.journey_id, i.identity_type, i.identity_key, i.state, i.current_step_id,
                 i.completed_reason, i.completed_event_key, i.first_seen_at, i.last_seen_at, i.completed_at,
                 i.metadata_json, i.created_at, i.updated_at,
-                j.journey_key, j.name AS journey_name, j.status AS journey_status
+                j.journey_key, j.name AS journey_name, j.status AS journey_status,
+                st.step_order AS current_step_order, st.step_key AS current_step_key
            FROM feed_message_journey_instances i
            LEFT JOIN feed_message_journeys j ON j.id = i.journey_id
+           LEFT JOIN feed_message_journey_steps st ON st.id = i.current_step_id
           WHERE ${where.join(' AND ')}
           ORDER BY i.updated_at DESC, i.id DESC
           LIMIT ?`,
@@ -7175,6 +7177,7 @@ pagesRouter.get('/admin/journey-inspector', async (req: any, res: any) => {
     const selectedInstance = instances.find((r) => Number(r.id || 0) === selectedInstanceId) || null
 
     let stepProgressRows: any[] = []
+    let selectedJourneyActiveSteps: any[] = []
     if (selectedInstanceId > 0) {
       const [progressRows]: any = await db.query(
         `SELECT p.id, p.journey_instance_id, p.state, p.completed_at, p.updated_at,
@@ -7196,6 +7199,17 @@ pagesRouter.get('/admin/journey-inspector', async (req: any, res: any) => {
         [selectedInstanceId, selectedInstanceId]
       )
       stepProgressRows = progressRows || []
+      if (selectedInstance && Number(selectedInstance.journey_id || 0) > 0) {
+        const [activeStepRows]: any = await db.query(
+          `SELECT id, step_key, step_order
+             FROM feed_message_journey_steps
+            WHERE journey_id = ?
+              AND status = 'active'
+            ORDER BY step_order ASC, id ASC`,
+          [Number(selectedInstance.journey_id)]
+        )
+        selectedJourneyActiveSteps = activeStepRows || []
+      }
     }
 
     const hasQuery = Boolean(userEmail || resolvedUserId > 0 || anonKey || journeyKey || resolvedJourneyId > 0)
@@ -7279,7 +7293,27 @@ pagesRouter.get('/admin/journey-inspector', async (req: any, res: any) => {
         body += `<div class="ji-summary-item"><div class="ji-summary-label">Run ID</div><div class="ji-summary-value">${escapeHtml(String(selectedInstance.id || ''))}</div></div>`
         body += `<div class="ji-summary-item"><div class="ji-summary-label">Journey</div><div class="ji-summary-value">#${escapeHtml(String(selectedInstance.journey_id || ''))} ${escapeHtml(String(selectedInstance.journey_key || ''))}</div></div>`
         body += `<div class="ji-summary-item"><div class="ji-summary-label">State</div><div class="ji-summary-value">${escapeHtml(String(selectedInstance.state || ''))}</div></div>`
-        body += `<div class="ji-summary-item"><div class="ji-summary-label">Current Step</div><div class="ji-summary-value">${escapeHtml(String(selectedInstance.current_step_id || '-'))}</div></div>`
+        const selectedCurrentStepOrder = Number(selectedInstance.current_step_order || 0)
+        let selectedCurrentStepLabel = selectedCurrentStepOrder > 0 ? `STEP ${selectedCurrentStepOrder}` : '-'
+        if (selectedCurrentStepOrder <= 0 && selectedJourneyActiveSteps.length > 0) {
+          const byStepId = new Map<number, string>()
+          for (const row of stepProgressRows) {
+            const sid = Number((row as any).step_id || 0)
+            if (!Number.isFinite(sid) || sid <= 0) continue
+            byStepId.set(sid, String((row as any).state || '').toLowerCase())
+          }
+          const doneStates = new Set(['completed', 'skipped', 'expired', 'suppressed'])
+          const inFlightStates = new Set(['eligible', 'shown', 'clicked'])
+          let derivedOrder = 0
+          for (const st of selectedJourneyActiveSteps as any[]) {
+            const sid = Number(st.id || 0)
+            const s = byStepId.get(sid) || ''
+            if (inFlightStates.has(s)) { derivedOrder = Number(st.step_order || 0); break }
+            if (!s || !doneStates.has(s)) { derivedOrder = Number(st.step_order || 0); break }
+          }
+          if (derivedOrder > 0) selectedCurrentStepLabel = `STEP ${derivedOrder} (derived)`
+        }
+        body += `<div class="ji-summary-item"><div class="ji-summary-label">Current Step</div><div class="ji-summary-value">${escapeHtml(selectedCurrentStepLabel)}</div></div>`
         body += `<div class="ji-summary-item"><div class="ji-summary-label">Terminal</div><div class="ji-summary-value">${terminal ? 'yes' : 'no'}</div></div>`
         body += `<div class="ji-summary-item"><div class="ji-summary-label">Completion Reason</div><div class="ji-summary-value">${escapeHtml(summaryReason || '-')}</div></div>`
         body += `<div class="ji-summary-item"><div class="ji-summary-label">Completion Event</div><div class="ji-summary-value">${escapeHtml(summaryEvent || '-')}</div></div>`
@@ -7312,7 +7346,7 @@ pagesRouter.get('/admin/journey-inspector', async (req: any, res: any) => {
             <td>#${escapeHtml(String(row.journey_id || ''))} ${escapeHtml(String(row.journey_key || ''))}</td>
             <td>${escapeHtml(String(row.identity_type || ''))}:${escapeHtml(String(row.identity_key || ''))}</td>
             <td>${escapeHtml(String(row.state || ''))}</td>
-            <td>${escapeHtml(String(row.current_step_id || ''))}</td>
+            <td>${Number(row.current_step_order || 0) > 0 ? `STEP ${escapeHtml(String(row.current_step_order))}` : '-'}</td>
             <td>${escapeHtml(completedLabel || '-')}</td>
             <td class="ji-metadata"><details><summary>View JSON</summary><pre>${escapeHtml(metadataStr)}</pre></details></td>
             <td>${escapeHtml(String(row.updated_at || ''))}</td>

@@ -28,6 +28,27 @@ const SESSION_ID_RE = /^[a-zA-Z0-9:_-]{8,120}$/
 
 export const ANON_SESSION_COOKIE = 'anon_session_id'
 export const ANON_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000
+export type JourneySubjectType = 'user' | 'anon'
+
+export function toJourneySubjectId(params: { userId?: number | null; anonKey?: string | null }): string | null {
+  const uid = params.userId != null && Number.isFinite(Number(params.userId)) && Number(params.userId) > 0
+    ? Math.round(Number(params.userId))
+    : 0
+  if (uid > 0) return `user:${uid}`
+  const anon = String(params.anonKey || '').trim()
+  if (!anon) return null
+  return `anon:${anon}`
+}
+
+export function toJourneySubjectType(params: { userId?: number | null; anonKey?: string | null }): JourneySubjectType | null {
+  const uid = params.userId != null && Number.isFinite(Number(params.userId)) && Number(params.userId) > 0
+    ? Math.round(Number(params.userId))
+    : 0
+  if (uid > 0) return 'user'
+  const anon = String(params.anonKey || '').trim()
+  if (anon) return 'anon'
+  return null
+}
 
 type SessionSuppressionState = {
   convertedMessageIds: Set<number>
@@ -696,7 +717,20 @@ async function applyJourneyGating(params: {
       if (next) activeStepByJourney.set(journeyId, next)
     }
     for (const [journeyId, step] of activeStepByJourney.entries()) {
-      if (activeInstanceByJourney.has(journeyId)) continue
+      const existing = activeInstanceByJourney.get(journeyId) as any
+      if (existing) {
+        const existingStepId = Number(existing?.current_step_id || 0)
+        if (!Number.isFinite(existingStepId) || existingStepId <= 0 || existingStepId !== Number(step.id)) {
+          try {
+            await messageJourneysRepo.updateJourneyInstanceById(Number(existing.id), {
+              currentStepId: Number(step.id),
+              lastSeenAt: toUtcDateTimeFromMs(nowMs()),
+            })
+            existing.current_step_id = Number(step.id)
+          } catch {}
+        }
+        continue
+      }
       try {
         const created = await messageJourneysRepo.createJourneyInstance({
           journeyId,
@@ -932,7 +966,20 @@ async function applyJourneyGating(params: {
     if (next) activeStepByJourney.set(journeyId, next)
   }
   for (const [journeyId, step] of activeStepByJourney.entries()) {
-    if (activeInstanceByJourney.has(journeyId)) continue
+    const existing = activeInstanceByJourney.get(journeyId) as any
+    if (existing) {
+      const existingStepId = Number(existing?.current_step_id || 0)
+      if (!Number.isFinite(existingStepId) || existingStepId <= 0 || existingStepId !== Number(step.id)) {
+        try {
+          await messageJourneysRepo.updateJourneyInstanceById(Number(existing.id), {
+            currentStepId: Number(step.id),
+            lastSeenAt: toUtcDateTimeFromMs(nowMs()),
+          })
+          existing.current_step_id = Number(step.id)
+        } catch {}
+      }
+      continue
+    }
     try {
       const created = await messageJourneysRepo.createJourneyInstance({
         journeyId,
@@ -1102,6 +1149,8 @@ export function buildDecisionInput(params: {
 }
 
 export async function decideMessage(input: MessageDecisionInput, opts?: { includeDebug?: boolean }): Promise<MessageDecisionResult> {
+  const journeySubjectId = toJourneySubjectId({ userId: input.userId, anonKey: input.anonVisitorId || input.sessionId || null })
+  const journeySubjectType = toJourneySubjectType({ userId: input.userId, anonKey: input.anonVisitorId || input.sessionId || null })
   const existing = await repo.getSessionByKey(input.sessionId, input.surface)
   const merged = mergeSessionState(existing, input)
   const suppressionJson = serializeSuppressionState(merged.suppression)
@@ -1429,6 +1478,8 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
         surface: input.surface,
         surfaceTarget: input.surfaceTarget,
         viewerState: input.viewerState,
+        journeySubjectId,
+        journeySubjectType,
         counters: input.counters,
       },
       mergedSession: {
