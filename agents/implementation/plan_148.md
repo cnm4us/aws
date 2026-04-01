@@ -1,6 +1,6 @@
 # Plan 148: Journey Objective Completion and Identity Merge
 
-Status: Active
+Status: Superseded by `agents/implementation/plan_151.md` (2026-04-01)
 
 ## Feature Reference
 - Feature doc: `none`
@@ -35,13 +35,69 @@ Status: Active
 - Re-entry is policy-driven (not implicit):
   - default `never_reenter`
 
-## Phase Status
-- A: Pending
-- B: Pending
-- C: Pending
-- D: Pending
-- E: Pending
-- F: Pending
+## Superseded Note (2026-04-01)
+- This plan was superseded by `agents/implementation/plan_151.md` after implementation moved to run-scoped journey lifecycle work.
+- Core outcomes originally targeted here were delivered through Plan 151 and related commits.
+- Keep this document for historical intent and scope framing only.
+
+## Detailed Delta (Plan 148 -> Delivered State)
+
+### Completed (implemented via Plan 151 and follow-on fixes)
+1. Journey instance lifecycle as first-class state
+- `feed_message_journey_instances` in use with terminal and active states.
+- Journey decisioning now keys off instance/run state rather than inferred step-only state.
+
+2. Goal-rule terminal completion
+- Journey completion on goal events (for example `auth.login_complete`) is implemented and terminal for that run.
+- Goal completion behavior is idempotent and recorded on instance metadata/state fields.
+
+3. Anonymous -> authenticated merge semantics
+- Auth merge promotes active anon run into user identity context.
+- Source anon run is closed/abandoned with merge metadata.
+- Completed-by-goal run remains terminal after merge.
+
+4. Re-entry policy behavior
+- Re-entry controls are operational (`never_reenter`, cooldown-based re-entry where configured).
+- Re-entry creates a new run rather than mutating prior completed run.
+
+5. Observability for run lifecycle
+- Journey decision traces include run-level tags (including `app.journey_instance_id` and re-entry indicators).
+- Delivery context and suppression-bypass reasoning for journey path are traceable.
+
+6. Dev tooling for deterministic testing
+- `/admin/dev-tools` now includes targeted journey reset/re-entry actions used for repeatable smoke tests.
+- Journey re-entry smoke script exists for Jaeger+manual verification.
+
+### Changed from original Plan 148 approach
+1. Coupling cleanup was done in Plan 151 terms
+- Plan 148 described objective completion + merge + re-entry goals.
+- Plan 151 formalized and delivered the decisive fix: journey delivery bypasses standalone campaign suppression.
+- Result: journey re-entry no longer depends on manual suppression clearing.
+
+2. Run-scoped progress hardening became explicit
+- Plan 151 introduced/finished run-scoped progression details (`journey_instance_id` usage) as a concrete implementation pivot.
+- This is stronger than the earlier “keep existing step tables for now” framing in Plan 148.
+
+### Remaining delta (not fully delivered from original Plan 148 text)
+1. Dedicated admin journey inspector page
+- Original Plan 148 Phase E called for a simple inspector page to query by user email/anon key and show instances + step progress.
+- Not implemented as a dedicated inspector page in this phase set.
+- Current coverage relies on:
+  - Jaeger tags/trace inspection
+  - existing analytics/admin pages
+  - `/admin/dev-tools` operational reset/re-entry controls
+
+2. Plan document metadata
+- Phase checkboxes in this file were never updated during execution because implementation shifted to Plan 151.
+- This superseded note now acts as canonical closure for Plan 148.
+
+## Phase Status (Historical)
+- A: Superseded (implemented via Plan 151)
+- B: Superseded (implemented via Plan 151)
+- C: Superseded (implemented via Plan 151)
+- D: Superseded (implemented via Plan 151)
+- E: Superseded (partially implemented; dedicated inspector page deferred)
+- F: Superseded (implemented via Plan 151 and follow-on cleanup)
 
 ## Phase A — Data Model for Journey Instance State
 - Goal:
