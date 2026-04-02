@@ -7086,6 +7086,9 @@ pagesRouter.get('/admin/journey-inspector', async (req: any, res: any) => {
   let resolvedJourneyId = Number.isFinite(journeyIdRaw) && journeyIdRaw > 0 ? Math.round(journeyIdRaw) : 0
   let resolvedJourneyKey = journeyKey
   let journeyName = ''
+  let resolvedJourneySubjectId = ''
+  let resolvedJourneySubjectSource = 'none'
+  let linkedSubjects: Array<{ source_subject_id: string; canonical_subject_id: string; link_reason: string; updated_at: string }> = []
   const errors: string[] = []
   const explainError = (code: string): string => {
     const key = String(code || '').trim().toLowerCase()
@@ -7137,25 +7140,55 @@ pagesRouter.get('/admin/journey-inspector', async (req: any, res: any) => {
       }
     }
 
-    const identityFilters: Array<{ type: 'user' | 'anon'; key: string }> = []
-    if (resolvedUserId > 0) identityFilters.push({ type: 'user', key: String(resolvedUserId) })
-    if (anonKey) identityFilters.push({ type: 'anon', key: anonKey })
+    if (journeySubjectId) {
+      resolvedJourneySubjectId = journeySubjectId
+      resolvedJourneySubjectSource = 'explicit'
+    } else if (resolvedUserId > 0) {
+      resolvedJourneySubjectId = `user:${resolvedUserId}`
+      resolvedJourneySubjectSource = 'auth'
+    } else if (anonKey) {
+      const sourceSubjectId = `anon:${anonKey}`
+      const [linkRows]: any = await db.query(
+        `SELECT source_subject_id, canonical_subject_id, link_reason, updated_at
+           FROM feed_journey_subject_links
+          WHERE source_subject_id = ?
+          ORDER BY updated_at DESC, id DESC
+          LIMIT 1`,
+        [sourceSubjectId]
+      )
+      if ((linkRows || []).length > 0) {
+        resolvedJourneySubjectId = String(linkRows[0].canonical_subject_id || sourceSubjectId)
+        resolvedJourneySubjectSource = 'linked_anon'
+      } else {
+        resolvedJourneySubjectId = sourceSubjectId
+        resolvedJourneySubjectSource = 'anon'
+      }
+    }
+
+    if (resolvedJourneySubjectId) {
+      const [subjectRows]: any = await db.query(
+        `SELECT source_subject_id, canonical_subject_id, link_reason, updated_at
+           FROM feed_journey_subject_links
+          WHERE source_subject_id = ?
+             OR canonical_subject_id = ?
+          ORDER BY updated_at DESC, id DESC
+          LIMIT 50`,
+        [resolvedJourneySubjectId, resolvedJourneySubjectId]
+      )
+      linkedSubjects = (subjectRows || []).map((r: any) => ({
+        source_subject_id: String(r.source_subject_id || ''),
+        canonical_subject_id: String(r.canonical_subject_id || ''),
+        link_reason: String(r.link_reason || ''),
+        updated_at: String(r.updated_at || ''),
+      }))
+    }
 
     let instances: any[] = []
-    if (identityFilters.length > 0 || journeySubjectId) {
+    if (resolvedJourneySubjectId) {
       const where: string[] = []
       const params: any[] = []
-      if (journeySubjectId) {
-        where.push(`i.journey_subject_id = ?`)
-        params.push(journeySubjectId)
-      } else {
-        const idClauses: string[] = []
-        for (const idf of identityFilters) {
-          idClauses.push(`(i.identity_type = ? AND i.identity_key = ?)`)
-          params.push(idf.type, idf.key)
-        }
-        where.push(`(${idClauses.join(' OR ')})`)
-      }
+      where.push(`i.journey_subject_id = ?`)
+      params.push(resolvedJourneySubjectId)
       if (resolvedJourneyId > 0) {
         where.push(`i.journey_id = ?`)
         params.push(resolvedJourneyId)
@@ -7185,26 +7218,40 @@ pagesRouter.get('/admin/journey-inspector', async (req: any, res: any) => {
     let stepProgressRows: any[] = []
     let selectedJourneyActiveSteps: any[] = []
     if (selectedInstanceId > 0) {
-      const [progressRows]: any = await db.query(
+      const [canonicalRows]: any = await db.query(
         `SELECT p.id, p.journey_instance_id, p.state, p.completed_at, p.updated_at,
                 st.id AS step_id, st.step_key, st.step_order, st.message_id,
-                m.name AS message_name, 'user' AS progress_source
-           FROM feed_user_message_journey_progress p
-           LEFT JOIN feed_message_journey_steps st ON st.id = p.step_id
-           LEFT JOIN feed_messages m ON m.id = st.message_id
-          WHERE p.journey_instance_id = ?
-          UNION ALL
-         SELECT p.id, p.journey_instance_id, p.state, p.completed_at, p.updated_at,
-                st.id AS step_id, st.step_key, st.step_order, st.message_id,
-                m.name AS message_name, 'anon' AS progress_source
-           FROM feed_anon_message_journey_progress p
+                m.name AS message_name, 'canonical' AS progress_source
+           FROM feed_message_journey_progress p
            LEFT JOIN feed_message_journey_steps st ON st.id = p.step_id
            LEFT JOIN feed_messages m ON m.id = st.message_id
           WHERE p.journey_instance_id = ?
           ORDER BY step_order ASC, id ASC`,
-        [selectedInstanceId, selectedInstanceId]
+        [selectedInstanceId]
       )
-      stepProgressRows = progressRows || []
+      stepProgressRows = canonicalRows || []
+      if (stepProgressRows.length === 0) {
+        const [legacyRows]: any = await db.query(
+          `SELECT p.id, p.journey_instance_id, p.state, p.completed_at, p.updated_at,
+                  st.id AS step_id, st.step_key, st.step_order, st.message_id,
+                  m.name AS message_name, 'legacy_user' AS progress_source
+             FROM feed_user_message_journey_progress p
+             LEFT JOIN feed_message_journey_steps st ON st.id = p.step_id
+             LEFT JOIN feed_messages m ON m.id = st.message_id
+            WHERE p.journey_instance_id = ?
+            UNION ALL
+           SELECT p.id, p.journey_instance_id, p.state, p.completed_at, p.updated_at,
+                  st.id AS step_id, st.step_key, st.step_order, st.message_id,
+                  m.name AS message_name, 'legacy_anon' AS progress_source
+             FROM feed_anon_message_journey_progress p
+             LEFT JOIN feed_message_journey_steps st ON st.id = p.step_id
+             LEFT JOIN feed_messages m ON m.id = st.message_id
+            WHERE p.journey_instance_id = ?
+            ORDER BY step_order ASC, id ASC`,
+          [selectedInstanceId, selectedInstanceId]
+        )
+        stepProgressRows = legacyRows || []
+      }
       if (selectedInstance && Number(selectedInstance.journey_id || 0) > 0) {
         const [activeStepRows]: any = await db.query(
           `SELECT id, step_key, step_order
@@ -7290,7 +7337,7 @@ pagesRouter.get('/admin/journey-inspector', async (req: any, res: any) => {
         <button class="btn" type="submit">Apply</button>
         <a class="btn" href="/admin/journey-inspector">Reset</a>
       </div>
-      <div class="field-hint" style="margin-top:6px">Use user/anon identity or normalized journey subject id to inspect journey runs and run-scoped step progress.</div>
+      <div class="field-hint" style="margin-top:6px">Inspector resolves to canonical <code>journey_subject_id</code> and uses canonical progress first.</div>
     </form>`
 
     if (errors.length > 0) {
@@ -7302,11 +7349,29 @@ pagesRouter.get('/admin/journey-inspector', async (req: any, res: any) => {
       body += `<div class="field-hint">user_id=${resolvedUserId > 0 ? escapeHtml(String(resolvedUserId)) : 'none'}`
       if (resolvedUserEmail) body += ` (${escapeHtml(resolvedUserEmail)})`
       body += ` • anon_key=${anonKey ? escapeHtml(anonKey) : 'none'}`
-      body += ` • journey_subject_id=${journeySubjectId ? escapeHtml(journeySubjectId) : 'none'}`
+      body += ` • journey_subject_id=${resolvedJourneySubjectId ? escapeHtml(resolvedJourneySubjectId) : 'none'}`
+      body += ` • resolution_source=${escapeHtml(resolvedJourneySubjectSource)}`
       body += ` • journey_id=${resolvedJourneyId > 0 ? escapeHtml(String(resolvedJourneyId)) : 'any'}`
       body += ` • journey_key=${resolvedJourneyKey ? escapeHtml(resolvedJourneyKey) : 'any'}`
       if (journeyName) body += ` (${escapeHtml(journeyName)})`
       body += `</div></div>`
+
+      body += `<div class="section" id="ji-section-subject-links"><div class="ji-section-head"><div class="section-title">Subject Links</div><button type="button" class="ji-copy-btn" data-copy-section="subject_links" title="Copy section">⧉</button></div>`
+      if (linkedSubjects.length === 0) {
+        body += `<div class="field-hint">No subject links found for resolved subject.</div>`
+      } else {
+        body += `<div class="ji-table-wrap"><table><thead><tr><th>Source Subject</th><th>Canonical Subject</th><th>Reason</th><th>Updated</th></tr></thead><tbody>`
+        for (const row of linkedSubjects) {
+          body += `<tr>
+            <td>${escapeHtml(row.source_subject_id || '-')}</td>
+            <td>${escapeHtml(row.canonical_subject_id || '-')}</td>
+            <td>${escapeHtml(row.link_reason || '-')}</td>
+            <td>${escapeHtml(row.updated_at || '-')}</td>
+          </tr>`
+        }
+        body += `</tbody></table></div>`
+      }
+      body += `</div>`
 
       body += `<div class="section" id="ji-section-summary"><div class="ji-section-head"><div class="section-title">Selected Run Summary</div><button type="button" class="ji-copy-btn" data-copy-section="summary" title="Copy section">⧉</button></div>`
       if (!selectedInstanceId || !selectedInstance) {
@@ -7420,7 +7485,7 @@ pagesRouter.get('/admin/journey-inspector', async (req: any, res: any) => {
       (function () {
         function t(el) { return String((el && el.textContent) || '').trim(); }
         function sectionByKey(key) {
-          var map = { resolved: 'ji-section-resolved', summary: 'ji-section-summary', instances: 'ji-section-instances', progress: 'ji-section-progress' };
+          var map = { resolved: 'ji-section-resolved', subject_links: 'ji-section-subject-links', summary: 'ji-section-summary', instances: 'ji-section-instances', progress: 'ji-section-progress' };
           return document.getElementById(map[key] || '');
         }
         function linesFromSection(section) {
@@ -8814,7 +8879,7 @@ pagesRouter.get('/admin/dev-tools', async (req: any, res: any) => {
     `<form method="post" action="/admin/dev-tools/clear-journey-progress" style="margin:0" onsubmit="return confirm('Clear all user and anonymous journey progress?')">
       ${addCsrf}
       <button class="btn dt-btn-danger" type="submit">Run</button>
-      <div class="field-hint" style="margin-top:6px">Clears <code>feed_user_message_journey_progress</code> and <code>feed_anon_message_journey_progress</code>.</div>
+      <div class="field-hint" style="margin-top:6px">Clears legacy progress tables and canonical <code>feed_message_journey_progress</code>.</div>
     </form>`
   )
   toolCard(
@@ -8822,7 +8887,7 @@ pagesRouter.get('/admin/dev-tools', async (req: any, res: any) => {
     `<form method="post" action="/admin/dev-tools/clear-journey-state" style="margin:0" onsubmit="return confirm('Clear full journey state (instances, progress, suppressions, decision sessions)?')">
       ${addCsrf}
       <button class="btn dt-btn-danger" type="submit">Run</button>
-      <div class="field-hint" style="margin-top:6px">Clears <code>feed_message_journey_instances</code>, journey progress tables, <code>feed_message_user_suppressions</code>, and <code>message_decision_sessions</code>.</div>
+      <div class="field-hint" style="margin-top:6px">Clears instances, canonical+legacy progress, subject links, suppressions, and decision sessions.</div>
     </form>`
   )
   toolCard(
@@ -8847,6 +8912,19 @@ pagesRouter.get('/admin/dev-tools', async (req: any, res: any) => {
       </div>
       <button class="btn dt-btn-danger" type="submit">Run</button>
       <div class="field-hint" style="margin-top:6px">Clears instances/progress by normalized subject id. For user subjects, also clears suppressions for messages used by that journey.</div>
+    </form>`
+  )
+  toolCard(
+    'Cooldown Journey State (By Canonical Subject)',
+    `<form method="post" action="/admin/dev-tools/cooldown-journey-subject" style="margin:0" onsubmit="return confirm('Apply journey cooldown for this canonical subject (and linked sources)?')">
+      ${addCsrf}
+      <div class="dt-grid-3">
+        <label>Journey Subject ID<input type="text" name="journey_subject_id" required maxlength="160" placeholder="user:8 or anon:uuid" /></label>
+        <label>Journey ID (optional)<input type="number" name="journey_id" min="1" placeholder="all journeys" /></label>
+        <label>Cooldown Days<input type="number" name="cooldown_days" min="1" max="365" value="2" required /></label>
+      </div>
+      <button class="btn dt-btn-danger" type="submit">Run</button>
+      <div class="field-hint" style="margin-top:6px">Primary cooldown tool. For canonical user subjects, linked anon subjects are included automatically.</div>
     </form>`
   )
   toolCard(
@@ -8900,11 +8978,13 @@ pagesRouter.post('/admin/dev-tools/clear-journey-progress', async (_req: any, re
   if (!isAdminDevToolsEnabled()) return res.status(404).send('Not found')
   const db = getPool()
   try {
+    const [canonicalResult] = await db.query(`DELETE FROM feed_message_journey_progress`)
     const [userResult] = await db.query(`DELETE FROM feed_user_message_journey_progress`)
     const [anonResult] = await db.query(`DELETE FROM feed_anon_message_journey_progress`)
+    const canonical = Number((canonicalResult as any)?.affectedRows || 0)
     const users = Number((userResult as any)?.affectedRows || 0)
     const anonymous = Number((anonResult as any)?.affectedRows || 0)
-    return res.redirect(`/admin/dev-tools?notice=${encodeURIComponent(`Cleared journey_progress users=${users}, anonymous=${anonymous}`)}`)
+    return res.redirect(`/admin/dev-tools?notice=${encodeURIComponent(`Cleared journey_progress canonical=${canonical}, users=${users}, anonymous=${anonymous}`)}`)
   } catch (err: any) {
     return res.redirect(`/admin/dev-tools?error=${encodeURIComponent(String(err?.message || 'clear_journey_progress_failed'))}`)
   }
@@ -8915,16 +8995,20 @@ pagesRouter.post('/admin/dev-tools/clear-journey-state', async (_req: any, res: 
   const db = getPool()
   try {
     const [instancesResult] = await db.query(`DELETE FROM feed_message_journey_instances`)
+    const [canonicalProgressResult] = await db.query(`DELETE FROM feed_message_journey_progress`)
     const [userProgressResult] = await db.query(`DELETE FROM feed_user_message_journey_progress`)
     const [anonProgressResult] = await db.query(`DELETE FROM feed_anon_message_journey_progress`)
+    const [subjectLinksResult] = await db.query(`DELETE FROM feed_journey_subject_links`)
     const [suppressionResult] = await db.query(`DELETE FROM feed_message_user_suppressions`)
     const [sessionsResult] = await db.query(`DELETE FROM message_decision_sessions`)
     const instances = Number((instancesResult as any)?.affectedRows || 0)
+    const canonicalProgress = Number((canonicalProgressResult as any)?.affectedRows || 0)
     const userProgress = Number((userProgressResult as any)?.affectedRows || 0)
     const anonProgress = Number((anonProgressResult as any)?.affectedRows || 0)
+    const subjectLinks = Number((subjectLinksResult as any)?.affectedRows || 0)
     const suppressions = Number((suppressionResult as any)?.affectedRows || 0)
     const sessions = Number((sessionsResult as any)?.affectedRows || 0)
-    return res.redirect(`/admin/dev-tools?notice=${encodeURIComponent(`Cleared journey_state instances=${instances}, user_progress=${userProgress}, anon_progress=${anonProgress}, suppressions=${suppressions}, decision_sessions=${sessions}`)}`)
+    return res.redirect(`/admin/dev-tools?notice=${encodeURIComponent(`Cleared journey_state instances=${instances}, canonical_progress=${canonicalProgress}, user_progress=${userProgress}, anon_progress=${anonProgress}, subject_links=${subjectLinks}, suppressions=${suppressions}, decision_sessions=${sessions}`)}`)
   } catch (err: any) {
     return res.redirect(`/admin/dev-tools?error=${encodeURIComponent(String(err?.message || 'clear_journey_state_failed'))}`)
   }
@@ -8946,6 +9030,10 @@ pagesRouter.post('/admin/dev-tools/clear-journey-state-user', async (req: any, r
       `DELETE FROM feed_user_message_journey_progress WHERE journey_id = ? AND user_id = ?`,
       [Math.round(journeyId), Math.round(userId)]
     )
+    const [canonicalProgressResult] = await db.query(
+      `DELETE FROM feed_message_journey_progress WHERE journey_id = ? AND journey_subject_id = ?`,
+      [Math.round(journeyId), `user:${Math.round(userId)}`]
+    )
     const [suppressionsResult] = await db.query(
       `DELETE s
          FROM feed_message_user_suppressions s
@@ -8962,8 +9050,9 @@ pagesRouter.post('/admin/dev-tools/clear-journey-state-user', async (req: any, r
     )
     const instances = Number((instanceResult as any)?.affectedRows || 0)
     const progress = Number((userProgressResult as any)?.affectedRows || 0)
+    const canonicalProgress = Number((canonicalProgressResult as any)?.affectedRows || 0)
     const suppressions = Number((suppressionsResult as any)?.affectedRows || 0)
-    return res.redirect(`/admin/dev-tools?notice=${encodeURIComponent(`Cleared journey+user state instances=${instances}, progress=${progress}, suppressions=${suppressions}`)}`)
+    return res.redirect(`/admin/dev-tools?notice=${encodeURIComponent(`Cleared journey+user state instances=${instances}, progress=${progress}, canonical_progress=${canonicalProgress}, suppressions=${suppressions}`)}`)
   } catch (err: any) {
     return res.redirect(`/admin/dev-tools?error=${encodeURIComponent(String(err?.message || 'clear_journey_state_user_failed'))}`)
   }
@@ -8987,6 +9076,10 @@ pagesRouter.post('/admin/dev-tools/clear-journey-state-subject', async (req: any
     )
     const [anonProgressResult] = await db.query(
       `DELETE FROM feed_anon_message_journey_progress WHERE journey_id = ? AND journey_subject_id = ?`,
+      [Math.round(journeyId), journeySubjectId]
+    )
+    const [canonicalProgressResult] = await db.query(
+      `DELETE FROM feed_message_journey_progress WHERE journey_id = ? AND journey_subject_id = ?`,
       [Math.round(journeyId), journeySubjectId]
     )
     let suppressions = 0
@@ -9014,9 +9107,55 @@ pagesRouter.post('/admin/dev-tools/clear-journey-state-subject', async (req: any
     const instances = Number((instanceResult as any)?.affectedRows || 0)
     const userProgress = Number((userProgressResult as any)?.affectedRows || 0)
     const anonProgress = Number((anonProgressResult as any)?.affectedRows || 0)
-    return res.redirect(`/admin/dev-tools?notice=${encodeURIComponent(`Cleared journey+subject state instances=${instances}, user_progress=${userProgress}, anon_progress=${anonProgress}, suppressions=${suppressions}`)}`)
+    const canonicalProgress = Number((canonicalProgressResult as any)?.affectedRows || 0)
+    return res.redirect(`/admin/dev-tools?notice=${encodeURIComponent(`Cleared journey+subject state instances=${instances}, canonical_progress=${canonicalProgress}, user_progress=${userProgress}, anon_progress=${anonProgress}, suppressions=${suppressions}`)}`)
   } catch (err: any) {
     return res.redirect(`/admin/dev-tools?error=${encodeURIComponent(String(err?.message || 'clear_journey_state_subject_failed'))}`)
+  }
+})
+
+pagesRouter.post('/admin/dev-tools/cooldown-journey-subject', async (req: any, res: any) => {
+  if (!isAdminDevToolsEnabled()) return res.status(404).send('Not found')
+  const db = getPool()
+  const journeySubjectIdRaw = String(req.body?.journey_subject_id || '').trim()
+  const journeyIdRaw = Number(req.body?.journey_id || 0)
+  const cooldownDaysRaw = Number(req.body?.cooldown_days || 0)
+  if (!journeySubjectIdRaw) return res.redirect('/admin/dev-tools?error=invalid_journey_subject_id')
+  const journeyId = Number.isFinite(journeyIdRaw) && journeyIdRaw > 0 ? Math.round(journeyIdRaw) : 0
+  const cooldownDays = Number.isFinite(cooldownDaysRaw) && cooldownDaysRaw > 0 ? Math.min(Math.max(Math.round(cooldownDaysRaw), 1), 365) : 2
+  try {
+    const subjectIds = [journeySubjectIdRaw]
+    const canonicalUserMatch = /^user:\d+$/i.test(journeySubjectIdRaw)
+    if (canonicalUserMatch) {
+      const [linkRows]: any = await db.query(
+        `SELECT source_subject_id
+           FROM feed_journey_subject_links
+          WHERE canonical_subject_id = ?`,
+        [journeySubjectIdRaw]
+      )
+      for (const row of (linkRows || [])) {
+        const source = String(row?.source_subject_id || '').trim()
+        if (source && !subjectIds.includes(source)) subjectIds.push(source)
+      }
+    }
+    const placeholders = subjectIds.map(() => '?').join(', ')
+    const whereJourney = journeyId > 0 ? 'AND journey_id = ?' : ''
+    const params: any[] = [cooldownDays, cooldownDays, ...subjectIds]
+    if (journeyId > 0) params.push(journeyId)
+    const [result] = await db.query(
+      `UPDATE feed_message_journey_instances
+          SET completed_at = DATE_SUB(UTC_TIMESTAMP(), INTERVAL ? DAY),
+              last_seen_at = DATE_SUB(UTC_TIMESTAMP(), INTERVAL ? DAY),
+              updated_at = CURRENT_TIMESTAMP
+        WHERE state IN ('completed','abandoned','expired')
+          AND journey_subject_id IN (${placeholders})
+          ${whereJourney}`,
+      params
+    )
+    const rows = Number((result as any)?.affectedRows || 0)
+    return res.redirect(`/admin/dev-tools?notice=${encodeURIComponent(`Cooldown applied rows=${rows}, journey_subject_id=${journeySubjectIdRaw}, journey_id=${journeyId > 0 ? journeyId : 'all'}, days=${cooldownDays}`)}`)
+  } catch (err: any) {
+    return res.redirect(`/admin/dev-tools?error=${encodeURIComponent(String(err?.message || 'cooldown_journey_subject_failed'))}`)
   }
 })
 
@@ -9030,8 +9169,20 @@ pagesRouter.post('/admin/dev-tools/cooldown-journey-user', async (req: any, res:
   const journeyId = Number.isFinite(journeyIdRaw) && journeyIdRaw > 0 ? Math.round(journeyIdRaw) : 0
   const cooldownDays = Number.isFinite(cooldownDaysRaw) && cooldownDaysRaw > 0 ? Math.min(Math.max(Math.round(cooldownDaysRaw), 1), 365) : 2
   try {
+    const canonicalSubjectId = `user:${Math.round(userId)}`
+    const [linkRows]: any = await db.query(
+      `SELECT source_subject_id
+         FROM feed_journey_subject_links
+        WHERE canonical_subject_id = ?`,
+      [canonicalSubjectId]
+    )
+    const subjectIds = Array.from(new Set([
+      canonicalSubjectId,
+      ...((linkRows || []).map((r: any) => String(r.source_subject_id || '').trim()).filter(Boolean)),
+    ]))
+    const subjectPlaceholders = subjectIds.map(() => '?').join(', ')
     const whereJourney = journeyId > 0 ? 'AND journey_id = ?' : ''
-    const params: any[] = [cooldownDays, cooldownDays, String(Math.round(userId)), Math.round(userId)]
+    const params: any[] = [cooldownDays, cooldownDays, ...subjectIds]
     if (journeyId > 0) params.push(journeyId)
     const [result] = await db.query(
       `UPDATE feed_message_journey_instances
@@ -9039,11 +9190,7 @@ pagesRouter.post('/admin/dev-tools/cooldown-journey-user', async (req: any, res:
               last_seen_at = DATE_SUB(UTC_TIMESTAMP(), INTERVAL ? DAY),
               updated_at = CURRENT_TIMESTAMP
         WHERE state IN ('completed','abandoned','expired')
-          AND (
-            (identity_type = 'user' AND identity_key = ?)
-            OR
-            (identity_type = 'anon' AND CAST(JSON_UNQUOTE(JSON_EXTRACT(metadata_json, '$.merged_to_user_id')) AS UNSIGNED) = ?)
-          )
+          AND journey_subject_id IN (${subjectPlaceholders})
           ${whereJourney}`,
       params
     )
