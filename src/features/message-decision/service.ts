@@ -344,6 +344,9 @@ type JourneyReentryPolicy = 'never_reenter' | 'reenter_after_days' | 'allow_rest
 type JourneyRuntimePolicy = {
   reentryPolicy: JourneyReentryPolicy
   reentryCooldownDays: number
+  reentryCooldownMs: number
+  reentryWindowMs: number | null
+  reentryMaxRestartsPerWindow: number | null
   journeyExpiresAfterDays: number | null
   stepExpiresAfterDays: number | null
 }
@@ -543,6 +546,37 @@ function dateToMs(raw: string | null): number | null {
   return date.getTime()
 }
 
+function parseDurationMsFromConfig(cfg: Record<string, any>, keySnake: string, keyCamel: string): number {
+  const objRaw = cfg[keySnake] ?? cfg[keyCamel]
+  if (objRaw && typeof objRaw === 'object' && !Array.isArray(objRaw)) {
+    const unit = String((objRaw as any).unit || '').trim().toLowerCase()
+    const value = Number((objRaw as any).value || 0)
+    if (Number.isFinite(value) && value > 0) {
+      const amount = Math.round(value)
+      if (unit === 'seconds' || unit === 'second') return amount * 1000
+      if (unit === 'minutes' || unit === 'minute') return amount * 60 * 1000
+      if (unit === 'hours' || unit === 'hour') return amount * 60 * 60 * 1000
+      if (unit === 'days' || unit === 'day') return amount * 24 * 60 * 60 * 1000
+    }
+  }
+
+  const secondsNum = Number(cfg[`${keySnake}_seconds`] ?? cfg[`${keyCamel}Seconds`] ?? 0)
+  const minutesNum = Number(cfg[`${keySnake}_minutes`] ?? cfg[`${keyCamel}Minutes`] ?? 0)
+  const hoursNum = Number(cfg[`${keySnake}_hours`] ?? cfg[`${keyCamel}Hours`] ?? 0)
+  const daysNum = Number(cfg[`${keySnake}_days`] ?? cfg[`${keyCamel}Days`] ?? 0)
+
+  const seconds = Number.isFinite(secondsNum) && secondsNum > 0 ? Math.round(secondsNum) : 0
+  const minutes = Number.isFinite(minutesNum) && minutesNum > 0 ? Math.round(minutesNum) : 0
+  const hours = Number.isFinite(hoursNum) && hoursNum > 0 ? Math.round(hoursNum) : 0
+  const days = Number.isFinite(daysNum) && daysNum > 0 ? Math.round(daysNum) : 0
+
+  if (seconds > 0) return seconds * 1000
+  if (minutes > 0) return minutes * 60 * 1000
+  if (hours > 0) return hours * 60 * 60 * 1000
+  if (days > 0) return days * 24 * 60 * 60 * 1000
+  return 0
+}
+
 function parseJourneyRuntimePolicyFromConfigRaw(raw: any): JourneyRuntimePolicy {
   let cfg: Record<string, any> = {}
   try {
@@ -554,10 +588,20 @@ function parseJourneyRuntimePolicyFromConfigRaw(raw: any): JourneyRuntimePolicy 
   const reentryPolicy: JourneyReentryPolicy =
     reentryPolicyRaw === 'allow_restart'
       ? 'allow_restart'
-      : (reentryPolicyRaw === 'reenter_after_days' ? 'reenter_after_days' : 'never_reenter')
+      : ((reentryPolicyRaw === 'reenter_after_days' || reentryPolicyRaw === 'reenter_after_interval')
+          ? 'reenter_after_days'
+          : 'never_reenter')
 
-  const cooldownNum = Number(cfg.reentry_cooldown_days ?? cfg.reentryCooldownDays ?? 0)
-  const reentryCooldownDays = Number.isFinite(cooldownNum) && cooldownNum > 0 ? Math.round(cooldownNum) : 0
+  const cooldownDaysNum = Number(cfg.reentry_cooldown_days ?? cfg.reentryCooldownDays ?? 0)
+
+  const reentryCooldownDays = Number.isFinite(cooldownDaysNum) && cooldownDaysNum > 0 ? Math.round(cooldownDaysNum) : 0
+
+  const reentryCooldownMs = parseDurationMsFromConfig(cfg, 'reentry_cooldown', 'reentryCooldown')
+  const reentryWindowMsRaw = parseDurationMsFromConfig(cfg, 'reentry_window', 'reentryWindow')
+  const reentryWindowMs = reentryWindowMsRaw > 0 ? reentryWindowMsRaw : null
+  const maxReentriesNum = Number(cfg.reentry_max_restarts_per_window ?? cfg.reentryMaxRestartsPerWindow ?? 0)
+  const reentryMaxRestartsPerWindow =
+    Number.isFinite(maxReentriesNum) && maxReentriesNum > 0 ? Math.round(maxReentriesNum) : null
 
   const journeyExpNum = Number(cfg.journey_expires_after_days ?? cfg.journeyExpiresAfterDays ?? 0)
   const journeyExpiresAfterDays =
@@ -570,6 +614,9 @@ function parseJourneyRuntimePolicyFromConfigRaw(raw: any): JourneyRuntimePolicy 
   return {
     reentryPolicy,
     reentryCooldownDays,
+    reentryCooldownMs,
+    reentryWindowMs,
+    reentryMaxRestartsPerWindow,
     journeyExpiresAfterDays,
     stepExpiresAfterDays,
   }
@@ -597,6 +644,37 @@ function isPastDays(referenceMs: number | null, days: number): boolean {
   if (!referenceMs || !Number.isFinite(referenceMs)) return false
   if (!Number.isFinite(days) || days <= 0) return false
   return nowMs() >= (referenceMs + (days * 24 * 60 * 60 * 1000))
+}
+
+function isPastDurationMs(referenceMs: number | null, durationMs: number): boolean {
+  if (!referenceMs || !Number.isFinite(referenceMs)) return false
+  if (!Number.isFinite(durationMs) || durationMs <= 0) return false
+  return nowMs() >= (referenceMs + durationMs)
+}
+
+function countRecentReentryStarts(rows: any[], windowMs: number): number {
+  if (!Number.isFinite(windowMs) || windowMs <= 0) return 0
+  const cutoff = nowMs() - windowMs
+  let count = 0
+  for (const row of rows || []) {
+    let meta: any = {}
+    try { meta = JSON.parse(String((row as any)?.metadata_json || '{}')) } catch {}
+    const source = String(meta?.source || '').trim().toLowerCase()
+    if (source !== 'reentry') continue
+    const atMs =
+      dateToMs(String(meta?.restarted_at || '').trim()) ??
+      dateToMs((row as any)?.created_at || null) ??
+      dateToMs((row as any)?.updated_at || null)
+    if (atMs != null && atMs >= cutoff) count += 1
+  }
+  return count
+}
+
+function canStartReentryForWindow(rows: any[], policy: JourneyRuntimePolicy): boolean {
+  if (!policy.reentryMaxRestartsPerWindow || policy.reentryMaxRestartsPerWindow <= 0) return true
+  if (!policy.reentryWindowMs || policy.reentryWindowMs <= 0) return true
+  const used = countRecentReentryStarts(rows, policy.reentryWindowMs)
+  return used < policy.reentryMaxRestartsPerWindow
 }
 
 async function applyJourneyGating(params: {
@@ -670,12 +748,22 @@ async function applyJourneyGating(params: {
       if (journeySubjectId) {
         instanceRows = await messageJourneysRepo.listJourneyInstancesBySubjectJourneyIds(journeySubjectId, journeyIds)
       }
+      const instanceRowsByJourney = new Map<number, any[]>()
+      for (const row of instanceRows as any[]) {
+        const jid = Number((row as any)?.journey_id || 0)
+        if (!Number.isFinite(jid) || jid <= 0) continue
+        if (!instanceRowsByJourney.has(jid)) instanceRowsByJourney.set(jid, [])
+        instanceRowsByJourney.get(jid)!.push(row)
+      }
       for (const row of instanceRows as any[]) {
         const journeyId = Number(row?.journey_id || 0)
         if (!Number.isFinite(journeyId) || journeyId <= 0) continue
         const policy = journeyPolicyMap.get(journeyId) || {
           reentryPolicy: 'never_reenter' as JourneyReentryPolicy,
           reentryCooldownDays: 0,
+          reentryCooldownMs: 0,
+          reentryWindowMs: null,
+          reentryMaxRestartsPerWindow: null,
           journeyExpiresAfterDays: null,
           stepExpiresAfterDays: null,
         }
@@ -708,6 +796,10 @@ async function applyJourneyGating(params: {
         }
         if (activeInstanceByJourney.has(journeyId)) continue
         if (policy.reentryPolicy === 'allow_restart') {
+          if (!canStartReentryForWindow(instanceRowsByJourney.get(journeyId) || [], policy)) {
+            terminalJourneys.add(journeyId)
+            continue
+          }
           try {
             const created = await messageJourneysRepo.createJourneyInstance({
               journeyId,
@@ -730,12 +822,16 @@ async function applyJourneyGating(params: {
           } catch {}
           continue
         }
-        if (policy.reentryPolicy === 'reenter_after_days' && policy.reentryCooldownDays > 0) {
+        if (policy.reentryPolicy === 'reenter_after_days' && policy.reentryCooldownMs > 0) {
           const refMs =
             dateToMs((row as any).completed_at || null) ??
             dateToMs((row as any).last_seen_at || null) ??
             dateToMs((row as any).updated_at || null)
-          if (isPastDays(refMs, policy.reentryCooldownDays)) {
+          if (isPastDurationMs(refMs, policy.reentryCooldownMs)) {
+            if (!canStartReentryForWindow(instanceRowsByJourney.get(journeyId) || [], policy)) {
+              terminalJourneys.add(journeyId)
+              continue
+            }
             try {
               const created = await messageJourneysRepo.createJourneyInstance({
                 journeyId,
@@ -926,12 +1022,22 @@ async function applyJourneyGating(params: {
     if (journeySubjectId) {
       instanceRows = await messageJourneysRepo.listJourneyInstancesBySubjectJourneyIds(journeySubjectId, journeyIds)
     }
+    const instanceRowsByJourney = new Map<number, any[]>()
+    for (const row of instanceRows as any[]) {
+      const jid = Number((row as any)?.journey_id || 0)
+      if (!Number.isFinite(jid) || jid <= 0) continue
+      if (!instanceRowsByJourney.has(jid)) instanceRowsByJourney.set(jid, [])
+      instanceRowsByJourney.get(jid)!.push(row)
+    }
     for (const row of instanceRows as any[]) {
       const journeyId = Number(row?.journey_id || 0)
       if (!Number.isFinite(journeyId) || journeyId <= 0) continue
       const policy = journeyPolicyMap.get(journeyId) || {
         reentryPolicy: 'never_reenter' as JourneyReentryPolicy,
         reentryCooldownDays: 0,
+        reentryCooldownMs: 0,
+        reentryWindowMs: null,
+        reentryMaxRestartsPerWindow: null,
         journeyExpiresAfterDays: null,
         stepExpiresAfterDays: null,
       }
@@ -964,6 +1070,10 @@ async function applyJourneyGating(params: {
       }
       if (activeInstanceByJourney.has(journeyId)) continue
       if (policy.reentryPolicy === 'allow_restart') {
+        if (!canStartReentryForWindow(instanceRowsByJourney.get(journeyId) || [], policy)) {
+          terminalJourneys.add(journeyId)
+          continue
+        }
         try {
           const created = await messageJourneysRepo.createJourneyInstance({
             journeyId,
@@ -986,12 +1096,16 @@ async function applyJourneyGating(params: {
         } catch {}
         continue
       }
-      if (policy.reentryPolicy === 'reenter_after_days' && policy.reentryCooldownDays > 0) {
+      if (policy.reentryPolicy === 'reenter_after_days' && policy.reentryCooldownMs > 0) {
         const refMs =
           dateToMs((row as any).completed_at || null) ??
           dateToMs((row as any).last_seen_at || null) ??
           dateToMs((row as any).updated_at || null)
-        if (isPastDays(refMs, policy.reentryCooldownDays)) {
+        if (isPastDurationMs(refMs, policy.reentryCooldownMs)) {
+          if (!canStartReentryForWindow(instanceRowsByJourney.get(journeyId) || [], policy)) {
+            terminalJourneys.add(journeyId)
+            continue
+          }
           try {
             const created = await messageJourneysRepo.createJourneyInstance({
               journeyId,

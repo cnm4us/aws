@@ -294,6 +294,70 @@ function normalizeJourneyConfigForAdmin(rawConfig: Record<string, any>): Record<
       .filter((v) => (JOURNEY_GOAL_EVENT_KEYS as readonly string[]).includes(v))
   )) as JourneyGoalEventKey[]
   ;(cfg as any).goal_rules = { any_of: normalized }
+
+  const policyRaw = String((cfg as any).reentry_policy ?? (cfg as any).reentryPolicy ?? '').trim().toLowerCase()
+  if (policyRaw) {
+    if (policyRaw === 'reenter_after_interval' || policyRaw === 'reenter_after_days') {
+      ;(cfg as any).reentry_policy = 'reenter_after_interval'
+    } else if (policyRaw === 'allow_restart') {
+      ;(cfg as any).reentry_policy = 'allow_restart'
+    } else if (policyRaw === 'never_reenter') {
+      ;(cfg as any).reentry_policy = 'never_reenter'
+    } else {
+      throw new DomainError('invalid_reentry_policy', 'invalid_reentry_policy', 400)
+    }
+  }
+  delete (cfg as any).reentryPolicy
+
+  const normalizePositive = (raw: any, code: string): number | null => {
+    if (raw == null || raw === '') return null
+    const n = Number(raw)
+    if (!Number.isFinite(n) || n <= 0) throw new DomainError(code, code, 400)
+    return Math.round(n)
+  }
+
+  const sec = normalizePositive((cfg as any).reentry_cooldown_seconds ?? (cfg as any).reentryCooldownSeconds, 'invalid_reentry_cooldown_seconds')
+  const min = normalizePositive((cfg as any).reentry_cooldown_minutes ?? (cfg as any).reentryCooldownMinutes, 'invalid_reentry_cooldown_minutes')
+  const hrs = normalizePositive((cfg as any).reentry_cooldown_hours ?? (cfg as any).reentryCooldownHours, 'invalid_reentry_cooldown_hours')
+  const days = normalizePositive((cfg as any).reentry_cooldown_days ?? (cfg as any).reentryCooldownDays, 'invalid_reentry_cooldown_days')
+  if (sec != null) (cfg as any).reentry_cooldown_seconds = sec
+  else delete (cfg as any).reentry_cooldown_seconds
+  if (min != null) (cfg as any).reentry_cooldown_minutes = min
+  else delete (cfg as any).reentry_cooldown_minutes
+  if (hrs != null) (cfg as any).reentry_cooldown_hours = hrs
+  else delete (cfg as any).reentry_cooldown_hours
+  if (days != null) (cfg as any).reentry_cooldown_days = days
+  else delete (cfg as any).reentry_cooldown_days
+  delete (cfg as any).reentryCooldownSeconds
+  delete (cfg as any).reentryCooldownMinutes
+  delete (cfg as any).reentryCooldownHours
+  delete (cfg as any).reentryCooldownDays
+
+  const windowSec = normalizePositive((cfg as any).reentry_window_seconds ?? (cfg as any).reentryWindowSeconds, 'invalid_reentry_window_seconds')
+  const windowMin = normalizePositive((cfg as any).reentry_window_minutes ?? (cfg as any).reentryWindowMinutes, 'invalid_reentry_window_minutes')
+  const windowHrs = normalizePositive((cfg as any).reentry_window_hours ?? (cfg as any).reentryWindowHours, 'invalid_reentry_window_hours')
+  const windowDays = normalizePositive((cfg as any).reentry_window_days ?? (cfg as any).reentryWindowDays, 'invalid_reentry_window_days')
+  if (windowSec != null) (cfg as any).reentry_window_seconds = windowSec
+  else delete (cfg as any).reentry_window_seconds
+  if (windowMin != null) (cfg as any).reentry_window_minutes = windowMin
+  else delete (cfg as any).reentry_window_minutes
+  if (windowHrs != null) (cfg as any).reentry_window_hours = windowHrs
+  else delete (cfg as any).reentry_window_hours
+  if (windowDays != null) (cfg as any).reentry_window_days = windowDays
+  else delete (cfg as any).reentry_window_days
+  delete (cfg as any).reentryWindowSeconds
+  delete (cfg as any).reentryWindowMinutes
+  delete (cfg as any).reentryWindowHours
+  delete (cfg as any).reentryWindowDays
+
+  const maxRestarts = normalizePositive(
+    (cfg as any).reentry_max_restarts_per_window ?? (cfg as any).reentryMaxRestartsPerWindow,
+    'invalid_reentry_max_restarts_per_window'
+  )
+  if (maxRestarts != null) (cfg as any).reentry_max_restarts_per_window = maxRestarts
+  else delete (cfg as any).reentry_max_restarts_per_window
+  delete (cfg as any).reentryMaxRestartsPerWindow
+
   return cfg
 }
 
