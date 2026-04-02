@@ -670,9 +670,6 @@ async function applyJourneyGating(params: {
       if (journeySubjectId) {
         instanceRows = await messageJourneysRepo.listJourneyInstancesBySubjectJourneyIds(journeySubjectId, journeyIds)
       }
-      if (!instanceRows.length) {
-        instanceRows = await messageJourneysRepo.listJourneyInstancesByAnonJourneyIds(anonVisitorId, journeyIds)
-      }
       for (const row of instanceRows as any[]) {
         const journeyId = Number(row?.journey_id || 0)
         if (!Number.isFinite(journeyId) || journeyId <= 0) continue
@@ -716,6 +713,7 @@ async function applyJourneyGating(params: {
               journeyId,
               identityType: 'anon',
               identityKey: anonVisitorId,
+              journeySubjectId,
               state: 'active',
               currentStepId: null,
               firstSeenAt: null,
@@ -743,6 +741,7 @@ async function applyJourneyGating(params: {
                 journeyId,
                 identityType: 'anon',
                 identityKey: anonVisitorId,
+                journeySubjectId,
                 state: 'active',
                 currentStepId: null,
                 firstSeenAt: null,
@@ -768,10 +767,19 @@ async function applyJourneyGating(params: {
       const activeInstanceIds = Array.from(activeInstanceByJourney.values())
         .map((row: any) => Number(row?.id || 0))
         .filter((id) => Number.isFinite(id) && id > 0)
-      const anonProgressRows = activeInstanceIds.length
-        ? await messageJourneysRepo.listAnonProgressByVisitorInstanceIds(anonVisitorId, activeInstanceIds)
+      const canonicalProgressRows = activeInstanceIds.length
+        ? await messageJourneysRepo.listCanonicalProgressByInstanceIds(activeInstanceIds)
         : []
-      for (const row of anonProgressRows) {
+      const canonicalByInstance = new Set(
+        canonicalProgressRows
+          .map((row: any) => Number((row as any)?.journey_instance_id || 0))
+          .filter((id: number) => Number.isFinite(id) && id > 0)
+      )
+      const missingInstanceIds = activeInstanceIds.filter((id) => !canonicalByInstance.has(id))
+      const fallbackAnonProgressRows = missingInstanceIds.length
+        ? await messageJourneysRepo.listAnonProgressByVisitorInstanceIds(anonVisitorId, missingInstanceIds)
+        : []
+      for (const row of [...canonicalProgressRows, ...fallbackAnonProgressRows]) {
         if (restartJourneys.has(Number((row as any).journey_id || 0))) continue
         if (String((row as any).state || '') !== 'completed') continue
         completedByJourneyStep.add(`${Number((row as any).journey_id)}:${Number((row as any).step_id)}`)
@@ -807,6 +815,7 @@ async function applyJourneyGating(params: {
           journeyId,
           identityType: 'anon',
           identityKey: anonVisitorId,
+          journeySubjectId,
           state: 'active',
           currentStepId: Number(step.id),
           firstSeenAt: toUtcDateTimeFromMs(nowMs()),
@@ -926,9 +935,6 @@ async function applyJourneyGating(params: {
     if (journeySubjectId) {
       instanceRows = await messageJourneysRepo.listJourneyInstancesBySubjectJourneyIds(journeySubjectId, journeyIds)
     }
-    if (!instanceRows.length) {
-      instanceRows = await messageJourneysRepo.listJourneyInstancesByUserJourneyIds(userId, journeyIds)
-    }
     for (const row of instanceRows as any[]) {
       const journeyId = Number(row?.journey_id || 0)
       if (!Number.isFinite(journeyId) || journeyId <= 0) continue
@@ -972,6 +978,7 @@ async function applyJourneyGating(params: {
             journeyId,
             identityType: 'user',
             identityKey: String(userId),
+            journeySubjectId,
             state: 'active',
             currentStepId: null,
             firstSeenAt: null,
@@ -999,6 +1006,7 @@ async function applyJourneyGating(params: {
               journeyId,
               identityType: 'user',
               identityKey: String(userId),
+              journeySubjectId,
               state: 'active',
               currentStepId: null,
               firstSeenAt: null,
@@ -1022,11 +1030,20 @@ async function applyJourneyGating(params: {
   const activeInstanceIds = Array.from(activeInstanceByJourney.values())
     .map((row: any) => Number(row?.id || 0))
     .filter((id) => Number.isFinite(id) && id > 0)
-  const progressRows = activeInstanceIds.length
-    ? await messageJourneysRepo.listProgressByUserInstanceIds(userId, activeInstanceIds)
+  const canonicalProgressRows = activeInstanceIds.length
+    ? await messageJourneysRepo.listCanonicalProgressByInstanceIds(activeInstanceIds)
+    : []
+  const canonicalByInstance = new Set(
+    canonicalProgressRows
+      .map((row: any) => Number((row as any)?.journey_instance_id || 0))
+      .filter((id: number) => Number.isFinite(id) && id > 0)
+  )
+  const missingInstanceIds = activeInstanceIds.filter((id) => !canonicalByInstance.has(id))
+  const fallbackUserProgressRows = missingInstanceIds.length
+    ? await messageJourneysRepo.listProgressByUserInstanceIds(userId, missingInstanceIds)
     : []
   const completedByJourneyStep = new Set<string>()
-  for (const row of progressRows) {
+  for (const row of [...canonicalProgressRows, ...fallbackUserProgressRows]) {
     if (restartJourneys.has(Number((row as any).journey_id || 0))) continue
     if (String(row.state) !== 'completed') continue
     completedByJourneyStep.add(`${Number(row.journey_id)}:${Number(row.step_id)}`)
@@ -1062,6 +1079,7 @@ async function applyJourneyGating(params: {
         journeyId,
         identityType: 'user',
         identityKey: String(userId),
+        journeySubjectId,
         state: 'active',
         currentStepId: Number(step.id),
         firstSeenAt: toUtcDateTimeFromMs(nowMs()),

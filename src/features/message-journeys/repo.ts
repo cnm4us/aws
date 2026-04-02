@@ -1096,6 +1096,71 @@ export async function upsertCanonicalProgress(input: CanonicalProgressUpsertInpu
   return row
 }
 
+export async function getCanonicalProgressByInstanceStep(
+  journeyInstanceId: number,
+  stepId: number
+): Promise<MessageJourneyCanonicalProgressRow | null> {
+  const iid = Number(journeyInstanceId || 0)
+  const sid = Number(stepId || 0)
+  if (!Number.isFinite(iid) || iid <= 0) return null
+  if (!Number.isFinite(sid) || sid <= 0) return null
+  const db = getPool()
+  const [rows] = await db.query(
+    `SELECT
+      id,
+      journey_subject_id,
+      journey_id,
+      journey_instance_id,
+      step_id,
+      state,
+      first_seen_at,
+      last_seen_at,
+      completed_at,
+      completed_by_outcome_id,
+      session_id,
+      metadata_json,
+      created_at,
+      updated_at
+     FROM feed_message_journey_progress
+     WHERE journey_instance_id = ? AND step_id = ?
+     LIMIT 1`,
+    [Math.round(iid), Math.round(sid)]
+  )
+  return ((rows as any[])[0] as MessageJourneyCanonicalProgressRow) || null
+}
+
+export async function listCanonicalProgressByInstanceIds(journeyInstanceIds: number[]): Promise<MessageJourneyCanonicalProgressRow[]> {
+  const uniq = Array.from(new Set(journeyInstanceIds
+    .map((n) => Number(n))
+    .filter((n) => Number.isFinite(n) && n > 0)
+    .map((n) => Math.round(n))))
+  if (!uniq.length) return []
+  const db = getPool()
+  const placeholders = uniq.map(() => '?').join(',')
+  const [rows] = await db.query(
+    `SELECT
+      id,
+      journey_subject_id,
+      journey_id,
+      journey_instance_id,
+      step_id,
+      state,
+      first_seen_at,
+      last_seen_at,
+      completed_at,
+      completed_by_outcome_id,
+      session_id,
+      metadata_json,
+      created_at,
+      updated_at
+     FROM feed_message_journey_progress
+     WHERE journey_instance_id IN (${placeholders})
+     ORDER BY updated_at DESC, id DESC`,
+    uniq
+  )
+  return rows as MessageJourneyCanonicalProgressRow[]
+}
+
 export async function updateAnonProgressById(id: number, patch: AnonProgressUpdateInput): Promise<MessageJourneyAnonProgressRow> {
   const db = getPool()
   const sets: string[] = []
