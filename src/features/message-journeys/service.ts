@@ -901,6 +901,26 @@ function eventToState(event: MessageJourneySignalEvent): MessageJourneyProgressS
   return 'completed'
 }
 
+function canonicalSubjectForSignal(input: {
+  userId: number
+  anonVisitorId: string
+}): string | null {
+  if (Number.isFinite(Number(input.userId)) && Number(input.userId) > 0) {
+    return `user:${Math.round(Number(input.userId))}`
+  }
+  const anon = String(input.anonVisitorId || '').trim()
+  if (!anon) return null
+  return `anon:${anon}`
+}
+
+async function upsertCanonicalProgressSafe(
+  input: Parameters<typeof repo.upsertCanonicalProgress>[0]
+): Promise<void> {
+  try {
+    await repo.upsertCanonicalProgress(input)
+  } catch {}
+}
+
 function canTransition(from: MessageJourneyProgressState, to: MessageJourneyProgressState): boolean {
   if (from === to) return true
   if (from === 'completed') return false
@@ -1131,6 +1151,7 @@ export async function recordJourneySignalFromMessageEvent(input: {
 }): Promise<{ stepsMatched: number; progressed: number; ignored: number }> {
   const userId = Number(input.userId || 0)
   const anonVisitorId = String(input.anonVisitorId || '').trim()
+  const canonicalSubjectId = canonicalSubjectForSignal({ userId, anonVisitorId })
   const messageId = Number(input.messageId || 0)
   if ((!Number.isFinite(userId) || userId <= 0) && !anonVisitorId) {
     return { stepsMatched: 0, progressed: 0, ignored: 0 }
@@ -1197,6 +1218,20 @@ export async function recordJourneySignalFromMessageEvent(input: {
           metadataJson: metadata,
         })
       }
+      if (canonicalSubjectId && journeyInstanceId != null && Number.isFinite(Number(journeyInstanceId)) && Number(journeyInstanceId) > 0) {
+        await upsertCanonicalProgressSafe({
+          journeySubjectId: canonicalSubjectId,
+          journeyId: Number(step.journey_id),
+          journeyInstanceId: Number(journeyInstanceId),
+          stepId: Number(step.id),
+          state: eventState,
+          firstSeenAt: eventState === 'shown' ? ts : null,
+          lastSeenAt: ts,
+          completedAt: eventState === 'completed' ? ts : null,
+          sessionId: input.sessionId ?? null,
+          metadataJson: metadata,
+        })
+      }
       progressed += 1
       continue
     }
@@ -1234,6 +1269,21 @@ export async function recordJourneySignalFromMessageEvent(input: {
         metadataJson,
       })
     }
+    if (canonicalSubjectId && journeyInstanceId != null && Number.isFinite(Number(journeyInstanceId)) && Number(journeyInstanceId) > 0) {
+      await upsertCanonicalProgressSafe({
+        journeySubjectId: canonicalSubjectId,
+        journeyId: Number(step.journey_id),
+        journeyInstanceId: Number(journeyInstanceId),
+        stepId: Number(step.id),
+        state: to,
+        firstSeenAt: existing.first_seen_at || (to === 'shown' ? ts : null),
+        lastSeenAt: ts,
+        completedAt: to === 'completed' ? (existing.completed_at || ts) : existing.completed_at,
+        completedByOutcomeId: existing.completed_by_outcome_id ?? null,
+        sessionId: input.sessionId ?? existing.session_id,
+        metadataJson,
+      })
+    }
     progressed += 1
   }
 
@@ -1259,6 +1309,7 @@ export async function recordJourneySignalFromCtaOutcome(input: {
 }): Promise<{ stepsMatched: number; progressed: number; ignored: number }> {
   const userId = Number(input.userId || 0)
   const anonVisitorId = String(input.anonVisitorId || '').trim()
+  const canonicalSubjectId = canonicalSubjectForSignal({ userId, anonVisitorId })
   const messageId = Number(input.messageId || 0)
   if ((!Number.isFinite(userId) || userId <= 0) && !anonVisitorId) return { stepsMatched: 0, progressed: 0, ignored: 0 }
   if (!Number.isFinite(messageId) || messageId <= 0) return { stepsMatched: 0, progressed: 0, ignored: 0 }
@@ -1389,6 +1440,21 @@ export async function recordJourneySignalFromCtaOutcome(input: {
           metadataJson,
         })
       }
+      if (canonicalSubjectId && journeyInstanceId != null && Number.isFinite(Number(journeyInstanceId)) && Number(journeyInstanceId) > 0) {
+        await upsertCanonicalProgressSafe({
+          journeySubjectId: canonicalSubjectId,
+          journeyId: Number(step.journey_id),
+          journeyInstanceId: Number(journeyInstanceId),
+          stepId: Number(step.id),
+          state: nextState,
+          firstSeenAt: null,
+          lastSeenAt: ts,
+          completedAt: nextState === 'completed' ? ts : null,
+          completedByOutcomeId: nextState === 'completed' ? Number(input.outcomeRowId) : null,
+          sessionId: input.sessionId ?? null,
+          metadataJson,
+        })
+      }
       progressed += 1
       continue
     }
@@ -1428,6 +1494,24 @@ export async function recordJourneySignalFromCtaOutcome(input: {
         lastSeenAt: ts,
         completedAt: nextState === 'completed' ? (existing.completed_at || ts) : existing.completed_at,
         completedByOutcomeId: nextState === 'completed' ? (existing.completed_by_outcome_id || Number(input.outcomeRowId)) : existing.completed_by_outcome_id,
+        sessionId: input.sessionId ?? existing.session_id,
+        metadataJson,
+      })
+    }
+    if (canonicalSubjectId && journeyInstanceId != null && Number.isFinite(Number(journeyInstanceId)) && Number(journeyInstanceId) > 0) {
+      await upsertCanonicalProgressSafe({
+        journeySubjectId: canonicalSubjectId,
+        journeyId: Number(step.journey_id),
+        journeyInstanceId: Number(journeyInstanceId),
+        stepId: Number(step.id),
+        state: nextState,
+        firstSeenAt: existing.first_seen_at || null,
+        lastSeenAt: ts,
+        completedAt: nextState === 'completed' ? (existing.completed_at || ts) : existing.completed_at,
+        completedByOutcomeId:
+          nextState === 'completed'
+            ? (existing.completed_by_outcome_id || Number(input.outcomeRowId))
+            : existing.completed_by_outcome_id,
         sessionId: input.sessionId ?? existing.session_id,
         metadataJson,
       })
@@ -1630,6 +1714,21 @@ export async function mergeAnonJourneyStateIntoUserOnAuth(input: {
       sessionId: userRow?.session_id ?? anonRow.session_id ?? null,
       metadataJson: JSON.stringify(mergedMetadata),
     })
+    if (upserted.journey_instance_id != null && Number.isFinite(Number(upserted.journey_instance_id)) && Number(upserted.journey_instance_id) > 0) {
+      await upsertCanonicalProgressSafe({
+        journeySubjectId: `user:${userId}`,
+        journeyId,
+        journeyInstanceId: Number(upserted.journey_instance_id),
+        stepId,
+        state: mergedState,
+        firstSeenAt: minDateTime(userRow?.first_seen_at || null, anonRow.first_seen_at || null),
+        lastSeenAt: maxDateTime(userRow?.last_seen_at || null, anonRow.last_seen_at || now),
+        completedAt: maxDateTime(userRow?.completed_at || null, anonRow.completed_at || null),
+        completedByOutcomeId: userRow?.completed_by_outcome_id ?? anonRow.completed_by_outcome_id ?? null,
+        sessionId: userRow?.session_id ?? anonRow.session_id ?? null,
+        metadataJson: JSON.stringify(mergedMetadata),
+      })
+    }
     userProgressByStep.set(stepId, upserted)
 
     await repo.updateAnonProgressById(Number(anonRow.id), {

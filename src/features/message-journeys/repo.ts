@@ -1,6 +1,7 @@
 import { getPool } from '../../db'
 import type {
   MessageJourneyAnonProgressRow,
+  MessageJourneyCanonicalProgressRow,
   MessageJourneyInstanceIdentityType,
   MessageJourneyInstanceRow,
   MessageJourneyInstanceState,
@@ -324,6 +325,20 @@ type JourneyInstanceUpsertInput = {
   lastSeenAt?: string | null
   completedAt?: string | null
   metadataJson?: string
+}
+
+type CanonicalProgressUpsertInput = {
+  journeySubjectId: string
+  journeyId: number
+  journeyInstanceId?: number | null
+  stepId: number
+  state: MessageJourneyProgressState
+  firstSeenAt?: string | null
+  lastSeenAt?: string | null
+  completedAt?: string | null
+  completedByOutcomeId?: number | null
+  sessionId?: string | null
+  metadataJson?: string | null
 }
 
 type JourneyInstanceUpdateInput = Partial<Omit<JourneyInstanceUpsertInput, 'journeyId' | 'identityType' | 'identityKey'>>
@@ -989,6 +1004,95 @@ export async function upsertAnonProgress(input: AnonProgressUpsertInput): Promis
     ? await getAnonProgressByVisitorStep(anonVisitorId, input.stepId)
     : await getAnonProgressByVisitorInstanceStep(anonVisitorId, journeyInstanceId, input.stepId)
   if (!row) throw new Error('failed_to_upsert_anon_message_journey_progress')
+  return row
+}
+
+export async function upsertCanonicalProgress(input: CanonicalProgressUpsertInput): Promise<MessageJourneyCanonicalProgressRow> {
+  const journeySubjectId = normalizeJourneySubjectId(input.journeySubjectId)
+  if (!journeySubjectId) throw new Error('invalid_journey_subject_id')
+  if (input.journeyInstanceId == null || !Number.isFinite(Number(input.journeyInstanceId)) || Number(input.journeyInstanceId) <= 0) {
+    throw new Error('invalid_journey_instance_id')
+  }
+  if (!(await rowExists('feed_message_journey_instances', Number(input.journeyInstanceId)))) {
+    throw new Error('invalid_journey_instance_id')
+  }
+  if (!(await rowExists('feed_message_journey_steps', Number(input.stepId)))) {
+    throw new Error('invalid_step_id')
+  }
+  const stepJourneyId = await getStepJourneyId(Number(input.stepId))
+  if (stepJourneyId == null || Number(stepJourneyId) !== Number(input.journeyId)) {
+    throw new Error('step_journey_mismatch')
+  }
+
+  const db = getPool()
+  const metadataJson = input.metadataJson ?? '{}'
+  const journeyInstanceId = Math.round(Number(input.journeyInstanceId))
+  const journeyId = Math.round(Number(input.journeyId))
+  const stepId = Math.round(Number(input.stepId))
+
+  await db.query(
+    `INSERT INTO feed_message_journey_progress (
+      journey_subject_id,
+      journey_id,
+      journey_instance_id,
+      step_id,
+      state,
+      first_seen_at,
+      last_seen_at,
+      completed_at,
+      completed_by_outcome_id,
+      session_id,
+      metadata_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON DUPLICATE KEY UPDATE
+      journey_subject_id = VALUES(journey_subject_id),
+      journey_id = VALUES(journey_id),
+      state = VALUES(state),
+      first_seen_at = COALESCE(feed_message_journey_progress.first_seen_at, VALUES(first_seen_at)),
+      last_seen_at = VALUES(last_seen_at),
+      completed_at = COALESCE(feed_message_journey_progress.completed_at, VALUES(completed_at)),
+      completed_by_outcome_id = COALESCE(feed_message_journey_progress.completed_by_outcome_id, VALUES(completed_by_outcome_id)),
+      session_id = COALESCE(VALUES(session_id), feed_message_journey_progress.session_id),
+      metadata_json = VALUES(metadata_json),
+      updated_at = CURRENT_TIMESTAMP`,
+    [
+      journeySubjectId,
+      journeyId,
+      journeyInstanceId,
+      stepId,
+      input.state,
+      input.firstSeenAt ?? null,
+      input.lastSeenAt ?? null,
+      input.completedAt ?? null,
+      input.completedByOutcomeId == null ? null : Math.round(Number(input.completedByOutcomeId)),
+      input.sessionId ?? null,
+      metadataJson,
+    ]
+  )
+
+  const [rows] = await db.query(
+    `SELECT
+      id,
+      journey_subject_id,
+      journey_id,
+      journey_instance_id,
+      step_id,
+      state,
+      first_seen_at,
+      last_seen_at,
+      completed_at,
+      completed_by_outcome_id,
+      session_id,
+      metadata_json,
+      created_at,
+      updated_at
+     FROM feed_message_journey_progress
+     WHERE journey_instance_id = ? AND step_id = ?
+     LIMIT 1`,
+    [journeyInstanceId, stepId]
+  )
+  const row = ((rows as any[])[0] as MessageJourneyCanonicalProgressRow) || null
+  if (!row) throw new Error('failed_to_upsert_canonical_message_journey_progress')
   return row
 }
 
