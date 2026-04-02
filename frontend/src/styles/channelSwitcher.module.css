@@ -7,8 +7,8 @@
   padding: 12px 14px;
   border-radius: 10px;
   margin-bottom: 8px;
-  border: 1px solid rgba(255,255,255,0.15);
-  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.9);
+  background: rgba(33,150,243,0.25);
   color: #fff;
   font-size: 15px;
   display: flex;
