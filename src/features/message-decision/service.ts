@@ -770,16 +770,7 @@ async function applyJourneyGating(params: {
       const canonicalProgressRows = activeInstanceIds.length
         ? await messageJourneysRepo.listCanonicalProgressByInstanceIds(activeInstanceIds)
         : []
-      const canonicalByInstance = new Set(
-        canonicalProgressRows
-          .map((row: any) => Number((row as any)?.journey_instance_id || 0))
-          .filter((id: number) => Number.isFinite(id) && id > 0)
-      )
-      const missingInstanceIds = activeInstanceIds.filter((id) => !canonicalByInstance.has(id))
-      const fallbackAnonProgressRows = missingInstanceIds.length
-        ? await messageJourneysRepo.listAnonProgressByVisitorInstanceIds(anonVisitorId, missingInstanceIds)
-        : []
-      for (const row of [...canonicalProgressRows, ...fallbackAnonProgressRows]) {
+      for (const row of canonicalProgressRows) {
         if (restartJourneys.has(Number((row as any).journey_id || 0))) continue
         if (String((row as any).state || '') !== 'completed') continue
         completedByJourneyStep.add(`${Number((row as any).journey_id)}:${Number((row as any).step_id)}`)
@@ -1033,17 +1024,8 @@ async function applyJourneyGating(params: {
   const canonicalProgressRows = activeInstanceIds.length
     ? await messageJourneysRepo.listCanonicalProgressByInstanceIds(activeInstanceIds)
     : []
-  const canonicalByInstance = new Set(
-    canonicalProgressRows
-      .map((row: any) => Number((row as any)?.journey_instance_id || 0))
-      .filter((id: number) => Number.isFinite(id) && id > 0)
-  )
-  const missingInstanceIds = activeInstanceIds.filter((id) => !canonicalByInstance.has(id))
-  const fallbackUserProgressRows = missingInstanceIds.length
-    ? await messageJourneysRepo.listProgressByUserInstanceIds(userId, missingInstanceIds)
-    : []
   const completedByJourneyStep = new Set<string>()
-  for (const row of [...canonicalProgressRows, ...fallbackUserProgressRows]) {
+  for (const row of canonicalProgressRows) {
     if (restartJourneys.has(Number((row as any).journey_id || 0))) continue
     if (String(row.state) !== 'completed') continue
     completedByJourneyStep.add(`${Number(row.journey_id)}:${Number(row.step_id)}`)

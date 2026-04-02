@@ -2,7 +2,6 @@ import * as repo from './repo'
 import { DomainError, ForbiddenError, NotFoundError } from '../../core/errors'
 import { getPool } from '../../db'
 import type {
-  MessageJourneyAnonProgressRow,
   MessageJourneyInstanceDto,
   MessageJourneyInstanceIdentityType,
   MessageJourneyInstanceRow,
@@ -10,7 +9,6 @@ import type {
   MessageJourneyDto,
   MessageJourneyProgressState,
   MessageJourneyRow,
-  MessageJourneyProgressRow,
   MessageJourneyStatus,
   MessageJourneyStepDto,
   MessageJourneyStepRow,
@@ -1005,8 +1003,8 @@ function toMs(value: string | null | undefined): number | null {
 }
 
 function preferredProgressState(
-  anonRow: MessageJourneyAnonProgressRow,
-  userRow: MessageJourneyProgressRow | null
+  anonRow: { state: MessageJourneyProgressState },
+  userRow: { state: MessageJourneyProgressState } | null
 ): MessageJourneyProgressState {
   if (!userRow) return anonRow.state
   const anonRank = progressStateRank(anonRow.state)
@@ -1179,14 +1177,11 @@ export async function recordJourneySignalFromMessageEvent(input: {
       source: 'message_event',
       sourceMessageId: messageId,
     })
-    const legacyExisting = userId > 0
-      ? await repo.getProgressByUserInstanceStep(userId, Number(journeyInstanceId || 0), Number(step.id))
-      : await repo.getAnonProgressByVisitorInstanceStep(anonVisitorId, Number(journeyInstanceId || 0), Number(step.id))
     const canonicalExisting =
       journeyInstanceId != null && Number.isFinite(Number(journeyInstanceId)) && Number(journeyInstanceId) > 0
         ? await repo.getCanonicalProgressByInstanceStep(Number(journeyInstanceId), Number(step.id))
         : null
-    const existing = canonicalExisting || legacyExisting
+    const existing = canonicalExisting
     if (!existing) {
       const metadata = JSON.stringify({
         source: 'message_event',
@@ -1194,35 +1189,6 @@ export async function recordJourneySignalFromMessageEvent(input: {
         source_message_id: messageId,
         last_event_at: ts,
       })
-      if (userId > 0) {
-        await repo.upsertProgress({
-          userId,
-          journeyId: Number(step.journey_id),
-          journeyInstanceId,
-          journeySubjectId: journeySubjectForIdentity({ userId, anonVisitorId: null }),
-          stepId: Number(step.id),
-          state: eventState,
-          firstSeenAt: eventState === 'shown' ? ts : null,
-          lastSeenAt: ts,
-          completedAt: eventState === 'completed' ? ts : null,
-          sessionId: input.sessionId ?? null,
-          metadataJson: metadata,
-        })
-      } else {
-        await repo.upsertAnonProgress({
-          anonVisitorId,
-          journeyId: Number(step.journey_id),
-          journeyInstanceId,
-          journeySubjectId: journeySubjectForIdentity({ userId: null, anonVisitorId }),
-          stepId: Number(step.id),
-          state: eventState,
-          firstSeenAt: eventState === 'shown' ? ts : null,
-          lastSeenAt: ts,
-          completedAt: eventState === 'completed' ? ts : null,
-          sessionId: input.sessionId ?? null,
-          metadataJson: metadata,
-        })
-      }
       if (canonicalSubjectId && journeyInstanceId != null && Number.isFinite(Number(journeyInstanceId)) && Number(journeyInstanceId) > 0) {
         await upsertCanonicalProgressSafe({
           journeySubjectId: canonicalSubjectId,
@@ -1255,59 +1221,6 @@ export async function recordJourneySignalFromMessageEvent(input: {
       last_event_at: ts,
     })
 
-    if (userId > 0) {
-      if (legacyExisting) {
-        await repo.updateProgressById(Number(legacyExisting.id), {
-          state: to,
-          firstSeenAt: existing.first_seen_at || (to === 'shown' ? ts : null),
-          lastSeenAt: ts,
-          completedAt: to === 'completed' ? (existing.completed_at || ts) : existing.completed_at,
-          sessionId: input.sessionId ?? existing.session_id,
-          metadataJson,
-        })
-      } else {
-        await repo.upsertProgress({
-          userId,
-          journeyId: Number(step.journey_id),
-          journeyInstanceId,
-          journeySubjectId: journeySubjectForIdentity({ userId, anonVisitorId: null }),
-          stepId: Number(step.id),
-          state: to,
-          firstSeenAt: existing.first_seen_at || (to === 'shown' ? ts : null),
-          lastSeenAt: ts,
-          completedAt: to === 'completed' ? (existing.completed_at || ts) : existing.completed_at,
-          completedByOutcomeId: existing.completed_by_outcome_id ?? null,
-          sessionId: input.sessionId ?? existing.session_id,
-          metadataJson,
-        })
-      }
-    } else {
-      if (legacyExisting) {
-        await repo.updateAnonProgressById(Number(legacyExisting.id), {
-          state: to,
-          firstSeenAt: existing.first_seen_at || (to === 'shown' ? ts : null),
-          lastSeenAt: ts,
-          completedAt: to === 'completed' ? (existing.completed_at || ts) : existing.completed_at,
-          sessionId: input.sessionId ?? existing.session_id,
-          metadataJson,
-        })
-      } else {
-        await repo.upsertAnonProgress({
-          anonVisitorId,
-          journeyId: Number(step.journey_id),
-          journeyInstanceId,
-          journeySubjectId: journeySubjectForIdentity({ userId: null, anonVisitorId }),
-          stepId: Number(step.id),
-          state: to,
-          firstSeenAt: existing.first_seen_at || (to === 'shown' ? ts : null),
-          lastSeenAt: ts,
-          completedAt: to === 'completed' ? (existing.completed_at || ts) : existing.completed_at,
-          completedByOutcomeId: existing.completed_by_outcome_id ?? null,
-          sessionId: input.sessionId ?? existing.session_id,
-          metadataJson,
-        })
-      }
-    }
     if (canonicalSubjectId && journeyInstanceId != null && Number.isFinite(Number(journeyInstanceId)) && Number(journeyInstanceId) > 0) {
       await upsertCanonicalProgressSafe({
         journeySubjectId: canonicalSubjectId,
@@ -1431,14 +1344,11 @@ export async function recordJourneySignalFromCtaOutcome(input: {
       continue
     }
 
-    const legacyExisting = userId > 0
-      ? await repo.getProgressByUserInstanceStep(userId, Number(journeyInstanceId || 0), Number(step.id))
-      : await repo.getAnonProgressByVisitorInstanceStep(anonVisitorId, Number(journeyInstanceId || 0), Number(step.id))
     const canonicalExisting =
       journeyInstanceId != null && Number.isFinite(Number(journeyInstanceId)) && Number(journeyInstanceId) > 0
         ? await repo.getCanonicalProgressByInstanceStep(Number(journeyInstanceId), Number(step.id))
         : null
-    const existing = canonicalExisting || legacyExisting
+    const existing = canonicalExisting
     if (!existing) {
       const metadataJson = JSON.stringify({
         source: 'cta_outcome',
@@ -1453,37 +1363,6 @@ export async function recordJourneySignalFromCtaOutcome(input: {
         policy_intent_key: policy.kind === 'on_intent_completion' ? policy.intentKey : null,
         last_event_at: ts,
       })
-      if (userId > 0) {
-        await repo.upsertProgress({
-          userId,
-          journeyId: Number(step.journey_id),
-          journeyInstanceId,
-          journeySubjectId: journeySubjectForIdentity({ userId, anonVisitorId: null }),
-          stepId: Number(step.id),
-          state: nextState,
-          firstSeenAt: null,
-          lastSeenAt: ts,
-          completedAt: nextState === 'completed' ? ts : null,
-          completedByOutcomeId: nextState === 'completed' ? Number(input.outcomeRowId) : null,
-          sessionId: input.sessionId ?? null,
-          metadataJson,
-        })
-      } else {
-        await repo.upsertAnonProgress({
-          anonVisitorId,
-          journeyId: Number(step.journey_id),
-          journeyInstanceId,
-          journeySubjectId: journeySubjectForIdentity({ userId: null, anonVisitorId }),
-          stepId: Number(step.id),
-          state: nextState,
-          firstSeenAt: null,
-          lastSeenAt: ts,
-          completedAt: nextState === 'completed' ? ts : null,
-          completedByOutcomeId: nextState === 'completed' ? Number(input.outcomeRowId) : null,
-          sessionId: input.sessionId ?? null,
-          metadataJson,
-        })
-      }
       if (canonicalSubjectId && journeyInstanceId != null && Number.isFinite(Number(journeyInstanceId)) && Number(journeyInstanceId) > 0) {
         await upsertCanonicalProgressSafe({
           journeySubjectId: canonicalSubjectId,
@@ -1521,61 +1400,6 @@ export async function recordJourneySignalFromCtaOutcome(input: {
       policy_intent_key: policy.kind === 'on_intent_completion' ? policy.intentKey : null,
       last_event_at: ts,
     })
-    if (userId > 0) {
-      if (legacyExisting) {
-        await repo.updateProgressById(Number(legacyExisting.id), {
-          state: nextState,
-          firstSeenAt: existing.first_seen_at || null,
-          lastSeenAt: ts,
-          completedAt: nextState === 'completed' ? (existing.completed_at || ts) : existing.completed_at,
-          completedByOutcomeId: nextState === 'completed' ? (existing.completed_by_outcome_id || Number(input.outcomeRowId)) : existing.completed_by_outcome_id,
-          sessionId: input.sessionId ?? existing.session_id,
-          metadataJson,
-        })
-      } else {
-        await repo.upsertProgress({
-          userId,
-          journeyId: Number(step.journey_id),
-          journeyInstanceId,
-          journeySubjectId: journeySubjectForIdentity({ userId, anonVisitorId: null }),
-          stepId: Number(step.id),
-          state: nextState,
-          firstSeenAt: existing.first_seen_at || null,
-          lastSeenAt: ts,
-          completedAt: nextState === 'completed' ? (existing.completed_at || ts) : existing.completed_at,
-          completedByOutcomeId: nextState === 'completed' ? (existing.completed_by_outcome_id || Number(input.outcomeRowId)) : existing.completed_by_outcome_id,
-          sessionId: input.sessionId ?? existing.session_id,
-          metadataJson,
-        })
-      }
-    } else {
-      if (legacyExisting) {
-        await repo.updateAnonProgressById(Number(legacyExisting.id), {
-          state: nextState,
-          firstSeenAt: existing.first_seen_at || null,
-          lastSeenAt: ts,
-          completedAt: nextState === 'completed' ? (existing.completed_at || ts) : existing.completed_at,
-          completedByOutcomeId: nextState === 'completed' ? (existing.completed_by_outcome_id || Number(input.outcomeRowId)) : existing.completed_by_outcome_id,
-          sessionId: input.sessionId ?? existing.session_id,
-          metadataJson,
-        })
-      } else {
-        await repo.upsertAnonProgress({
-          anonVisitorId,
-          journeyId: Number(step.journey_id),
-          journeyInstanceId,
-          journeySubjectId: journeySubjectForIdentity({ userId: null, anonVisitorId }),
-          stepId: Number(step.id),
-          state: nextState,
-          firstSeenAt: existing.first_seen_at || null,
-          lastSeenAt: ts,
-          completedAt: nextState === 'completed' ? (existing.completed_at || ts) : existing.completed_at,
-          completedByOutcomeId: nextState === 'completed' ? (existing.completed_by_outcome_id || Number(input.outcomeRowId)) : existing.completed_by_outcome_id,
-          sessionId: input.sessionId ?? existing.session_id,
-          metadataJson,
-        })
-      }
-    }
     if (canonicalSubjectId && journeyInstanceId != null && Number.isFinite(Number(journeyInstanceId)) && Number(journeyInstanceId) > 0) {
       await upsertCanonicalProgressSafe({
         journeySubjectId: canonicalSubjectId,
@@ -1626,10 +1450,9 @@ export async function mergeAnonJourneyStateIntoUserOnAuth(input: {
   const mergedAtIso = new Date().toISOString()
   const userKey = String(userId)
 
-  const [anonInstances, userInstances, anonProgressRows] = await Promise.all([
+  const [anonInstances, userInstances] = await Promise.all([
     repo.listJourneyInstancesByIdentity({ identityType: 'anon', identityKey: anonVisitorId }),
     repo.listJourneyInstancesByIdentity({ identityType: 'user', identityKey: userKey }),
-    repo.listAnonProgressByVisitor(anonVisitorId),
   ])
 
   const userInstanceByJourney = new Map<number, MessageJourneyInstanceRow>()
@@ -1646,17 +1469,22 @@ export async function mergeAnonJourneyStateIntoUserOnAuth(input: {
     if (!anonInstanceByJourney.has(journeyId)) anonInstanceByJourney.set(journeyId, row)
   }
 
-  const anonProgressByJourney = new Map<number, MessageJourneyAnonProgressRow[]>()
-  for (const row of anonProgressRows) {
-    const journeyId = Number(row.journey_id || 0)
-    if (!Number.isFinite(journeyId) || journeyId <= 0) continue
-    if (!anonProgressByJourney.has(journeyId)) anonProgressByJourney.set(journeyId, [])
-    anonProgressByJourney.get(journeyId)!.push(row)
+  const anonInstanceIds = anonInstances
+    .map((row) => Number(row.id || 0))
+    .filter((id) => Number.isFinite(id) && id > 0)
+  const anonCanonicalProgressRows = anonInstanceIds.length
+    ? await repo.listCanonicalProgressByInstanceIds(anonInstanceIds)
+    : []
+  const anonCanonicalByInstance = new Map<number, any[]>()
+  for (const row of anonCanonicalProgressRows as any[]) {
+    const instanceId = Number((row as any).journey_instance_id || 0)
+    if (!Number.isFinite(instanceId) || instanceId <= 0) continue
+    if (!anonCanonicalByInstance.has(instanceId)) anonCanonicalByInstance.set(instanceId, [])
+    anonCanonicalByInstance.get(instanceId)!.push(row)
   }
 
   const journeyIds = new Set<number>([
     ...Array.from(anonInstanceByJourney.keys()),
-    ...Array.from(anonProgressByJourney.keys()),
   ])
   const mergedUserInstanceIdByJourney = new Map<number, number>()
 
@@ -1664,7 +1492,8 @@ export async function mergeAnonJourneyStateIntoUserOnAuth(input: {
   for (const journeyId of journeyIds) {
     const sourceInstance = anonInstanceByJourney.get(journeyId) || null
     const existingUserInstance = userInstanceByJourney.get(journeyId) || null
-    const anonJourneyProgress = anonProgressByJourney.get(journeyId) || []
+    const sourceInstanceId = sourceInstance ? Number(sourceInstance.id || 0) : 0
+    const anonJourneyProgress = sourceInstanceId > 0 ? (anonCanonicalByInstance.get(sourceInstanceId) || []) : []
 
     // Skip churn merges: if anon state/progress was already merged to this user and
     // there is no anon activity newer than the last merge marker, do nothing.
@@ -1675,7 +1504,7 @@ export async function mergeAnonJourneyStateIntoUserOnAuth(input: {
       if (mergedToUser === userId && mergedAtMs != null) {
         const sourceUpdatedMs = toMs(sourceInstance.updated_at)
         let hasPostMergeProgress = false
-        for (const row of anonJourneyProgress) {
+        for (const row of anonJourneyProgress as any[]) {
           const meta = parseMetadata((row as any).metadata_json)
           const rowMergedUser = Number(meta.merged_to_user_id || 0)
           if (rowMergedUser !== userId) { hasPostMergeProgress = true; break }
@@ -1750,81 +1579,52 @@ export async function mergeAnonJourneyStateIntoUserOnAuth(input: {
   }
 
   let mergedProgressRows = 0
-  for (const anonRow of anonProgressRows) {
-    const stepId = Number(anonRow.step_id || 0)
-    const journeyId = Number(anonRow.journey_id || 0)
-    if (!Number.isFinite(stepId) || stepId <= 0) continue
-    if (!Number.isFinite(journeyId) || journeyId <= 0) continue
+  for (const journeyId of journeyIds) {
     const sourceInstance = anonInstanceByJourney.get(journeyId) || null
     if (!sourceInstance) continue
     const sourceInstanceId = Number(sourceInstance.id || 0)
-    const anonRowInstanceId = anonRow.journey_instance_id == null ? null : Number(anonRow.journey_instance_id)
-    // Merge only progress from the current anon run for this journey to avoid
-    // carrying historical completed steps into a fresh re-entry run.
-    if (sourceInstanceId > 0 && (anonRowInstanceId == null || anonRowInstanceId !== sourceInstanceId)) continue
+    if (!Number.isFinite(sourceInstanceId) || sourceInstanceId <= 0) continue
+    const targetUserInstanceId = mergedUserInstanceIdByJourney.get(journeyId) || null
+    if (!targetUserInstanceId) continue
 
-    const targetUserInstanceId =
-      mergedUserInstanceIdByJourney.get(journeyId) ||
-      (userInstanceByJourney.get(journeyId)?.id != null
-        ? Number(userInstanceByJourney.get(journeyId)?.id)
-        : null)
-    const userRow =
-      targetUserInstanceId != null && Number.isFinite(Number(targetUserInstanceId)) && Number(targetUserInstanceId) > 0
-        ? await repo.getProgressByUserInstanceStep(userId, Number(targetUserInstanceId), stepId)
-        : null
-
-    const mergedState = preferredProgressState(anonRow, userRow)
-    const mergedMetadata = {
-      ...parseMetadata(userRow?.metadata_json),
-      ...parseMetadata(anonRow.metadata_json),
-      merged_from_anon: true,
-      merged_from_anon_key: anonVisitorId,
-      merged_to_user_id: userId,
-      merged_at: mergedAtIso,
-      source: 'auth_merge',
+    const sourceRows = anonCanonicalByInstance.get(sourceInstanceId) || []
+    const userRows = await repo.listCanonicalProgressByInstanceIds([targetUserInstanceId])
+    const userByStep = new Map<number, any>()
+    for (const row of userRows as any[]) {
+      const stepId = Number((row as any).step_id || 0)
+      if (!Number.isFinite(stepId) || stepId <= 0) continue
+      userByStep.set(stepId, row)
     }
 
-    const upserted = await repo.upsertProgress({
-      userId,
-      journeyId,
-      journeyInstanceId:
-        mergedUserInstanceIdByJourney.get(journeyId) ||
-        (userRow?.journey_instance_id != null ? Number(userRow.journey_instance_id) : null),
-      journeySubjectId: journeySubjectForIdentity({ userId, anonVisitorId: null }),
-      stepId,
-      state: mergedState,
-      firstSeenAt: minDateTime(userRow?.first_seen_at || null, anonRow.first_seen_at || null),
-      lastSeenAt: maxDateTime(userRow?.last_seen_at || null, anonRow.last_seen_at || now),
-      completedAt: maxDateTime(userRow?.completed_at || null, anonRow.completed_at || null),
-      completedByOutcomeId: userRow?.completed_by_outcome_id ?? anonRow.completed_by_outcome_id ?? null,
-      sessionId: userRow?.session_id ?? anonRow.session_id ?? null,
-      metadataJson: JSON.stringify(mergedMetadata),
-    })
-    if (upserted.journey_instance_id != null && Number.isFinite(Number(upserted.journey_instance_id)) && Number(upserted.journey_instance_id) > 0) {
-      await upsertCanonicalProgressSafe({
-        journeySubjectId: `user:${userId}`,
-        journeyId,
-        journeyInstanceId: Number(upserted.journey_instance_id),
-        stepId,
-        state: mergedState,
-        firstSeenAt: minDateTime(userRow?.first_seen_at || null, anonRow.first_seen_at || null),
-        lastSeenAt: maxDateTime(userRow?.last_seen_at || null, anonRow.last_seen_at || now),
-        completedAt: maxDateTime(userRow?.completed_at || null, anonRow.completed_at || null),
-        completedByOutcomeId: userRow?.completed_by_outcome_id ?? anonRow.completed_by_outcome_id ?? null,
-        sessionId: userRow?.session_id ?? anonRow.session_id ?? null,
-        metadataJson: JSON.stringify(mergedMetadata),
-      })
-    }
-
-    await repo.updateAnonProgressById(Number(anonRow.id), {
-      metadataJson: JSON.stringify({
-        ...parseMetadata(anonRow.metadata_json),
+    for (const anonRow of sourceRows as any[]) {
+      const stepId = Number((anonRow as any).step_id || 0)
+      if (!Number.isFinite(stepId) || stepId <= 0) continue
+      const userRow = userByStep.get(stepId) || null
+      const mergedState = preferredProgressState(anonRow as any, userRow as any)
+      const mergedMetadata = {
+        ...parseMetadata((userRow as any)?.metadata_json),
+        ...parseMetadata((anonRow as any).metadata_json),
+        merged_from_anon: true,
+        merged_from_anon_key: anonVisitorId,
         merged_to_user_id: userId,
         merged_at: mergedAtIso,
         source: 'auth_merge',
-      }),
-    })
-    mergedProgressRows += 1
+      }
+      await upsertCanonicalProgressSafe({
+        journeySubjectId: `user:${userId}`,
+        journeyId,
+        journeyInstanceId: Number(targetUserInstanceId),
+        stepId,
+        state: mergedState,
+        firstSeenAt: minDateTime((userRow as any)?.first_seen_at || null, (anonRow as any).first_seen_at || null),
+        lastSeenAt: maxDateTime((userRow as any)?.last_seen_at || null, (anonRow as any).last_seen_at || now),
+        completedAt: maxDateTime((userRow as any)?.completed_at || null, (anonRow as any).completed_at || null),
+        completedByOutcomeId: (userRow as any)?.completed_by_outcome_id ?? (anonRow as any).completed_by_outcome_id ?? null,
+        sessionId: (userRow as any)?.session_id ?? (anonRow as any).session_id ?? null,
+        metadataJson: JSON.stringify(mergedMetadata),
+      })
+      mergedProgressRows += 1
+    }
   }
 
   return { mergedJourneys, mergedProgressRows, skipped: false }
