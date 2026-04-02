@@ -108,7 +108,7 @@ export default function SharedNav(props: {
             : activeContext === 'info'
             ? 'Info'
             : activeContext === 'assets'
-            ? 'Library'
+            ? 'Creative Studio'
             : activeContext === 'channel'
             ? 'Channel Changer'
             : activeContext === 'profile'
