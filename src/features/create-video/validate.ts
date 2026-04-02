@@ -1126,7 +1126,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
     const plateOpacityRaw = Number((o as any).plateOpacityPct)
     const plateOpacityPct = Number.isFinite(plateOpacityRaw) ? Math.round(clamp(plateOpacityRaw, 0, 100)) : 85
 
-    const meta = await loadUploadMetaForUser(uploadId, ctx.userId, { requireVideoRole: 'source' })
+    const meta = await loadUploadMetaForUser(uploadId, ctx.userId)
     let end = sourceEndSeconds
     if (meta.durationSeconds != null) {
       end = Math.min(end, roundToTenth(Math.max(0, meta.durationSeconds)))
