@@ -445,6 +445,7 @@ Uploads/assets API family (examples):
 - `uploads.file.get`
 - `uploads.edit_proxy.get`
 - `assets.videos.list`
+- `assets.videos.used`
 - `assets.graphics.list`
 
 Local subprocess operations:
@@ -492,6 +493,12 @@ Used to mark expected S3 missing-object checks (for idempotent/provisioning flow
 - `storage_exists=true|false`
 - `storage_missing_expected=true|false`
 - `storage_lookup_result=exists|missing_expected|error_unexpected`
+
+## Timeline asset origin tags
+Emitted on video insertion/used tracking (`POST /api/assets/videos/:id/used`):
+
+- `app.timeline_asset_origin=source|export|shared|clip`
+- `app.timeline_asset_role=source|export`
 
 ## Subprocess tags
 Used for local command execution spans (FFmpeg family):

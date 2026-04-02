@@ -24,6 +24,8 @@ Scope notes:
 | `app.message_status` | `draft`, `active`, `paused`, `archived` | enum | Admin message status when a write operation is annotated. |
 | `app.message_priority` | integer encoded as string | string | Message priority used by selection ordering. |
 | `app.message_session_id` | non-empty string | string | Per-session message decision / analytics session id when known. |
+| `app.timeline_asset_origin` | `source`, `export`, `shared`, `clip` | enum | Asset origin for timeline insertion/selection tracking on `assets.videos.used`. |
+| `app.timeline_asset_role` | `source`, `export` | enum | Effective upload role derived from `uploads.video_role` (with legacy key fallback). |
 | `app.request.class` | `static_asset`, `probe`, `root` | enum | Set only when trace toggles include those classes. |
 | `error.class` | `validation`, `auth`, `forbidden`, `not_found`, `conflict`, `rate_limit`, `upstream`, `internal`, `client`, `timeout`, `network` | enum | Some values are route-status-derived; others from external error classification. |
 | `http.status_code` | `100..599` | integer | Set by HTTP/external spans. |

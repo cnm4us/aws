@@ -1,6 +1,6 @@
 # Plan 155: Use Exports as Timeline Sources
 
-Status: Draft
+Status: Completed (A–E)
 
 ## Context
 - Create Video exports are already stored in `uploads` with `video_role='export'`.
@@ -72,6 +72,23 @@ Allow users to add their own exported videos as reusable source clips in new tim
   4. Search/filter can find export by name.
   5. Missing proxy/thumbnail path degrades gracefully.
 - Document source taxonomy and expected behaviors for export-origin assets.
+
+## Completion Notes
+
+- Phase A complete:
+  - Added role-aware listing support for video assets.
+  - `/api/assets/videos` supports `video_role=source|export|all` (`source` default).
+  - `/api/uploads` supports `video_role=source|export` when `kind=video`.
+- Phase B complete:
+  - Video asset picker now includes `Exports` as a source scope.
+  - Existing scopes remain: `Uploads`, `My Clips`, `Shared Videos`.
+- Phase C complete:
+  - Timeline validation now accepts export-origin videos for both base clips and video overlays.
+- Phase D complete:
+  - Added readiness fallbacks in picker UI (thumbnail/proxy unavailable states).
+  - Added insertion-origin diagnostics (`app.timeline_asset_origin`, `app.timeline_asset_role`) on `assets.videos.used`.
+- Phase E complete:
+  - Documentation updated for source taxonomy, APIs, and observability tags.
 
 ## Risks
 1. Duplicate listing across groups (same upload appearing in multiple tabs).
