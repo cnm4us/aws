@@ -1067,10 +1067,12 @@ const VideoAssetsListPage: React.FC<{
   const [editUpload, setEditUpload] = React.useState<UploadListItem | null>(null)
   const [editClip, setEditClip] = React.useState<LibraryClipItem | null>(null)
   const [videoPreview, setVideoPreview] = React.useState<{ title: string; src: string; clipStart?: number; clipEnd?: number } | null>(null)
+  const [videoPreviewError, setVideoPreviewError] = React.useState<string | null>(null)
   const clipVideoRef = React.useRef<HTMLVideoElement | null>(null)
   const [clipPreviewTime, setClipPreviewTime] = React.useState(0)
   const [clipPreviewPlaying, setClipPreviewPlaying] = React.useState(false)
   const [togglingClipFav, setTogglingClipFav] = React.useState<Record<number, boolean>>({})
+  const [thumbErrorByUploadId, setThumbErrorByUploadId] = React.useState<Record<number, boolean>>({})
 
   const returnTo = useMemo(() => window.location.pathname + window.location.search, [])
   const allowClips = pickType === 'video' || pickType === 'videoOverlay'
@@ -1282,10 +1284,15 @@ const VideoAssetsListPage: React.FC<{
 
   const onPick = React.useCallback(
     (u: UploadListItem) => {
-      const href = buildReturnHref({ cvPickType: pickType || 'video', cvPickUploadId: String(u.id) })
+      const source = clipScope === 'exports' ? 'exports' : 'uploads'
+      const href = buildReturnHref({
+        cvPickType: pickType || 'video',
+        cvPickUploadId: String(u.id),
+        cvPickSource: source,
+      })
       if (href) window.location.href = href
     },
-    [pickType]
+    [clipScope, pickType]
   )
 
   const toggleFavorite = React.useCallback(
@@ -1425,6 +1432,7 @@ const VideoAssetsListPage: React.FC<{
           <button
             type="button"
             onClick={() => {
+              setVideoPreviewError(null)
               setVideoPreview({
                 title: name,
                 src: `/api/uploads/${encodeURIComponent(String(u.id))}/edit-proxy#t=0.1`,
@@ -1443,9 +1451,43 @@ const VideoAssetsListPage: React.FC<{
               cursor: 'pointer',
             }}
           >
-            <img src={thumbSrc} alt="" style={{ width: '100%', height: '100%', objectFit: previewFit, display: 'block' }} />
+            <img
+              src={thumbSrc}
+              alt=""
+              onError={() => {
+                setThumbErrorByUploadId((prev) => ({ ...prev, [u.id]: true }))
+              }}
+              style={{
+                width: '100%',
+                height: '100%',
+                objectFit: previewFit,
+                display: thumbErrorByUploadId[u.id] ? 'none' : 'block',
+              }}
+            />
+            {thumbErrorByUploadId[u.id] ? (
+              <div
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  textAlign: 'center',
+                  color: '#b7c5da',
+                  fontSize: 12,
+                  fontWeight: 700,
+                  padding: 10,
+                  background: 'rgba(0,0,0,0.4)',
+                }}
+              >
+                Thumbnail not ready
+              </div>
+            ) : null}
           </button>
         </div>
+        {isExportAsset ? (
+          <div style={{ marginTop: 8, color: '#9bb6d7', fontSize: 12 }}>Export-origin asset</div>
+        ) : null}
 
         {isPick ? (
           <div className="card-actions card-actions-right" style={{ marginTop: 10 }}>
@@ -1495,10 +1537,11 @@ const VideoAssetsListPage: React.FC<{
                 className="card-btn card-btn-edit"
                 type="button"
                 onClick={() =>
+                  (setVideoPreviewError(null),
                   setVideoPreview({
                     title: name,
                     src: `/api/uploads/${encodeURIComponent(String(u.id))}/edit-proxy#t=0.1`,
-                  })
+                  }))
                 }
                 style={{ cursor: 'pointer' }}
               >
@@ -1575,7 +1618,7 @@ const VideoAssetsListPage: React.FC<{
                 type="button"
                 onClick={() => {
                   const pick = pickType === 'videoOverlay' ? 'videoOverlayClip' : 'clip'
-                  const href = buildReturnHref({ cvPickType: pick, cvPickClipId: String(c.id) })
+                  const href = buildReturnHref({ cvPickType: pick, cvPickClipId: String(c.id), cvPickSource: 'clips' })
                   if (href) window.location.href = href
                 }}
                 style={{ cursor: 'pointer' }}
@@ -1596,7 +1639,10 @@ const VideoAssetsListPage: React.FC<{
             overflow: 'hidden',
             cursor: 'pointer',
           }}
-          onClick={() => setVideoPreview({ title: name, src: playbackSrc, clipStart: start, clipEnd: end })}
+          onClick={() => {
+            setVideoPreviewError(null)
+            setVideoPreview({ title: name, src: playbackSrc, clipStart: start, clipEnd: end })
+          }}
         >
           <video
             preload="metadata"
@@ -1878,7 +1924,10 @@ const VideoAssetsListPage: React.FC<{
                   padding: '64px 16px 80px',
                   zIndex: 24000,
                 }}
-                onClick={() => setVideoPreview(null)}
+                onClick={() => {
+                  setVideoPreview(null)
+                  setVideoPreviewError(null)
+                }}
               >
                 <div
                   style={{
@@ -1908,7 +1957,10 @@ const VideoAssetsListPage: React.FC<{
                     </div>
                     <button
                       type="button"
-                      onClick={() => setVideoPreview(null)}
+                      onClick={() => {
+                        setVideoPreview(null)
+                        setVideoPreviewError(null)
+                      }}
                       style={{
                         width: 34,
                         height: 34,
@@ -1997,6 +2049,7 @@ const VideoAssetsListPage: React.FC<{
                         playsInline
                         preload="metadata"
                         src={videoPreview.src}
+                        onError={() => setVideoPreviewError('Preview proxy not ready or unavailable')}
                         style={{
                           width: '100%',
                           maxHeight: '72vh',
@@ -2008,6 +2061,9 @@ const VideoAssetsListPage: React.FC<{
                       />
                     )}
                   </div>
+                  {videoPreviewError ? (
+                    <div style={{ marginTop: 10, color: '#ffb4b4', fontSize: 13 }}>{videoPreviewError}</div>
+                  ) : null}
                 </div>
               </div>
             ) : null}

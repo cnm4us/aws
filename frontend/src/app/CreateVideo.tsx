@@ -11515,6 +11515,8 @@ export default function CreateVideo() {
       const presetId = Number(String(qp.get('cvPickPresetId') || '0'))
       const clipId = Number(String(qp.get('cvPickClipId') || '0'))
       const targetClipIdRaw = String(qp.get('cvPickTargetClipId') || '').trim()
+      const sourceRaw = String(qp.get('cvPickSource') || '').trim().toLowerCase()
+      const source = sourceRaw === 'exports' || sourceRaw === 'shared' || sourceRaw === 'clips' ? sourceRaw : 'uploads'
       return {
         type,
         uploadId: Number.isFinite(uploadId) && uploadId > 0 ? uploadId : null,
@@ -11523,6 +11525,7 @@ export default function CreateVideo() {
         presetId: Number.isFinite(presetId) && presetId > 0 ? presetId : null,
         clipId: Number.isFinite(clipId) && clipId > 0 ? clipId : null,
         targetClipId: targetClipIdRaw || null,
+        source,
       }
     } catch {
       return null
@@ -11547,6 +11550,7 @@ export default function CreateVideo() {
         url.searchParams.delete('cvPickPresetId')
         url.searchParams.delete('cvPickClipId')
         url.searchParams.delete('cvPickTargetClipId')
+        url.searchParams.delete('cvPickSource')
         window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash || ''}`)
       } catch {}
     }
@@ -11567,7 +11571,7 @@ export default function CreateVideo() {
       return clip && typeof clip === 'object' ? clip : null
     }
 
-    const markVideoUsed = async (id: number) => {
+    const markVideoUsed = async (id: number, origin: 'source' | 'export' | 'shared' | 'clip' = 'source') => {
       try {
         const headers: Record<string, string> = { 'Content-Type': 'application/json' }
         const csrf = getCsrfToken()
@@ -11576,7 +11580,7 @@ export default function CreateVideo() {
           method: 'POST',
           credentials: 'same-origin',
           headers,
-          body: JSON.stringify({}),
+          body: JSON.stringify({ origin }),
         })
       } catch {}
     }
@@ -11603,26 +11607,36 @@ export default function CreateVideo() {
           if (clip) {
             addClipFromLibraryClip(clip as any)
             const uploadId = Number((clip as any).upload_id || (clip as any).uploadId)
-            if (Number.isFinite(uploadId) && uploadId > 0) void markVideoUsed(uploadId)
+            if (Number.isFinite(uploadId) && uploadId > 0) void markVideoUsed(uploadId, 'clip')
           }
         } else if (t === 'videoOverlayClip' && pickFromAssets.clipId) {
           const clip = await fetchClip(pickFromAssets.clipId)
           if (clip) {
             addVideoOverlayFromLibraryClip(clip as any)
             const uploadId = Number((clip as any).upload_id || (clip as any).uploadId)
-            if (Number.isFinite(uploadId) && uploadId > 0) void markVideoUsed(uploadId)
+            if (Number.isFinite(uploadId) && uploadId > 0) void markVideoUsed(uploadId, 'clip')
           }
         } else if (t === 'video' && pickFromAssets.uploadId) {
           const up = await fetchUpload(pickFromAssets.uploadId)
           if (up) {
             addClipFromUpload(up as any)
-            void markVideoUsed(pickFromAssets.uploadId)
+            void markVideoUsed(
+              pickFromAssets.uploadId,
+              pickFromAssets.source === 'exports' ? 'export' : pickFromAssets.source === 'shared' ? 'shared' : 'source'
+            )
+          } else {
+            setTimelineMessage('Selected video is unavailable or was removed.')
           }
         } else if (t === 'videoOverlay' && pickFromAssets.uploadId) {
           const up = await fetchUpload(pickFromAssets.uploadId)
           if (up) {
             addVideoOverlayFromUpload(up as any)
-            void markVideoUsed(pickFromAssets.uploadId)
+            void markVideoUsed(
+              pickFromAssets.uploadId,
+              pickFromAssets.source === 'exports' ? 'export' : pickFromAssets.source === 'shared' ? 'shared' : 'source'
+            )
+          } else {
+            setTimelineMessage('Selected video overlay is unavailable or was removed.')
           }
         } else if (t === 'graphic' && pickFromAssets.uploadId) {
           const up = await fetchUpload(pickFromAssets.uploadId)

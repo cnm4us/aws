@@ -4,6 +4,7 @@ import * as uploadsSvc from '../features/uploads/service'
 import { clampLimit, parseNumberCursor } from '../core/pagination'
 import * as audioTagsSvc from '../features/audio-tags/service'
 import { getLogger, logError } from '../lib/logger'
+import { trace } from '@opentelemetry/api'
 
 export const uploadsRouter = Router();
 const uploadsLogger = getLogger({ component: 'routes.uploads' })
@@ -187,7 +188,11 @@ uploadsRouter.post('/api/assets/videos/:id/used', requireAuth, async (req, res) 
     const userId = Number(req.user!.id)
     const uploadId = Number(req.params.id)
     if (!Number.isFinite(uploadId) || uploadId <= 0) return res.status(400).json({ error: 'bad_id' })
-    const data = await uploadsSvc.markVideoAssetUsed({ uploadId }, { userId })
+    const originRaw = String(((req.body || {}) as any).origin || '').trim().toLowerCase()
+    const origin = originRaw === 'export' || originRaw === 'shared' || originRaw === 'clip' ? originRaw : 'source'
+    const span = trace.getActiveSpan()
+    span?.setAttribute('app.timeline_asset_origin', origin)
+    const data = await uploadsSvc.markVideoAssetUsed({ uploadId, origin }, { userId })
     return res.json(data)
   } catch (err: any) {
     logError(req.log || uploadsLogger, err, 'uploads_route_error', { path: req.path })

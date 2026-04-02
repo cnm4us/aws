@@ -1499,7 +1499,7 @@ export async function setVideoAssetFavorite(
 }
 
 export async function markVideoAssetUsed(
-  input: { uploadId: number },
+  input: { uploadId: number; origin?: 'source' | 'export' | 'shared' | 'clip' },
   ctx: ServiceContext
 ): Promise<{ ok: true; uploadId: number }> {
   if (!ctx.userId) throw new ForbiddenError()
@@ -1514,15 +1514,23 @@ export async function markVideoAssetUsed(
   const ownerId = (row as any).user_id != null ? Number((row as any).user_id) : null
   if (ownerId == null || ownerId !== userId) throw new ForbiddenError()
 
-  const inferredRole = (() => {
+  const inferredRole: 'source' | 'export' = (() => {
     const roleRaw = (row as any).video_role != null ? String((row as any).video_role).trim().toLowerCase() : ''
     const keyRaw = (row as any).s3_key != null ? String((row as any).s3_key) : ''
     if (roleRaw === 'source' || roleRaw === 'export') return roleRaw
     return /(^|\/)renders\//.test(keyRaw) ? 'export' : 'source'
   })()
-  if (inferredRole !== 'source') throw new ForbiddenError()
-
-  await uploadPrefsRepo.markUsed(userId, uploadId)
+  const origin = String(input?.origin || 'source').trim().toLowerCase()
+  const canonicalOrigin = origin === 'export' || origin === 'shared' || origin === 'clip' ? origin : 'source'
+  // We only persist recency/favorites state for source assets.
+  if (inferredRole === 'source') {
+    await uploadPrefsRepo.markUsed(userId, uploadId)
+  }
+  const span = trace.getActiveSpan()
+  span?.setAttribute('app.operation', 'uploads.video_asset.used')
+  span?.setAttribute('app.timeline_asset_origin', canonicalOrigin)
+  span?.setAttribute('app.timeline_asset_role', inferredRole)
+  span?.setAttribute('app.upload_id', String(uploadId))
   return { ok: true, uploadId }
 }
 
