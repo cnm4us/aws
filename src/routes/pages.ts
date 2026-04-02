@@ -8850,6 +8850,19 @@ pagesRouter.get('/admin/dev-tools', async (req: any, res: any) => {
     </form>`
   )
   toolCard(
+    'Cooldown Journey State (User + Merged Anon)',
+    `<form method="post" action="/admin/dev-tools/cooldown-journey-user" style="margin:0" onsubmit="return confirm('Apply journey cooldown for this user (and merged anon runs)?')">
+      ${addCsrf}
+      <div class="dt-grid-3">
+        <label>User ID<input type="number" name="user_id" min="1" required /></label>
+        <label>Journey ID (optional)<input type="number" name="journey_id" min="1" placeholder="all journeys" /></label>
+        <label>Cooldown Days<input type="number" name="cooldown_days" min="1" max="365" value="2" required /></label>
+      </div>
+      <button class="btn dt-btn-danger" type="submit">Run</button>
+      <div class="field-hint" style="margin-top:6px">Moves terminal runs (<code>completed</code>/<code>abandoned</code>/<code>expired</code>) back in time for <code>user:&lt;id&gt;</code> and merged anon runs (<code>metadata_json.merged_to_user_id</code>).</div>
+    </form>`
+  )
+  toolCard(
     'Force Re-entry (Create Active Run)',
     `<form method="post" action="/admin/dev-tools/force-journey-reentry" style="margin:0" onsubmit="return confirm('Force a new active journey run for this identity?')">
       ${addCsrf}
@@ -9004,6 +9017,40 @@ pagesRouter.post('/admin/dev-tools/clear-journey-state-subject', async (req: any
     return res.redirect(`/admin/dev-tools?notice=${encodeURIComponent(`Cleared journey+subject state instances=${instances}, user_progress=${userProgress}, anon_progress=${anonProgress}, suppressions=${suppressions}`)}`)
   } catch (err: any) {
     return res.redirect(`/admin/dev-tools?error=${encodeURIComponent(String(err?.message || 'clear_journey_state_subject_failed'))}`)
+  }
+})
+
+pagesRouter.post('/admin/dev-tools/cooldown-journey-user', async (req: any, res: any) => {
+  if (!isAdminDevToolsEnabled()) return res.status(404).send('Not found')
+  const db = getPool()
+  const userId = Number(req.body?.user_id || 0)
+  const journeyIdRaw = Number(req.body?.journey_id || 0)
+  const cooldownDaysRaw = Number(req.body?.cooldown_days || 0)
+  if (!Number.isFinite(userId) || userId <= 0) return res.redirect('/admin/dev-tools?error=invalid_user_id')
+  const journeyId = Number.isFinite(journeyIdRaw) && journeyIdRaw > 0 ? Math.round(journeyIdRaw) : 0
+  const cooldownDays = Number.isFinite(cooldownDaysRaw) && cooldownDaysRaw > 0 ? Math.min(Math.max(Math.round(cooldownDaysRaw), 1), 365) : 2
+  try {
+    const whereJourney = journeyId > 0 ? 'AND journey_id = ?' : ''
+    const params: any[] = [cooldownDays, cooldownDays, String(Math.round(userId)), Math.round(userId)]
+    if (journeyId > 0) params.push(journeyId)
+    const [result] = await db.query(
+      `UPDATE feed_message_journey_instances
+          SET completed_at = DATE_SUB(UTC_TIMESTAMP(), INTERVAL ? DAY),
+              last_seen_at = DATE_SUB(UTC_TIMESTAMP(), INTERVAL ? DAY),
+              updated_at = CURRENT_TIMESTAMP
+        WHERE state IN ('completed','abandoned','expired')
+          AND (
+            (identity_type = 'user' AND identity_key = ?)
+            OR
+            (identity_type = 'anon' AND CAST(JSON_UNQUOTE(JSON_EXTRACT(metadata_json, '$.merged_to_user_id')) AS UNSIGNED) = ?)
+          )
+          ${whereJourney}`,
+      params
+    )
+    const rows = Number((result as any)?.affectedRows || 0)
+    return res.redirect(`/admin/dev-tools?notice=${encodeURIComponent(`Cooldown applied rows=${rows}, user_id=${Math.round(userId)}, journey_id=${journeyId > 0 ? journeyId : 'all'}, days=${cooldownDays}`)}`)
+  } catch (err: any) {
+    return res.redirect(`/admin/dev-tools?error=${encodeURIComponent(String(err?.message || 'cooldown_journey_user_failed'))}`)
   }
 })
 
