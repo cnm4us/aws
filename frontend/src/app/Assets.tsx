@@ -1025,8 +1025,9 @@ function normalizeGraphicSort(raw: string): string {
   return allowed.has(s) ? s : 'recent'
 }
 
-function normalizeClipScope(raw: string | null): 'uploads' | 'mine' | 'shared' {
+function normalizeClipScope(raw: string | null): 'uploads' | 'exports' | 'mine' | 'shared' {
   const s = String(raw || '').trim().toLowerCase()
+  if (s === 'exports') return 'exports'
   if (s === 'mine') return 'mine'
   if (s === 'shared' || s === 'system') return 'shared'
   return 'uploads'
@@ -1057,7 +1058,7 @@ const VideoAssetsListPage: React.FC<{
   const [q, setQ] = React.useState('')
   const [sort, setSort] = React.useState<string>('recent')
   const [favoritesOnly, setFavoritesOnly] = React.useState(false)
-  const [clipScope, setClipScope] = React.useState<'uploads' | 'mine' | 'shared'>(() => normalizeClipScope(getQueryParam('scope')))
+  const [clipScope, setClipScope] = React.useState<'uploads' | 'exports' | 'mine' | 'shared'>(() => normalizeClipScope(getQueryParam('scope')))
   const [sharedScope, setSharedScope] = React.useState<'system' | 'users'>(() => {
     const raw = String(getQueryParam('shared_scope') || getQueryParam('sharedScope') || '').trim().toLowerCase()
     return raw === 'users' ? 'users' : 'system'
@@ -1075,6 +1076,7 @@ const VideoAssetsListPage: React.FC<{
   const allowClips = pickType === 'video' || pickType === 'videoOverlay'
   const isSharedMode = allowClips && clipScope === 'shared'
   const isClipMode = allowClips && clipScope === 'mine'
+  const isExportMode = clipScope === 'exports'
   const isUploadMode = clipScope === 'uploads'
 
   const clipPreviewStart = videoPreview?.clipStart
@@ -1190,6 +1192,7 @@ const VideoAssetsListPage: React.FC<{
           const params = new URLSearchParams()
           if (qTrim) params.set('q', qTrim)
           params.set('sort', normalizeVideoSort(sort))
+          params.set('video_role', isExportMode ? 'export' : 'source')
           if (favoritesOnly) params.set('favorites_only', '1')
           params.set('limit', '200')
           const res = await fetch(`/api/assets/videos?${params.toString()}`, {
@@ -1208,7 +1211,7 @@ const VideoAssetsListPage: React.FC<{
         if (!isSharedMode) setLoading(false)
       }
     },
-    [favoritesOnly, q, sort, isClipMode, isSharedMode]
+    [favoritesOnly, q, sort, isClipMode, isExportMode, isSharedMode]
   )
 
   const sortedUploadItems = React.useMemo(() => {
@@ -1359,6 +1362,9 @@ const VideoAssetsListPage: React.FC<{
     const isPortrait = u.width != null && u.height != null && Number(u.width) > 0 && Number(u.height) > 0 ? Number(u.height) > Number(u.width) : false
     const previewAspect = isPortrait ? '9 / 16' : '16 / 9'
     const previewFit = isPortrait ? 'contain' : 'cover'
+    const roleRaw = u.video_role ? String(u.video_role).trim().toLowerCase() : ''
+    const keyRaw = String((u as any).s3_key || '')
+    const isExportAsset = roleRaw === 'export' || (roleRaw !== 'source' && /(^|\/)renders\//.test(keyRaw))
     const fav = Boolean(u.is_favorite)
     const isPick = mode === 'pick'
     return (
@@ -1368,27 +1374,51 @@ const VideoAssetsListPage: React.FC<{
           <div className="card-title" style={{ fontSize: 17, color: '#ffd60a' }}>{name}</div>
             <div className="card-meta">{meta}</div>
           </div>
-          <button
-            type="button"
-            onClick={() => void toggleFavorite(u)}
-            disabled={!!togglingFav[u.id]}
-            title={fav ? 'Unfavorite' : 'Favorite'}
-            style={{
-              flex: '0 0 auto',
-              width: 40,
-              height: 40,
-              borderRadius: 12,
-              border: '1px solid rgba(212,175,55,0.7)',
-              background: '#0c0c0c',
-              color: fav ? '#ffd35a' : '#bbb',
-              fontSize: 18,
-              fontWeight: 900,
-              cursor: togglingFav[u.id] ? 'default' : 'pointer',
-              opacity: togglingFav[u.id] ? 0.7 : 1,
-            }}
-          >
-            {fav ? '★' : '☆'}
-          </button>
+          {!isExportAsset ? (
+            <button
+              type="button"
+              onClick={() => void toggleFavorite(u)}
+              disabled={!!togglingFav[u.id]}
+              title={fav ? 'Unfavorite' : 'Favorite'}
+              style={{
+                flex: '0 0 auto',
+                width: 40,
+                height: 40,
+                borderRadius: 12,
+                border: '1px solid rgba(212,175,55,0.7)',
+                background: '#0c0c0c',
+                color: fav ? '#ffd35a' : '#bbb',
+                fontSize: 18,
+                fontWeight: 900,
+                cursor: togglingFav[u.id] ? 'default' : 'pointer',
+                opacity: togglingFav[u.id] ? 0.7 : 1,
+              }}
+            >
+              {fav ? '★' : '☆'}
+            </button>
+          ) : (
+            <span
+              style={{
+                flex: '0 0 auto',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                minWidth: 70,
+                height: 28,
+                padding: '0 10px',
+                borderRadius: 999,
+                border: '1px solid rgba(10,132,255,0.7)',
+                background: 'rgba(10,132,255,0.18)',
+                color: '#d9ecff',
+                fontSize: 12,
+                fontWeight: 900,
+                letterSpacing: 0.3,
+                textTransform: 'uppercase',
+              }}
+            >
+              Export
+            </span>
+          )}
         </div>
 
         <div style={{ marginTop: 10 }}>
@@ -1679,6 +1709,7 @@ const VideoAssetsListPage: React.FC<{
               }}
             >
               <option value="uploads">Uploads</option>
+              <option value="exports">Exports</option>
               <option value="mine">My Clips</option>
               <option value="shared">Shared Videos</option>
             </select>

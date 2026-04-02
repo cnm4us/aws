@@ -62,7 +62,18 @@ function variantReductionOutcomeBucket(originalBytes: number | null, variantByte
 }
 
 export async function list(
-  params: { status?: string; kind?: 'video' | 'logo' | 'audio' | 'image'; imageRole?: string; userId?: number; spaceId?: number; cursorId?: number; limit?: number; includePublications?: boolean; includeProductions?: boolean },
+  params: {
+    status?: string
+    kind?: 'video' | 'logo' | 'audio' | 'image'
+    imageRole?: string
+    videoRole?: 'source' | 'export'
+    userId?: number
+    spaceId?: number
+    cursorId?: number
+    limit?: number
+    includePublications?: boolean
+    includeProductions?: boolean
+  },
   ctx: ServiceContext
 ) {
   const statusParam = params.status ? String(params.status) : undefined
@@ -80,6 +91,7 @@ export async function list(
       status: statusList,
       kind: params.kind,
       imageRole: params.imageRole,
+      videoRole: params.videoRole,
       userId: params.userId,
       spaceId: params.spaceId,
       cursorId: params.cursorId,
@@ -1311,8 +1323,32 @@ function normalizeVideoSort(raw: any): VideoSortKey {
   }
 }
 
-function videoSourceRoleWhereSql(): string {
-  // Plan 68: prefer `video_role='source'`, else infer from s3_key.
+type VideoRoleFilter = 'source' | 'export' | 'all'
+
+function normalizeVideoRoleFilter(raw: any): VideoRoleFilter {
+  const s = String(raw || '')
+    .trim()
+    .toLowerCase()
+  if (s === 'export') return 'export'
+  if (s === 'all') return 'all'
+  return 'source'
+}
+
+function videoRoleWhereSql(filter: VideoRoleFilter): string {
+  // Plan 68: prefer explicit roles; fallback to s3_key inference for legacy rows.
+  if (filter === 'export') {
+    return `(
+      u.video_role = 'export'
+      OR (u.video_role IS NULL AND u.s3_key REGEXP '(^|/)renders/')
+    )`
+  }
+  if (filter === 'all') {
+    return `(
+      u.video_role IN ('source','export')
+      OR u.video_role IS NULL
+    )`
+  }
+  // source
   return `(
     u.video_role = 'source'
     OR (u.video_role IS NULL AND u.s3_key NOT REGEXP '(^|/)renders/')
@@ -1323,6 +1359,7 @@ export async function listUserVideoAssets(
   input: {
     q?: string
     sort?: string
+    videoRole?: 'source' | 'export' | 'all'
     favoritesOnly?: boolean
     includeRecent?: boolean
     limit?: number
@@ -1335,6 +1372,7 @@ export async function listUserVideoAssets(
 
   const q = String(input?.q || '').trim().slice(0, 200)
   const sort = normalizeVideoSort(input?.sort)
+  const videoRole = normalizeVideoRoleFilter(input?.videoRole)
   const favoritesOnly = Boolean(input?.favoritesOnly)
   const includeRecent = Boolean(input?.includeRecent)
   const lim = clampLimit(input?.limit, 200, 1, 500)
@@ -1344,7 +1382,7 @@ export async function listUserVideoAssets(
   const args: any[] = []
 
   where.push(`u.kind = 'video'`)
-  where.push(videoSourceRoleWhereSql())
+  where.push(videoRoleWhereSql(videoRole))
   where.push(`u.status IN ('uploaded','completed')`)
   where.push(`u.source_deleted_at IS NULL`)
   where.push(`u.user_id = ?`)
@@ -1413,7 +1451,7 @@ export async function listUserVideoAssets(
        FROM uploads u
        JOIN user_upload_prefs p ON p.user_id = ? AND p.upload_id = u.id
       WHERE u.kind = 'video'
-        AND ${videoSourceRoleWhereSql()}
+        AND ${videoRoleWhereSql(videoRole)}
         AND u.status IN ('uploaded','completed')
         AND u.source_deleted_at IS NULL
         AND u.user_id = ?

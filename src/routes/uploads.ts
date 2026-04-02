@@ -10,15 +10,18 @@ const uploadsLogger = getLogger({ component: 'routes.uploads' })
 
 uploadsRouter.get('/api/uploads', async (req, res) => {
   try {
-    const { status, kind, image_role, limit, cursor, user_id, space_id, include_publications, include_productions } = req.query as any
+    const { status, kind, image_role, video_role, limit, cursor, user_id, space_id, include_publications, include_productions } = req.query as any
     const includePubs = include_publications === '1' || include_publications === 'true'
     const includeProds = include_productions === '1' || include_productions === 'true'
+    const videoRoleRaw = String(video_role || '').trim().toLowerCase()
+    const videoRole = videoRoleRaw === 'source' || videoRoleRaw === 'export' ? (videoRoleRaw as 'source' | 'export') : undefined
     const lim = clampLimit(limit, 50, 1, 500)
     const curId = parseNumberCursor(cursor) ?? undefined
     const result = await uploadsSvc.list({
       status: status ? String(status) : undefined,
       kind: kind ? (String(kind).toLowerCase() as any) : undefined,
       imageRole: image_role ? String(image_role).trim().toLowerCase() : undefined,
+      videoRole,
       userId: user_id ? Number(user_id) : undefined,
       spaceId: space_id ? Number(space_id) : undefined,
       cursorId: curId,
@@ -142,11 +145,14 @@ uploadsRouter.post('/api/system-audio/:id/favorite', requireAuth, async (req, re
 uploadsRouter.get('/api/assets/videos', requireAuth, async (req, res) => {
   try {
     const userId = Number(req.user!.id)
-    const { q, sort, favorites_only, include_recent, limit } = req.query as any
+    const { q, sort, video_role, favorites_only, include_recent, limit } = req.query as any
+    const videoRoleRaw = String(video_role || '').trim().toLowerCase()
+    const videoRole = videoRoleRaw === 'export' || videoRoleRaw === 'all' ? (videoRoleRaw as 'export' | 'all') : 'source'
     const data = await uploadsSvc.listUserVideoAssets(
       {
         q: q != null ? String(q) : undefined,
         sort: sort != null ? String(sort) : undefined,
+        videoRole,
         favoritesOnly: favorites_only === '1' || favorites_only === 'true',
         includeRecent: include_recent === '1' || include_recent === 'true',
         limit: limit != null ? Number(limit) : undefined,
