@@ -47,6 +47,15 @@ const JOURNEY_GOAL_EVENT_KEYS: readonly JourneyGoalEventKey[] = [
   'support.donate_complete',
 ]
 
+export type JourneySubjectResolutionSource = 'auth' | 'anon' | 'linked_anon'
+
+function journeySubjectTypeFromSubjectId(raw: any): MessageJourneyInstanceIdentityType | null {
+  const value = String(raw || '').trim().toLowerCase()
+  if (value.startsWith('user:')) return 'user'
+  if (value.startsWith('anon:')) return 'anon'
+  return null
+}
+
 function isEnumValue<T extends string>(value: any, allowed: readonly T[]): value is T {
   return typeof value === 'string' && (allowed as readonly string[]).includes(value)
 }
@@ -723,6 +732,84 @@ export async function listJourneyInstancesForIdentity(input: {
   return rows.map((row) => toJourneyInstanceDto(row))
 }
 
+export async function resolveJourneySubject(input: {
+  userId?: any
+  anonVisitorId?: any
+}): Promise<{
+  journeySubjectId: string | null
+  journeySubjectType: MessageJourneyInstanceIdentityType | null
+  resolutionSource: JourneySubjectResolutionSource | null
+}> {
+  const userId = Number(input?.userId || 0)
+  if (Number.isFinite(userId) && userId > 0) {
+    const subject = `user:${Math.round(userId)}`
+    return {
+      journeySubjectId: subject,
+      journeySubjectType: 'user',
+      resolutionSource: 'auth',
+    }
+  }
+
+  const anonVisitorId = String(input?.anonVisitorId || '').trim()
+  if (!anonVisitorId) {
+    return {
+      journeySubjectId: null,
+      journeySubjectType: null,
+      resolutionSource: null,
+    }
+  }
+
+  const sourceSubject = `anon:${anonVisitorId}`
+  try {
+    const link = await repo.getJourneySubjectLinkBySourceSubjectId(sourceSubject)
+    const canonical = String((link as any)?.canonical_subject_id || '').trim()
+    const canonicalType = journeySubjectTypeFromSubjectId(canonical)
+    if (canonical && canonicalType) {
+      return {
+        journeySubjectId: canonical,
+        journeySubjectType: canonicalType,
+        resolutionSource: 'linked_anon',
+      }
+    }
+  } catch {}
+
+  return {
+    journeySubjectId: sourceSubject,
+    journeySubjectType: 'anon',
+    resolutionSource: 'anon',
+  }
+}
+
+export async function linkAnonToUserSubject(input: {
+  anonVisitorId: any
+  userId: any
+  reason?: any
+  metadata?: Record<string, any> | null
+}): Promise<void> {
+  const anonVisitorId = String(input?.anonVisitorId || '').trim()
+  const userId = normalizePositiveInt(input?.userId, 'bad_user_id')
+  if (!anonVisitorId) throw new DomainError('bad_anon_visitor_id', 'bad_anon_visitor_id', 400)
+  const sourceSubjectId = `anon:${anonVisitorId}`
+  const canonicalSubjectId = `user:${userId}`
+  const reasonRaw = String(input?.reason || 'auth_merge').trim().toLowerCase()
+  const reason = reasonRaw || 'auth_merge'
+  const metadata = input?.metadata && typeof input.metadata === 'object' && !Array.isArray(input.metadata)
+    ? input.metadata
+    : {}
+  const metadataJson = JSON.stringify({
+    ...metadata,
+    source_subject_id: sourceSubjectId,
+    canonical_subject_id: canonicalSubjectId,
+    linked_at: new Date().toISOString(),
+  })
+  await repo.upsertJourneySubjectLink({
+    sourceSubjectId,
+    canonicalSubjectId,
+    linkReason: reason,
+    metadataJson,
+  })
+}
+
 export async function upsertJourneyInstanceForIdentity(input: {
   journeyId: any
   identityType: any
@@ -1362,6 +1449,16 @@ export async function mergeAnonJourneyStateIntoUserOnAuth(input: {
   const userId = normalizePositiveInt(input?.userId, 'bad_user_id')
   const anonVisitorId = String(input?.anonVisitorId || '').trim()
   if (!anonVisitorId) return { mergedJourneys: 0, mergedProgressRows: 0, skipped: true }
+  try {
+    await linkAnonToUserSubject({
+      anonVisitorId,
+      userId,
+      reason: 'auth_merge',
+      metadata: {
+        source: 'auth_merge',
+      },
+    })
+  } catch {}
 
   const now = toUtcDateTimeString(new Date())
   const mergedAtIso = new Date().toISOString()

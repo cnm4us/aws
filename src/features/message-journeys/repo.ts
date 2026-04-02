@@ -116,6 +116,18 @@ const INSTANCE_SELECT_SQL = `
   FROM feed_message_journey_instances
 `
 
+const SUBJECT_LINK_SELECT_SQL = `
+  SELECT
+    id,
+    source_subject_id,
+    canonical_subject_id,
+    link_reason,
+    metadata_json,
+    created_at,
+    updated_at
+  FROM feed_journey_subject_links
+`
+
 async function rowExists(tableName: string, id: number): Promise<boolean> {
   const db = getPool()
   const [rows] = await db.query(`SELECT id FROM ${tableName} WHERE id = ? LIMIT 1`, [id])
@@ -257,6 +269,13 @@ type StepCreateInput = {
 }
 
 type StepUpdateInput = Partial<StepCreateInput>
+
+type JourneySubjectLinkUpsertInput = {
+  sourceSubjectId: string
+  canonicalSubjectId: string
+  linkReason?: string | null
+  metadataJson?: string | null
+}
 
 type ProgressUpsertInput = {
   userId: number
@@ -1104,6 +1123,50 @@ export async function listJourneyInstancesBySubjectJourneyIds(journeySubjectId: 
     [subject, ...uniq]
   )
   return rows as MessageJourneyInstanceRow[]
+}
+
+export async function getJourneySubjectLinkBySourceSubjectId(sourceSubjectId: string): Promise<{
+  id: number
+  source_subject_id: string
+  canonical_subject_id: string
+  link_reason: string
+  metadata_json: string
+  created_at: string
+  updated_at: string
+} | null> {
+  const source = String(sourceSubjectId || '').trim()
+  if (!source) return null
+  const db = getPool()
+  const [rows] = await db.query(
+    `${SUBJECT_LINK_SELECT_SQL}
+      WHERE source_subject_id = ?
+      LIMIT 1`,
+    [source]
+  )
+  return ((rows as any[])[0] || null) as any
+}
+
+export async function upsertJourneySubjectLink(input: JourneySubjectLinkUpsertInput): Promise<void> {
+  const source = String(input.sourceSubjectId || '').trim()
+  const canonical = String(input.canonicalSubjectId || '').trim()
+  if (!source || !canonical) throw new Error('invalid_subject_link')
+  const linkReason = String(input.linkReason || 'auth_merge').trim() || 'auth_merge'
+  const metadataJson = input.metadataJson == null ? '{}' : String(input.metadataJson || '{}')
+  const db = getPool()
+  await db.query(
+    `INSERT INTO feed_journey_subject_links (
+      source_subject_id,
+      canonical_subject_id,
+      link_reason,
+      metadata_json
+    ) VALUES (?, ?, ?, ?)
+    ON DUPLICATE KEY UPDATE
+      canonical_subject_id = VALUES(canonical_subject_id),
+      link_reason = VALUES(link_reason),
+      metadata_json = VALUES(metadata_json),
+      updated_at = CURRENT_TIMESTAMP`,
+    [source, canonical, linkReason, metadataJson]
+  )
 }
 
 export async function listJourneyInstancesByAnonJourneyIds(anonVisitorId: string, journeyIds: number[]): Promise<MessageJourneyInstanceRow[]> {

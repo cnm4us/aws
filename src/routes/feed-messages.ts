@@ -325,9 +325,19 @@ async function handleDecision(req: any, res: any, next: any) {
       span.setAttribute('app.viewer_state', viewerState)
       const journeySubjectIdRaw = String((decision.debug as any)?.input?.journeySubjectId || '').trim()
       const journeySubjectTypeRaw = String((decision.debug as any)?.input?.journeySubjectType || '').trim().toLowerCase()
+      const journeySubjectIdResolvedRaw = String((decision.debug as any)?.input?.journeySubjectIdResolved || '').trim()
+      const journeySubjectTypeResolvedRaw = String((decision.debug as any)?.input?.journeySubjectTypeResolved || '').trim().toLowerCase()
+      const journeySubjectResolutionSourceRaw = String((decision.debug as any)?.input?.journeySubjectResolutionSource || '').trim().toLowerCase()
       if (journeySubjectIdRaw) span.setAttribute('app.journey_subject_id', journeySubjectIdRaw)
       if (journeySubjectTypeRaw === 'user' || journeySubjectTypeRaw === 'anon') {
         span.setAttribute('app.journey_subject_type', journeySubjectTypeRaw)
+      }
+      if (journeySubjectIdResolvedRaw) span.setAttribute('app.journey_subject_id_resolved', journeySubjectIdResolvedRaw)
+      if (journeySubjectTypeResolvedRaw === 'user' || journeySubjectTypeResolvedRaw === 'anon') {
+        span.setAttribute('app.journey_subject_type_resolved', journeySubjectTypeResolvedRaw)
+      }
+      if (journeySubjectResolutionSourceRaw === 'auth' || journeySubjectResolutionSourceRaw === 'anon' || journeySubjectResolutionSourceRaw === 'linked_anon') {
+        span.setAttribute('app.journey_subject_resolution_source', journeySubjectResolutionSourceRaw)
       }
       span.setAttribute('app.targeting_model', 'ruleset_only')
       span.setAttribute('app.decision_reason', decision.reasonCode)

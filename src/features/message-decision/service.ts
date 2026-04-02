@@ -50,6 +50,69 @@ export function toJourneySubjectType(params: { userId?: number | null; anonKey?:
   return null
 }
 
+function toJourneySubjectTypeFromSubjectId(raw: any): JourneySubjectType | null {
+  const value = String(raw || '').trim().toLowerCase()
+  if (value.startsWith('user:')) return 'user'
+  if (value.startsWith('anon:')) return 'anon'
+  return null
+}
+
+async function resolveJourneySubject(params: {
+  userId?: number | null
+  anonKey?: string | null
+}): Promise<{
+  rawJourneySubjectId: string | null
+  rawJourneySubjectType: JourneySubjectType | null
+  resolvedJourneySubjectId: string | null
+  resolvedJourneySubjectType: JourneySubjectType | null
+  resolutionSource: 'auth' | 'anon' | 'linked_anon' | null
+}> {
+  const rawJourneySubjectId = toJourneySubjectId(params)
+  const rawJourneySubjectType = toJourneySubjectType(params)
+
+  if (rawJourneySubjectType === 'user') {
+    return {
+      rawJourneySubjectId,
+      rawJourneySubjectType,
+      resolvedJourneySubjectId: rawJourneySubjectId,
+      resolvedJourneySubjectType: 'user',
+      resolutionSource: 'auth',
+    }
+  }
+
+  if (rawJourneySubjectType === 'anon' && rawJourneySubjectId) {
+    try {
+      const link = await messageJourneysRepo.getJourneySubjectLinkBySourceSubjectId(rawJourneySubjectId)
+      const canonical = String((link as any)?.canonical_subject_id || '').trim()
+      const canonicalType = toJourneySubjectTypeFromSubjectId(canonical)
+      if (canonical && canonicalType) {
+        return {
+          rawJourneySubjectId,
+          rawJourneySubjectType,
+          resolvedJourneySubjectId: canonical,
+          resolvedJourneySubjectType: canonicalType,
+          resolutionSource: 'linked_anon',
+        }
+      }
+    } catch {}
+    return {
+      rawJourneySubjectId,
+      rawJourneySubjectType,
+      resolvedJourneySubjectId: rawJourneySubjectId,
+      resolvedJourneySubjectType: 'anon',
+      resolutionSource: 'anon',
+    }
+  }
+
+  return {
+    rawJourneySubjectId,
+    rawJourneySubjectType,
+    resolvedJourneySubjectId: rawJourneySubjectId,
+    resolvedJourneySubjectType: rawJourneySubjectType,
+    resolutionSource: null,
+  }
+}
+
 type SessionSuppressionState = {
   convertedMessageIds: Set<number>
 }
@@ -539,6 +602,7 @@ function isPastDays(referenceMs: number | null, days: number): boolean {
 async function applyJourneyGating(params: {
   userId: number | null
   anonVisitorId?: string | null
+  resolvedJourneySubjectId?: string | null
   surface: MessageDecisionSurface
   surfaceTarget: { groupId: number | null; channelId: number | null }
   candidates: EligibleMessageCandidate[]
@@ -596,7 +660,7 @@ async function applyJourneyGating(params: {
     ? Math.round(Number(params.userId))
     : null
   const anonVisitorId = userId == null ? String(params.anonVisitorId || '').trim() : ''
-  const journeySubjectId = toJourneySubjectId({ userId, anonKey: anonVisitorId || null })
+  const journeySubjectId = String(params.resolvedJourneySubjectId || toJourneySubjectId({ userId, anonKey: anonVisitorId || null }) || '').trim() || null
   if (userId == null) {
     const terminalJourneys = new Set<number>()
     const restartJourneys = new Set<number>()
@@ -1162,8 +1226,15 @@ export function buildDecisionInput(params: {
 }
 
 export async function decideMessage(input: MessageDecisionInput, opts?: { includeDebug?: boolean }): Promise<MessageDecisionResult> {
-  const journeySubjectId = toJourneySubjectId({ userId: input.userId, anonKey: input.anonVisitorId || input.sessionId || null })
-  const journeySubjectType = toJourneySubjectType({ userId: input.userId, anonKey: input.anonVisitorId || input.sessionId || null })
+  const subjectResolution = await resolveJourneySubject({
+    userId: input.userId,
+    anonKey: input.anonVisitorId || input.sessionId || null,
+  })
+  const journeySubjectId = subjectResolution.rawJourneySubjectId
+  const journeySubjectType = subjectResolution.rawJourneySubjectType
+  const journeySubjectIdResolved = subjectResolution.resolvedJourneySubjectId
+  const journeySubjectTypeResolved = subjectResolution.resolvedJourneySubjectType
+  const journeySubjectResolutionSource = subjectResolution.resolutionSource
   const existing = await repo.getSessionByKey(input.sessionId, input.surface)
   const merged = mergeSessionState(existing, input)
   const suppressionJson = serializeSuppressionState(merged.suppression)
@@ -1331,6 +1402,7 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
           const gated = await applyJourneyGating({
             userId: input.userId,
             anonVisitorId: input.anonVisitorId || input.sessionId || null,
+            resolvedJourneySubjectId: journeySubjectIdResolved,
             surface: input.surface,
             surfaceTarget: input.surfaceTarget,
             candidates: eligible,
@@ -1493,6 +1565,9 @@ export async function decideMessage(input: MessageDecisionInput, opts?: { includ
         viewerState: input.viewerState,
         journeySubjectId,
         journeySubjectType,
+        journeySubjectIdResolved,
+        journeySubjectTypeResolved,
+        journeySubjectResolutionSource,
         counters: input.counters,
       },
       mergedSession: {

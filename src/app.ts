@@ -383,7 +383,16 @@ export function buildServer(): express.Application {
     if (!Number.isFinite(numericUserId) || numericUserId <= 0) return
     try {
       const cookies = parseCookies(req?.headers?.cookie)
-      const anonVisitorId = String(cookies?.[ANON_SESSION_COOKIE] || '').trim()
+      const anonVisitorId = String(
+        cookies?.[ANON_SESSION_COOKIE] ||
+        req?.body?.message_session_id ||
+        req?.body?.prompt_session_id ||
+        req?.body?.session_id ||
+        req?.query?.message_session_id ||
+        req?.query?.prompt_session_id ||
+        req?.query?.session_id ||
+        ''
+      ).trim()
       if (!anonVisitorId) return
       await messageJourneysSvc.mergeAnonJourneyStateIntoUserOnAuth({
         userId: numericUserId,
