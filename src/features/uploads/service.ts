@@ -1486,14 +1486,6 @@ export async function setVideoAssetFavorite(
   const ownerId = (row as any).user_id != null ? Number((row as any).user_id) : null
   if (ownerId == null || ownerId !== userId) throw new ForbiddenError()
 
-  const inferredRole = (() => {
-    const roleRaw = (row as any).video_role != null ? String((row as any).video_role).trim().toLowerCase() : ''
-    const keyRaw = (row as any).s3_key != null ? String((row as any).s3_key) : ''
-    if (roleRaw === 'source' || roleRaw === 'export') return roleRaw
-    return /(^|\/)renders\//.test(keyRaw) ? 'export' : 'source'
-  })()
-  if (inferredRole !== 'source') throw new ForbiddenError()
-
   await uploadPrefsRepo.setFavorite(userId, uploadId, Boolean(input.favorite))
   return { ok: true, uploadId, favorite: Boolean(input.favorite) }
 }

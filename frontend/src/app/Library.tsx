@@ -270,6 +270,14 @@ function truncateWords(text: string, limit: number): { text: string; truncated: 
   return { text: `${words.slice(0, limit).join(' ')}…`, truncated: true }
 }
 
+function sharedBadgeStyle() {
+  return {
+    border: '1px solid rgba(52,199,89,0.8)',
+    background: 'rgba(52,199,89,0.2)',
+    color: '#ddffe7',
+  }
+}
+
 const FALLBACK_LIBRARY_SOURCES: LibrarySourceOption[] = [
   { value: 'cspan', label: 'CSPAN' },
   { value: 'glenn kirschner', label: 'Glenn Kirschner' },
@@ -695,12 +703,12 @@ export const LibraryListPage: React.FC<LibraryListPageProps> = ({
                 getLibrarySourceLabel(v.source_org, sourceOptions) ||
                 (v.source_org ? String(v.source_org).toUpperCase() : null)
               const meta = [
-                sourceLabel,
+                sourceLabel || 'SHARED',
                 v.duration_seconds ? formatDuration(v.duration_seconds) : null,
                 v.width && v.height ? `${v.width}×${v.height}` : null,
               ]
                 .filter(Boolean)
-                .join(' · ')
+                .join(' * ')
               const description = v.description ? String(v.description) : ''
               const clippedDescription = description ? truncateWords(description, 50).text : ''
               const fav = Boolean(v.is_favorite)
@@ -725,26 +733,32 @@ export const LibraryListPage: React.FC<LibraryListPageProps> = ({
               const clipHref = qs
                 ? `${clipBasePath}/${encodeURIComponent(String(v.id))}?${qs}`
                 : `${clipBasePath}/${encodeURIComponent(String(v.id))}`
+              const badgeTone = sharedBadgeStyle()
 
               return (
                 <div key={v.id} className="card-item">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedInfo(v)}
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, alignItems: 'center' }}>
+                    <span
                       style={{
-                        padding: 0,
-                        margin: 0,
-                        border: 'none',
-                        background: 'transparent',
-                        textAlign: 'left',
-                        cursor: 'pointer',
-                        flex: '1 1 auto',
-                        minWidth: 0,
+                        flex: '0 0 auto',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        minWidth: 70,
+                        height: 28,
+                        padding: '0 10px',
+                        borderRadius: 999,
+                        border: badgeTone.border,
+                        background: badgeTone.background,
+                        color: badgeTone.color,
+                        fontSize: 12,
+                        fontWeight: 900,
+                        letterSpacing: 0.3,
+                        textTransform: 'uppercase',
                       }}
                     >
-                      <div className="card-title" style={{ fontSize: 17 }}>{name}</div>
-                    </button>
+                      Shared
+                    </span>
                     <button
                       type="button"
                       onClick={() => void toggleFavorite(v)}
@@ -767,6 +781,21 @@ export const LibraryListPage: React.FC<LibraryListPageProps> = ({
                       {fav ? '★' : '☆'}
                     </button>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedInfo(v)}
+                    style={{
+                      padding: 0,
+                      margin: 0,
+                      border: 'none',
+                      background: 'transparent',
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                      width: '100%',
+                    }}
+                  >
+                    <div className="card-title" style={{ fontSize: 17 }}>{name}</div>
+                  </button>
                   {meta ? <div style={{ color: '#bbb', fontSize: 13 }}>{meta}</div> : null}
                   <div
                     style={{

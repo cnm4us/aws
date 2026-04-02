@@ -360,6 +360,36 @@ function formatDate(input: string | null): string {
   return d.toISOString().slice(0, 10)
 }
 
+function truncateWords(text: string, limit: number): { text: string; truncated: boolean } {
+  const clean = String(text || '').trim()
+  if (!clean) return { text: '', truncated: false }
+  const words = clean.split(/\s+/)
+  if (words.length <= limit) return { text: clean, truncated: false }
+  return { text: `${words.slice(0, limit).join(' ')}…`, truncated: true }
+}
+
+function videoScopeBadgeStyle(kind: 'upload' | 'export' | 'clip') {
+  if (kind === 'export') {
+    return {
+      border: '1px solid rgba(175,82,222,0.8)',
+      background: 'rgba(175,82,222,0.2)',
+      color: '#f1ddff',
+    }
+  }
+  if (kind === 'clip') {
+    return {
+      border: '1px solid rgba(255,149,0,0.85)',
+      background: 'rgba(255,149,0,0.2)',
+      color: '#ffe8cc',
+    }
+  }
+  return {
+    border: '1px solid rgba(10,132,255,0.8)',
+    background: 'rgba(10,132,255,0.18)',
+    color: '#d9ecff',
+  }
+}
+
 function formatDuration(seconds: number | null | undefined): string {
   const s = seconds == null ? 0 : Number(seconds)
   if (!Number.isFinite(s) || s <= 0) return ''
@@ -1102,8 +1132,8 @@ const VideoAssetsListPage: React.FC<{
   }, [allowClips, clipScope])
 
   React.useEffect(() => {
-    if (!isUploadMode && !isClipMode && favoritesOnly) setFavoritesOnly(false)
-  }, [isUploadMode, isClipMode, favoritesOnly])
+    if (!isUploadMode && !isExportMode && !isClipMode && favoritesOnly) setFavoritesOnly(false)
+  }, [isUploadMode, isExportMode, isClipMode, favoritesOnly])
 
   React.useEffect(() => {
     if (!isClipPreview) {
@@ -1364,7 +1394,8 @@ const VideoAssetsListPage: React.FC<{
     const date = formatDate(u.created_at)
     const size = formatBytes(u.size_bytes)
     const dur = formatDuration(u.duration_seconds ?? null)
-    const meta = [date, size, dur].filter(Boolean).join(' · ')
+    const sourceLabel = isExportMode ? 'EXPORT' : 'UPLOAD'
+    const meta = [sourceLabel, dur, date].filter(Boolean).join(' * ')
     const thumbSrc = `/api/uploads/${encodeURIComponent(String(u.id))}/thumb`
     const isPortrait = u.width != null && u.height != null && Number(u.width) > 0 && Number(u.height) > 0 ? Number(u.height) > Number(u.width) : false
     const previewAspect = isPortrait ? '9 / 16' : '16 / 9'
@@ -1372,61 +1403,58 @@ const VideoAssetsListPage: React.FC<{
     const roleRaw = u.video_role ? String(u.video_role).trim().toLowerCase() : ''
     const keyRaw = String((u as any).s3_key || '')
     const isExportAsset = roleRaw === 'export' || (roleRaw !== 'source' && /(^|\/)renders\//.test(keyRaw))
+    const badgeKind: 'upload' | 'export' = isExportAsset ? 'export' : 'upload'
+    const badgeTone = videoScopeBadgeStyle(badgeKind)
     const fav = Boolean(u.is_favorite)
     const isPick = mode === 'pick'
     return (
       <div key={u.id} className="card-item" data-card-type="video">
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
-          <div style={{ flex: '1 1 auto', minWidth: 0 }}>
-          <div className="card-title" style={{ fontSize: 17, color: '#ffd60a' }}>{name}</div>
-            <div className="card-meta">{meta}</div>
-          </div>
-          {!isExportAsset ? (
-            <button
-              type="button"
-              onClick={() => void toggleFavorite(u)}
-              disabled={!!togglingFav[u.id]}
-              title={fav ? 'Unfavorite' : 'Favorite'}
-              style={{
-                flex: '0 0 auto',
-                width: 40,
-                height: 40,
-                borderRadius: 12,
-                border: '1px solid rgba(212,175,55,0.7)',
-                background: '#0c0c0c',
-                color: fav ? '#ffd35a' : '#bbb',
-                fontSize: 18,
-                fontWeight: 900,
-                cursor: togglingFav[u.id] ? 'default' : 'pointer',
-                opacity: togglingFav[u.id] ? 0.7 : 1,
-              }}
-            >
-              {fav ? '★' : '☆'}
-            </button>
-          ) : (
-            <span
-              style={{
-                flex: '0 0 auto',
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                minWidth: 70,
-                height: 28,
-                padding: '0 10px',
-                borderRadius: 999,
-                border: '1px solid rgba(10,132,255,0.7)',
-                background: 'rgba(10,132,255,0.18)',
-                color: '#d9ecff',
-                fontSize: 12,
-                fontWeight: 900,
-                letterSpacing: 0.3,
-                textTransform: 'uppercase',
-              }}
-            >
-              Export
-            </span>
-          )}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, alignItems: 'center' }}>
+          <span
+            style={{
+              flex: '0 0 auto',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              minWidth: 70,
+              height: 28,
+              padding: '0 10px',
+              borderRadius: 999,
+              border: badgeTone.border,
+              background: badgeTone.background,
+              color: badgeTone.color,
+              fontSize: 12,
+              fontWeight: 900,
+              letterSpacing: 0.3,
+              textTransform: 'uppercase',
+            }}
+          >
+            {isExportAsset ? 'Export' : 'Upload'}
+          </span>
+          <button
+            type="button"
+            onClick={() => void toggleFavorite(u)}
+            disabled={!!togglingFav[u.id]}
+            title={fav ? 'Unfavorite' : 'Favorite'}
+            style={{
+              flex: '0 0 auto',
+              width: 40,
+              height: 40,
+              borderRadius: 12,
+              border: '1px solid rgba(212,175,55,0.7)',
+              background: '#0c0c0c',
+              color: fav ? '#ffd35a' : '#bbb',
+              fontSize: 18,
+              fontWeight: 900,
+              cursor: togglingFav[u.id] ? 'default' : 'pointer',
+              opacity: togglingFav[u.id] ? 0.7 : 1,
+            }}
+          >
+            {fav ? '★' : '☆'}
+          </button>
         </div>
+        <div className="card-title" style={{ fontSize: 17, color: '#ffd60a', marginTop: 6 }}>{name}</div>
+        <div className="card-meta">{meta}</div>
 
         <div style={{ marginTop: 10 }}>
           <button
@@ -1485,8 +1513,8 @@ const VideoAssetsListPage: React.FC<{
             ) : null}
           </button>
         </div>
-        {isExportAsset ? (
-          <div style={{ marginTop: 8, color: '#9bb6d7', fontSize: 12 }}>Export-origin asset</div>
+        {String(u.description || '').trim() ? (
+          <div className="card-meta" style={{ lineHeight: 1.35, marginTop: 8 }}>{truncateWords(String(u.description || '').trim(), 50).text}</div>
         ) : null}
 
         {isPick ? (
@@ -1582,52 +1610,54 @@ const VideoAssetsListPage: React.FC<{
     const isPick = mode === 'pick'
     const fav = Boolean(c.is_favorite)
     const isToggling = !!togglingClipFav[c.id]
+    const badgeTone = videoScopeBadgeStyle('clip')
     return (
       <div key={`clip-${c.id}`} className="card-item" data-card-type="clip">
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
-          <div style={{ flex: '1 1 auto', minWidth: 0 }}>
-            <div className="card-title" style={{ fontSize: 17, color: '#ffd60a' }}>{name}</div>
-            {meta ? <div className="card-meta">{meta}</div> : null}
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: '0 0 auto' }}>
-            {!isPick ? (
-              <button
-                type="button"
-                onClick={() => void toggleClipFavorite(c)}
-                disabled={isToggling}
-                title={fav ? 'Unfavorite' : 'Favorite'}
-                style={{
-                  width: 40,
-                  height: 40,
-                  borderRadius: 12,
-                  border: '1px solid rgba(212,175,55,0.7)',
-                  background: '#0c0c0c',
-                  color: fav ? '#ffd35a' : '#bbb',
-                  fontSize: 18,
-                  fontWeight: 900,
-                  cursor: isToggling ? 'default' : 'pointer',
-                  opacity: isToggling ? 0.7 : 1,
-                }}
-              >
-                {fav ? '★' : '☆'}
-              </button>
-            ) : null}
-            {isPick ? (
-              <button
-                className="card-btn card-btn-open"
-                type="button"
-                onClick={() => {
-                  const pick = pickType === 'videoOverlay' ? 'videoOverlayClip' : 'clip'
-                  const href = buildReturnHref({ cvPickType: pick, cvPickClipId: String(c.id), cvPickSource: 'clips' })
-                  if (href) window.location.href = href
-                }}
-                style={{ cursor: 'pointer' }}
-              >
-                Select
-              </button>
-            ) : null}
-          </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, alignItems: 'center' }}>
+          <span
+            style={{
+              flex: '0 0 auto',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              minWidth: 70,
+              height: 28,
+              padding: '0 10px',
+              borderRadius: 999,
+              border: badgeTone.border,
+              background: badgeTone.background,
+              color: badgeTone.color,
+              fontSize: 12,
+              fontWeight: 900,
+              letterSpacing: 0.3,
+              textTransform: 'uppercase',
+            }}
+          >
+            Clip
+          </span>
+          <button
+            type="button"
+            onClick={() => void toggleClipFavorite(c)}
+            disabled={isToggling}
+            title={fav ? 'Unfavorite' : 'Favorite'}
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 12,
+              border: '1px solid rgba(212,175,55,0.7)',
+              background: '#0c0c0c',
+              color: fav ? '#ffd35a' : '#bbb',
+              fontSize: 18,
+              fontWeight: 900,
+              cursor: isToggling ? 'default' : 'pointer',
+              opacity: isToggling ? 0.7 : 1,
+            }}
+          >
+            {fav ? '★' : '☆'}
+          </button>
         </div>
+        <div className="card-title" style={{ fontSize: 17, color: '#ffd60a', marginTop: 6 }}>{name}</div>
+        {meta ? <div className="card-meta">{meta}</div> : null}
         <div
           style={{
             marginTop: 12,
@@ -1652,7 +1682,22 @@ const VideoAssetsListPage: React.FC<{
           />
         </div>
         {c.description ? <div style={{ marginTop: 8, color: '#a8a8a8', fontSize: 13 }}>{c.description}</div> : null}
-        {!isPick ? (
+        {isPick ? (
+          <div className="card-actions card-actions-right" style={{ marginTop: 10 }}>
+            <button
+              className="card-btn card-btn-open"
+              type="button"
+              onClick={() => {
+                const pick = pickType === 'videoOverlay' ? 'videoOverlayClip' : 'clip'
+                const href = buildReturnHref({ cvPickType: pick, cvPickClipId: String(c.id), cvPickSource: 'clips' })
+                if (href) window.location.href = href
+              }}
+              style={{ cursor: 'pointer' }}
+            >
+              Select
+            </button>
+          </div>
+        ) : (
           <div className="card-actions card-actions-spread" style={{ flexWrap: 'wrap', marginTop: 10 }}>
             <button
               className="card-btn card-btn-delete"
@@ -1689,7 +1734,7 @@ const VideoAssetsListPage: React.FC<{
               Edit
             </button>
           </div>
-        ) : null}
+        )}
       </div>
     )
   }
@@ -1824,7 +1869,7 @@ const VideoAssetsListPage: React.FC<{
               <input
                 value={q}
                 onChange={(e) => setQ(String((e.target as any).value || ''))}
-                placeholder="Search name or description…"
+                placeholder="Search name/description"
                 style={{
                   flex: '1 1 220px',
                   minWidth: 200,
@@ -1837,7 +1882,7 @@ const VideoAssetsListPage: React.FC<{
                 }}
               />
 
-              {isUploadMode || isClipMode ? (
+              {isUploadMode || isExportMode || isClipMode ? (
                 <button
                   type="button"
                   onClick={() => setFavoritesOnly((prev) => !prev)}
