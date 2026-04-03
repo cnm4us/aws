@@ -899,15 +899,36 @@ pagesRouter.get('/admin/categories', async (req: any, res: any) => {
     );
     const items = rows as any[];
 
-    let body = '<h1>Categories</h1>';
-    body += '<div class="toolbar"><div><span class="pill">Categories</span></div><div><a href="/admin/categories/new">New category</a></div></div>';
+    let body = `<style>
+    .categories-nebula{ min-height: 100vh; color:#fff; font-family:system-ui,sans-serif; position:relative; background:#050508; }
+    .categories-nebula-bg{ position:fixed; inset:0; background-image:url('/nebula_bg.jpg'); background-position:center; background-repeat:no-repeat; background-size:cover; z-index:0; pointer-events:none; }
+    .categories-nebula-content{ position:relative; z-index:1; }
+    .categories-nebula h1{ color:#ffd60a; }
+    .categories-nebula .section{
+      background: rgba(6,8,12,0.5);
+      border: 1px solid rgba(255,255,255,0.20);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      box-shadow: 0 10px 28px rgba(0,0,0,0.38), inset 0 1px 0 rgba(255,255,255,0.06);
+    }
+    .categories-nebula .category-title{ color:#ffd60a; text-decoration:none; font-size:1.1rem; font-weight:700; line-height:1.25; }
+    .categories-nebula .card-btn{
+      display:inline-flex; align-items:center; justify-content:center; gap:8px;
+      padding:7px 12px; border-radius:999px; border:1px solid rgba(255,255,255,0.32);
+      text-decoration:none; cursor:pointer; font-size:0.95rem; color:#fff;
+      background:rgba(25,118,210,0.92);
+    }
+    .categories-nebula .card-btn:hover{ filter:brightness(1.05); }
+    </style>`;
+    body += `<div class="categories-nebula"><div class="categories-nebula-bg"></div><div class="categories-nebula-content">`;
+    body += '<h1>Categories</h1>';
+    body += '<div class="toolbar"><div><span class="pill">Categories</span></div><div><a href="/admin/categories/new" class="card-btn">New category</a></div></div>';
     if (notice) body += `<div class="success">${escapeHtml(notice)}</div>`;
     if (error) body += `<div class="error">${escapeHtml(error)}</div>`;
 
     if (!items.length) {
       body += '<p>No categories have been created yet.</p>';
     } else {
-      body += '<table><thead><tr><th>Name</th><th>Cultures</th><th>Rules</th><th>Updated</th></tr></thead><tbody>';
       for (const row of items) {
         const id = Number(row.id);
         const name = escapeHtml(String(row.name || ''));
@@ -915,10 +936,18 @@ pagesRouter.get('/admin/categories', async (req: any, res: any) => {
         const cultures = row.culture_count != null ? escapeHtml(String(row.culture_count)) : '0';
         const rules = row.rule_count != null ? escapeHtml(String(row.rule_count)) : '0';
         const href = `/admin/categories/${encodeURIComponent(String(id))}`;
-        body += `<tr><td><a href="${href}">${name}</a></td><td>${cultures}</td><td>${rules}</td><td>${updated}</td></tr>`;
+        body += `<div class="section" style="margin-top:12px">`;
+        body += `<a href="${href}" class="category-title">${name}</a>`;
+        body += `<div style="display:grid; gap:7px; margin-top:10px">`;
+        body += `<div><strong>Name:</strong> ${name || '-'}</div>`;
+        body += `<div><strong>Cultures:</strong> ${cultures}</div>`;
+        body += `<div><strong>Rules:</strong> ${rules}</div>`;
+        body += `<div><strong>Updated:</strong> ${updated || '-'}</div>`;
+        body += `</div>`;
+        body += `</div>`;
       }
-      body += '</tbody></table>';
     }
+    body += `</div></div>`;
 
     const doc = renderAdminPage({ title: 'Categories', bodyHtml: body, active: 'categories' });
     res.set('Content-Type', 'text/html; charset=utf-8');
