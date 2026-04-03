@@ -1786,8 +1786,33 @@ function renderRuleListPage(
     return `<a href="/admin/rules?${escapeHtml(qs.toString())}">${escapeHtml(label)}${arrow}</a>`;
   };
 
-  let body = '<h1>Rules</h1>';
-  body += '<div class="toolbar"><div><span class="pill">Rules</span></div><div><a href="/admin/rules/new">New rule</a></div></div>';
+  let body = `<style>
+  .rules-nebula{ min-height: 100vh; color:#fff; font-family:system-ui,sans-serif; position:relative; background:#050508; }
+  .rules-nebula-bg{ position:fixed; inset:0; background-image:url('/nebula_bg.jpg'); background-position:center; background-repeat:no-repeat; background-size:cover; z-index:0; pointer-events:none; }
+  .rules-nebula-content{ position:relative; z-index:1; }
+  .rules-nebula h1{ color:#ffd60a; }
+  .rules-nebula .section{
+    background: rgba(6,8,12,0.5);
+    border: 1px solid rgba(255,255,255,0.20);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    box-shadow: 0 10px 28px rgba(0,0,0,0.38), inset 0 1px 0 rgba(255,255,255,0.06);
+  }
+  .rules-nebula .section a[href^="/admin/rules/"]:not(.card-btn){ color:#ffd60a; }
+  .rules-nebula .card-btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:8px;
+    padding:7px 12px; border-radius:999px; border:1px solid rgba(255,255,255,0.32);
+    text-decoration:none; cursor:pointer; font-size:0.95rem; color:#fff;
+  }
+  .rules-nebula .card-btn-open{ background:rgba(25,118,210,0.92); }
+  .rules-nebula .card-btn-edit{ background:rgba(90,102,120,0.7); }
+  .rules-nebula .card-btn-delete{ background:rgba(198,40,40,0.92); }
+  .rules-nebula .card-btn:hover{ filter:brightness(1.05); }
+  .rules-nebula .sort-links a{ color:#cfe8ff; }
+  </style>`;
+  body += `<div class="rules-nebula"><div class="rules-nebula-bg"></div><div class="rules-nebula-content">`;
+  body += '<h1>Rules</h1>';
+  body += '<div class="toolbar"><div><span class="pill">Rules</span></div><div><a href="/admin/rules/new" class="card-btn card-btn-open">New rule</a></div></div>';
   body += `<div class="toolbar" style="margin-top: 10px"><div><label style="display:flex; gap:10px; align-items:center; margin:0"><span style="opacity:0.85">Category</span><select name="categoryId" onchange="(function(sel){const qs=new URLSearchParams(window.location.search); if(sel.value){qs.set('categoryId', sel.value)} else {qs.delete('categoryId')} window.location.search=qs.toString()})(this)"><option value=""${selectedCategoryId === '' ? ' selected' : ''}>All</option>${categories
     .map((c) => {
       const id = String(c.id);
@@ -1795,49 +1820,56 @@ function renderRuleListPage(
       return `<option value="${escapeHtml(id)}"${sel}>${escapeHtml(c.name)}</option>`;
     })
     .join('')}</select></label></div></div>`;
+  body += `<div class="toolbar sort-links" style="margin-top: 8px; align-items:flex-start; flex-wrap:wrap">
+    <div style="opacity:0.85; font-size: 0.92rem">Sort</div>
+    <div style="display:flex; gap:12px; flex-wrap:wrap">
+      ${headerLink('Category', 'category')}
+      ${headerLink('Title', 'title')}
+      ${headerLink('Visibility', 'visibility')}
+      ${headerLink('Current Version', 'version')}
+      ${headerLink('Draft', 'draft')}
+      ${headerLink('Updated', 'updated')}
+    </div>
+  </div>`;
   if (!rules.length) {
     body += '<p>No rules have been created yet.</p>';
   } else {
-    body += `<table><thead><tr>
-      <th>${headerLink('Slug', 'slug')}</th>
-      <th>${headerLink('Category', 'category')}</th>
-      <th>${headerLink('Title', 'title')}</th>
-      <th>${headerLink('Visibility', 'visibility')}</th>
-      <th>${headerLink('Current Version', 'version')}</th>
-      <th>${headerLink('Draft', 'draft')}</th>
-      <th>${headerLink('Updated', 'updated')}</th>
-      <th></th>
-    </tr></thead><tbody>`;
     for (const row of rules) {
-      const slug = escapeHtml(String(row.slug || ''));
+      const id = Number(row.id);
+      const titleRaw = String(row.title || '').trim();
+      const title = escapeHtml(titleRaw || '(untitled)');
       const category = escapeHtml(String(row.category_name || ''));
-      const title = escapeHtml(String(row.title || ''));
       const vis = escapeHtml(String(row.visibility || 'public'));
       const ver = row.current_version ?? row.current_version_id ?? null;
       const versionLabel = ver != null ? escapeHtml(String(ver)) : '';
       const draftPending = row.draft_pending != null ? Number(row.draft_pending) === 1 : false;
+      const draftLabel = draftPending ? 'Draft pending' : 'No draft';
       const updated = row.updated_at ? escapeHtml(String(row.updated_at)) : '';
-      body += `<tr>`;
-      body += `<td><a href="/admin/rules/${row.id}">${slug}</a></td>`;
-      body += `<td>${category}</td>`;
-      body += `<td>${title}</td>`;
-      body += `<td>${vis}</td>`;
-      body += `<td>${versionLabel}</td>`;
-      body += `<td>${draftPending ? '<span class="pill">Draft pending</span>' : ''}</td>`;
-      body += `<td>${updated}</td>`;
-      body += `<td style="text-align: right; white-space: nowrap">`;
-      body += `<a href="/admin/rules/${row.id}/edit" style="margin-right: 10px">Edit Draft</a>`;
-      body += `<form method="post" action="/admin/rules/${row.id}/delete" style="margin:0; display:inline" onsubmit="return confirm('Delete rule \\'${slug}\\'? This cannot be undone.');">`;
+      const confirmName = escapeHtml(titleRaw || `Rule #${id}`);
+      body += `<div class="section" style="margin-top: 12px">`;
+      body += `<div style="display:flex; align-items:flex-start; justify-content:space-between; gap:10px">`;
+      body += `<a href="/admin/rules/${id}" style="font-size: 1.15rem; font-weight: 700; line-height: 1.25; text-decoration: none">${title}</a>`;
+      body += `<a href="/admin/rules/${id}/edit" class="card-btn card-btn-open" style="white-space:nowrap">Edit Draft</a>`;
+      body += `</div>`;
+      body += `<div style="display:grid; gap:7px; margin-top: 10px">`;
+      body += `<div><strong>Category:</strong> ${category || '-'}</div>`;
+      body += `<div><strong>Updated:</strong> ${updated || '-'}</div>`;
+      body += `<div><strong>Visibility:</strong> ${vis || '-'}</div>`;
+      body += `<div><strong>Current Version:</strong> ${versionLabel || '-'}</div>`;
+      body += `<div><strong>Draft:</strong> ${draftPending ? '<span class="pill">Draft pending</span>' : escapeHtml(draftLabel)}</div>`;
+      body += `</div>`;
+      body += `<div style="display:flex; justify-content:flex-end; margin-top: 12px">`;
+      body += `<form method="post" action="/admin/rules/${id}/delete" style="margin:0; display:inline" onsubmit="return confirm('Delete rule \\'${confirmName}\\'? This cannot be undone.');">`;
       if (csrf) {
         body += `<input type="hidden" name="csrf" value="${escapeHtml(csrf)}" />`;
       }
-      body += `<button type="submit" class="danger">Delete</button>`;
+      body += `<button type="submit" class="card-btn card-btn-delete">Delete</button>`;
       body += `</form>`;
-      body += `</td>`;
-      body += `</tr>`;
+      body += `</div>`;
+      body += `</div>`;
     }
-    body += '</tbody></table>';
   }
+  body += `</div></div>`;
   return renderAdminPage({ title: 'Rules', bodyHtml: body, active: 'rules' });
 }
 
