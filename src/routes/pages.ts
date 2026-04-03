@@ -826,6 +826,8 @@ function renderCategoryDetailPage(opts: {
   category: any;
   cultureCount: number;
   ruleCount: number;
+  linkedCultures?: Array<{ id: number; name: string }>;
+  linkedRules?: Array<{ id: number; title: string }>;
   csrfToken?: string | null;
   notice?: string | null;
   error?: string | null;
@@ -836,6 +838,8 @@ function renderCategoryDetailPage(opts: {
   const error = opts.error ? String(opts.error) : '';
   const cultureCount = Number.isFinite(opts.cultureCount) ? Number(opts.cultureCount) : 0;
   const ruleCount = Number.isFinite(opts.ruleCount) ? Number(opts.ruleCount) : 0;
+  const linkedCultures = Array.isArray(opts.linkedCultures) ? opts.linkedCultures : [];
+  const linkedRules = Array.isArray(opts.linkedRules) ? opts.linkedRules : [];
 
   const id = category.id != null ? String(category.id) : '';
   const nameValue = category.name ? String(category.name) : '';
@@ -878,7 +882,65 @@ function renderCategoryDetailPage(opts: {
   }
   body += `</div>`;
 
+  body += `<div class="section" style="margin-top: 18px">`;
+  body += `<div class="section-title">Cultures</div>`;
+  if (!linkedCultures.length) {
+    body += `<div class="field-hint">No cultures currently use this category.</div>`;
+  } else {
+    body += `<ul style="margin: 0; padding-left: 18px">`;
+    for (const c of linkedCultures) {
+      body += `<li><a href="/admin/cultures/${encodeURIComponent(String(c.id))}">${escapeHtml(String(c.name || `Culture #${c.id}`))}</a></li>`;
+    }
+    body += `</ul>`;
+  }
+  body += `</div>`;
+
+  body += `<div class="section" style="margin-top: 12px">`;
+  body += `<div class="section-title">Rules</div>`;
+  if (!linkedRules.length) {
+    body += `<div class="field-hint">No rules currently use this category.</div>`;
+  } else {
+    body += `<ul style="margin: 0; padding-left: 18px">`;
+    for (const r of linkedRules) {
+      body += `<li><a href="/admin/rules/${encodeURIComponent(String(r.id))}">${escapeHtml(String(r.title || `Rule #${r.id}`))}</a></li>`;
+    }
+    body += `</ul>`;
+  }
+  body += `</div>`;
+
   return renderAdminPage({ title: 'Category', bodyHtml: body, active: 'categories' });
+}
+
+async function loadCategoryUsageLinks(
+  db: any,
+  categoryId: number
+): Promise<{
+  linkedCultures: Array<{ id: number; name: string }>;
+  linkedRules: Array<{ id: number; title: string }>;
+}> {
+  const [cultureRows] = await db.query(
+    `SELECT c.id, c.name
+       FROM cultures c
+       INNER JOIN culture_categories cc ON cc.culture_id = c.id
+      WHERE cc.category_id = ?
+      ORDER BY c.name`,
+    [categoryId]
+  );
+  const [ruleRows] = await db.query(
+    `SELECT r.id, r.title
+       FROM rules r
+      WHERE r.category_id = ?
+      ORDER BY r.title`,
+    [categoryId]
+  );
+  return {
+    linkedCultures: (cultureRows as any[])
+      .map((r) => ({ id: Number(r.id), name: String(r.name || '') }))
+      .filter((r) => Number.isFinite(r.id) && r.id > 0),
+    linkedRules: (ruleRows as any[])
+      .map((r) => ({ id: Number(r.id), title: String(r.title || '') }))
+      .filter((r) => Number.isFinite(r.id) && r.id > 0),
+  };
 }
 
 pagesRouter.get('/admin/categories', async (req: any, res: any) => {
@@ -1026,6 +1088,7 @@ pagesRouter.get('/admin/categories/:id', async (req: any, res: any) => {
 
     const [[cCount]]: any = await db.query(`SELECT COUNT(*) AS c FROM culture_categories WHERE category_id = ?`, [id]);
     const [[rCount]]: any = await db.query(`SELECT COUNT(*) AS c FROM rules WHERE category_id = ?`, [id]);
+    const { linkedCultures, linkedRules } = await loadCategoryUsageLinks(db, id);
 
     const cookies = parseCookies(req.headers.cookie);
     const csrfToken = cookies['csrf'] || '';
@@ -1034,6 +1097,8 @@ pagesRouter.get('/admin/categories/:id', async (req: any, res: any) => {
       category,
       cultureCount: Number(cCount?.c || 0),
       ruleCount: Number(rCount?.c || 0),
+      linkedCultures,
+      linkedRules,
       csrfToken,
       notice,
       error,
@@ -1066,6 +1131,7 @@ pagesRouter.post('/admin/categories/:id', async (req: any, res: any) => {
     const [[rCount]]: any = await db.query(`SELECT COUNT(*) AS c FROM rules WHERE category_id = ?`, [id]);
     const cultureCount = Number(cCount?.c || 0);
     const ruleCount = Number(rCount?.c || 0);
+    const { linkedCultures, linkedRules } = await loadCategoryUsageLinks(db, id);
 
     if (!name) {
       const cookies = parseCookies(req.headers.cookie);
@@ -1074,6 +1140,8 @@ pagesRouter.post('/admin/categories/:id', async (req: any, res: any) => {
         category: { ...category, name: rawName, description: rawDescription },
         cultureCount,
         ruleCount,
+        linkedCultures,
+        linkedRules,
         csrfToken,
         error: 'Name is required.',
       });
@@ -1087,6 +1155,8 @@ pagesRouter.post('/admin/categories/:id', async (req: any, res: any) => {
         category: { ...category, name: rawName, description: rawDescription },
         cultureCount,
         ruleCount,
+        linkedCultures,
+        linkedRules,
         csrfToken,
         error: 'Name is too long (max 255 characters).',
       });
@@ -1105,6 +1175,8 @@ pagesRouter.post('/admin/categories/:id', async (req: any, res: any) => {
           category: { ...category, name: rawName, description: rawDescription },
           cultureCount,
           ruleCount,
+          linkedCultures,
+          linkedRules,
           csrfToken,
           error: 'A category with that name already exists.',
         });
