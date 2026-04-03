@@ -1,7 +1,7 @@
 import React from 'react'
 import styles from '../styles/menu.module.css'
 
-export type ContextId = 'info' | 'channel' | 'assets' | 'help' | 'settings' | 'messages' | 'profile'
+export type ContextId = 'info' | 'channel' | 'assets' | 'admin_mod' | 'help' | 'settings' | 'messages' | 'profile'
 
 export default function ContextPicker(props: {
   active: ContextId
@@ -11,6 +11,7 @@ export default function ContextPicker(props: {
   showSpaceModerationLink?: boolean
 }) {
   const { active, onSelect, showAdmin = false, showSpaceAdminLink = false, showSpaceModerationLink = false } = props
+  const hasAnyAdminModeration = showAdmin || showSpaceAdminLink || showSpaceModerationLink
   const item = (id: ContextId, label: string, enabled = true, note?: string) => (
     <button
       key={id}
@@ -24,28 +25,11 @@ export default function ContextPicker(props: {
   )
 
   return (
-    <div className={styles.list}>
+    <div className={`${styles.list} ${styles.selectorList}`}>
       {item('info', 'Info (Pages & Rules)')}
       {item('assets', 'Creative Studio')}
       {item('channel', 'Channel Changer')}
-      {showSpaceAdminLink ? (
-        <a href="/space/admin" className={styles.itemLink}>
-          <span>Space Admin</span>
-          <span className={styles.note}>opens console</span>
-        </a>
-      ) : null}
-      {showSpaceModerationLink ? (
-        <a href="/space/moderation" className={styles.itemLink}>
-          <span>Space Moderation</span>
-          <span className={styles.note}>opens console</span>
-        </a>
-      ) : null}
-      {showAdmin ? (
-        <a href="/admin" className={styles.itemLink}>
-          <span>Admin</span>
-          <span className={styles.note}>opens console</span>
-        </a>
-      ) : null}
+      {hasAnyAdminModeration ? item('admin_mod', 'Admin & Moderation') : null}
       {item('profile', 'Profile')}
       {item('help', 'Help')}
       {item('messages', 'My Messages', false, 'Coming soon')}

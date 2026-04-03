@@ -7,6 +7,7 @@ import ContextPicker, { type ContextId } from '../menu/ContextPicker'
 import HelpMenu from '../menu/contexts/HelpMenu'
 import ProfileMenu from '../menu/contexts/ProfileMenu'
 import InfoMenu from '../menu/contexts/InfoMenu'
+import AdminModerationMenu from '../menu/contexts/AdminModerationMenu'
 // useEffect already imported above
 
 type DrawerMode = 'nav' | 'spaces'
@@ -65,7 +66,7 @@ export default function SharedNav(props: {
   const [activeContext, setActiveContext] = useState<ContextId>(() => {
     try {
       const v = localStorage.getItem('menu:context') as ContextId | null
-      if (v === 'info' || v === 'channel' || v === 'assets' || v === 'help' || v === 'settings' || v === 'messages' || v === 'profile') return v
+      if (v === 'info' || v === 'channel' || v === 'assets' || v === 'admin_mod' || v === 'help' || v === 'settings' || v === 'messages' || v === 'profile') return v
     } catch {}
     return 'channel'
   })
@@ -78,7 +79,11 @@ export default function SharedNav(props: {
   // Normalize context when admin not allowed
   useEffect(() => {
     if (!authLoaded) return
-  }, [authLoaded, isSiteAdmin, activeContext])
+    const canSeeAdminModeration = isSiteAdmin || hasAnySpaceAdmin || hasAnySpaceModerator
+    if (activeContext === 'admin_mod' && !canSeeAdminModeration) {
+      setActiveContext('channel')
+    }
+  }, [authLoaded, isSiteAdmin, hasAnySpaceAdmin, hasAnySpaceModerator, activeContext])
 
   // No edge-swipe opener; open via hamburger, close via overlay or swipe-right on drawer.
 
@@ -111,6 +116,8 @@ export default function SharedNav(props: {
             ? 'Creative Studio'
             : activeContext === 'channel'
             ? 'Channel Changer'
+            : activeContext === 'admin_mod'
+            ? 'Admin & Moderation'
             : activeContext === 'profile'
             ? 'Profile'
             : activeContext === 'help'
@@ -142,6 +149,13 @@ export default function SharedNav(props: {
           />
         ) : activeContext === 'assets' ? (
           <MyAssets onNavigate={() => setMenuOpen(false)} />
+        ) : activeContext === 'admin_mod' ? (
+          <AdminModerationMenu
+            onNavigate={() => setMenuOpen(false)}
+            showAdmin={isSiteAdmin}
+            showSpaceAdminLink={hasAnySpaceAdmin}
+            showSpaceModerationLink={hasAnySpaceModerator}
+          />
         ) : activeContext === 'profile' ? (
           <ProfileMenu onNavigate={() => setMenuOpen(false)} />
         ) : activeContext === 'help' ? (
