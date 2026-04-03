@@ -4277,7 +4277,6 @@ export default function Feed() {
 	                      >
 	                        <span className={clsx(styles.ccBadge, captionsEnabled ? styles.ccBadgeOn : null)}>CC</span>
 	                      </button>
-	                      <div style={{ fontSize: 12, opacity: 0.85 }}>CC</div>
 	                    </div>
 	                  ) : null}
 	                  <div style={{ display: 'grid', justifyItems: 'center', gap: 2 }}>
