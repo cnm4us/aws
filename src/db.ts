@@ -3197,19 +3197,31 @@ export async function ensureSchema(db: DB) {
   await db.query(`
     CREATE TABLE IF NOT EXISTS pages (
       id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      type ENUM('section','document') NOT NULL DEFAULT 'document',
+      parent_id BIGINT UNSIGNED NULL,
+      sort_order INT NOT NULL DEFAULT 0,
       slug VARCHAR(255) NOT NULL,
       title VARCHAR(255) NOT NULL,
       markdown MEDIUMTEXT NOT NULL,
       html MEDIUMTEXT NOT NULL,
       visibility ENUM('public','authenticated','space_moderator','space_admin') NOT NULL DEFAULT 'public',
       layout VARCHAR(64) NOT NULL DEFAULT 'default',
+      parent_scope BIGINT UNSIGNED AS (IFNULL(parent_id, 0)) STORED,
       created_by BIGINT UNSIGNED NULL,
       updated_by BIGINT UNSIGNED NULL,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      UNIQUE KEY uniq_pages_slug (slug)
+      UNIQUE KEY uniq_pages_parent_slug (parent_scope, slug),
+      KEY idx_pages_parent_sort (parent_id, sort_order, id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `);
+  try { await db.query(`ALTER TABLE pages ADD COLUMN IF NOT EXISTS type ENUM('section','document') NOT NULL DEFAULT 'document'`); } catch {}
+  try { await db.query(`ALTER TABLE pages ADD COLUMN IF NOT EXISTS parent_id BIGINT UNSIGNED NULL`); } catch {}
+  try { await db.query(`ALTER TABLE pages ADD COLUMN IF NOT EXISTS sort_order INT NOT NULL DEFAULT 0`); } catch {}
+  try { await db.query(`ALTER TABLE pages ADD COLUMN IF NOT EXISTS parent_scope BIGINT UNSIGNED AS (IFNULL(parent_id, 0)) STORED`); } catch {}
+  try { await db.query(`ALTER TABLE pages DROP INDEX uniq_pages_slug`); } catch {}
+  try { await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_pages_parent_slug ON pages (parent_scope, slug)`); } catch {}
+  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_pages_parent_sort ON pages (parent_id, sort_order, id)`); } catch {}
 
   // Dedicated moderation actions with optional linkage to rule versions
   await db.query(`
