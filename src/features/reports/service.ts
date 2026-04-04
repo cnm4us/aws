@@ -119,6 +119,10 @@ export async function getUserFacingReportingOptionsForPublication(publicationId:
           ruleId: Number(existingReport.rule_id),
           ruleSlug: existingReport.rule_slug,
           ruleTitle: existingReport.rule_title,
+          userFacingRuleId: existingReport.user_facing_rule_id == null ? null : Number(existingReport.user_facing_rule_id),
+          userFacingRuleLabel: existingReport.user_facing_rule_label_at_submit,
+          userFacingGroupKey: existingReport.user_facing_group_key_at_submit,
+          userFacingGroupLabel: existingReport.user_facing_group_label_at_submit,
           createdAt: existingReport.created_at,
         }
       : null,
@@ -126,17 +130,66 @@ export async function getUserFacingReportingOptionsForPublication(publicationId:
   }
 }
 
-export async function submitPublicationReport(publicationId: number, userId: number, input: { ruleId: number }) {
-  const ruleId = Number(input?.ruleId)
-  if (!Number.isFinite(ruleId) || ruleId <= 0) throw new DomainError('bad_rule_id', 'bad_rule_id', 400)
+export async function submitPublicationReport(
+  publicationId: number,
+  userId: number,
+  input: { ruleId?: number | null; userFacingRuleId?: number | null }
+) {
+  const rawRuleId = input?.ruleId == null ? null : Number(input.ruleId)
+  const rawUserFacingRuleId = input?.userFacingRuleId == null ? null : Number(input.userFacingRuleId)
+  const ruleId = rawRuleId != null && Number.isFinite(rawRuleId) && rawRuleId > 0 ? Math.round(rawRuleId) : null
+  const userFacingRuleId =
+    rawUserFacingRuleId != null && Number.isFinite(rawUserFacingRuleId) && rawUserFacingRuleId > 0
+      ? Math.round(rawUserFacingRuleId)
+      : null
+  if (ruleId == null && userFacingRuleId == null) {
+    throw new DomainError('missing_rule_reference', 'missing_rule_reference', 400)
+  }
 
   const pub = await repo.getPublishedPublicationSummary(publicationId)
   if (!pub) throw new DomainError('publication_not_found', 'publication_not_found', 404)
 
   await spacesSvc.assertCanViewSpaceFeed(pub.space_id, userId)
+  let resolvedRule: { rule_id: number; current_version_id: number | null } | null = null
+  let resolvedUserFacingSummary:
+    | { id: number; label: string; group_key: string | null; group_label: string | null }
+    | null = null
 
-  const allowed = await repo.getReportableRuleForSpace(pub.space_id, ruleId)
-  if (!allowed) throw new DomainError('rule_not_allowed', 'rule_not_allowed', 400)
+  if (ruleId != null && userFacingRuleId != null) {
+    const reasonOptions = await repo.listUserFacingReportingReasonsForSpace(pub.space_id, 'authenticated')
+    const match = reasonOptions.find(
+      (row) => Number(row.user_facing_rule_id) === userFacingRuleId && Number(row.rule_id) === ruleId
+    )
+    if (!match) throw new DomainError('rule_not_allowed', 'rule_not_allowed', 400)
+    resolvedRule = await repo.getReportableRuleForSpace(pub.space_id, ruleId, 'authenticated')
+    if (!resolvedRule) throw new DomainError('rule_not_allowed', 'rule_not_allowed', 400)
+    resolvedUserFacingSummary = await repo.getUserFacingReasonSummary(userFacingRuleId)
+  } else if (ruleId != null) {
+    resolvedRule = await repo.getReportableRuleForSpace(pub.space_id, ruleId, 'authenticated')
+    if (!resolvedRule) throw new DomainError('rule_not_allowed', 'rule_not_allowed', 400)
+    const visibleReason = await repo.getVisibleUserFacingReasonForRule({
+      spaceId: pub.space_id,
+      ruleId,
+      viewerState: 'authenticated',
+    })
+    if (visibleReason) {
+      resolvedUserFacingSummary = {
+        id: visibleReason.user_facing_rule_id,
+        label: visibleReason.label,
+        group_key: visibleReason.group_key,
+        group_label: visibleReason.group_label,
+      }
+    }
+  } else {
+    resolvedRule = await repo.resolveDefaultMappedRuleForUserFacingReason({
+      spaceId: pub.space_id,
+      userFacingRuleId: userFacingRuleId as number,
+      viewerState: 'authenticated',
+    })
+    if (!resolvedRule) throw new DomainError('no_resolvable_rule', 'no_resolvable_rule', 400)
+    resolvedUserFacingSummary = await repo.getUserFacingReasonSummary(userFacingRuleId as number)
+    if (!resolvedUserFacingSummary) throw new DomainError('invalid_user_facing_rule_id', 'invalid_user_facing_rule_id', 400)
+  }
 
   try {
     const reportId = await repo.insertSpacePublicationReport({
@@ -144,8 +197,12 @@ export async function submitPublicationReport(publicationId: number, userId: num
       spaceId: pub.space_id,
       productionId: pub.production_id,
       reporterUserId: userId,
-      ruleId: allowed.rule_id,
-      ruleVersionId: allowed.current_version_id,
+      ruleId: resolvedRule.rule_id,
+      ruleVersionId: resolvedRule.current_version_id,
+      userFacingRuleId: resolvedUserFacingSummary?.id ?? null,
+      userFacingRuleLabelAtSubmit: resolvedUserFacingSummary?.label ?? null,
+      userFacingGroupKeyAtSubmit: resolvedUserFacingSummary?.group_key ?? null,
+      userFacingGroupLabelAtSubmit: resolvedUserFacingSummary?.group_label ?? null,
     })
     return { ok: true, reportId }
   } catch (err: any) {

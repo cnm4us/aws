@@ -45,13 +45,26 @@ export async function getUserPublicationReport(
   publicationId: number,
   userId: number,
   db?: DbLike
-): Promise<{ rule_id: number; rule_slug: string | null; rule_title: string | null; created_at: string } | null> {
+): Promise<{
+  rule_id: number
+  rule_slug: string | null
+  rule_title: string | null
+  created_at: string
+  user_facing_rule_id: number | null
+  user_facing_rule_label_at_submit: string | null
+  user_facing_group_key_at_submit: string | null
+  user_facing_group_label_at_submit: string | null
+} | null> {
   const q = (db as any) || getPool()
   const [rows] = await q.query(
     `SELECT spr.rule_id,
             r.slug AS rule_slug,
             r.title AS rule_title,
-            spr.created_at
+            spr.created_at,
+            spr.user_facing_rule_id,
+            spr.user_facing_rule_label_at_submit,
+            spr.user_facing_group_key_at_submit,
+            spr.user_facing_group_label_at_submit
        FROM space_publication_reports spr
        JOIN rules r ON r.id = spr.rule_id
       WHERE spr.space_publication_id = ?
@@ -67,6 +80,13 @@ export async function getUserPublicationReport(
     rule_slug: row.rule_slug != null ? String(row.rule_slug) : null,
     rule_title: row.rule_title != null ? String(row.rule_title) : null,
     created_at: String(row.created_at),
+    user_facing_rule_id: row.user_facing_rule_id == null ? null : Number(row.user_facing_rule_id),
+    user_facing_rule_label_at_submit:
+      row.user_facing_rule_label_at_submit == null ? null : String(row.user_facing_rule_label_at_submit),
+    user_facing_group_key_at_submit:
+      row.user_facing_group_key_at_submit == null ? null : String(row.user_facing_group_key_at_submit),
+    user_facing_group_label_at_submit:
+      row.user_facing_group_label_at_submit == null ? null : String(row.user_facing_group_label_at_submit),
   }
 }
 
@@ -253,6 +273,48 @@ export async function getUserFacingReasonSummary(
     label: String(row.label || ''),
     group_key: row.group_key != null ? String(row.group_key) : null,
     group_label: row.group_label != null ? String(row.group_label) : null,
+  }
+}
+
+export async function getVisibleUserFacingReasonForRule(input: {
+  spaceId: number
+  ruleId: number
+  viewerState?: ReportingViewerState
+  db?: DbLike
+}): Promise<{ user_facing_rule_id: number; label: string; group_key: string | null; group_label: string | null } | null> {
+  const q = (input.db as any) || getPool()
+  const visibility = visibilityFilterSql(input.viewerState || 'authenticated')
+  const [rows] = await q.query(
+    `SELECT ufr.id AS user_facing_rule_id,
+            ufr.label,
+            ufr.group_key,
+            ufr.group_label
+       FROM user_facing_rules ufr
+       JOIN user_facing_rule_rule_map m
+         ON m.user_facing_rule_id = ufr.id
+       JOIN rules r
+         ON r.id = m.rule_id
+       JOIN space_cultures sc
+         ON sc.space_id = ?
+       JOIN culture_categories cc
+         ON cc.culture_id = sc.culture_id
+        AND cc.category_id = r.category_id
+      WHERE ufr.is_active = 1
+        AND r.id = ?
+        AND r.visibility ${visibility.sql}
+      ORDER BY ufr.group_order ASC,
+               ufr.display_order ASC,
+               ufr.id ASC
+      LIMIT 1`,
+    [input.spaceId, input.ruleId, ...visibility.params]
+  )
+  const row = (rows as any[])[0]
+  if (!row) return null
+  return {
+    user_facing_rule_id: Number(row.user_facing_rule_id),
+    label: String(row.label || ''),
+    group_key: row.group_key == null ? null : String(row.group_key),
+    group_label: row.group_label == null ? null : String(row.group_label),
   }
 }
 

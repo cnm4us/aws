@@ -18,7 +18,30 @@ import * as reportsSvc from '../features/reports/service'
 export const publicationsRouter = Router();
 
 const visibilityEnum = z.enum(['inherit', 'members', 'public']);
-const reportSchema = z.object({ ruleId: z.number().int().positive() })
+const reportSchema = z
+  .object({
+    ruleId: z.number().int().positive().optional(),
+    userFacingRuleId: z.number().int().positive().optional(),
+    note: z.string().max(2000).optional(),
+  })
+  .refine((v) => Number.isFinite(Number(v.ruleId)) || Number.isFinite(Number(v.userFacingRuleId)), {
+    message: 'ruleId_or_userFacingRuleId_required',
+  })
+const moderationReportingReasonsSchema = z.object({
+  target_type: z.enum(['publication']),
+  target_id: z.number().int().positive(),
+})
+const moderationReportSubmitSchema = z
+  .object({
+    target_type: z.enum(['publication']),
+    target_id: z.number().int().positive(),
+    rule_id: z.number().int().positive().optional(),
+    user_facing_rule_id: z.number().int().positive().optional(),
+    note: z.string().max(2000).optional(),
+  })
+  .refine((v) => Number.isFinite(Number(v.rule_id)) || Number.isFinite(Number(v.user_facing_rule_id)), {
+    message: 'rule_id_or_user_facing_rule_id_required',
+  })
 
 const createPublicationSchema = z.object({
   spaceId: z.number().int().positive(),
@@ -191,7 +214,7 @@ publicationsRouter.get('/api/publications/:id/reporting/options', requireAuth, a
       return res.status(400).json({ error: 'bad_publication_id' })
     }
     const userId = Number(req.user!.id)
-    const data = await reportsSvc.getReportingOptionsForPublication(publicationId, userId)
+    const data = await reportsSvc.getUserFacingReportingOptionsForPublication(publicationId, userId)
     res.json(data)
   } catch (err: any) { next(err) }
 })
@@ -207,9 +230,44 @@ publicationsRouter.post('/api/publications/:id/report', requireAuth, async (req,
       return res.status(400).json({ error: 'invalid_body', detail: parsed.error.flatten() })
     }
     const userId = Number(req.user!.id)
-    const data = await reportsSvc.submitPublicationReport(publicationId, userId, parsed.data)
+    const data = await reportsSvc.submitPublicationReport(publicationId, userId, {
+      ruleId: parsed.data.ruleId ?? null,
+      userFacingRuleId: parsed.data.userFacingRuleId ?? null,
+    })
     res.json(data)
   } catch (err: any) { next(err) }
+})
+
+publicationsRouter.get('/api/moderation/reporting-reasons', requireAuth, async (req, res, next) => {
+  try {
+    const parsed = moderationReportingReasonsSchema.safeParse({
+      target_type: String(req.query?.target_type || 'publication'),
+      target_id: Number(req.query?.target_id || 0),
+    })
+    if (!parsed.success) return res.status(400).json({ error: 'invalid_query', detail: parsed.error.flatten() })
+    const userId = Number(req.user!.id)
+    if (parsed.data.target_type !== 'publication') return res.status(400).json({ error: 'unsupported_target_type' })
+    const data = await reportsSvc.getUserFacingReportingOptionsForPublication(parsed.data.target_id, userId)
+    return res.json(data)
+  } catch (err: any) {
+    return next(err)
+  }
+})
+
+publicationsRouter.post('/api/moderation/reports', requireAuth, async (req, res, next) => {
+  try {
+    const parsed = moderationReportSubmitSchema.safeParse(req.body || {})
+    if (!parsed.success) return res.status(400).json({ error: 'invalid_body', detail: parsed.error.flatten() })
+    const userId = Number(req.user!.id)
+    if (parsed.data.target_type !== 'publication') return res.status(400).json({ error: 'unsupported_target_type' })
+    const data = await reportsSvc.submitPublicationReport(parsed.data.target_id, userId, {
+      ruleId: parsed.data.rule_id ?? null,
+      userFacingRuleId: parsed.data.user_facing_rule_id ?? null,
+    })
+    return res.json(data)
+  } catch (err: any) {
+    return next(err)
+  }
 })
 
 const noteSchema = z.object({
