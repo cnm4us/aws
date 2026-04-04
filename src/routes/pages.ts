@@ -22,6 +22,7 @@ import * as messageCtasSvc from '../features/message-cta-definitions/service'
 import * as messageRulesetsSvc from '../features/message-eligibility-rulesets/service'
 import * as messageJourneysSvc from '../features/message-journeys/service'
 import * as messageAnalyticsSvc from '../features/message-analytics/service'
+import * as userFacingRulesSvc from '../features/user-facing-rules/service'
 import * as feedActivitySvc from '../features/feed-activity/service'
 import * as paymentsSvc from '../features/payments/service'
 import { getAnalyticsSinkHealth } from '../features/analytics-sink/service'
@@ -764,6 +765,7 @@ type AdminNavKey =
   | 'messages'
   | 'message_ctas'
   | 'message_rulesets'
+  | 'user_facing_rules'
   | 'message_journeys'
   | 'journey_inspector'
   | 'payment_providers'
@@ -795,6 +797,7 @@ const ADMIN_NAV_ITEMS: Array<{ key: AdminNavKey; label: string; href: string }> 
   { key: 'messages', label: 'Messages', href: '/admin/messages' },
   { key: 'message_ctas', label: 'Message CTAs', href: '/admin/message-ctas' },
   { key: 'message_rulesets', label: 'Message Rulesets', href: '/admin/message-rulesets' },
+  { key: 'user_facing_rules', label: 'User-Facing Rules', href: '/admin/user-facing-rules' },
   { key: 'message_journeys', label: 'Message Journeys', href: '/admin/message-journeys' },
   { key: 'journey_inspector', label: 'Journey Inspector', href: '/admin/journey-inspector' },
   { key: 'payment_providers', label: 'Payment Providers', href: '/admin/payments/providers' },
@@ -3656,6 +3659,7 @@ pagesRouter.get('/admin', async (_req: any, res: any) => {
     { title: 'Messages', href: '/admin/messages', desc: 'Manage in-feed message units, targeting, and lifecycle controls' },
     { title: 'Message CTAs', href: '/admin/message-ctas', desc: 'Reusable CTA definitions (intent + executor + config) for in-feed messages' },
     { title: 'Message Rulesets', href: '/admin/message-rulesets', desc: 'Reusable inclusion/exclusion eligibility rulesets for message targeting' },
+    { title: 'User-Facing Rules', href: '/admin/user-facing-rules', desc: 'Manage simplified reporting reasons and map them to canonical moderation rules' },
     { title: 'Message Journeys', href: '/admin/message-journeys', desc: 'Ordered multi-step message journeys that sequence messages per user progression' },
     { title: 'Payment Providers', href: '/admin/payments/providers', desc: 'Configure PSP credentials and sandbox/live mode toggles' },
     { title: 'Payment Catalog', href: '/admin/payments/catalog', desc: 'Manage donation campaigns and subscription plans mapped to PSP products' },
@@ -6366,6 +6370,294 @@ pagesRouter.post('/admin/message-rulesets/:id', async (req: any, res: any) => {
       error: String(err?.message || 'Failed to save message ruleset'),
     })
     res.status(400).set('Content-Type', 'text/html; charset=utf-8').send(doc)
+  }
+})
+
+function buildUserFacingRuleCreateOrUpdatePayload(body: any): any {
+  return {
+    label: String(body?.label || '').trim(),
+    shortDescription: String(body?.shortDescription ?? body?.short_description ?? '').trim() || null,
+    groupKey: String(body?.groupKey ?? body?.group_key ?? '').trim() || null,
+    groupLabel: String(body?.groupLabel ?? body?.group_label ?? '').trim() || null,
+    groupOrder: String(body?.groupOrder ?? body?.group_order ?? '').trim(),
+    displayOrder: String(body?.displayOrder ?? body?.display_order ?? '').trim(),
+    isActive: String(body?.isActive ?? body?.is_active ?? '').trim(),
+  }
+}
+
+function buildUserFacingRuleMappingPayload(body: any): any {
+  return {
+    id: String(body?.mappingId ?? body?.id ?? '').trim(),
+    ruleId: String(body?.ruleId ?? body?.rule_id ?? '').trim(),
+    priority: String(body?.priority ?? '').trim(),
+    isDefault: String(body?.isDefault ?? body?.is_default ?? '').trim(),
+  }
+}
+
+function renderAdminUserFacingRuleForm(opts: {
+  title: string
+  action: string
+  csrfToken?: string | null
+  backHref: string
+  values: any
+  mappings?: any[]
+  ruleOptions?: Array<{ id: number; title: string; slug: string; categoryName: string | null; visibility: string }>
+  error?: string | null
+  notice?: string | null
+}): string {
+  const csrfToken = opts.csrfToken ? String(opts.csrfToken) : ''
+  const values = opts.values || {}
+  const mappings = Array.isArray(opts.mappings) ? opts.mappings : []
+  const ruleOptions = Array.isArray(opts.ruleOptions) ? opts.ruleOptions : []
+  const selectedRuleIds = new Set<number>(mappings.map((m) => Number((m as any).ruleId || 0)).filter((n) => Number.isFinite(n) && n > 0))
+
+  let body = `<h1>${escapeHtml(opts.title)}</h1>`
+  body += `<div class="toolbar"><div><a href="${escapeHtml(opts.backHref)}">← Back to user-facing rules</a></div><div></div></div>`
+  if (opts.error) body += `<div class="error">${escapeHtml(String(opts.error))}</div>`
+  if (opts.notice) body += `<div class="notice">${escapeHtml(String(opts.notice))}</div>`
+  body += `<form method="post" action="${escapeHtml(opts.action)}">`
+  if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
+
+  body += `<div class="section"><div class="section-title">Rule</div>`
+  body += `<label>Label<input type="text" name="label" maxlength="255" value="${escapeHtml(String(values?.label || ''))}" required /></label>`
+  body += `<label>Short Description (optional)<input type="text" name="shortDescription" maxlength="500" value="${escapeHtml(String(values?.shortDescription || values?.short_description || ''))}" /></label>`
+  body += `<div style="display:grid; gap:10px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));">`
+  body += `<label>Group Key<input type="text" name="groupKey" maxlength="64" value="${escapeHtml(String(values?.groupKey || values?.group_key || ''))}" /></label>`
+  body += `<label>Group Label<input type="text" name="groupLabel" maxlength="128" value="${escapeHtml(String(values?.groupLabel || values?.group_label || ''))}" /></label>`
+  body += `<label>Group Order<input type="number" name="groupOrder" value="${escapeHtml(String(values?.groupOrder || values?.group_order || '0'))}" /></label>`
+  body += `<label>Display Order<input type="number" name="displayOrder" value="${escapeHtml(String(values?.displayOrder || values?.display_order || '0'))}" /></label>`
+  body += `</div>`
+  const isActiveValue = String(values?.isActive ?? values?.is_active ?? '1')
+  body += `<label><input type="checkbox" name="isActive" value="1"${isActiveValue === '1' || isActiveValue.toLowerCase?.() === 'true' || isActiveValue.toLowerCase?.() === 'on' ? ' checked' : ''} /> Active</label>`
+  body += `</div>`
+
+  body += `<div class="toolbar"><div></div><div><button class="btn btn-primary-accent" type="submit">Save</button></div></div>`
+  body += `</form>`
+
+  if (values?.id) {
+    body += `<div class="section"><div class="section-title">Mappings</div>`
+    if (!mappings.length) {
+      body += `<p class="field-hint">No mappings yet. Add at least one canonical rule.</p>`
+    } else {
+      body += `<table><thead><tr><th>Rule</th><th>Priority</th><th>Default</th><th>Actions</th></tr></thead><tbody>`
+      for (const mapping of mappings) {
+        const mid = Number((mapping as any).id || 0)
+        const rid = Number((mapping as any).ruleId || 0)
+        const ropt = ruleOptions.find((r) => Number(r.id) === rid)
+        const ruleLabel = ropt ? `${ropt.title} [#${ropt.id}]` : `#${rid}`
+        body += `<tr><td>${escapeHtml(ruleLabel)}</td><td>${escapeHtml(String((mapping as any).priority ?? 100))}</td><td>${(mapping as any).isDefault ? 'Yes' : 'No'}</td><td>`
+        body += `<div style="display:flex; gap:6px; flex-wrap:wrap">`
+        body += `<form method="post" action="/admin/user-facing-rules/${Number(values.id)}/mappings" style="margin:0; display:flex; gap:6px; align-items:center">`
+        if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
+        body += `<input type="hidden" name="mappingId" value="${mid}" />`
+        body += `<input type="hidden" name="ruleId" value="${rid}" />`
+        body += `<input type="number" name="priority" value="${escapeHtml(String((mapping as any).priority ?? 100))}" style="width:80px" />`
+        body += `<label style="margin:0"><input type="checkbox" name="isDefault" value="1"${(mapping as any).isDefault ? ' checked' : ''} /> Default</label>`
+        body += `<button class="btn" type="submit">Update</button></form>`
+        body += `<form method="post" action="/admin/user-facing-rules/${Number(values.id)}/mappings/${mid}/delete" style="margin:0" onsubmit="return confirm('Delete mapping?')">`
+        if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
+        body += `<button class="btn btn-danger" type="submit">Delete</button></form>`
+        body += `</div></td></tr>`
+      }
+      body += `</tbody></table>`
+    }
+    body += `<hr style="border-color: rgba(255,255,255,0.15); margin: 14px 0" />`
+    body += `<form method="post" action="/admin/user-facing-rules/${Number(values.id)}/mappings">`
+    if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
+    body += `<div style="display:grid; gap:10px; grid-template-columns: minmax(260px,1fr) 120px 120px auto; align-items:end">`
+    body += `<label>Rule<select name="ruleId" required><option value="">Select rule</option>`
+    for (const opt of ruleOptions) {
+      if (selectedRuleIds.has(Number(opt.id))) continue
+      const label = `${opt.title} [#${opt.id}]`
+      body += `<option value="${opt.id}">${escapeHtml(label)}</option>`
+    }
+    body += `</select></label>`
+    body += `<label>Priority<input type="number" name="priority" value="100" /></label>`
+    body += `<label><input type="checkbox" name="isDefault" value="1" /> Default</label>`
+    body += `<button class="btn" type="submit">Add Mapping</button>`
+    body += `</div>`
+    body += `<div class="field-hint">Only one default mapping is allowed per user-facing rule.</div>`
+    body += `</form>`
+    body += `</div>`
+
+    body += `<div class="section"><div class="section-title">Danger Zone</div>`
+    body += `<form method="post" action="/admin/user-facing-rules/${Number(values.id)}/delete" onsubmit="return confirm('Delete this user-facing rule?')">`
+    if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
+    body += `<button class="btn btn-danger" type="submit">Delete Rule</button></form></div>`
+  }
+
+  return renderAdminPage({ title: opts.title, bodyHtml: body, active: 'user_facing_rules' })
+}
+
+pagesRouter.get('/admin/user-facing-rules', async (req: any, res: any) => {
+  try {
+    const includeInactive = String(req.query?.include_inactive || '0') === '1'
+    const notice = req.query?.notice ? String(req.query.notice) : ''
+    const error = req.query?.error ? String(req.query.error) : ''
+    const items = await userFacingRulesSvc.listUserFacingRulesForAdmin({
+      includeInactive,
+      limit: 500,
+    })
+    let body = '<h1>User-Facing Rules</h1>'
+    body += '<div class="toolbar"><div><span class="pill">Reporting Reasons</span></div><div><a href="/admin/user-facing-rules/new">New reason</a></div></div>'
+    if (notice) body += `<div class="notice">${escapeHtml(notice)}</div>`
+    if (error) body += `<div class="error">${escapeHtml(error)}</div>`
+    body += `<form method="get" action="/admin/user-facing-rules" class="section" style="margin:12px 0">`
+    body += `<label><input type="checkbox" name="include_inactive" value="1"${includeInactive ? ' checked' : ''} /> Include inactive</label> <button class="btn" type="submit">Apply</button>`
+    body += `</form>`
+    if (!items.length) {
+      body += '<p>No user-facing rules found.</p>'
+    } else {
+      body += '<table><thead><tr><th>ID</th><th>Label</th><th>Group</th><th>Order</th><th>Mappings</th><th>Default</th><th>Status</th><th>Updated</th></tr></thead><tbody>'
+      for (const item of items) {
+        body += `<tr>
+          <td>${item.id}</td>
+          <td><a href="/admin/user-facing-rules/${item.id}">${escapeHtml(item.label)}</a></td>
+          <td>${escapeHtml(item.groupLabel || item.groupKey || '-')}</td>
+          <td>${item.groupOrder} / ${item.displayOrder}</td>
+          <td>${item.mappingCount}</td>
+          <td>${item.defaultMappingCount}</td>
+          <td>${item.isActive ? 'active' : 'inactive'}</td>
+          <td>${escapeHtml(item.updatedAt || '')}</td>
+        </tr>`
+      }
+      body += '</tbody></table>'
+    }
+    const doc = renderAdminPage({ title: 'User-Facing Rules', bodyHtml: body, active: 'user_facing_rules' })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.send(doc)
+  } catch (err) {
+    logError(req.log || pagesLogger, err, 'admin user-facing-rules list failed', { path: req.path })
+    res.status(500).send('Failed to load user-facing rules')
+  }
+})
+
+pagesRouter.get('/admin/user-facing-rules/new', async (req: any, res: any) => {
+  try {
+    const cookies = parseCookies(req.headers.cookie)
+    const csrfToken = cookies['csrf'] || ''
+    const doc = renderAdminUserFacingRuleForm({
+      title: 'New User-Facing Rule',
+      action: '/admin/user-facing-rules',
+      csrfToken,
+      backHref: '/admin/user-facing-rules',
+      values: { label: '', shortDescription: '', groupKey: '', groupLabel: '', groupOrder: 0, displayOrder: 0, isActive: '1' },
+      mappings: [],
+      ruleOptions: await userFacingRulesSvc.listCanonicalRuleOptionsForAdmin(),
+    })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.send(doc)
+  } catch (err) {
+    logError(req.log || pagesLogger, err, 'admin user-facing-rules new page failed', { path: req.path })
+    res.status(500).send('Failed to load user-facing rule editor')
+  }
+})
+
+pagesRouter.post('/admin/user-facing-rules', async (req: any, res: any) => {
+  const payload = buildUserFacingRuleCreateOrUpdatePayload(req.body || {})
+  const cookies = parseCookies(req.headers.cookie)
+  const csrfToken = cookies['csrf'] || ''
+  try {
+    const created = await userFacingRulesSvc.createUserFacingRuleForAdmin(payload, Number(req.user?.id || 0))
+    return res.redirect(`/admin/user-facing-rules/${created.id}?notice=${encodeURIComponent('User-facing rule created.')}`)
+  } catch (err: any) {
+    const doc = renderAdminUserFacingRuleForm({
+      title: 'New User-Facing Rule',
+      action: '/admin/user-facing-rules',
+      csrfToken,
+      backHref: '/admin/user-facing-rules',
+      values: payload,
+      ruleOptions: await userFacingRulesSvc.listCanonicalRuleOptionsForAdmin(),
+      error: String(err?.message || 'Failed to create user-facing rule'),
+    })
+    return res.status(400).set('Content-Type', 'text/html; charset=utf-8').send(doc)
+  }
+})
+
+pagesRouter.get('/admin/user-facing-rules/:id', async (req: any, res: any) => {
+  const id = Number(req.params.id)
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).send('Bad rule id')
+  try {
+    const item = await userFacingRulesSvc.getUserFacingRuleForAdmin(id)
+    const cookies = parseCookies(req.headers.cookie)
+    const csrfToken = cookies['csrf'] || ''
+    const doc = renderAdminUserFacingRuleForm({
+      title: `Edit User-Facing Rule #${id}`,
+      action: `/admin/user-facing-rules/${id}`,
+      csrfToken,
+      backHref: '/admin/user-facing-rules',
+      values: item,
+      mappings: item.mappings,
+      ruleOptions: await userFacingRulesSvc.listCanonicalRuleOptionsForAdmin(),
+      notice: req.query?.notice ? String(req.query.notice) : '',
+      error: req.query?.error ? String(req.query.error) : '',
+    })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.send(doc)
+  } catch (err) {
+    logError(req.log || pagesLogger, err, 'admin user-facing-rules detail failed', { path: req.path, rule_id: id })
+    res.status(404).send('User-facing rule not found')
+  }
+})
+
+pagesRouter.post('/admin/user-facing-rules/:id', async (req: any, res: any) => {
+  const id = Number(req.params.id)
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).send('Bad rule id')
+  const payload = buildUserFacingRuleCreateOrUpdatePayload(req.body || {})
+  const cookies = parseCookies(req.headers.cookie)
+  const csrfToken = cookies['csrf'] || ''
+  try {
+    await userFacingRulesSvc.updateUserFacingRuleForAdmin(id, payload, Number(req.user?.id || 0))
+    return res.redirect(`/admin/user-facing-rules/${id}?notice=${encodeURIComponent('Saved.')}`)
+  } catch (err: any) {
+    const existing = await userFacingRulesSvc.getUserFacingRuleForAdmin(id).catch(() => null)
+    const doc = renderAdminUserFacingRuleForm({
+      title: `Edit User-Facing Rule #${id}`,
+      action: `/admin/user-facing-rules/${id}`,
+      csrfToken,
+      backHref: '/admin/user-facing-rules',
+      values: { ...(existing || {}), ...payload, id },
+      mappings: existing?.mappings || [],
+      ruleOptions: await userFacingRulesSvc.listCanonicalRuleOptionsForAdmin(),
+      error: String(err?.message || 'Failed to save user-facing rule'),
+    })
+    return res.status(400).set('Content-Type', 'text/html; charset=utf-8').send(doc)
+  }
+})
+
+pagesRouter.post('/admin/user-facing-rules/:id/delete', async (req: any, res: any) => {
+  const id = Number(req.params.id)
+  if (!Number.isFinite(id) || id <= 0) return res.redirect('/admin/user-facing-rules?error=bad_id')
+  try {
+    await userFacingRulesSvc.deleteUserFacingRuleForAdmin(id, Number(req.user?.id || 0))
+    return res.redirect('/admin/user-facing-rules?notice=' + encodeURIComponent('Deleted.'))
+  } catch (err: any) {
+    return res.redirect(`/admin/user-facing-rules/${id}?error=${encodeURIComponent(String(err?.message || 'Failed to delete user-facing rule'))}`)
+  }
+})
+
+pagesRouter.post('/admin/user-facing-rules/:id/mappings', async (req: any, res: any) => {
+  const id = Number(req.params.id)
+  if (!Number.isFinite(id) || id <= 0) return res.redirect('/admin/user-facing-rules?error=bad_id')
+  const payload = buildUserFacingRuleMappingPayload(req.body || {})
+  try {
+    await userFacingRulesSvc.upsertMappingForAdmin(id, payload, Number(req.user?.id || 0))
+    return res.redirect(`/admin/user-facing-rules/${id}?notice=${encodeURIComponent('Mapping saved.')}`)
+  } catch (err: any) {
+    return res.redirect(`/admin/user-facing-rules/${id}?error=${encodeURIComponent(String(err?.message || 'Failed to save mapping'))}`)
+  }
+})
+
+pagesRouter.post('/admin/user-facing-rules/:id/mappings/:mappingId/delete', async (req: any, res: any) => {
+  const id = Number(req.params.id)
+  const mappingId = Number(req.params.mappingId)
+  if (!Number.isFinite(id) || id <= 0) return res.redirect('/admin/user-facing-rules?error=bad_id')
+  if (!Number.isFinite(mappingId) || mappingId <= 0) return res.redirect(`/admin/user-facing-rules/${id}?error=bad_mapping_id`)
+  try {
+    await userFacingRulesSvc.deleteMappingForAdmin(id, mappingId, Number(req.user?.id || 0))
+    return res.redirect(`/admin/user-facing-rules/${id}?notice=${encodeURIComponent('Mapping deleted.')}`)
+  } catch (err: any) {
+    return res.redirect(`/admin/user-facing-rules/${id}?error=${encodeURIComponent(String(err?.message || 'Failed to delete mapping'))}`)
   }
 })
 
