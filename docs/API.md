@@ -18,6 +18,38 @@ Auth: cookie session in development (httpOnly `sid` + `csrf` cookie). `x-admin-t
   - quality: "standard" | "hq"
   - sound: "original" | "normalize"
 
+Pages / Docs APIs
+- GET /api/pages
+  - Returns root page tree listing (visible nodes only), with section/document metadata.
+- GET /api/pages/:path
+  - Resolves a page node by hierarchical path traversal (`parent_id` + slug segments).
+  - Returns node content + child listing when children exist.
+- Visibility filtering for both endpoints:
+  - `public`
+  - `authenticated`
+  - `space_moderator`
+  - `space_admin`
+  - Response is filtered by current user/session permissions.
+
+Admin Pages (Site Admin)
+- GET /admin/pages
+  - Hierarchical manager view (root + nested cards), including sibling ordering controls.
+- GET /admin/pages/new
+  - Create node with:
+    - `type` (`section` or `document`)
+    - optional `parentId`
+    - `sortOrder`
+    - `slug` (segment)
+- POST /admin/pages
+  - Creates node; enforces parent/type/slug constraints.
+- GET /admin/pages/:id
+  - Edit node.
+- POST /admin/pages/:id
+  - Updates node and allows reparenting with cycle checks.
+- POST /admin/pages/:id/move-up
+- POST /admin/pages/:id/move-down
+  - Swaps `sort_order` with adjacent sibling.
+
 UploadRow (selected fields)
 - id, s3_bucket, s3_key, original_filename, content_type, size_bytes
 - width, height, duration_seconds

@@ -29,3 +29,14 @@ Conventions
 - Output prefix: YYYY-MM/DD/<uuid>/<orientation>/
 - Master: video.m3u8
 
+Pages/Docs Hierarchy
+- `pages` now uses an explicit node tree model:
+  - `type`: `section | document`
+  - `parent_id`: nullable parent reference
+  - `sort_order`: sibling ordering
+  - `slug`: URL segment (unique per parent)
+- Public resolution is parent/child-based (not slug-prefix-based):
+  - `/pages` -> root nodes
+  - `/pages/<segment>/<segment>/...` -> node resolved by traversing parent chain
+- Sections can contain sections and documents.
+- Documents are leaf nodes (cannot be parents).

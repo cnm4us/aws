@@ -356,8 +356,6 @@ async function listChildPagesByParent(
 
 // -------- JSON APIs: Pages & Rules (latest only; SPA embed) --------
 
-const TOC_PAGE_SLUGS = new Set(['docs']);
-
 pagesRouter.get('/api/pages', async (req: any, res: any) => {
   try {
     const allowed = await allowedPageVisibilitiesForRequest(req)
@@ -402,7 +400,7 @@ pagesRouter.get(/^\/api\/pages\/(.+)$/, async (req: any, res: any) => {
     const segments = slugPath.split('/')
     const children = await listChildPagesByParent(Number(page.id), allowed)
     const updatedAt = page.updated_at ? new Date(page.updated_at) : null;
-    const includeChildren = String(page.type || 'document') === 'section' || TOC_PAGE_SLUGS.has(slugPath) || children.length > 0
+    const includeChildren = String(page.type || 'document') === 'section' || children.length > 0
     jsonNoStore(res);
     res.json({
       id: Number(page.id),
@@ -580,7 +578,7 @@ pagesRouter.get('/pages/', (_req: any, res: any) => {
 })
 
 pagesRouter.get(/^\/pages\/(.+)$/, (req: any, res: any) => {
-  // Phase 2: SPA owns latest /pages/* views and fetches content via /api/pages/:slugPath.
+  // SPA owns latest /pages/* views and fetches content via /api/pages/:path.
   // Keep /pages/home non-canonical.
   const rawSlug = String((req.params as any)[0] || '');
   let decoded = rawSlug;

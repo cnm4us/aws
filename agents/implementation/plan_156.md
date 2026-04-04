@@ -1,6 +1,6 @@
 # Plan 156: Pages/Docs Hierarchy Refactor (Section + Document Model)
 
-Status: Draft
+Status: Completed (A–E)
 
 ## Context
 - Current docs navigation relies heavily on slug path patterns (for example `docs/...`) to imply hierarchy.
@@ -137,3 +137,20 @@ Replace slug-derived docs hierarchy with an explicit parent/child structure supp
 - `/pages` and nested docs navigation work with section/document nodes.
 - Admin supports creating/managing both node types with parent assignment.
 - Stub legacy docs removed and replaced by clean structure.
+
+## Completion Notes
+- Phase A complete:
+  - Added page node columns (`type`, `parent_id`, `sort_order`) and parent-scoped uniqueness support.
+  - Added `db:reset:pages` script to wipe stubs and reseed minimal roots.
+- Phase B complete:
+  - Added `/api/pages` root listing and parent-chain resolver for `/api/pages/:path`.
+  - Public `/pages` route now works as root index in SPA.
+- Phase C complete:
+  - Reworked `/admin/pages` into hierarchical manager cards.
+  - Updated create/edit forms for section/document model with parent + sort controls.
+- Phase D complete:
+  - Enforced hierarchy invariants (no cycles, parent must be section, immutable type).
+  - Added sibling ordering controls (`move-up` / `move-down`).
+- Phase E complete:
+  - Removed TOC/docs-prefix dependency in page API child inclusion behavior.
+  - Updated docs: `docs/Architecture.md`, `docs/API.md`, `docs/Changelog.md`.
