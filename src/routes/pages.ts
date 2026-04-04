@@ -869,6 +869,8 @@ pagesRouter.get('/admin/pages', async (req: any, res: any) => {
         ORDER BY parent_id, sort_order, title, id`
     );
     const items = rows as any[];
+    const cookies = parseCookies(req.headers.cookie)
+    const csrfToken = cookies['csrf'] || ''
     const byId = new Map<number, any>()
     for (const it of items) byId.set(Number(it.id), it)
     const pathCache = new Map<number, string>()
@@ -927,6 +929,14 @@ pagesRouter.get('/admin/pages', async (req: any, res: any) => {
           body += `<div class="actions" style="margin-top:10px">`
           body += `<a href="/pages/${pathEsc}" class="btn">Open</a>`
           body += `<a href="/admin/pages/${id}" class="btn">Edit</a>`
+          body += `<form method="post" action="/admin/pages/${id}/move-up" style="margin:0; display:inline-flex">`
+          if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
+          body += `<button type="submit" class="btn">Move Up</button>`
+          body += `</form>`
+          body += `<form method="post" action="/admin/pages/${id}/move-down" style="margin:0; display:inline-flex">`
+          if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
+          body += `<button type="submit" class="btn">Move Down</button>`
+          body += `</form>`
           if (type === 'section') {
             body += `<a href="/admin/pages/new?type=section&parentId=${id}" class="btn">Child section</a>`
             body += `<a href="/admin/pages/new?type=document&parentId=${id}" class="btn">Child document</a>`
@@ -3086,6 +3096,45 @@ async function validatePageParentCandidate(opts: {
   }
   return { ok: true }
 }
+
+async function movePageWithinSiblings(pageId: number, direction: 'up' | 'down'): Promise<boolean> {
+  const db = getPool()
+  const [rowRes] = await db.query(
+    `SELECT id, parent_id, sort_order
+       FROM pages
+      WHERE id = ?
+      LIMIT 1`,
+    [pageId]
+  )
+  const row = (rowRes as any[])[0]
+  if (!row) return false
+  const parentId = row.parent_id == null ? null : Number(row.parent_id)
+  const sortOrder = Number(row.sort_order || 0)
+  const parentWhere = parentId == null ? 'parent_id IS NULL' : 'parent_id = ?'
+  const cmp = direction === 'up' ? '<' : '>'
+  const ord = direction === 'up' ? 'DESC' : 'ASC'
+  const [sibRes] = await db.query(
+    `SELECT id, sort_order
+       FROM pages
+      WHERE ${parentWhere}
+        AND (
+          sort_order ${cmp} ?
+          OR (sort_order = ? AND id ${cmp} ?)
+        )
+      ORDER BY sort_order ${ord}, id ${ord}
+      LIMIT 1`,
+    direction === 'up'
+      ? (parentId == null ? [sortOrder, sortOrder, pageId] : [parentId, sortOrder, sortOrder, pageId])
+      : (parentId == null ? [sortOrder, sortOrder, pageId] : [parentId, sortOrder, sortOrder, pageId])
+  )
+  const sibling = (sibRes as any[])[0]
+  if (!sibling) return false
+  const siblingId = Number(sibling.id)
+  const siblingOrder = Number(sibling.sort_order || 0)
+  await db.query(`UPDATE pages SET sort_order = ? WHERE id = ?`, [siblingOrder, pageId])
+  await db.query(`UPDATE pages SET sort_order = ? WHERE id = ?`, [sortOrder, siblingId])
+  return true
+}
 function renderPageForm(opts: {
   page?: any;
   parentOptions?: Array<{ id: number; title: string; path: string }>;
@@ -3415,6 +3464,30 @@ pagesRouter.post('/admin/pages/:id', async (req: any, res: any) => {
     res.status(500).send('Failed to update page');
   }
 });
+
+pagesRouter.post('/admin/pages/:id/move-up', async (req: any, res: any) => {
+  try {
+    const id = Number(req.params.id)
+    if (!Number.isFinite(id) || id <= 0) return res.redirect('/admin/pages')
+    await movePageWithinSiblings(id, 'up')
+    res.redirect('/admin/pages')
+  } catch (err) {
+    logError(req.log || pagesLogger, err, 'admin move page up failed', { path: req.path })
+    res.redirect('/admin/pages')
+  }
+})
+
+pagesRouter.post('/admin/pages/:id/move-down', async (req: any, res: any) => {
+  try {
+    const id = Number(req.params.id)
+    if (!Number.isFinite(id) || id <= 0) return res.redirect('/admin/pages')
+    await movePageWithinSiblings(id, 'down')
+    res.redirect('/admin/pages')
+  } catch (err) {
+    logError(req.log || pagesLogger, err, 'admin move page down failed', { path: req.path })
+    res.redirect('/admin/pages')
+  }
+})
 
 pagesRouter.get('/uploads', async (req: any, res: any) => {
   try {
