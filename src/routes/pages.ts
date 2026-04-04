@@ -223,6 +223,13 @@ function normalizePagePath(raw: string): string | null {
   return segments.join('/')
 }
 
+function normalizePageNodeSlug(raw: string): string | null {
+  const trimmed = String(raw || '').trim().toLowerCase().replace(/^\/+|\/+$/g, '')
+  if (!trimmed) return null
+  if (!/^[a-z][a-z0-9-]*$/.test(trimmed)) return null
+  return trimmed
+}
+
 function jsonNoStore(res: any) {
   res.set('Cache-Control', 'no-store');
 }
@@ -857,25 +864,79 @@ pagesRouter.get('/admin/pages', async (req: any, res: any) => {
   try {
     const db = getPool();
     const [rows] = await db.query(
-      `SELECT id, slug, title, visibility, updated_at
+      `SELECT id, type, parent_id, sort_order, slug, title, visibility, updated_at
          FROM pages
-        ORDER BY slug`
+        ORDER BY parent_id, sort_order, title, id`
     );
     const items = rows as any[];
+    const byId = new Map<number, any>()
+    for (const it of items) byId.set(Number(it.id), it)
+    const pathCache = new Map<number, string>()
+    const buildPath = (id: number): string => {
+      const cached = pathCache.get(id)
+      if (cached) return cached
+      const segments: string[] = []
+      const visited = new Set<number>()
+      let cur: any = byId.get(id) || null
+      while (cur) {
+        const cid = Number(cur.id)
+        if (visited.has(cid)) break
+        visited.add(cid)
+        segments.push(String(cur.slug || ''))
+        cur = cur.parent_id == null ? null : byId.get(Number(cur.parent_id)) || null
+      }
+      const pathValue = segments.reverse().join('/')
+      pathCache.set(id, pathValue)
+      return pathValue
+    }
+    const childrenByParent = new Map<string, any[]>()
+    for (const row of items) {
+      const key = row.parent_id == null ? 'root' : String(Number(row.parent_id))
+      if (!childrenByParent.has(key)) childrenByParent.set(key, [])
+      childrenByParent.get(key)!.push(row)
+    }
     let body = '<h1>Pages</h1>';
-    body += '<div class="toolbar"><div><span class="pill">Pages</span></div><div><a href="/admin/pages/new">New page</a></div></div>';
+    body += '<div class="toolbar"><div><span class="pill">Pages</span></div><div style="display:flex; gap:8px"><a href="/admin/pages/new?type=section" class="btn">New section</a><a href="/admin/pages/new?type=document" class="btn">New document</a></div></div>';
     if (!items.length) {
       body += '<p>No pages have been created yet.</p>';
     } else {
-      body += '<table><thead><tr><th>Slug</th><th>Title</th><th>Visibility</th><th>Updated</th></tr></thead><tbody>';
-      for (const row of items) {
-        const slug = escapeHtml(String(row.slug || ''));
-        const title = escapeHtml(String(row.title || ''));
-        const vis = escapeHtml(String(row.visibility || 'public'));
-        const updated = row.updated_at ? escapeHtml(String(row.updated_at)) : '';
-        body += `<tr><td><a href="/admin/pages/${row.id}">${slug || '(home)'}</a></td><td>${title}</td><td>${vis}</td><td>${updated}</td></tr>`;
+      const renderTree = (parentKey: string, depth: number) => {
+        const nodes = childrenByParent.get(parentKey) || []
+        for (const row of nodes) {
+          const id = Number(row.id)
+          const type = String(row.type || 'document') === 'section' ? 'section' : 'document'
+          const title = escapeHtml(String(row.title || ''))
+          const slug = escapeHtml(String(row.slug || ''))
+          const vis = escapeHtml(String(row.visibility || 'public'))
+          const updated = row.updated_at ? escapeHtml(String(row.updated_at)) : ''
+          const sortOrder = Number(row.sort_order || 0)
+          const pathValue = buildPath(id)
+          const pathEsc = escapeHtml(pathValue)
+          const indent = Math.min(42, depth * 14)
+          body += `<div class="section" style="margin-top:10px; margin-left:${indent}px">`
+          body += `<div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start">`
+          body += `<div><div style="font-size:1.05rem; font-weight:700"><a href="/admin/pages/${id}">${title || '(untitled)'}</a></div><div class="field-hint"><code>/pages/${pathEsc}</code></div></div>`
+          body += `<div class="pill">${escapeHtml(type)}</div>`
+          body += `</div>`
+          body += `<div style="display:grid; gap:6px; margin-top:10px">`
+          body += `<div><strong>Slug:</strong> ${slug}</div>`
+          body += `<div><strong>Visibility:</strong> ${vis}</div>`
+          body += `<div><strong>Sort:</strong> ${escapeHtml(String(sortOrder))}</div>`
+          body += `<div><strong>Updated:</strong> ${updated || '-'}</div>`
+          body += `</div>`
+          body += `<div class="actions" style="margin-top:10px">`
+          body += `<a href="/pages/${pathEsc}" class="btn">Open</a>`
+          body += `<a href="/admin/pages/${id}" class="btn">Edit</a>`
+          if (type === 'section') {
+            body += `<a href="/admin/pages/new?type=section&parentId=${id}" class="btn">Child section</a>`
+            body += `<a href="/admin/pages/new?type=document&parentId=${id}" class="btn">Child document</a>`
+          }
+          body += `</div>`
+          body += `</div>`
+          renderTree(String(id), depth + 1)
+        }
       }
-      body += '</tbody></table>';
+      renderTree('root', 0)
     }
     const doc = renderAdminPage({ title: 'Pages', bodyHtml: body, active: 'pages' });
     res.set('Content-Type', 'text/html; charset=utf-8');
@@ -2944,17 +3005,103 @@ pagesRouter.post('/admin/rules/:id/versions/new', async (req: any, res: any) => 
     res.status(500).send('Failed to create rule version');
   }
 });
+
+async function loadPageParentOptions(): Promise<Array<{ id: number; title: string; path: string }>> {
+  const db = getPool()
+  const [rows] = await db.query(
+    `SELECT id, parent_id, slug, title
+       FROM pages
+      WHERE type = 'section'
+      ORDER BY title, id`
+  )
+  const items = (rows as any[]).map((r) => ({
+    id: Number(r.id),
+    parentId: r.parent_id == null ? null : Number(r.parent_id),
+    slug: String(r.slug || ''),
+    title: String(r.title || ''),
+  }))
+  const byId = new Map<number, { id: number; parentId: number | null; slug: string; title: string }>()
+  for (const it of items) byId.set(it.id, it)
+  const cache = new Map<number, string>()
+  const buildPath = (id: number): string => {
+    const cached = cache.get(id)
+    if (cached) return cached
+    const node = byId.get(id)
+    if (!node) return ''
+    const visited = new Set<number>()
+    let cur: typeof node | undefined = node
+    const segments: string[] = []
+    while (cur) {
+      if (visited.has(cur.id)) break
+      visited.add(cur.id)
+      segments.push(cur.slug)
+      cur = cur.parentId != null ? byId.get(cur.parentId) : undefined
+    }
+    const path = segments.reverse().join('/')
+    cache.set(id, path)
+    return path
+  }
+  return items.map((it) => ({
+    id: it.id,
+    title: it.title || it.slug,
+    path: buildPath(it.id),
+  }))
+}
+
+async function loadPageByIdForAdmin(id: number): Promise<any | null> {
+  const db = getPool()
+  const [rows] = await db.query(
+    `SELECT id, type, parent_id, sort_order, slug, title, markdown, html, visibility
+       FROM pages
+      WHERE id = ?
+      LIMIT 1`,
+    [id]
+  )
+  return (rows as any[])[0] || null
+}
+
+async function validatePageParentCandidate(opts: {
+  pageId?: number | null
+  parentId: number | null
+}): Promise<{ ok: boolean; error?: string }> {
+  const { pageId = null, parentId } = opts
+  if (parentId == null) return { ok: true }
+  const parent = await loadPageByIdForAdmin(parentId)
+  if (!parent) return { ok: false, error: 'Parent section not found.' }
+  if (String(parent.type || 'document') !== 'section') return { ok: false, error: 'Parent must be a section.' }
+  if (pageId != null && Number(pageId) === Number(parentId)) return { ok: false, error: 'A page cannot be its own parent.' }
+  if (pageId != null) {
+    const db = getPool()
+    const visited = new Set<number>()
+    let cur: any = parent
+    while (cur) {
+      const cid = Number(cur.id)
+      if (visited.has(cid)) break
+      visited.add(cid)
+      if (cid === Number(pageId)) return { ok: false, error: 'Invalid parent: cycle detected.' }
+      if (cur.parent_id == null) break
+      const [rows] = await db.query(`SELECT id, parent_id FROM pages WHERE id = ? LIMIT 1`, [Number(cur.parent_id)])
+      cur = (rows as any[])[0] || null
+    }
+  }
+  return { ok: true }
+}
 function renderPageForm(opts: {
   page?: any;
+  parentOptions?: Array<{ id: number; title: string; path: string }>;
   error?: string | null;
   success?: string | null;
   csrfToken?: string | null;
 }): string {
   const page = opts.page ?? {};
+  const parentOptions = Array.isArray(opts.parentOptions) ? opts.parentOptions : [];
   const error = opts.error;
   const success = opts.success;
   const isEdit = !!page.id;
   const title = isEdit ? 'Edit Page' : 'New Page';
+  const typeValue = page.type === 'section' ? 'section' : 'document';
+  const parentIdValue = page.parent_id != null ? String(page.parent_id) : (page.parentId != null ? String(page.parentId) : '');
+  const sortOrderValue = page.sort_order != null ? String(page.sort_order) : (page.sortOrder != null ? String(page.sortOrder) : '0');
   const slugValue = page.slug ? String(page.slug) : '';
   const titleValue = page.title ? String(page.title) : '';
   const visibilityValue = page.visibility ? String(page.visibility) : 'public';
@@ -2974,9 +3121,32 @@ function renderPageForm(opts: {
   if (csrfToken) {
     body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`;
   }
-  body += `<label>Slug (URL path)
+  body += `<label>Type
+    <select name="type" id="page-type" ${isEdit ? 'disabled' : ''}>
+      <option value="document"${typeValue === 'document' ? ' selected' : ''}>Document</option>
+      <option value="section"${typeValue === 'section' ? ' selected' : ''}>Section</option>
+    </select>
+    ${isEdit ? '<input type="hidden" name="type" value="' + escapeHtml(typeValue) + '" /><div class="field-hint">Type is fixed after creation.</div>' : ''}
+  </label>`;
+  body += `<label>Parent section
+    <select name="parentId">
+      <option value="">(root)</option>
+      ${parentOptions
+        .filter((opt) => Number(opt.id) !== Number(page.id || 0))
+        .map((opt) => {
+          const selected = String(opt.id) === parentIdValue ? ' selected' : ''
+          const label = `${opt.title} (${opt.path})`
+          return `<option value="${escapeHtml(String(opt.id))}"${selected}>${escapeHtml(label)}</option>`
+        })
+        .join('')}
+    </select>
+  </label>`;
+  body += `<label>Sort order
+    <input type="text" name="sortOrder" value="${escapeHtml(sortOrderValue)}" />
+  </label>`;
+  body += `<label>Slug (URL segment)
     <input type="text" name="slug" value="${escapeHtml(slugValue)}" />
-    <div class="field-hint">Lowercase; a–z, 0–9, '-' only; up to 4 segments separated by '/'. The home page uses slug <code>home</code> and is served at <code>/</code>.</div>
+    <div class="field-hint">Lowercase segment only (a–z, 0–9, '-'). Full URL is assembled from parent sections.</div>
   </label>`;
   body += `<label>Title
     <input type="text" name="title" value="${escapeHtml(titleValue)}" />
@@ -2990,9 +3160,11 @@ function renderPageForm(opts: {
     </select>
   </label>`;
   const pageMdId = `page_markdown_${page.id ? String(page.id) : 'new'}`;
+  body += `<div id="page-document-fields" style="${typeValue === 'section' ? 'display:none;' : ''}">`;
   body += `<label for="${escapeHtml(pageMdId)}">Markdown</label>`;
   body += `<textarea id="${escapeHtml(pageMdId)}" name="markdown" data-md-wysiwyg="1" data-md-initial-html="${escapeHtml(htmlValue)}">${escapeHtml(markdownValue)}</textarea>`;
   body += `<div class="field-hint">Markdown is rendered server-side using the restricted contract in <code>agents/requirements/markdown.md</code>.</div>`;
+  body += `</div>`;
   body += `<div class="actions">
     <button type="submit">${isEdit ? 'Save changes' : 'Create page'}</button>
   </div>`;
@@ -3017,39 +3189,85 @@ function renderPageForm(opts: {
 <script src="/vendor/ckeditor5/ckeditor.js"></script>
 <script src="/vendor/turndown/turndown.js"></script>
 <script src="/admin/ckeditor_markdown.js"></script>
+<script>
+  (function(){
+    var typeSelect = document.getElementById('page-type');
+    var docFields = document.getElementById('page-document-fields');
+    if (!typeSelect || !docFields) return;
+    var sync = function(){
+      var v = String(typeSelect.value || '');
+      docFields.style.display = v === 'section' ? 'none' : '';
+    };
+    typeSelect.addEventListener('change', sync);
+    sync();
+  })();
+</script>
 `;
 
   return renderAdminPage({ title, bodyHtml: body, active: 'pages' });
 }
 
 pagesRouter.get('/admin/pages/new', async (req: any, res: any) => {
-  const cookies = parseCookies(req.headers.cookie);
-  const csrfToken = cookies['csrf'] || '';
-  const doc = renderPageForm({ page: {}, error: null, success: null, csrfToken });
-  res.set('Content-Type', 'text/html; charset=utf-8');
-  res.send(doc);
+  try {
+    const parentOptions = await loadPageParentOptions()
+    const initialType = String(req.query?.type || '').trim().toLowerCase() === 'section' ? 'section' : 'document'
+    const initialParentId = parsePositiveIntOrNull(req.query?.parentId)
+    const cookies = parseCookies(req.headers.cookie);
+    const csrfToken = cookies['csrf'] || '';
+    const doc = renderPageForm({
+      page: {
+        type: initialType,
+        parent_id: initialParentId != null ? initialParentId : null,
+        sort_order: 0,
+      },
+      parentOptions,
+      error: null,
+      success: null,
+      csrfToken,
+    });
+    res.set('Content-Type', 'text/html; charset=utf-8');
+    res.send(doc);
+  } catch (err) {
+    logError(req.log || pagesLogger, err, 'admin new page form failed', { path: req.path })
+    res.status(500).send('Failed to load page form');
+  }
 });
 
 pagesRouter.post('/admin/pages', async (req: any, res: any) => {
   try {
     const body = (req.body || {}) as any;
+    const rawType = String(body.type || 'document').trim().toLowerCase()
+    const pageType: 'section' | 'document' = rawType === 'section' ? 'section' : 'document'
+    const parentId = parsePositiveIntOrNull(body.parentId)
+    const sortOrder = Number.isFinite(Number(body.sortOrder)) ? Math.trunc(Number(body.sortOrder)) : 0
     const rawSlug = String(body.slug || '');
     const rawTitle = String(body.title || '');
     const rawMarkdown = String(body.markdown || '');
     const rawVisibility = String(body.visibility || 'public');
 
-    const slug = normalizePageSlug(rawSlug);
+    const slug = normalizePageNodeSlug(rawSlug);
     if (!slug) {
+      const parentOptions = await loadPageParentOptions()
       const cookies = parseCookies(req.headers.cookie);
       const csrfToken = cookies['csrf'] || '';
-      const doc = renderPageForm({ page: body, error: 'Slug is required and must use only a–z, 0–9, \'-\' and \'/\' (max 4 segments).', success: null, csrfToken });
+      const doc = renderPageForm({ page: body, parentOptions, error: 'Slug is required and must use only a–z, 0–9, \'-\'.', success: null, csrfToken });
       res.set('Content-Type', 'text/html; charset=utf-8');
       return res.status(400).send(doc);
     }
-    if (isReservedPageSlug(slug)) {
+    if (parentId == null && isReservedPageSlug(slug)) {
+      const parentOptions = await loadPageParentOptions()
       const cookies = parseCookies(req.headers.cookie);
       const csrfToken = cookies['csrf'] || '';
-      const doc = renderPageForm({ page: body, error: 'Slug collides with a reserved route (global-feed, channels, groups, users, admin, api, auth, login, logout, assets, static). Please choose a different slug.', success: null, csrfToken });
+      const doc = renderPageForm({ page: body, parentOptions, error: 'Root slug collides with a reserved route. Please choose a different slug.', success: null, csrfToken });
+      res.set('Content-Type', 'text/html; charset=utf-8');
+      return res.status(400).send(doc);
+    }
+    const parentValidation = await validatePageParentCandidate({ parentId })
+    if (!parentValidation.ok) {
+      const parentOptions = await loadPageParentOptions()
+      const cookies = parseCookies(req.headers.cookie);
+      const csrfToken = cookies['csrf'] || '';
+      const doc = renderPageForm({ page: body, parentOptions, error: parentValidation.error || 'Invalid parent selection.', success: null, csrfToken });
       res.set('Content-Type', 'text/html; charset=utf-8');
       return res.status(400).send(doc);
     }
@@ -3058,22 +3276,24 @@ pagesRouter.post('/admin/pages', async (req: any, res: any) => {
       ? (rawVisibility as PageVisibility)
       : 'public';
 
-    const { html } = renderMarkdown(rawMarkdown);
+    const markdown = pageType === 'document' ? rawMarkdown : ''
+    const { html } = pageType === 'document' ? renderMarkdown(rawMarkdown) : { html: '' }
 
     const db = getPool();
     const userId = req.user && req.user.id ? Number(req.user.id) : null;
     try {
       await db.query(
-        `INSERT INTO pages (slug, title, markdown, html, visibility, layout, created_by, updated_by)
-         VALUES (?, ?, ?, ?, ?, 'default', ?, ?)`,
-        [slug, title, rawMarkdown, html, visibility, userId, userId]
+        `INSERT INTO pages (type, parent_id, sort_order, slug, title, markdown, html, visibility, layout, created_by, updated_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'default', ?, ?)`,
+        [pageType, parentId, sortOrder, slug, title, markdown, html, visibility, userId, userId]
       );
     } catch (err: any) {
       const msg = String(err?.message || err);
-      if (msg.includes('ER_DUP_ENTRY') || msg.includes('uniq_pages_slug')) {
+      if (msg.includes('ER_DUP_ENTRY') || msg.includes('uniq_pages_parent_slug')) {
+        const parentOptions = await loadPageParentOptions()
         const cookies = parseCookies(req.headers.cookie);
         const csrfToken = cookies['csrf'] || '';
-        const doc = renderPageForm({ page: body, error: 'Slug already exists. Please choose a different slug.', success: null, csrfToken });
+        const doc = renderPageForm({ page: body, parentOptions, error: 'Slug already exists under this parent. Please choose a different slug.', success: null, csrfToken });
         res.set('Content-Type', 'text/html; charset=utf-8');
         return res.status(400).send(doc);
       }
@@ -3091,13 +3311,12 @@ pagesRouter.get('/admin/pages/:id', async (req: any, res: any) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isFinite(id) || id <= 0) return res.status(404).send('Page not found');
-    const db = getPool();
-    const [rows] = await db.query(`SELECT id, slug, title, markdown, html, visibility FROM pages WHERE id = ? LIMIT 1`, [id]);
-    const page = (rows as any[])[0];
+    const page = await loadPageByIdForAdmin(id)
     if (!page) return res.status(404).send('Page not found');
+    const parentOptions = await loadPageParentOptions()
     const cookies = parseCookies(req.headers.cookie);
     const csrfToken = cookies['csrf'] || '';
-    const doc = renderPageForm({ page, error: null, success: null, csrfToken });
+    const doc = renderPageForm({ page, parentOptions, error: null, success: null, csrfToken });
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.send(doc);
   } catch (err) {
@@ -3112,23 +3331,51 @@ pagesRouter.post('/admin/pages/:id', async (req: any, res: any) => {
     if (!Number.isFinite(id) || id <= 0) return res.status(404).send('Page not found');
 
     const body = (req.body || {}) as any;
+    const rawType = String(body.type || 'document').trim().toLowerCase()
+    const requestedType: 'section' | 'document' = rawType === 'section' ? 'section' : 'document'
+    const parentId = parsePositiveIntOrNull(body.parentId)
+    const sortOrder = Number.isFinite(Number(body.sortOrder)) ? Math.trunc(Number(body.sortOrder)) : 0
     const rawSlug = String(body.slug || '');
     const rawTitle = String(body.title || '');
     const rawMarkdown = String(body.markdown || '');
     const rawVisibility = String(body.visibility || 'public');
 
-    const slug = normalizePageSlug(rawSlug);
-    if (!slug) {
+    const existing = await loadPageByIdForAdmin(id)
+    if (!existing) return res.status(404).send('Page not found');
+    const pageType: 'section' | 'document' = String(existing.type || 'document') === 'section' ? 'section' : 'document'
+
+    if (requestedType !== pageType) {
+      const parentOptions = await loadPageParentOptions()
       const cookies = parseCookies(req.headers.cookie);
       const csrfToken = cookies['csrf'] || '';
-      const doc = renderPageForm({ page: { ...body, id }, error: 'Slug is required and must use only a–z, 0–9, \'-\' and \'/\' (max 4 segments).', success: null, csrfToken });
+      const doc = renderPageForm({ page: { ...body, id, type: pageType }, parentOptions, error: 'Type cannot be changed after creation.', success: null, csrfToken });
       res.set('Content-Type', 'text/html; charset=utf-8');
       return res.status(400).send(doc);
     }
-    if (isReservedPageSlug(slug)) {
+
+    const slug = normalizePageNodeSlug(rawSlug);
+    if (!slug) {
+      const parentOptions = await loadPageParentOptions()
       const cookies = parseCookies(req.headers.cookie);
       const csrfToken = cookies['csrf'] || '';
-      const doc = renderPageForm({ page: { ...body, id }, error: 'Slug collides with a reserved route (global-feed, channels, groups, users, admin, api, auth, login, logout, assets, static). Please choose a different slug.', success: null, csrfToken });
+      const doc = renderPageForm({ page: { ...body, id, type: pageType }, parentOptions, error: 'Slug is required and must use only a–z, 0–9, \'-\'.', success: null, csrfToken });
+      res.set('Content-Type', 'text/html; charset=utf-8');
+      return res.status(400).send(doc);
+    }
+    if (parentId == null && isReservedPageSlug(slug)) {
+      const parentOptions = await loadPageParentOptions()
+      const cookies = parseCookies(req.headers.cookie);
+      const csrfToken = cookies['csrf'] || '';
+      const doc = renderPageForm({ page: { ...body, id, type: pageType }, parentOptions, error: 'Root slug collides with a reserved route. Please choose a different slug.', success: null, csrfToken });
+      res.set('Content-Type', 'text/html; charset=utf-8');
+      return res.status(400).send(doc);
+    }
+    const parentValidation = await validatePageParentCandidate({ pageId: id, parentId })
+    if (!parentValidation.ok) {
+      const parentOptions = await loadPageParentOptions()
+      const cookies = parseCookies(req.headers.cookie);
+      const csrfToken = cookies['csrf'] || '';
+      const doc = renderPageForm({ page: { ...body, id, type: pageType }, parentOptions, error: parentValidation.error || 'Invalid parent selection.', success: null, csrfToken });
       res.set('Content-Type', 'text/html; charset=utf-8');
       return res.status(400).send(doc);
     }
@@ -3137,23 +3384,25 @@ pagesRouter.post('/admin/pages/:id', async (req: any, res: any) => {
       ? (rawVisibility as PageVisibility)
       : 'public';
 
-    const { html } = renderMarkdown(rawMarkdown);
+    const markdown = pageType === 'document' ? rawMarkdown : ''
+    const { html } = pageType === 'document' ? renderMarkdown(rawMarkdown) : { html: '' }
     const db = getPool();
     const userId = req.user && req.user.id ? Number(req.user.id) : null;
 
     try {
       await db.query(
         `UPDATE pages
-            SET slug = ?, title = ?, markdown = ?, html = ?, visibility = ?, updated_by = ?, updated_at = CURRENT_TIMESTAMP
+            SET parent_id = ?, sort_order = ?, slug = ?, title = ?, markdown = ?, html = ?, visibility = ?, updated_by = ?, updated_at = CURRENT_TIMESTAMP
           WHERE id = ?`,
-        [slug, title, rawMarkdown, html, visibility, userId, id]
+        [parentId, sortOrder, slug, title, markdown, html, visibility, userId, id]
       );
     } catch (err: any) {
       const msg = String(err?.message || err);
-      if (msg.includes('ER_DUP_ENTRY') || msg.includes('uniq_pages_slug')) {
+      if (msg.includes('ER_DUP_ENTRY') || msg.includes('uniq_pages_parent_slug')) {
+        const parentOptions = await loadPageParentOptions()
         const cookies = parseCookies(req.headers.cookie);
         const csrfToken = cookies['csrf'] || '';
-        const doc = renderPageForm({ page: { ...body, id }, error: 'Slug already exists. Please choose a different slug.', success: null, csrfToken });
+        const doc = renderPageForm({ page: { ...body, id, type: pageType }, parentOptions, error: 'Slug already exists under this parent. Please choose a different slug.', success: null, csrfToken });
         res.set('Content-Type', 'text/html; charset=utf-8');
         return res.status(400).send(doc);
       }
