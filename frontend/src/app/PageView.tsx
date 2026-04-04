@@ -1,16 +1,19 @@
 import React, { useEffect, useMemo, useState } from 'react'
 
 type PageResponse = {
+  id?: number
   slug: string
+  type?: 'section' | 'document'
   title: string
   html: string
   visibility: string
   layout: string
   updatedAt: string | null
-  children?: Array<{ slug: string; title: string; url: string }>
+  children?: Array<{ id?: number; slug: string; type?: 'section' | 'document'; title: string; url: string }>
 }
 
 function normalizeSlugFromPath(pathname: string): string | null {
+  if (pathname === '/pages' || pathname === '/pages/') return ''
   const m = pathname.match(/^\/pages\/(.+)$/)
   if (!m) return null
   const raw = m[1] || ''
@@ -32,10 +35,11 @@ export default function PageView() {
     let canceled = false
     ;(async () => {
       try {
-        if (!slug) throw new Error('bad_slug')
+        if (slug == null) throw new Error('bad_slug')
         setLoading(true)
         setError(null)
-        const res = await fetch(`/api/pages/${encodeURIComponent(slug)}`, { credentials: 'same-origin' })
+        const endpoint = slug === '' ? '/api/pages' : `/api/pages/${encodeURIComponent(slug)}`
+        const res = await fetch(endpoint, { credentials: 'same-origin' })
         if (!res.ok) {
           let body: any = null
           try { body = await res.json() } catch {}
@@ -94,4 +98,3 @@ export default function PageView() {
     </div>
   )
 }
-

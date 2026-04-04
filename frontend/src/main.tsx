@@ -81,7 +81,7 @@ if (path === '/' || path === '') {
       <Feed />
     </Suspense>
   )
-} else if (/^\/pages\/.+/.test(path)) {
+} else if (path === '/pages' || path === '/pages/' || /^\/pages\/.+/.test(path)) {
   root.render(
     <Layout label="Page">
       <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}>

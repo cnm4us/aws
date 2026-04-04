@@ -212,6 +212,17 @@ function normalizePageSlug(raw: string): string | null {
   return segments.join('/');
 }
 
+function normalizePagePath(raw: string): string | null {
+  const trimmed = String(raw || '').trim().toLowerCase().replace(/^\/+|\/+$/g, '')
+  if (!trimmed) return null
+  const segments = trimmed.split('/')
+  if (segments.length === 0 || segments.length > 8) return null
+  for (const segment of segments) {
+    if (!/^[a-z][a-z0-9-]*$/.test(segment)) return null
+  }
+  return segments.join('/')
+}
+
 function jsonNoStore(res: any) {
   res.set('Cache-Control', 'no-store');
 }
@@ -259,6 +270,18 @@ async function ensurePageVisibilityJson(req: any, res: any, visibility: PageVisi
   return true;
 }
 
+async function allowedPageVisibilitiesForRequest(req: any): Promise<PageVisibility[]> {
+  const user = req.user
+  const session = req.session
+  const allowed: PageVisibility[] = ['public']
+  if (user && session) {
+    allowed.push('authenticated')
+    if (await hasAnySpaceModerator(user.id)) allowed.push('space_moderator')
+    if (await hasAnySpaceAdmin(user.id)) allowed.push('space_admin')
+  }
+  return allowed
+}
+
 async function canViewGuidance(req: any): Promise<boolean> {
   const user = req.user;
   const session = req.session;
@@ -274,65 +297,125 @@ async function canViewGuidance(req: any): Promise<boolean> {
   }
 }
 
-async function listDirectChildPages(parentSlug: string): Promise<Array<{ slug: string; title: string | null }>> {
-  const slug = String(parentSlug || '').trim().toLowerCase();
-  if (!slug) return [];
-  const segments = slug.split('/');
-  if (segments.length >= 4) return [];
+async function resolvePageByPath(pathValue: string): Promise<any | null> {
+  const normalized = normalizePagePath(pathValue)
+  if (!normalized) return null
+  const segments = normalized.split('/')
+  const db = getPool()
+  let parentId: number | null = null
+  let current: any = null
+  for (const segment of segments) {
+    const query = parentId == null
+      ? `SELECT id, type, parent_id, slug, title, html, visibility, layout, updated_at
+           FROM pages
+          WHERE slug = ? AND parent_id IS NULL
+          LIMIT 1`
+      : `SELECT id, type, parent_id, slug, title, html, visibility, layout, updated_at
+           FROM pages
+          WHERE slug = ? AND parent_id = ?
+          LIMIT 1`
+    const params = parentId == null ? [segment] : [segment, parentId]
+    const [rows] = await db.query(query, params)
+    current = (rows as any[])[0] || null
+    if (!current) return null
+    parentId = Number(current.id)
+  }
+  return current
+}
 
-  const prefix = `${slug}/`;
-  const db = getPool();
+async function listChildPagesByParent(
+  parentId: number | null,
+  allowedVisibilities: PageVisibility[]
+): Promise<Array<{ id: number; type: 'section' | 'document'; slug: string; title: string; visibility: string }>> {
+  const db = getPool()
+  const parentWhere = parentId == null ? 'p.parent_id IS NULL' : 'p.parent_id = ?'
   const [rows] = await db.query(
-    `SELECT slug, title
-       FROM pages
-      WHERE slug LIKE ?
-        AND slug NOT LIKE ?
-      ORDER BY slug
-      LIMIT 200`,
-    [`${prefix}%`, `${prefix}%/%`]
-  );
-  return (rows as any[]).map((r) => ({ slug: String(r.slug), title: r.title != null ? String(r.title) : null }));
+    `SELECT p.id, p.type, p.slug, p.title, p.visibility
+       FROM pages p
+      WHERE ${parentWhere}
+        AND p.visibility IN (${allowedVisibilities.map(() => '?').join(',')})
+      ORDER BY p.sort_order ASC, p.title ASC, p.id ASC
+      LIMIT 300`,
+    parentId == null ? [...allowedVisibilities] : [parentId, ...allowedVisibilities]
+  )
+  return (rows as any[]).map((r) => ({
+    id: Number(r.id),
+    type: String(r.type || 'document') === 'section' ? 'section' : 'document',
+    slug: String(r.slug || ''),
+    title: String(r.title || ''),
+    visibility: String(r.visibility || 'public'),
+  }))
 }
 
 // -------- JSON APIs: Pages & Rules (latest only; SPA embed) --------
 
 const TOC_PAGE_SLUGS = new Set(['docs']);
 
+pagesRouter.get('/api/pages', async (req: any, res: any) => {
+  try {
+    const allowed = await allowedPageVisibilitiesForRequest(req)
+    const children = await listChildPagesByParent(null, allowed)
+    jsonNoStore(res)
+    res.json({
+      slug: '',
+      type: 'section',
+      title: 'Pages',
+      html: '',
+      visibility: 'public',
+      layout: 'default',
+      updatedAt: null,
+      children: children.map((c) => ({
+        id: c.id,
+        slug: c.slug,
+        type: c.type,
+        title: c.title || c.slug,
+        url: `/pages/${c.slug}`,
+      })),
+    })
+  } catch (err) {
+    logError(req.log || pagesLogger, err, 'api pages root failed', { path: req.path })
+    jsonError(res, 500, 'internal_error')
+  }
+})
+
 pagesRouter.get(/^\/api\/pages\/(.+)$/, async (req: any, res: any) => {
   try {
     const rawSlug = String((req.params as any)[0] || '');
     let decoded = rawSlug;
     try { decoded = decodeURIComponent(rawSlug) } catch {}
-    const slug = normalizePageSlug(decoded);
-    if (!slug) return jsonError(res, 400, 'bad_slug');
-
-    const db = getPool();
-    const [rows] = await db.query(
-      `SELECT slug, title, html, visibility, layout, updated_at
-         FROM pages
-        WHERE slug = ?
-        LIMIT 1`,
-      [slug]
-    );
-    const page = (rows as any[])[0];
+    const slugPath = normalizePagePath(decoded)
+    if (!slugPath) return jsonError(res, 400, 'bad_slug');
+    const page = await resolvePageByPath(slugPath)
     if (!page) return jsonError(res, 404, 'page_not_found');
 
     const ok = await ensurePageVisibilityJson(req, res, page.visibility as PageVisibility);
     if (!ok) return;
 
+    const allowed = await allowedPageVisibilitiesForRequest(req)
+    const segments = slugPath.split('/')
+    const children = await listChildPagesByParent(Number(page.id), allowed)
     const updatedAt = page.updated_at ? new Date(page.updated_at) : null;
-    const children = slug === 'home' ? [] : await listDirectChildPages(slug);
-    const includeChildren = TOC_PAGE_SLUGS.has(slug) || children.length > 0;
+    const includeChildren = String(page.type || 'document') === 'section' || TOC_PAGE_SLUGS.has(slugPath) || children.length > 0
     jsonNoStore(res);
     res.json({
-      slug,
+      id: Number(page.id),
+      slug: slugPath,
+      type: String(page.type || 'document') === 'section' ? 'section' : 'document',
       title: page.title != null ? String(page.title) : '',
       html: String(page.html || ''),
       visibility: String(page.visibility || 'public'),
       layout: page.layout != null ? String(page.layout) : 'default',
       updatedAt: updatedAt && !isNaN(updatedAt.getTime()) ? updatedAt.toISOString() : null,
       ...(includeChildren
-        ? { children: children.map((c) => ({ slug: c.slug, title: c.title || '', url: `/pages/${c.slug}` })) }
+        ? {
+            children: children.map((c) => ({
+              id: c.id,
+              slug: c.slug,
+              type: c.type,
+              title: c.title || c.slug,
+              url: `/pages/${[...segments, c.slug].join('/')}`,
+            })),
+          }
         : {}),
     });
   } catch (err) {
@@ -481,13 +564,21 @@ pagesRouter.get('/', async (req: any, res: any) => {
   serveHtml(res, path.join('app', 'index.html'));
 });
 
+pagesRouter.get('/pages', (_req: any, res: any) => {
+  serveHtml(res, path.join('app', 'index.html'))
+})
+
+pagesRouter.get('/pages/', (_req: any, res: any) => {
+  serveHtml(res, path.join('app', 'index.html'))
+})
+
 pagesRouter.get(/^\/pages\/(.+)$/, (req: any, res: any) => {
   // Phase 2: SPA owns latest /pages/* views and fetches content via /api/pages/:slugPath.
   // Keep /pages/home non-canonical.
   const rawSlug = String((req.params as any)[0] || '');
   let decoded = rawSlug;
   try { decoded = decodeURIComponent(rawSlug) } catch {}
-  const slug = normalizePageSlug(decoded);
+  const slug = normalizePagePath(decoded);
   if (slug === 'home') return res.redirect('/');
   serveHtml(res, path.join('app', 'index.html'));
 });
@@ -1418,7 +1509,7 @@ function renderCultureDetailPage(opts: {
       const checked = assigned.has(cid) ? ' checked' : '';
       body += `<label style="display:flex; gap:10px; align-items:flex-start; margin-top: 8px">`;
       body += `<input type="checkbox" name="categoryIds" value="${escapeHtml(String(cid))}"${checked} style="margin-top: 3px" />`;
-      body += `<div><div>${escapeHtml(c.name)}</div>`;
+      body += `<div><div><a href="/admin/categories/${encodeURIComponent(String(cid))}">${escapeHtml(c.name)}</a></div>`;
       if (c.description) {
         body += `<div class="field-hint">${escapeHtml(c.description)}</div>`;
       }
