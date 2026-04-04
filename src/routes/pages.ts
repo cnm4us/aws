@@ -860,6 +860,8 @@ ${opts.bodyHtml}
 
 pagesRouter.get('/admin/pages', async (req: any, res: any) => {
   try {
+    const notice = req.query && (req.query as any).notice != null ? String((req.query as any).notice) : ''
+    const error = req.query && (req.query as any).error != null ? String((req.query as any).error) : ''
     const db = getPool();
     const [rows] = await db.query(
       `SELECT id, type, parent_id, sort_order, slug, title, visibility, updated_at
@@ -896,7 +898,29 @@ pagesRouter.get('/admin/pages', async (req: any, res: any) => {
       childrenByParent.get(key)!.push(row)
     }
     let body = '<h1>Pages</h1>';
+    body += `<style>
+      .page-node-head{ display:flex; justify-content:space-between; gap:10px; align-items:flex-start; }
+      .page-node-meta{ display:flex; align-items:flex-start; gap:8px; }
+      .page-move-stack{ display:inline-flex; flex-direction:column; gap:4px; }
+      .page-move-btn{
+        width: 28px;
+        height: 24px;
+        line-height: 1;
+        display:inline-flex;
+        align-items:center;
+        justify-content:center;
+        padding:0;
+        border-radius:8px;
+        border:1px solid rgba(255,255,255,0.35);
+        background: rgba(255,255,255,0.10);
+        color:#fff;
+        cursor:pointer;
+      }
+      .page-move-btn:hover{ background: rgba(255,255,255,0.16); }
+    </style>`;
     body += '<div class="toolbar"><div><span class="pill">Pages</span></div><div style="display:flex; gap:8px"><a href="/admin/pages/new?type=section" class="btn">New section</a><a href="/admin/pages/new?type=document" class="btn">New document</a></div></div>';
+    if (notice) body += `<div class="success">${escapeHtml(notice)}</div>`
+    if (error) body += `<div class="error">${escapeHtml(error)}</div>`
     if (!items.length) {
       body += '<p>No pages have been created yet.</p>';
     } else {
@@ -914,9 +938,21 @@ pagesRouter.get('/admin/pages', async (req: any, res: any) => {
           const pathEsc = escapeHtml(pathValue)
           const indent = Math.min(42, depth * 14)
           body += `<div class="section" style="margin-top:10px; margin-left:${indent}px">`
-          body += `<div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start">`
+          body += `<div class="page-node-head">`
           body += `<div><div style="font-size:1.05rem; font-weight:700"><a href="/admin/pages/${id}">${title || '(untitled)'}</a></div><div class="field-hint"><code>/pages/${pathEsc}</code></div></div>`
+          body += `<div class="page-node-meta">`
           body += `<div class="pill">${escapeHtml(type)}</div>`
+          body += `<div class="page-move-stack">`
+          body += `<form method="post" action="/admin/pages/${id}/move-up" style="margin:0; display:inline-flex">`
+          if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
+          body += `<button type="submit" class="page-move-btn" title="Move Up" aria-label="Move Up">↑</button>`
+          body += `</form>`
+          body += `<form method="post" action="/admin/pages/${id}/move-down" style="margin:0; display:inline-flex">`
+          if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
+          body += `<button type="submit" class="page-move-btn" title="Move Down" aria-label="Move Down">↓</button>`
+          body += `</form>`
+          body += `</div>`
+          body += `</div>`
           body += `</div>`
           body += `<div style="display:grid; gap:6px; margin-top:10px">`
           body += `<div><strong>Slug:</strong> ${slug}</div>`
@@ -927,18 +963,14 @@ pagesRouter.get('/admin/pages', async (req: any, res: any) => {
           body += `<div class="actions" style="margin-top:10px">`
           body += `<a href="/pages/${pathEsc}" class="btn">Open</a>`
           body += `<a href="/admin/pages/${id}" class="btn">Edit</a>`
-          body += `<form method="post" action="/admin/pages/${id}/move-up" style="margin:0; display:inline-flex">`
-          if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
-          body += `<button type="submit" class="btn">Move Up</button>`
-          body += `</form>`
-          body += `<form method="post" action="/admin/pages/${id}/move-down" style="margin:0; display:inline-flex">`
-          if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
-          body += `<button type="submit" class="btn">Move Down</button>`
-          body += `</form>`
           if (type === 'section') {
             body += `<a href="/admin/pages/new?type=section&parentId=${id}" class="btn">Child section</a>`
             body += `<a href="/admin/pages/new?type=document&parentId=${id}" class="btn">Child document</a>`
           }
+          body += `<form method="post" action="/admin/pages/${id}/delete" style="margin:0; display:inline-flex" onsubmit="return confirm('Delete this ${escapeHtml(type)}?');">`
+          if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
+          body += `<button type="submit" class="btn danger">Delete</button>`
+          body += `</form>`
           body += `</div>`
           body += `</div>`
           renderTree(String(id), depth + 1)
@@ -3133,6 +3165,27 @@ async function movePageWithinSiblings(pageId: number, direction: 'up' | 'down'):
   await db.query(`UPDATE pages SET sort_order = ? WHERE id = ?`, [sortOrder, siblingId])
   return true
 }
+
+async function countDocumentDescendants(sectionId: number): Promise<number> {
+  const db = getPool()
+  const [rows] = await db.query(
+    `WITH RECURSIVE subtree AS (
+       SELECT id, type
+         FROM pages
+        WHERE id = ?
+       UNION ALL
+       SELECT p.id, p.type
+         FROM pages p
+         INNER JOIN subtree s ON p.parent_id = s.id
+     )
+     SELECT COUNT(*) AS c
+       FROM subtree
+      WHERE id <> ?
+        AND type = 'document'`,
+    [sectionId, sectionId]
+  )
+  return Number((rows as any[])[0]?.c || 0)
+}
 function renderPageForm(opts: {
   page?: any;
   parentOptions?: Array<{ id: number; title: string; path: string }>;
@@ -3484,6 +3537,34 @@ pagesRouter.post('/admin/pages/:id/move-down', async (req: any, res: any) => {
   } catch (err) {
     logError(req.log || pagesLogger, err, 'admin move page down failed', { path: req.path })
     res.redirect('/admin/pages')
+  }
+})
+
+pagesRouter.post('/admin/pages/:id/delete', async (req: any, res: any) => {
+  try {
+    const id = Number(req.params.id)
+    if (!Number.isFinite(id) || id <= 0) return res.redirect('/admin/pages')
+    const db = getPool()
+    const [rows] = await db.query(`SELECT id, type FROM pages WHERE id = ? LIMIT 1`, [id])
+    const page = (rows as any[])[0]
+    if (!page) return res.redirect('/admin/pages?error=' + encodeURIComponent('Page not found.'))
+    const type = String(page.type || 'document') === 'section' ? 'section' : 'document'
+    if (type === 'section') {
+      const docsCount = await countDocumentDescendants(id)
+      if (docsCount > 0) {
+        return res.redirect('/admin/pages?error=' + encodeURIComponent('Cannot delete section until all documents in that section are removed.'))
+      }
+      const [childRows] = await db.query(`SELECT COUNT(*) AS c FROM pages WHERE parent_id = ?`, [id])
+      const childCount = Number((childRows as any[])[0]?.c || 0)
+      if (childCount > 0) {
+        return res.redirect('/admin/pages?error=' + encodeURIComponent('Cannot delete section until child sections are removed or moved.'))
+      }
+    }
+    await db.query(`DELETE FROM pages WHERE id = ?`, [id])
+    return res.redirect('/admin/pages?notice=' + encodeURIComponent('Page deleted.'))
+  } catch (err) {
+    logError(req.log || pagesLogger, err, 'admin delete page failed', { path: req.path })
+    return res.redirect('/admin/pages?error=' + encodeURIComponent('Failed to delete page.'))
   }
 })
 
