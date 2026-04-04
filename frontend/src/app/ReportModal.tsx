@@ -1,13 +1,44 @@
 import React, { useEffect, useMemo, useState } from 'react'
 
-type OptionsRule = { id: number; slug: string; title: string; shortDescription?: string }
-type OptionsCategory = { id: number; name: string; rules: OptionsRule[] }
+type OptionsRule = {
+  id: number
+  slug: string
+  title: string
+  priority?: number
+  isDefault?: boolean
+}
+
+type OptionsReason = {
+  id: number
+  label: string
+  shortDescription?: string | null
+  groupKey?: string | null
+  groupLabel?: string | null
+  displayOrder?: number
+  rules: OptionsRule[]
+}
+
+type OptionsGroup = {
+  key?: string | null
+  label?: string | null
+  reasons: OptionsReason[]
+}
+
 type OptionsResponse = {
   spacePublicationId: number
   spaceId: number
   reportedByMe: boolean
-  myReport?: { ruleId: number; ruleSlug: string | null; ruleTitle: string | null; createdAt: string } | null
-  categories: OptionsCategory[]
+  myReport?: {
+    ruleId: number
+    ruleSlug: string | null
+    ruleTitle: string | null
+    userFacingRuleId?: number | null
+    userFacingRuleLabel?: string | null
+    userFacingGroupKey?: string | null
+    userFacingGroupLabel?: string | null
+    createdAt: string
+  } | null
+  groups: OptionsGroup[]
 }
 
 type RuleDetailResponse = {
@@ -37,17 +68,16 @@ export default function ReportModal(props: {
   const [error, setError] = useState<string | null>(null)
   const [options, setOptions] = useState<OptionsResponse | null>(null)
 
-  const [expandedRuleId, setExpandedRuleId] = useState<number | null>(null)
-  const [selectedRuleId, setSelectedRuleId] = useState<number | null>(null)
-  const [selectedRuleSlug, setSelectedRuleSlug] = useState<string | null>(null)
+  const [expandedReasonId, setExpandedReasonId] = useState<number | null>(null)
 
   const [detailSlug, setDetailSlug] = useState<string | null>(null)
+  const [detailContext, setDetailContext] = useState<{ userFacingRuleId: number; ruleId: number } | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState<string | null>(null)
   const [detail, setDetail] = useState<RuleDetailResponse | null>(null)
   const [detailTab, setDetailTab] = useState<'long' | 'allowed' | 'disallowed'>('long')
 
-  const [submitBusy, setSubmitBusy] = useState(false)
+  const [submitBusyKey, setSubmitBusyKey] = useState<string | null>(null)
   const [submitError, setSubmitError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -61,14 +91,6 @@ export default function ReportModal(props: {
         const data = (await res.json()) as OptionsResponse
         if (canceled) return
         setOptions(data)
-        if (data?.myReport?.ruleId) {
-          const rid = Number(data.myReport.ruleId)
-          if (Number.isFinite(rid) && rid > 0) {
-            setSelectedRuleId(rid)
-            const slug = data.myReport.ruleSlug
-            if (slug) setSelectedRuleSlug(String(slug))
-          }
-        }
         setLoading(false)
       } catch {
         if (!canceled) {
@@ -91,27 +113,19 @@ export default function ReportModal(props: {
 
   const flatRules = useMemo(() => {
     const map = new Map<number, OptionsRule>()
-    for (const cat of options?.categories || []) {
-      for (const r of cat.rules || []) {
-        map.set(Number(r.id), r)
+    for (const group of options?.groups || []) {
+      for (const reason of group.reasons || []) {
+        for (const r of reason.rules || []) {
+          map.set(Number(r.id), r)
+        }
       }
     }
     return map
   }, [options])
 
-  useEffect(() => {
-    if (!options?.myReport?.ruleId) return
-    const rid = Number(options.myReport.ruleId)
-    if (!Number.isFinite(rid) || rid <= 0) return
-    if (selectedRuleId == null) setSelectedRuleId(rid)
-    if (!selectedRuleSlug) {
-      const slug = options.myReport.ruleSlug || flatRules.get(rid)?.slug || null
-      if (slug) setSelectedRuleSlug(String(slug))
-    }
-  }, [options, flatRules, selectedRuleId, selectedRuleSlug])
-
-  async function openDetail(slug: string) {
+  async function openDetail(slug: string, context: { userFacingRuleId: number; ruleId: number }) {
     setDetailSlug(slug)
+    setDetailContext(context)
     setDetailLoading(true)
     setDetailError(null)
     setDetail(null)
@@ -128,19 +142,21 @@ export default function ReportModal(props: {
     }
   }
 
-  async function submit() {
-    if (submitBusy) return
-    if (!selectedRuleId) return
+  async function submitReport(input: { userFacingRuleId?: number | null; ruleId?: number | null; busyKey: string }) {
+    if (submitBusyKey) return
     if (options?.reportedByMe) return
-    setSubmitBusy(true)
+    setSubmitBusyKey(input.busyKey)
     setSubmitError(null)
     try {
       const csrf = getCsrfToken()
+      const payload: Record<string, any> = {}
+      if (input.userFacingRuleId != null) payload.userFacingRuleId = Number(input.userFacingRuleId)
+      if (input.ruleId != null) payload.ruleId = Number(input.ruleId)
       const res = await fetch(`/api/publications/${publicationId}/report`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(csrf ? { 'x-csrf-token': csrf } : {}) },
         credentials: 'same-origin',
-        body: JSON.stringify({ ruleId: selectedRuleId }),
+        body: JSON.stringify(payload),
       })
       if (res.status === 409) {
         onReported(publicationId)
@@ -153,15 +169,16 @@ export default function ReportModal(props: {
     } catch {
       setSubmitError('Failed to submit report')
     } finally {
-      setSubmitBusy(false)
+      setSubmitBusyKey(null)
     }
   }
 
   const reportedByMe = Boolean(options?.reportedByMe)
   const reportedTitle =
-    selectedRuleId != null && flatRules.has(selectedRuleId)
-      ? flatRules.get(selectedRuleId)!.title
+    options?.myReport?.ruleId != null && flatRules.has(Number(options.myReport.ruleId))
+      ? flatRules.get(Number(options.myReport.ruleId))?.title || null
       : options?.myReport?.ruleTitle || null
+  const hasReasons = Array.isArray(options?.groups) && (options?.groups || []).some((g) => Array.isArray(g.reasons) && g.reasons.length > 0)
 
   return (
     <div
@@ -193,7 +210,7 @@ export default function ReportModal(props: {
         <div style={{ padding: '10px 14px', borderBottom: '1px solid rgba(255,255,255,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           <div>
             <div style={{ fontWeight: 700 }}>Report</div>
-            <div style={{ fontSize: 12, opacity: 0.8 }}>Select the single rule that best matches.</div>
+            <div style={{ fontSize: 12, opacity: 0.8 }}>Choose a reason and submit, or drill down to a specific rule.</div>
           </div>
           <button onClick={onClose} style={{ background: 'transparent', color: '#fff', border: '1px solid rgba(255,255,255,0.28)', borderRadius: 10, padding: '6px 10px', fontSize: 16 }}>
             Close
@@ -209,12 +226,36 @@ export default function ReportModal(props: {
             <div style={{ padding: 14, display: 'grid', gap: 10 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
                 <button
-                  onClick={() => { setDetailSlug(null); setDetail(null); setDetailError(null) }}
+                  onClick={() => { setDetailSlug(null); setDetailContext(null); setDetail(null); setDetailError(null) }}
                   style={{ background: 'transparent', color: '#fff', border: '1px solid rgba(255,255,255,0.28)', borderRadius: 10, padding: '6px 10px', fontSize: 16 }}
                 >
                   Back
                 </button>
-                <div style={{ fontSize: 12, opacity: 0.8, textAlign: 'right' }}>Publication #{publicationId}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {detailContext ? (
+                    <button
+                      type="button"
+                      onClick={() => submitReport({
+                        userFacingRuleId: detailContext.userFacingRuleId,
+                        ruleId: detailContext.ruleId,
+                        busyKey: `detail:${detailContext.userFacingRuleId}:${detailContext.ruleId}`,
+                      })}
+                      disabled={reportedByMe || !!submitBusyKey}
+                      style={{
+                        background: (reportedByMe || !!submitBusyKey) ? '#333' : '#e53935',
+                        color: '#fff',
+                        border: '1px solid rgba(255,255,255,0.22)',
+                        borderRadius: 10,
+                        padding: '6px 10px',
+                        fontSize: 14,
+                        cursor: (reportedByMe || !!submitBusyKey) ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      {submitBusyKey === `detail:${detailContext.userFacingRuleId}:${detailContext.ruleId}` ? 'Submitting…' : 'Submit'}
+                    </button>
+                  ) : null}
+                  <div style={{ fontSize: 12, opacity: 0.8, textAlign: 'right' }}>Publication #{publicationId}</div>
+                </div>
               </div>
 
               {detailLoading ? (
@@ -246,45 +287,44 @@ export default function ReportModal(props: {
             </div>
           ) : (
             <div style={{ padding: 14, display: 'grid', gap: 10 }}>
+              {expandedReasonId != null ? (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+                  <button
+                    type="button"
+                    onClick={() => setExpandedReasonId(null)}
+                    style={{ background: 'transparent', color: '#fff', border: '1px solid rgba(255,255,255,0.28)', borderRadius: 10, padding: '6px 10px', fontSize: 16 }}
+                  >
+                    Back
+                  </button>
+                  <div style={{ fontSize: 12, opacity: 0.8 }}>Reason details</div>
+                </div>
+              ) : null}
               {reportedByMe ? (
                 <div style={{ padding: 10, borderRadius: 12, border: '1px solid rgba(255,255,255,0.14)', background: 'rgba(255,255,255,0.04)', color: '#b3ffd2' }}>
                   You already reported this post{reportedTitle ? ` (rule: ${reportedTitle}).` : '.'}
                 </div>
               ) : null}
 
-              {!options?.categories?.length ? (
+              {!hasReasons ? (
                 <div style={{ padding: 10, opacity: 0.85 }}>
-                  No reporting rules are configured for this space yet.
+                  No moderation rules available for this space.
                 </div>
               ) : (
-                options.categories.map((cat) => (
-                  <div key={cat.id} style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, overflow: 'hidden' }}>
+                (options?.groups || []).map((group, gIdx) => (
+                  <div key={`${group.key || 'group'}-${gIdx}`} style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, overflow: 'hidden' }}>
                     <div style={{ padding: '10px 12px', background: 'rgba(255,255,255,0.04)', fontWeight: 700 }}>
-                      {cat.name}
+                      {group.label || 'General'}
                     </div>
                     <div style={{ display: 'grid' }}>
-                      {(cat.rules || []).map((r) => {
-                        const checked = selectedRuleId === r.id
-                        const expanded = expandedRuleId === r.id
+                      {(group.reasons || []).map((reason) => {
+                        const expanded = expandedReasonId === Number(reason.id)
+                        const reasonBusy = submitBusyKey === `reason:${reason.id}`
                         return (
-                          <div key={r.id} style={{ borderTop: '1px solid rgba(255,255,255,0.08)', padding: '10px 12px' }}>
-                            <div style={{ display: 'grid', gridTemplateColumns: '22px 1fr', columnGap: 10, rowGap: 8, alignItems: 'start' }}>
-                              <div>
-                                <input
-                                  type="radio"
-                                  name={`report-rule-${publicationId}`}
-                                  checked={checked}
-                                  disabled={reportedByMe}
-                                  onChange={() => {
-                                    setSelectedRuleId(r.id)
-                                    setSelectedRuleSlug(r.slug)
-                                  }}
-                                  style={{ marginTop: 2 }}
-                                />
-                              </div>
+                          <div key={reason.id} style={{ borderTop: '1px solid rgba(255,255,255,0.08)', padding: '10px 12px', display: 'grid', gap: 8 }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 8, alignItems: 'center' }}>
                               <button
                                 type="button"
-                                onClick={() => setExpandedRuleId(expanded ? null : r.id)}
+                                onClick={() => setExpandedReasonId(expanded ? null : Number(reason.id))}
                                 style={{
                                   background: 'transparent',
                                   border: 'none',
@@ -296,28 +336,79 @@ export default function ReportModal(props: {
                                   fontWeight: 600,
                                   fontSize: 'inherit',
                                   lineHeight: 1.25,
-                                  whiteSpace: 'normal',
                                 }}
                               >
-                                {r.title}
+                                {reason.label}
                               </button>
-
-                              {expanded && r.shortDescription ? (
-                                <>
-                                  <div style={{ gridColumn: '1 / -1', fontSize: 'inherit', fontWeight: 400, opacity: 0.9, lineHeight: 1.35 }}>
-                                    {r.shortDescription}
-                                  </div>
-                                  <div style={{ gridColumn: '2 / -1', display: 'flex', justifyContent: 'flex-end' }}>
-                                    <button
-                                      onClick={() => openDetail(r.slug)}
-                                      style={{ background: 'transparent', color: '#9cf', border: '1px solid rgba(255,255,255,0.22)', borderRadius: 10, padding: '6px 10px', fontSize: 16 }}
-                                    >
-                                      More
-                                    </button>
-                                  </div>
-                                </>
-                              ) : null}
+                              <button
+                                type="button"
+                                onClick={() => submitReport({ userFacingRuleId: Number(reason.id), busyKey: `reason:${reason.id}` })}
+                                disabled={reportedByMe || !!submitBusyKey}
+                                style={{
+                                  background: (reportedByMe || !!submitBusyKey) ? '#333' : '#e53935',
+                                  color: '#fff',
+                                  border: '1px solid rgba(255,255,255,0.22)',
+                                  borderRadius: 10,
+                                  padding: '6px 10px',
+                                  fontSize: 14,
+                                  cursor: (reportedByMe || !!submitBusyKey) ? 'not-allowed' : 'pointer',
+                                }}
+                              >
+                                {reasonBusy ? 'Submitting…' : 'Submit'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setExpandedReasonId(expanded ? null : Number(reason.id))}
+                                style={{ background: 'transparent', color: '#9cf', border: '1px solid rgba(255,255,255,0.22)', borderRadius: 10, padding: '6px 10px', fontSize: 14 }}
+                              >
+                                {expanded ? 'Hide' : 'Drill Down'}
+                              </button>
                             </div>
+                            {reason.shortDescription ? (
+                              <div style={{ fontSize: 'inherit', fontWeight: 400, opacity: 0.9, lineHeight: 1.35 }}>
+                                {reason.shortDescription}
+                              </div>
+                            ) : null}
+                            {expanded ? (
+                              <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', marginTop: 4, paddingTop: 8, display: 'grid', gap: 8 }}>
+                                {(reason.rules || []).map((r) => {
+                                  const ruleBusy = submitBusyKey === `rule:${reason.id}:${r.id}`
+                                  return (
+                                    <div key={r.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 8, alignItems: 'center', padding: '6px 0' }}>
+                                      <div style={{ display: 'grid', gap: 3 }}>
+                                        <div style={{ fontWeight: 600 }}>{r.title}</div>
+                                        <div style={{ fontSize: 12, opacity: 0.75 }}>
+                                          {r.isDefault ? 'Default' : `Priority ${Number(r.priority ?? 100)}`}
+                                        </div>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => submitReport({ userFacingRuleId: Number(reason.id), ruleId: Number(r.id), busyKey: `rule:${reason.id}:${r.id}` })}
+                                        disabled={reportedByMe || !!submitBusyKey}
+                                        style={{
+                                          background: (reportedByMe || !!submitBusyKey) ? '#333' : '#e53935',
+                                          color: '#fff',
+                                          border: '1px solid rgba(255,255,255,0.22)',
+                                          borderRadius: 10,
+                                          padding: '6px 10px',
+                                          fontSize: 14,
+                                          cursor: (reportedByMe || !!submitBusyKey) ? 'not-allowed' : 'pointer',
+                                        }}
+                                      >
+                                        {ruleBusy ? 'Submitting…' : 'Submit'}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => openDetail(r.slug, { userFacingRuleId: Number(reason.id), ruleId: Number(r.id) })}
+                                        style={{ background: 'transparent', color: '#9cf', border: '1px solid rgba(255,255,255,0.22)', borderRadius: 10, padding: '6px 10px', fontSize: 14 }}
+                                      >
+                                        More
+                                      </button>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            ) : null}
                           </div>
                         )
                       })}
@@ -331,29 +422,10 @@ export default function ReportModal(props: {
 
         <div style={{ padding: '10px 14px', borderTop: '1px solid rgba(255,255,255,0.12)', display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
           <div style={{ fontSize: 12, opacity: 0.8 }}>
-            {selectedRuleId && selectedRuleSlug && flatRules.has(selectedRuleId) ? (
-              <>Selected: <span style={{ fontWeight: 700 }}>{flatRules.get(selectedRuleId)!.title}</span></>
-            ) : (
-              <>Select a rule to submit.</>
-            )}
+            {reportedByMe ? 'This publication is already reported by you.' : 'Select a reason or drill down to a specific rule.'}
           </div>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
             {submitError ? <span style={{ color: '#ffb3b3', fontSize: 12 }}>{submitError}</span> : null}
-            <button
-              onClick={submit}
-              disabled={submitBusy || reportedByMe || !selectedRuleId}
-              style={{
-                background: (submitBusy || reportedByMe || !selectedRuleId) ? '#333' : '#e53935',
-                color: '#fff',
-                border: '1px solid rgba(255,255,255,0.22)',
-                borderRadius: 10,
-                padding: '8px 12px',
-                fontSize: 16,
-                cursor: (submitBusy || reportedByMe || !selectedRuleId) ? 'not-allowed' : 'pointer',
-              }}
-            >
-              {reportedByMe ? 'Reported' : submitBusy ? 'Submitting…' : 'Submit'}
-            </button>
           </div>
         </div>
       </div>
