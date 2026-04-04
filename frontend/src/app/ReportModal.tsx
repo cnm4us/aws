@@ -196,12 +196,13 @@ export default function ReportModal(props: {
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          width: 'min(760px, 96vw)',
+          width: 'min(760px, calc(100vw - 32px))',
           maxHeight: '86vh',
           background: 'rgba(18,18,18,0.98)',
           color: '#fff',
           border: '1px solid rgba(255,255,255,0.16)',
           borderRadius: 14,
+          boxSizing: 'border-box',
           overflow: 'hidden',
           display: 'grid',
           gridTemplateRows: 'auto 1fr auto',
