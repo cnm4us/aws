@@ -44,6 +44,88 @@ export async function getReportingOptionsForPublication(publicationId: number, u
   }
 }
 
+export async function getUserFacingReportingOptionsForPublication(publicationId: number, userId: number) {
+  const pub = await repo.getPublishedPublicationSummary(publicationId)
+  if (!pub) throw new DomainError('publication_not_found', 'publication_not_found', 404)
+
+  await spacesSvc.assertCanViewSpaceFeed(pub.space_id, userId)
+
+  const [existingReport, reasonRows] = await Promise.all([
+    repo.getUserPublicationReport(publicationId, userId),
+    repo.listUserFacingReportingReasonsForSpace(pub.space_id, 'authenticated'),
+  ])
+
+  const reasonsById = new Map<number, {
+    id: number
+    label: string
+    shortDescription: string | null
+    groupKey: string | null
+    groupLabel: string | null
+    groupOrder: number
+    displayOrder: number
+    rules: Array<{ id: number; slug: string; title: string; priority: number; isDefault: boolean }>
+  }>()
+  for (const row of reasonRows as any[]) {
+    const reasonId = Number(row.user_facing_rule_id)
+    if (!reasonsById.has(reasonId)) {
+      reasonsById.set(reasonId, {
+        id: reasonId,
+        label: String(row.label || ''),
+        shortDescription: row.short_description != null ? String(row.short_description) : null,
+        groupKey: row.group_key != null ? String(row.group_key) : null,
+        groupLabel: row.group_label != null ? String(row.group_label) : null,
+        groupOrder: Number(row.group_order || 0),
+        displayOrder: Number(row.display_order || 0),
+        rules: [],
+      })
+    }
+    reasonsById.get(reasonId)!.rules.push({
+      id: Number(row.rule_id),
+      slug: String(row.rule_slug || ''),
+      title: String(row.rule_title || ''),
+      priority: Number(row.priority || 100),
+      isDefault: Number(row.is_default || 0) === 1,
+    })
+  }
+
+  const grouped = new Map<string, { key: string | null; label: string | null; order: number; reasons: any[] }>()
+  for (const reason of reasonsById.values()) {
+    const groupKey = reason.groupKey || ''
+    if (!grouped.has(groupKey)) {
+      grouped.set(groupKey, {
+        key: reason.groupKey,
+        label: reason.groupLabel,
+        order: reason.groupOrder,
+        reasons: [],
+      })
+    }
+    grouped.get(groupKey)!.reasons.push(reason)
+  }
+
+  const groups = Array.from(grouped.values())
+    .sort((a, b) => (a.order - b.order) || String(a.label || '').localeCompare(String(b.label || '')))
+    .map((group) => ({
+      key: group.key,
+      label: group.label,
+      reasons: group.reasons.sort((a, b) => (a.displayOrder - b.displayOrder) || a.label.localeCompare(b.label)),
+    }))
+
+  return {
+    spacePublicationId: publicationId,
+    spaceId: pub.space_id,
+    reportedByMe: Boolean(existingReport),
+    myReport: existingReport
+      ? {
+          ruleId: Number(existingReport.rule_id),
+          ruleSlug: existingReport.rule_slug,
+          ruleTitle: existingReport.rule_title,
+          createdAt: existingReport.created_at,
+        }
+      : null,
+    groups,
+  }
+}
+
 export async function submitPublicationReport(publicationId: number, userId: number, input: { ruleId: number }) {
   const ruleId = Number(input?.ruleId)
   if (!Number.isFinite(ruleId) || ruleId <= 0) throw new DomainError('bad_rule_id', 'bad_rule_id', 400)

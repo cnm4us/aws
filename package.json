@@ -47,6 +47,7 @@
     "admin:backfill-spaces-ulid": "ts-node scripts/backfill-spaces-ulid.ts",
     "admin:backfill-audio-durations": "ts-node scripts/backfill-audio-durations.ts",
     "admin:seed-message-test-audiences": "ts-node scripts/seed-message-test-audiences.ts",
+    "admin:seed:user-facing-rules": "ts-node scripts/seed-user-facing-rules.ts",
     "admin:backfill-image-derivatives": "ts-node scripts/backfill-upload-image-derivatives.ts",
     "admin:backfill-image-derivatives:loop": "bash scripts/backfill-upload-image-derivatives-loop.sh",
     "db:clear:suppression": "ts-node scripts/db-clear-suppression.ts",

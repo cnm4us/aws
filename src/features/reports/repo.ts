@@ -1,6 +1,12 @@
 import { getPool } from '../../db'
 
 type DbLike = { query: (sql: string, params?: any[]) => Promise<any> }
+export type ReportingViewerState = 'anonymous' | 'authenticated'
+
+function visibilityFilterSql(viewerState: ReportingViewerState): { sql: string; params: string[] } {
+  if (viewerState === 'authenticated') return { sql: `IN ('public','authenticated')`, params: [] }
+  return { sql: `IN ('public')`, params: [] }
+}
 
 export async function getPublishedPublicationSummary(publicationId: number, db?: DbLike): Promise<{ id: number; space_id: number; production_id: number | null } | null> {
   const q = (db as any) || getPool()
@@ -66,6 +72,7 @@ export async function getUserPublicationReport(
 
 export async function listReportingRulesForSpace(
   spaceId: number,
+  viewerState: ReportingViewerState = 'authenticated',
   db?: DbLike
 ): Promise<
   Array<{
@@ -78,6 +85,7 @@ export async function listReportingRulesForSpace(
   }>
 > {
   const q = (db as any) || getPool()
+  const visibility = visibilityFilterSql(viewerState)
   const [rows] = await q.query(
     `SELECT DISTINCT
             rc.id AS category_id,
@@ -92,9 +100,69 @@ export async function listReportingRulesForSpace(
        JOIN rules r ON r.category_id = rc.id
        JOIN rule_versions rv ON rv.id = r.current_version_id
       WHERE sc.space_id = ?
-        AND r.visibility IN ('public','authenticated')
+        AND r.visibility ${visibility.sql}
       ORDER BY rc.name ASC, r.title ASC`,
-    [spaceId]
+    [spaceId, ...visibility.params]
+  )
+  return rows as any[]
+}
+
+export async function listUserFacingReportingReasonsForSpace(
+  spaceId: number,
+  viewerState: ReportingViewerState = 'authenticated',
+  db?: DbLike
+): Promise<
+  Array<{
+    user_facing_rule_id: number
+    label: string
+    short_description: string | null
+    group_key: string | null
+    group_label: string | null
+    group_order: number
+    display_order: number
+    rule_id: number
+    rule_slug: string
+    rule_title: string
+    priority: number
+    is_default: number
+  }>
+> {
+  const q = (db as any) || getPool()
+  const visibility = visibilityFilterSql(viewerState)
+  const [rows] = await q.query(
+    `SELECT DISTINCT
+            ufr.id AS user_facing_rule_id,
+            ufr.label,
+            ufr.short_description,
+            ufr.group_key,
+            ufr.group_label,
+            ufr.group_order,
+            ufr.display_order,
+            r.id AS rule_id,
+            r.slug AS rule_slug,
+            r.title AS rule_title,
+            m.priority,
+            m.is_default
+       FROM user_facing_rules ufr
+       JOIN user_facing_rule_rule_map m
+         ON m.user_facing_rule_id = ufr.id
+       JOIN rules r
+         ON r.id = m.rule_id
+       JOIN space_cultures sc
+         ON sc.space_id = ?
+       JOIN culture_categories cc
+         ON cc.culture_id = sc.culture_id
+        AND cc.category_id = r.category_id
+      WHERE ufr.is_active = 1
+        AND r.visibility ${visibility.sql}
+      ORDER BY ufr.group_order ASC,
+               ufr.group_label ASC,
+               ufr.display_order ASC,
+               ufr.label ASC,
+               m.is_default DESC,
+               m.priority ASC,
+               r.id ASC`,
+    [spaceId, ...visibility.params]
   )
   return rows as any[]
 }
@@ -102,26 +170,89 @@ export async function listReportingRulesForSpace(
 export async function getReportableRuleForSpace(
   spaceId: number,
   ruleId: number,
+  viewerState: ReportingViewerState = 'authenticated',
   db?: DbLike
 ): Promise<{ rule_id: number; current_version_id: number | null } | null> {
   const q = (db as any) || getPool()
+  const visibility = visibilityFilterSql(viewerState)
   const [rows] = await q.query(
     `SELECT DISTINCT
             r.id AS rule_id,
             r.current_version_id
        FROM rules r
        JOIN space_cultures sc ON sc.space_id = ?
-       JOIN culture_categories cc ON cc.culture_id = sc.culture_id AND cc.category_id = r.category_id
+      JOIN culture_categories cc ON cc.culture_id = sc.culture_id AND cc.category_id = r.category_id
       WHERE r.id = ?
-        AND r.visibility IN ('public','authenticated')
+        AND r.visibility ${visibility.sql}
       LIMIT 1`,
-    [spaceId, ruleId]
+    [spaceId, ruleId, ...visibility.params]
   )
   const row = (rows as any[])[0]
   if (!row) return null
   return {
     rule_id: Number(row.rule_id),
     current_version_id: row.current_version_id != null ? Number(row.current_version_id) : null,
+  }
+}
+
+export async function resolveDefaultMappedRuleForUserFacingReason(input: {
+  spaceId: number
+  userFacingRuleId: number
+  viewerState?: ReportingViewerState
+  db?: DbLike
+}): Promise<{ rule_id: number; current_version_id: number | null } | null> {
+  const q = (input.db as any) || getPool()
+  const visibility = visibilityFilterSql(input.viewerState || 'authenticated')
+  const [rows] = await q.query(
+    `SELECT r.id AS rule_id,
+            r.current_version_id
+       FROM user_facing_rules ufr
+       JOIN user_facing_rule_rule_map m
+         ON m.user_facing_rule_id = ufr.id
+       JOIN rules r
+         ON r.id = m.rule_id
+       JOIN space_cultures sc
+         ON sc.space_id = ?
+       JOIN culture_categories cc
+         ON cc.culture_id = sc.culture_id
+        AND cc.category_id = r.category_id
+      WHERE ufr.id = ?
+        AND ufr.is_active = 1
+        AND r.visibility ${visibility.sql}
+      ORDER BY m.is_default DESC,
+               m.priority ASC,
+               r.id ASC
+      LIMIT 1`,
+    [input.spaceId, input.userFacingRuleId, ...visibility.params]
+  )
+  const row = (rows as any[])[0]
+  if (!row) return null
+  return {
+    rule_id: Number(row.rule_id),
+    current_version_id: row.current_version_id != null ? Number(row.current_version_id) : null,
+  }
+}
+
+export async function getUserFacingReasonSummary(
+  userFacingRuleId: number,
+  db?: DbLike
+): Promise<{ id: number; label: string; group_key: string | null; group_label: string | null } | null> {
+  const q = (db as any) || getPool()
+  const [rows] = await q.query(
+    `SELECT id, label, group_key, group_label
+       FROM user_facing_rules
+      WHERE id = ?
+        AND is_active = 1
+      LIMIT 1`,
+    [userFacingRuleId]
+  )
+  const row = (rows as any[])[0]
+  if (!row) return null
+  return {
+    id: Number(row.id),
+    label: String(row.label || ''),
+    group_key: row.group_key != null ? String(row.group_key) : null,
+    group_label: row.group_label != null ? String(row.group_label) : null,
   }
 }
 
@@ -132,12 +263,16 @@ export async function insertSpacePublicationReport(input: {
   reporterUserId: number
   ruleId: number
   ruleVersionId: number | null
+  userFacingRuleId?: number | null
+  userFacingRuleLabelAtSubmit?: string | null
+  userFacingGroupKeyAtSubmit?: string | null
+  userFacingGroupLabelAtSubmit?: string | null
 }): Promise<number> {
   const db = getPool()
   const [result] = await db.query(
     `INSERT INTO space_publication_reports
-      (space_publication_id, space_id, production_id, reporter_user_id, rule_id, rule_version_id)
-      VALUES (?, ?, ?, ?, ?, ?)`,
+      (space_publication_id, space_id, production_id, reporter_user_id, rule_id, rule_version_id, user_facing_rule_id, user_facing_rule_label_at_submit, user_facing_group_key_at_submit, user_facing_group_label_at_submit)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.spacePublicationId,
       input.spaceId,
@@ -145,6 +280,10 @@ export async function insertSpacePublicationReport(input: {
       input.reporterUserId,
       input.ruleId,
       input.ruleVersionId,
+      input.userFacingRuleId ?? null,
+      input.userFacingRuleLabelAtSubmit ?? null,
+      input.userFacingGroupKeyAtSubmit ?? null,
+      input.userFacingGroupLabelAtSubmit ?? null,
     ]
   )
   return Number((result as any).insertId)

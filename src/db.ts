@@ -3668,6 +3668,12 @@ export async function ensureSchema(db: DB) {
       KEY idx_space_publication_reports_rule_created (rule_id, created_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `);
+  // Snapshot fields for user-facing reporting reasons (plan_157A).
+  await db.query(`ALTER TABLE space_publication_reports ADD COLUMN IF NOT EXISTS user_facing_rule_id BIGINT UNSIGNED NULL`);
+  await db.query(`ALTER TABLE space_publication_reports ADD COLUMN IF NOT EXISTS user_facing_rule_label_at_submit VARCHAR(255) NULL`);
+  await db.query(`ALTER TABLE space_publication_reports ADD COLUMN IF NOT EXISTS user_facing_group_key_at_submit VARCHAR(64) NULL`);
+  await db.query(`ALTER TABLE space_publication_reports ADD COLUMN IF NOT EXISTS user_facing_group_label_at_submit VARCHAR(128) NULL`);
+  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_space_publication_reports_user_facing_rule_created ON space_publication_reports (user_facing_rule_id, created_at)`); } catch {}
 
   // Best-effort foreign keys for publication reports
   try {
@@ -3710,6 +3716,79 @@ export async function ensureSchema(db: DB) {
       ALTER TABLE space_publication_reports
       ADD CONSTRAINT fk_space_publication_reports_rule_version
       FOREIGN KEY (rule_version_id) REFERENCES rule_versions(id)
+    `);
+  } catch {}
+  // User-facing reporting layer (plan_157A).
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS user_facing_rules (
+      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      label VARCHAR(255) NOT NULL,
+      short_description VARCHAR(500) NULL,
+      group_key VARCHAR(64) NULL,
+      group_label VARCHAR(128) NULL,
+      group_order INT NOT NULL DEFAULT 0,
+      display_order INT NOT NULL DEFAULT 0,
+      is_active TINYINT(1) NOT NULL DEFAULT 1,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      KEY idx_user_facing_rules_active_group_display (is_active, group_order, display_order, id),
+      KEY idx_user_facing_rules_group (group_key, group_order, display_order, id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+  await db.query(`ALTER TABLE user_facing_rules ADD COLUMN IF NOT EXISTS label VARCHAR(255) NOT NULL`)
+  await db.query(`ALTER TABLE user_facing_rules ADD COLUMN IF NOT EXISTS short_description VARCHAR(500) NULL`)
+  await db.query(`ALTER TABLE user_facing_rules ADD COLUMN IF NOT EXISTS group_key VARCHAR(64) NULL`)
+  await db.query(`ALTER TABLE user_facing_rules ADD COLUMN IF NOT EXISTS group_label VARCHAR(128) NULL`)
+  await db.query(`ALTER TABLE user_facing_rules ADD COLUMN IF NOT EXISTS group_order INT NOT NULL DEFAULT 0`)
+  await db.query(`ALTER TABLE user_facing_rules ADD COLUMN IF NOT EXISTS display_order INT NOT NULL DEFAULT 0`)
+  await db.query(`ALTER TABLE user_facing_rules ADD COLUMN IF NOT EXISTS is_active TINYINT(1) NOT NULL DEFAULT 1`)
+  await db.query(`ALTER TABLE user_facing_rules ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP`)
+  await db.query(`ALTER TABLE user_facing_rules ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`)
+  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_user_facing_rules_active_group_display ON user_facing_rules (is_active, group_order, display_order, id)`); } catch {}
+  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_user_facing_rules_group ON user_facing_rules (group_key, group_order, display_order, id)`); } catch {}
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS user_facing_rule_rule_map (
+      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      user_facing_rule_id BIGINT UNSIGNED NOT NULL,
+      rule_id BIGINT UNSIGNED NOT NULL,
+      priority INT NOT NULL DEFAULT 100,
+      is_default TINYINT(1) NOT NULL DEFAULT 0,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uniq_user_facing_rule_rule_map (user_facing_rule_id, rule_id),
+      KEY idx_user_facing_rule_rule_map_rule (rule_id, user_facing_rule_id),
+      KEY idx_user_facing_rule_rule_map_resolver (user_facing_rule_id, is_default, priority, id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+  await db.query(`ALTER TABLE user_facing_rule_rule_map ADD COLUMN IF NOT EXISTS user_facing_rule_id BIGINT UNSIGNED NOT NULL`)
+  await db.query(`ALTER TABLE user_facing_rule_rule_map ADD COLUMN IF NOT EXISTS rule_id BIGINT UNSIGNED NOT NULL`)
+  await db.query(`ALTER TABLE user_facing_rule_rule_map ADD COLUMN IF NOT EXISTS priority INT NOT NULL DEFAULT 100`)
+  await db.query(`ALTER TABLE user_facing_rule_rule_map ADD COLUMN IF NOT EXISTS is_default TINYINT(1) NOT NULL DEFAULT 0`)
+  await db.query(`ALTER TABLE user_facing_rule_rule_map ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP`)
+  await db.query(`ALTER TABLE user_facing_rule_rule_map ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`)
+  try { await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_user_facing_rule_rule_map ON user_facing_rule_rule_map (user_facing_rule_id, rule_id)`); } catch {}
+  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_user_facing_rule_rule_map_rule ON user_facing_rule_rule_map (rule_id, user_facing_rule_id)`); } catch {}
+  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_user_facing_rule_rule_map_resolver ON user_facing_rule_rule_map (user_facing_rule_id, is_default, priority, id)`); } catch {}
+  try {
+    await db.query(`
+      ALTER TABLE user_facing_rule_rule_map
+      ADD CONSTRAINT fk_user_facing_rule_rule_map_user_facing_rule
+      FOREIGN KEY (user_facing_rule_id) REFERENCES user_facing_rules(id)
+    `);
+  } catch {}
+  try {
+    await db.query(`
+      ALTER TABLE user_facing_rule_rule_map
+      ADD CONSTRAINT fk_user_facing_rule_rule_map_rule
+      FOREIGN KEY (rule_id) REFERENCES rules(id)
+    `);
+  } catch {}
+  try {
+    await db.query(`
+      ALTER TABLE space_publication_reports
+      ADD CONSTRAINT fk_space_publication_reports_user_facing_rule
+      FOREIGN KEY (user_facing_rule_id) REFERENCES user_facing_rules(id)
     `);
   } catch {}
 }
