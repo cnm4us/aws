@@ -1,6 +1,23 @@
 import React, { useEffect, useMemo, useState } from 'react'
 const CLOSE_CIRCLE_X_ICON_URL = new URL('./icons/close-circle-x.svg', import.meta.url).toString()
 
+function ChevronIcon(props: { direction: 'left' | 'right' | 'down' }) {
+  const { direction } = props
+  const rotation = direction === 'left' ? '135deg' : direction === 'down' ? '45deg' : '-45deg'
+  return (
+    <span
+      aria-hidden="true"
+      style={{
+        width: 10,
+        height: 10,
+        borderRight: '2px solid #fff',
+        borderBottom: '2px solid #fff',
+        transform: `rotate(${rotation})`,
+      }}
+    />
+  )
+}
+
 type OptionsRule = {
   id: number
   slug: string
@@ -249,12 +266,26 @@ export default function ReportModal(props: {
             <div style={{ padding: 16, color: '#ffb3b3' }}>{error}</div>
           ) : detailSlug ? (
             <div style={{ padding: 14, display: 'grid', gap: 10 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
                 <button
                   onClick={() => { setDetailSlug(null); setDetailContext(null); setDetail(null); setDetailError(null) }}
-                  style={{ background: 'transparent', color: '#fff', border: '1px solid rgba(255,255,255,0.28)', borderRadius: 10, padding: '6px 10px', fontSize: 16 }}
+                  aria-label="Back"
+                  title="Back"
+                  style={{
+                    background: 'transparent',
+                    color: '#fff',
+                    border: '1px solid rgba(255,255,255,0.28)',
+                    borderRadius: 10,
+                    width: 40,
+                    height: 36,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: 0,
+                    cursor: 'pointer',
+                  }}
                 >
-                  Back
+                  <ChevronIcon direction="left" />
                 </button>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   {detailContext ? (
@@ -279,7 +310,6 @@ export default function ReportModal(props: {
                       {submitBusyKey === `detail:${detailContext.userFacingRuleId}:${detailContext.ruleId}` ? 'Submitting…' : 'Submit'}
                     </button>
                   ) : null}
-                  <div style={{ fontSize: 12, opacity: 0.8, textAlign: 'right' }}>Publication #{publicationId}</div>
                 </div>
               </div>
 
@@ -317,9 +347,23 @@ export default function ReportModal(props: {
                   <button
                     type="button"
                     onClick={() => setExpandedReasonId(null)}
-                    style={{ background: 'transparent', color: '#fff', border: '1px solid rgba(255,255,255,0.28)', borderRadius: 10, padding: '6px 10px', fontSize: 16 }}
+                    aria-label="Back"
+                    title="Back"
+                    style={{
+                      background: 'transparent',
+                      color: '#fff',
+                      border: '1px solid rgba(255,255,255,0.28)',
+                      borderRadius: 10,
+                      width: 40,
+                      height: 36,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: 0,
+                      cursor: 'pointer',
+                    }}
                   >
-                    Back
+                    <ChevronIcon direction="left" />
                   </button>
                   <div style={{ fontSize: 12, opacity: 0.8 }}>Reason details</div>
                 </div>
@@ -365,17 +409,9 @@ export default function ReportModal(props: {
                             boxSizing: 'border-box',
                           }}
                         >
-                          <span
-                            aria-hidden="true"
-                            style={{
-                              width: 10,
-                              height: 10,
-                              borderRight: '2px solid #fff',
-                              borderBottom: '2px solid #fff',
-                              transform: groupExpanded ? 'rotate(45deg)' : 'rotate(-45deg)',
-                              marginTop: groupExpanded ? -3 : 0,
-                            }}
-                          />
+                          <span style={{ marginTop: groupExpanded ? -3 : 0, display: 'inline-flex' }}>
+                            <ChevronIcon direction={groupExpanded ? 'down' : 'right'} />
+                          </span>
                         </button>
                       </div>
                       <div style={{ display: 'grid' }}>
