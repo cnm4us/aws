@@ -1,7 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
 
-const BACK_ARROW_ICON_URL = new URL('./icons/arrow.svg', import.meta.url).toString()
-
 type OptionsRule = {
   id: number
   slug: string
@@ -343,15 +341,15 @@ export default function ReportModal(props: {
                             boxSizing: 'border-box',
                           }}
                         >
-                          <img
-                            src={BACK_ARROW_ICON_URL}
-                            alt=""
+                          <span
                             aria-hidden="true"
                             style={{
-                              width: 16,
-                              height: 16,
-                              transform: groupExpanded ? 'rotate(270deg)' : 'rotate(90deg)',
-                              filter: 'invert(1)'
+                              width: 10,
+                              height: 10,
+                              borderRight: '2px solid #fff',
+                              borderBottom: '2px solid #fff',
+                              transform: groupExpanded ? 'rotate(45deg)' : 'rotate(-45deg)',
+                              marginTop: groupExpanded ? -3 : 0,
                             }}
                           />
                         </button>
@@ -362,30 +360,24 @@ export default function ReportModal(props: {
                           const reasonBusy = submitBusyKey === `reason:${reason.id}`
                           return (
                             <div key={reason.id} style={{ borderTop: '1px solid rgba(255,255,255,0.08)', padding: '10px 12px', display: 'grid', gap: 8 }}>
-                              <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 8, alignItems: 'center' }}>
-                                <button
-                                  type="button"
-                                  onClick={() => setExpandedReasonId(expanded ? null : Number(reason.id))}
-                                  style={{
-                                    background: 'transparent',
-                                    border: 'none',
-                                    padding: 0,
-                                    margin: 0,
-                                    color: '#fff',
-                                    textAlign: 'left',
-                                    cursor: 'pointer',
-                                    fontWeight: 600,
-                                    fontSize: 'inherit',
-                                    lineHeight: 1.25,
-                                  }}
-                                >
+                              <div style={{ position: 'relative', paddingBottom: 42, minHeight: 72 }}>
+                                <div style={{ fontWeight: 600, lineHeight: 1.25 }}>
                                   {reason.label}
-                                </button>
+                                </div>
+                                {reason.shortDescription ? (
+                                  <div style={{ fontSize: 'inherit', fontWeight: 400, opacity: 0.9, lineHeight: 1.35 }}>
+                                    {reason.shortDescription}
+                                    <span aria-hidden="true" style={{ display: 'inline-block', width: 94, height: 1 }} />
+                                  </div>
+                                ) : null}
                                 <button
                                   type="button"
                                   onClick={() => submitReport({ userFacingRuleId: Number(reason.id), busyKey: `reason:${reason.id}` })}
                                   disabled={reportedByMe || !!submitBusyKey}
                                   style={{
+                                    position: 'absolute',
+                                    right: 0,
+                                    bottom: 0,
                                     background: (reportedByMe || !!submitBusyKey) ? '#333' : '#e53935',
                                     color: '#fff',
                                     border: '1px solid rgba(255,255,255,0.22)',
@@ -397,19 +389,7 @@ export default function ReportModal(props: {
                                 >
                                   {reasonBusy ? 'Submitting…' : 'Submit'}
                                 </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setExpandedReasonId(expanded ? null : Number(reason.id))}
-                                  style={{ background: 'transparent', color: '#9cf', border: '1px solid rgba(255,255,255,0.22)', borderRadius: 10, padding: '6px 10px', fontSize: 14 }}
-                                >
-                                  {expanded ? 'Hide' : 'Drill Down'}
-                                </button>
                               </div>
-                              {reason.shortDescription ? (
-                                <div style={{ fontSize: 'inherit', fontWeight: 400, opacity: 0.9, lineHeight: 1.35 }}>
-                                  {reason.shortDescription}
-                                </div>
-                              ) : null}
                               {expanded ? (
                                 <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', marginTop: 4, paddingTop: 8, display: 'grid', gap: 8 }}>
                                   {(reason.rules || []).map((r) => {
