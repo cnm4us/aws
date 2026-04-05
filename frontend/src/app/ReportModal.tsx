@@ -398,9 +398,11 @@ export default function ReportModal(props: {
                                       <div key={r.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 8, alignItems: 'center', padding: '6px 0' }}>
                                         <div style={{ display: 'grid', gap: 3 }}>
                                           <div style={{ fontWeight: 600 }}>{r.title}</div>
-                                          <div style={{ fontSize: 12, opacity: 0.75 }}>
-                                            {r.isDefault ? 'Default' : `Priority ${Number(r.priority ?? 100)}`}
-                                          </div>
+                                          {r.shortDescription ? (
+                                            <div style={{ fontSize: 12, opacity: 0.82, lineHeight: 1.3 }}>
+                                              {r.shortDescription}
+                                            </div>
+                                          ) : null}
                                         </div>
                                         <button
                                           type="button"
