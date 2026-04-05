@@ -71,7 +71,6 @@ export default function ReportModal(props: {
   const [options, setOptions] = useState<OptionsResponse | null>(null)
 
   const [expandedReasonId, setExpandedReasonId] = useState<number | null>(null)
-  const [collapsedGroupKeys, setCollapsedGroupKeys] = useState<Record<string, boolean>>({})
 
   const [detailSlug, setDetailSlug] = useState<string | null>(null)
   const [detailContext, setDetailContext] = useState<{ userFacingRuleId: number; ruleId: number } | null>(null)
@@ -105,19 +104,6 @@ export default function ReportModal(props: {
     load()
     return () => { canceled = true }
   }, [publicationId])
-
-  useEffect(() => {
-    const groups = options?.groups || []
-    if (!groups.length) return
-    setCollapsedGroupKeys((prev) => {
-      const next: Record<string, boolean> = { ...prev }
-      for (let i = 0; i < groups.length; i += 1) {
-        const key = String(groups[i]?.key || `group-${i}`)
-        if (next[key] === undefined) next[key] = false
-      }
-      return next
-    })
-  }, [options?.groups])
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -328,17 +314,22 @@ export default function ReportModal(props: {
                 </div>
               ) : (
                 (options?.groups || []).map((group, gIdx) => {
-                  const groupToggleKey = String(group.key || `group-${gIdx}`)
-                  const groupCollapsed = Boolean(collapsedGroupKeys[groupToggleKey])
+                  const reasons = group.reasons || []
+                  const expandedReasonInGroup = reasons.find((r) => expandedReasonId === Number(r.id))
+                  const groupExpanded = Boolean(expandedReasonInGroup)
+                  const firstReasonId = reasons.length ? Number(reasons[0].id) : null
                   return (
                     <div key={`${group.key || 'group'}-${gIdx}`} style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, overflow: 'hidden' }}>
                       <div style={{ padding: '10px 12px', background: 'rgba(255,255,255,0.04)', fontWeight: 700, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span>{group.label || 'General'}</span>
                         <button
                           type="button"
-                          aria-label={groupCollapsed ? 'Expand group' : 'Collapse group'}
-                          title={groupCollapsed ? 'Expand group' : 'Collapse group'}
-                          onClick={() => setCollapsedGroupKeys((prev) => ({ ...prev, [groupToggleKey]: !groupCollapsed }))}
+                          aria-label={groupExpanded ? 'Hide details' : 'Drill down'}
+                          title={groupExpanded ? 'Hide details' : 'Drill down'}
+                          onClick={() => {
+                            if (firstReasonId == null) return
+                            setExpandedReasonId(groupExpanded ? null : firstReasonId)
+                          }}
                           style={{
                             background: 'transparent',
                             border: '1px solid rgba(255,255,255,0.22)',
@@ -359,112 +350,110 @@ export default function ReportModal(props: {
                             style={{
                               width: 16,
                               height: 16,
-                              transform: groupCollapsed ? 'rotate(90deg)' : 'rotate(270deg)',
+                              transform: groupExpanded ? 'rotate(270deg)' : 'rotate(90deg)',
                               filter: 'invert(1)'
                             }}
                           />
                         </button>
                       </div>
-                      {!groupCollapsed && (
-                        <div style={{ display: 'grid' }}>
-                          {(group.reasons || []).map((reason) => {
-                            const expanded = expandedReasonId === Number(reason.id)
-                            const reasonBusy = submitBusyKey === `reason:${reason.id}`
-                            return (
-                              <div key={reason.id} style={{ borderTop: '1px solid rgba(255,255,255,0.08)', padding: '10px 12px', display: 'grid', gap: 8 }}>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 8, alignItems: 'center' }}>
-                                  <button
-                                    type="button"
-                                    onClick={() => setExpandedReasonId(expanded ? null : Number(reason.id))}
-                                    style={{
-                                      background: 'transparent',
-                                      border: 'none',
-                                      padding: 0,
-                                      margin: 0,
-                                      color: '#fff',
-                                      textAlign: 'left',
-                                      cursor: 'pointer',
-                                      fontWeight: 600,
-                                      fontSize: 'inherit',
-                                      lineHeight: 1.25,
-                                    }}
-                                  >
-                                    {reason.label}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => submitReport({ userFacingRuleId: Number(reason.id), busyKey: `reason:${reason.id}` })}
-                                    disabled={reportedByMe || !!submitBusyKey}
-                                    style={{
-                                      background: (reportedByMe || !!submitBusyKey) ? '#333' : '#e53935',
-                                      color: '#fff',
-                                      border: '1px solid rgba(255,255,255,0.22)',
-                                      borderRadius: 10,
-                                      padding: '6px 10px',
-                                      fontSize: 14,
-                                      cursor: (reportedByMe || !!submitBusyKey) ? 'not-allowed' : 'pointer',
-                                    }}
-                                  >
-                                    {reasonBusy ? 'Submitting…' : 'Submit'}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => setExpandedReasonId(expanded ? null : Number(reason.id))}
-                                    style={{ background: 'transparent', color: '#9cf', border: '1px solid rgba(255,255,255,0.22)', borderRadius: 10, padding: '6px 10px', fontSize: 14 }}
-                                  >
-                                    {expanded ? 'Hide' : 'Drill Down'}
-                                  </button>
-                                </div>
-                                {reason.shortDescription ? (
-                                  <div style={{ fontSize: 'inherit', fontWeight: 400, opacity: 0.9, lineHeight: 1.35 }}>
-                                    {reason.shortDescription}
-                                  </div>
-                                ) : null}
-                                {expanded ? (
-                                  <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', marginTop: 4, paddingTop: 8, display: 'grid', gap: 8 }}>
-                                    {(reason.rules || []).map((r) => {
-                                      const ruleBusy = submitBusyKey === `rule:${reason.id}:${r.id}`
-                                      return (
-                                        <div key={r.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 8, alignItems: 'center', padding: '6px 0' }}>
-                                          <div style={{ display: 'grid', gap: 3 }}>
-                                            <div style={{ fontWeight: 600 }}>{r.title}</div>
-                                            <div style={{ fontSize: 12, opacity: 0.75 }}>
-                                              {r.isDefault ? 'Default' : `Priority ${Number(r.priority ?? 100)}`}
-                                            </div>
-                                          </div>
-                                          <button
-                                            type="button"
-                                            onClick={() => submitReport({ userFacingRuleId: Number(reason.id), ruleId: Number(r.id), busyKey: `rule:${reason.id}:${r.id}` })}
-                                            disabled={reportedByMe || !!submitBusyKey}
-                                            style={{
-                                              background: (reportedByMe || !!submitBusyKey) ? '#333' : '#e53935',
-                                              color: '#fff',
-                                              border: '1px solid rgba(255,255,255,0.22)',
-                                              borderRadius: 10,
-                                              padding: '6px 10px',
-                                              fontSize: 14,
-                                              cursor: (reportedByMe || !!submitBusyKey) ? 'not-allowed' : 'pointer',
-                                            }}
-                                          >
-                                            {ruleBusy ? 'Submitting…' : 'Submit'}
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={() => openDetail(r.slug, { userFacingRuleId: Number(reason.id), ruleId: Number(r.id) })}
-                                            style={{ background: 'transparent', color: '#9cf', border: '1px solid rgba(255,255,255,0.22)', borderRadius: 10, padding: '6px 10px', fontSize: 14 }}
-                                          >
-                                            More
-                                          </button>
-                                        </div>
-                                      )
-                                    })}
-                                  </div>
-                                ) : null}
+                      <div style={{ display: 'grid' }}>
+                        {(group.reasons || []).map((reason) => {
+                          const expanded = expandedReasonId === Number(reason.id)
+                          const reasonBusy = submitBusyKey === `reason:${reason.id}`
+                          return (
+                            <div key={reason.id} style={{ borderTop: '1px solid rgba(255,255,255,0.08)', padding: '10px 12px', display: 'grid', gap: 8 }}>
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 8, alignItems: 'center' }}>
+                                <button
+                                  type="button"
+                                  onClick={() => setExpandedReasonId(expanded ? null : Number(reason.id))}
+                                  style={{
+                                    background: 'transparent',
+                                    border: 'none',
+                                    padding: 0,
+                                    margin: 0,
+                                    color: '#fff',
+                                    textAlign: 'left',
+                                    cursor: 'pointer',
+                                    fontWeight: 600,
+                                    fontSize: 'inherit',
+                                    lineHeight: 1.25,
+                                  }}
+                                >
+                                  {reason.label}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => submitReport({ userFacingRuleId: Number(reason.id), busyKey: `reason:${reason.id}` })}
+                                  disabled={reportedByMe || !!submitBusyKey}
+                                  style={{
+                                    background: (reportedByMe || !!submitBusyKey) ? '#333' : '#e53935',
+                                    color: '#fff',
+                                    border: '1px solid rgba(255,255,255,0.22)',
+                                    borderRadius: 10,
+                                    padding: '6px 10px',
+                                    fontSize: 14,
+                                    cursor: (reportedByMe || !!submitBusyKey) ? 'not-allowed' : 'pointer',
+                                  }}
+                                >
+                                  {reasonBusy ? 'Submitting…' : 'Submit'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setExpandedReasonId(expanded ? null : Number(reason.id))}
+                                  style={{ background: 'transparent', color: '#9cf', border: '1px solid rgba(255,255,255,0.22)', borderRadius: 10, padding: '6px 10px', fontSize: 14 }}
+                                >
+                                  {expanded ? 'Hide' : 'Drill Down'}
+                                </button>
                               </div>
-                            )
-                          })}
-                        </div>
-                      )}
+                              {reason.shortDescription ? (
+                                <div style={{ fontSize: 'inherit', fontWeight: 400, opacity: 0.9, lineHeight: 1.35 }}>
+                                  {reason.shortDescription}
+                                </div>
+                              ) : null}
+                              {expanded ? (
+                                <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', marginTop: 4, paddingTop: 8, display: 'grid', gap: 8 }}>
+                                  {(reason.rules || []).map((r) => {
+                                    const ruleBusy = submitBusyKey === `rule:${reason.id}:${r.id}`
+                                    return (
+                                      <div key={r.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 8, alignItems: 'center', padding: '6px 0' }}>
+                                        <div style={{ display: 'grid', gap: 3 }}>
+                                          <div style={{ fontWeight: 600 }}>{r.title}</div>
+                                          <div style={{ fontSize: 12, opacity: 0.75 }}>
+                                            {r.isDefault ? 'Default' : `Priority ${Number(r.priority ?? 100)}`}
+                                          </div>
+                                        </div>
+                                        <button
+                                          type="button"
+                                          onClick={() => submitReport({ userFacingRuleId: Number(reason.id), ruleId: Number(r.id), busyKey: `rule:${reason.id}:${r.id}` })}
+                                          disabled={reportedByMe || !!submitBusyKey}
+                                          style={{
+                                            background: (reportedByMe || !!submitBusyKey) ? '#333' : '#e53935',
+                                            color: '#fff',
+                                            border: '1px solid rgba(255,255,255,0.22)',
+                                            borderRadius: 10,
+                                            padding: '6px 10px',
+                                            fontSize: 14,
+                                            cursor: (reportedByMe || !!submitBusyKey) ? 'not-allowed' : 'pointer',
+                                          }}
+                                        >
+                                          {ruleBusy ? 'Submitting…' : 'Submit'}
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => openDetail(r.slug, { userFacingRuleId: Number(reason.id), ruleId: Number(r.id) })}
+                                          style={{ background: 'transparent', color: '#9cf', border: '1px solid rgba(255,255,255,0.22)', borderRadius: 10, padding: '6px 10px', fontSize: 14 }}
+                                        >
+                                          More
+                                        </button>
+                                  </div>
+                                    )
+                                  })}
+                                </div>
+                              ) : null}
+                            </div>
+                          )
+                        })}
+                      </div>
                     </div>
                   )
                 })
