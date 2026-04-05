@@ -395,13 +395,45 @@ export default function ReportModal(props: {
                                   {(reason.rules || []).map((r) => {
                                     const ruleBusy = submitBusyKey === `rule:${reason.id}:${r.id}`
                                     return (
-                                      <div key={r.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 8, alignItems: 'center', padding: '6px 0' }}>
+                                      <div key={r.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'start', padding: '6px 0' }}>
                                         <div style={{ display: 'grid', gap: 3 }}>
-                                          <div style={{ fontWeight: 600 }}>{r.title}</div>
+                                          <button
+                                            type="button"
+                                            onClick={() => openDetail(r.slug, { userFacingRuleId: Number(reason.id), ruleId: Number(r.id) })}
+                                            style={{
+                                              background: 'transparent',
+                                              border: 'none',
+                                              padding: 0,
+                                              margin: 0,
+                                              textAlign: 'left',
+                                              color: '#fff',
+                                              fontWeight: 600,
+                                              fontSize: 'inherit',
+                                              lineHeight: 1.25,
+                                              cursor: 'pointer',
+                                            }}
+                                          >
+                                            {r.title}
+                                          </button>
                                           {r.shortDescription ? (
-                                            <div style={{ fontSize: 12, opacity: 0.82, lineHeight: 1.3 }}>
+                                            <button
+                                              type="button"
+                                              onClick={() => openDetail(r.slug, { userFacingRuleId: Number(reason.id), ruleId: Number(r.id) })}
+                                              style={{
+                                                background: 'transparent',
+                                                border: 'none',
+                                                padding: 0,
+                                                margin: 0,
+                                                textAlign: 'left',
+                                                color: '#fff',
+                                                fontSize: 12,
+                                                opacity: 0.82,
+                                                lineHeight: 1.3,
+                                                cursor: 'pointer',
+                                              }}
+                                            >
                                               {r.shortDescription}
-                                            </div>
+                                            </button>
                                           ) : null}
                                         </div>
                                         <button
@@ -419,13 +451,6 @@ export default function ReportModal(props: {
                                           }}
                                         >
                                           {ruleBusy ? 'Submitting…' : 'Submit'}
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => openDetail(r.slug, { userFacingRuleId: Number(reason.id), ruleId: Number(r.id) })}
-                                          style={{ background: 'transparent', color: '#9cf', border: '1px solid rgba(255,255,255,0.22)', borderRadius: 10, padding: '6px 10px', fontSize: 14 }}
-                                        >
-                                          More
                                         </button>
                                   </div>
                                     )
