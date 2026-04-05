@@ -249,7 +249,9 @@ export default function ReportModal(props: {
         <div style={{ paddingBottom: 10, borderBottom: '1px solid rgba(255,255,255,0.12)', display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
           <div>
             <div style={{ fontWeight: 900, fontSize: 18 }}>Report</div>
-            <div style={{ fontSize: 12, opacity: 0.8 }}>Submit a reason, or drill down to a specific rule.</div>
+            <div style={{ fontSize: 12, opacity: 0.8 }}>
+              Let us know if a video, or comment is violating the community guidelines or a group's or channel's cultural norms. Submitting a general complaint is helpful. Drilling down to more sepcific complaints is even more helpful.
+            </div>
           </div>
           <button
             onClick={onClose}
@@ -554,10 +556,7 @@ export default function ReportModal(props: {
           )}
         </div>
 
-        <div style={{ paddingTop: 10, borderTop: '1px solid rgba(255,255,255,0.12)', display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>
-            {reportedByMe ? 'This publication is already reported by you.' : 'Submit a reason or drill down to a specific rule.'}
-          </div>
+        <div style={{ paddingTop: 10, borderTop: '1px solid rgba(255,255,255,0.12)', display: 'flex', justifyContent: 'flex-end', gap: 10, alignItems: 'center' }}>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
             {submitError ? <span style={{ color: '#ffb3b3', fontSize: 12 }}>{submitError}</span> : null}
           </div>
