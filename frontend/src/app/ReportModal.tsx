@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
+const CLOSE_CIRCLE_X_ICON_URL = new URL('./icons/close-circle-x.svg', import.meta.url).toString()
 
 type OptionsRule = {
   id: number
@@ -213,8 +214,31 @@ export default function ReportModal(props: {
             <div style={{ fontWeight: 700 }}>Report</div>
             <div style={{ fontSize: 12, opacity: 0.8 }}>Choose a reason and submit, or drill down to a specific rule.</div>
           </div>
-          <button onClick={onClose} style={{ background: 'transparent', color: '#fff', border: '1px solid rgba(255,255,255,0.28)', borderRadius: 10, padding: '6px 10px', fontSize: 16 }}>
-            Close
+          <button
+            onClick={onClose}
+            aria-label="Close report modal"
+            title="Close"
+            style={{
+              background: 'transparent',
+              color: '#fff',
+              border: 'none',
+              width: 44,
+              height: 44,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginTop: -5,
+              marginRight: -7,
+              padding: 0,
+              cursor: 'pointer',
+            }}
+          >
+            <img
+              src={CLOSE_CIRCLE_X_ICON_URL}
+              alt=""
+              aria-hidden="true"
+              style={{ width: 34, height: 34, filter: 'invert(1)' }}
+            />
           </button>
         </div>
 
