@@ -197,6 +197,13 @@ export default function ReportModal(props: {
       ? flatRules.get(Number(options.myReport.ruleId))?.title || null
       : options?.myReport?.ruleTitle || null
   const hasReasons = Array.isArray(options?.groups) && (options?.groups || []).some((g) => Array.isArray(g.reasons) && g.reasons.length > 0)
+  const softButtonStyle: React.CSSProperties = {
+    background: 'rgba(255,255,255,0.08)',
+    color: '#fff',
+    border: '1px solid rgba(255,255,255,0.18)',
+    borderRadius: 10,
+    fontWeight: 900,
+  }
 
   return (
     <div
@@ -216,29 +223,34 @@ export default function ReportModal(props: {
         style={{
           width: 'min(760px, calc(100vw - 32px))',
           maxHeight: '86vh',
-          background: 'rgba(18,18,18,0.98)',
+          background: 'rgba(0,0,0,0.55)',
+          WebkitBackdropFilter: 'blur(6px)',
+          backdropFilter: 'blur(6px)',
           color: '#fff',
-          border: '1px solid rgba(255,255,255,0.16)',
+          border: '1px solid rgba(255,255,255,0.18)',
           borderRadius: 14,
           boxSizing: 'border-box',
           overflow: 'hidden',
+          boxShadow: 'none',
           display: 'grid',
-          gridTemplateRows: 'auto 1fr auto',
+          gridTemplateRows: '18px auto 1fr auto',
         }}
       >
+        <div style={{ cursor: 'grab', touchAction: 'none', display: 'grid', placeItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+          <span style={{ width: 44, height: 4, borderRadius: 999, background: 'rgba(255,255,255,0.22)', display: 'inline-block' }} />
+        </div>
         <div style={{ padding: '10px 14px', borderBottom: '1px solid rgba(255,255,255,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           <div>
             <div style={{ fontWeight: 700 }}>Report</div>
-            <div style={{ fontSize: 12, opacity: 0.8 }}>Choose a reason and submit, or drill down to a specific rule.</div>
+            <div style={{ fontSize: 12, opacity: 0.8 }}>Submit a reason, or drill down to a specific rule.</div>
           </div>
           <button
             onClick={onClose}
             aria-label="Close report modal"
             title="Close"
             style={{
-              background: 'transparent',
+              ...softButtonStyle,
               color: '#fff',
-              border: 'none',
               width: 44,
               height: 44,
               display: 'inline-flex',
@@ -272,10 +284,7 @@ export default function ReportModal(props: {
                   aria-label="Back"
                   title="Back"
                   style={{
-                    background: 'transparent',
-                    color: '#fff',
-                    border: '1px solid rgba(255,255,255,0.28)',
-                    borderRadius: 10,
+                    ...softButtonStyle,
                     width: 40,
                     height: 36,
                     display: 'inline-flex',
@@ -300,10 +309,11 @@ export default function ReportModal(props: {
                       style={{
                         background: (reportedByMe || !!submitBusyKey) ? '#333' : '#e53935',
                         color: '#fff',
-                        border: '1px solid rgba(255,255,255,0.22)',
+                        border: '1px solid rgba(255,255,255,0.18)',
                         borderRadius: 10,
                         padding: '6px 10px',
                         fontSize: 14,
+                        fontWeight: 900,
                         cursor: (reportedByMe || !!submitBusyKey) ? 'not-allowed' : 'pointer',
                       }}
                     >
@@ -324,9 +334,9 @@ export default function ReportModal(props: {
                     {detail.shortDescription ? <div style={{ fontSize: 16, fontWeight: 400, opacity: 0.9, lineHeight: 1.35 }}>{detail.shortDescription}</div> : null}
                   </div>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    <button onClick={() => setDetailTab('long')} style={{ background: detailTab === 'long' ? '#1976d2' : '#222', color: '#fff', border: '1px solid rgba(255,255,255,0.18)', borderRadius: 999, padding: '6px 10px', fontSize: 16 }}>Long</button>
-                    <button onClick={() => setDetailTab('allowed')} style={{ background: detailTab === 'allowed' ? '#1976d2' : '#222', color: '#fff', border: '1px solid rgba(255,255,255,0.18)', borderRadius: 999, padding: '6px 10px', fontSize: 16 }}>Allowed</button>
-                    <button onClick={() => setDetailTab('disallowed')} style={{ background: detailTab === 'disallowed' ? '#1976d2' : '#222', color: '#fff', border: '1px solid rgba(255,255,255,0.18)', borderRadius: 999, padding: '6px 10px', fontSize: 16 }}>Disallowed</button>
+                    <button onClick={() => setDetailTab('long')} style={{ background: detailTab === 'long' ? 'rgba(25,118,210,0.35)' : 'rgba(255,255,255,0.08)', color: '#fff', border: '1px solid rgba(255,255,255,0.18)', borderRadius: 999, padding: '6px 10px', fontSize: 16, fontWeight: 900 }}>Long</button>
+                    <button onClick={() => setDetailTab('allowed')} style={{ background: detailTab === 'allowed' ? 'rgba(25,118,210,0.35)' : 'rgba(255,255,255,0.08)', color: '#fff', border: '1px solid rgba(255,255,255,0.18)', borderRadius: 999, padding: '6px 10px', fontSize: 16, fontWeight: 900 }}>Allowed</button>
+                    <button onClick={() => setDetailTab('disallowed')} style={{ background: detailTab === 'disallowed' ? 'rgba(25,118,210,0.35)' : 'rgba(255,255,255,0.08)', color: '#fff', border: '1px solid rgba(255,255,255,0.18)', borderRadius: 999, padding: '6px 10px', fontSize: 16, fontWeight: 900 }}>Disallowed</button>
                   </div>
                   <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, padding: 12, background: 'rgba(255,255,255,0.03)' }}>
                     {detailTab === 'long' ? (
@@ -350,10 +360,7 @@ export default function ReportModal(props: {
                     aria-label="Back"
                     title="Back"
                     style={{
-                      background: 'transparent',
-                      color: '#fff',
-                      border: '1px solid rgba(255,255,255,0.28)',
-                      borderRadius: 10,
+                      ...softButtonStyle,
                       width: 40,
                       height: 36,
                       display: 'inline-flex',
@@ -397,8 +404,7 @@ export default function ReportModal(props: {
                             setExpandedReasonId(groupExpanded ? null : firstReasonId)
                           }}
                           style={{
-                            background: 'transparent',
-                            border: '1px solid rgba(255,255,255,0.22)',
+                            ...softButtonStyle,
                             borderRadius: 10,
                             width: 44,
                             height: 36,
@@ -440,10 +446,11 @@ export default function ReportModal(props: {
                                     bottom: 0,
                                     background: (reportedByMe || !!submitBusyKey) ? '#333' : '#e53935',
                                     color: '#fff',
-                                    border: '1px solid rgba(255,255,255,0.22)',
+                                    border: '1px solid rgba(255,255,255,0.18)',
                                     borderRadius: 10,
                                     padding: '6px 10px',
                                     fontSize: 14,
+                                    fontWeight: 900,
                                     cursor: (reportedByMe || !!submitBusyKey) ? 'not-allowed' : 'pointer',
                                   }}
                                 >
@@ -517,10 +524,11 @@ export default function ReportModal(props: {
                                               bottom: 0,
                                               background: (reportedByMe || !!submitBusyKey) ? '#333' : '#e53935',
                                               color: '#fff',
-                                              border: '1px solid rgba(255,255,255,0.22)',
+                                              border: '1px solid rgba(255,255,255,0.18)',
                                               borderRadius: 10,
                                               padding: '6px 10px',
                                               fontSize: 14,
+                                              fontWeight: 900,
                                               cursor: (reportedByMe || !!submitBusyKey) ? 'not-allowed' : 'pointer',
                                             }}
                                           >
@@ -546,7 +554,7 @@ export default function ReportModal(props: {
 
         <div style={{ padding: '10px 14px', borderTop: '1px solid rgba(255,255,255,0.12)', display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
           <div style={{ fontSize: 12, opacity: 0.8 }}>
-            {reportedByMe ? 'This publication is already reported by you.' : 'Select a reason or drill down to a specific rule.'}
+            {reportedByMe ? 'This publication is already reported by you.' : 'Submit a reason or drill down to a specific rule.'}
           </div>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
             {submitError ? <span style={{ color: '#ffb3b3', fontSize: 12 }}>{submitError}</span> : null}
