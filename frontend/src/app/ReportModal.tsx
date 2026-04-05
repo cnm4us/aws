@@ -197,10 +197,17 @@ export default function ReportModal(props: {
       ? flatRules.get(Number(options.myReport.ruleId))?.title || null
       : options?.myReport?.ruleTitle || null
   const hasReasons = Array.isArray(options?.groups) && (options?.groups || []).some((g) => Array.isArray(g.reasons) && g.reasons.length > 0)
-  const softButtonStyle: React.CSSProperties = {
-    background: 'rgba(255,255,255,0.08)',
+  const secondaryButtonStyle: React.CSSProperties = {
+    background: 'rgba(255,255,255,0.06)',
     color: '#fff',
     border: '1px solid rgba(255,255,255,0.18)',
+    borderRadius: 10,
+    fontWeight: 800,
+  }
+  const primaryButtonStyle: React.CSSProperties = {
+    background: 'rgba(96,165,250,0.14)',
+    color: '#fff',
+    border: '1px solid rgba(96,165,250,0.95)',
     borderRadius: 10,
     fontWeight: 900,
   }
@@ -211,37 +218,37 @@ export default function ReportModal(props: {
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 80,
-        background: 'rgba(0,0,0,0.82)',
-        display: 'grid',
-        placeItems: 'center',
-        padding: 16,
+        zIndex: 1100,
+        background: 'rgba(0,0,0,0.86)',
+        overflowY: 'auto',
+        WebkitOverflowScrolling: 'touch',
+        padding: '64px 16px 80px',
       }}
     >
       <div
+        role="dialog"
+        aria-modal="true"
         onClick={(e) => e.stopPropagation()}
         style={{
-          width: 'min(760px, calc(100vw - 32px))',
-          maxHeight: '86vh',
-          background: 'rgba(0,0,0,0.55)',
-          WebkitBackdropFilter: 'blur(6px)',
-          backdropFilter: 'blur(6px)',
+          maxWidth: 560,
+          width: '100%',
+          margin: '0 auto',
+          maxHeight: 'calc(100vh - 144px)',
+          background: 'linear-gradient(180deg, rgba(28,45,58,0.96) 0%, rgba(12,16,20,0.96) 100%)',
           color: '#fff',
-          border: '1px solid rgba(255,255,255,0.18)',
+          border: '1px solid rgba(96,165,250,0.95)',
           borderRadius: 14,
+          padding: 16,
           boxSizing: 'border-box',
           overflow: 'hidden',
           boxShadow: 'none',
           display: 'grid',
-          gridTemplateRows: '18px auto 1fr auto',
+          gridTemplateRows: 'auto 1fr auto',
         }}
       >
-        <div style={{ cursor: 'grab', touchAction: 'none', display: 'grid', placeItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-          <span style={{ width: 44, height: 4, borderRadius: 999, background: 'rgba(255,255,255,0.22)', display: 'inline-block' }} />
-        </div>
-        <div style={{ padding: '10px 14px', borderBottom: '1px solid rgba(255,255,255,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+        <div style={{ paddingBottom: 10, borderBottom: '1px solid rgba(255,255,255,0.12)', display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
           <div>
-            <div style={{ fontWeight: 700 }}>Report</div>
+            <div style={{ fontWeight: 900, fontSize: 18 }}>Report</div>
             <div style={{ fontSize: 12, opacity: 0.8 }}>Submit a reason, or drill down to a specific rule.</div>
           </div>
           <button
@@ -249,15 +256,13 @@ export default function ReportModal(props: {
             aria-label="Close report modal"
             title="Close"
             style={{
-              ...softButtonStyle,
+              ...secondaryButtonStyle,
               color: '#fff',
-              width: 44,
-              height: 44,
+              width: 40,
+              height: 36,
               display: 'inline-flex',
               alignItems: 'center',
               justifyContent: 'center',
-              marginTop: -5,
-              marginRight: -7,
               padding: 0,
               cursor: 'pointer',
             }}
@@ -266,12 +271,12 @@ export default function ReportModal(props: {
               src={CLOSE_CIRCLE_X_ICON_URL}
               alt=""
               aria-hidden="true"
-              style={{ width: 34, height: 34, filter: 'invert(1)' }}
+              style={{ width: 22, height: 22, filter: 'invert(1)' }}
             />
           </button>
         </div>
 
-        <div style={{ overflowY: 'auto' }}>
+        <div style={{ overflowY: 'auto', paddingTop: 10 }}>
           {loading ? (
             <div style={{ padding: 16, opacity: 0.85 }}>Loading…</div>
           ) : error ? (
@@ -284,7 +289,7 @@ export default function ReportModal(props: {
                   aria-label="Back"
                   title="Back"
                   style={{
-                    ...softButtonStyle,
+                    ...secondaryButtonStyle,
                     width: 40,
                     height: 36,
                     display: 'inline-flex',
@@ -307,9 +312,8 @@ export default function ReportModal(props: {
                       })}
                       disabled={reportedByMe || !!submitBusyKey}
                       style={{
-                        background: (reportedByMe || !!submitBusyKey) ? '#333' : '#e53935',
+                        ...(reportedByMe || !!submitBusyKey ? { background: '#333', border: '1px solid rgba(255,255,255,0.18)' } : primaryButtonStyle),
                         color: '#fff',
-                        border: '1px solid rgba(255,255,255,0.18)',
                         borderRadius: 10,
                         padding: '6px 10px',
                         fontSize: 14,
@@ -360,7 +364,7 @@ export default function ReportModal(props: {
                     aria-label="Back"
                     title="Back"
                     style={{
-                      ...softButtonStyle,
+                      ...secondaryButtonStyle,
                       width: 40,
                       height: 36,
                       display: 'inline-flex',
@@ -404,7 +408,7 @@ export default function ReportModal(props: {
                             setExpandedReasonId(groupExpanded ? null : firstReasonId)
                           }}
                           style={{
-                            ...softButtonStyle,
+                            ...secondaryButtonStyle,
                             borderRadius: 10,
                             width: 44,
                             height: 36,
@@ -444,9 +448,8 @@ export default function ReportModal(props: {
                                     position: 'absolute',
                                     right: 0,
                                     bottom: 0,
-                                    background: (reportedByMe || !!submitBusyKey) ? '#333' : '#e53935',
+                                    ...(reportedByMe || !!submitBusyKey ? { background: '#333', border: '1px solid rgba(255,255,255,0.18)' } : primaryButtonStyle),
                                     color: '#fff',
-                                    border: '1px solid rgba(255,255,255,0.18)',
                                     borderRadius: 10,
                                     padding: '6px 10px',
                                     fontSize: 14,
@@ -522,9 +525,8 @@ export default function ReportModal(props: {
                                               position: 'absolute',
                                               right: 0,
                                               bottom: 0,
-                                              background: (reportedByMe || !!submitBusyKey) ? '#333' : '#e53935',
+                                              ...(reportedByMe || !!submitBusyKey ? { background: '#333', border: '1px solid rgba(255,255,255,0.18)' } : primaryButtonStyle),
                                               color: '#fff',
-                                              border: '1px solid rgba(255,255,255,0.18)',
                                               borderRadius: 10,
                                               padding: '6px 10px',
                                               fontSize: 14,
@@ -552,7 +554,7 @@ export default function ReportModal(props: {
           )}
         </div>
 
-        <div style={{ padding: '10px 14px', borderTop: '1px solid rgba(255,255,255,0.12)', display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
+        <div style={{ paddingTop: 10, borderTop: '1px solid rgba(255,255,255,0.12)', display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
           <div style={{ fontSize: 12, opacity: 0.8 }}>
             {reportedByMe ? 'This publication is already reported by you.' : 'Submit a reason or drill down to a specific rule.'}
           </div>
