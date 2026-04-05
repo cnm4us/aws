@@ -63,7 +63,7 @@ export async function getUserFacingReportingOptionsForPublication(publicationId:
     groupLabel: string | null
     groupOrder: number
     displayOrder: number
-    rules: Array<{ id: number; slug: string; title: string; priority: number; isDefault: boolean }>
+    rules: Array<{ id: number; slug: string; title: string; shortDescription: string | null; priority: number; isDefault: boolean }>
   }>()
   for (const row of reasonRows as any[]) {
     const reasonId = Number(row.user_facing_rule_id)
@@ -83,6 +83,7 @@ export async function getUserFacingReportingOptionsForPublication(publicationId:
       id: Number(row.rule_id),
       slug: String(row.rule_slug || ''),
       title: String(row.rule_title || ''),
+      shortDescription: row.rule_short_description != null ? String(row.rule_short_description) : null,
       priority: Number(row.priority || 100),
       isDefault: Number(row.is_default || 0) === 1,
     })

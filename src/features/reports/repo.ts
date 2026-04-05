@@ -143,6 +143,7 @@ export async function listUserFacingReportingReasonsForSpace(
     rule_id: number
     rule_slug: string
     rule_title: string
+    rule_short_description: string | null
     priority: number
     is_default: number
   }>
@@ -161,6 +162,7 @@ export async function listUserFacingReportingReasonsForSpace(
             r.id AS rule_id,
             r.slug AS rule_slug,
             r.title AS rule_title,
+            rv.short_description AS rule_short_description,
             m.priority,
             m.is_default
        FROM user_facing_rules ufr
@@ -168,6 +170,8 @@ export async function listUserFacingReportingReasonsForSpace(
          ON m.user_facing_rule_id = ufr.id
        JOIN rules r
          ON r.id = m.rule_id
+  LEFT JOIN rule_versions rv
+         ON rv.id = r.current_version_id
        JOIN space_cultures sc
          ON sc.space_id = ?
        JOIN culture_categories cc
