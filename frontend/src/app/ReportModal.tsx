@@ -361,7 +361,7 @@ export default function ReportModal(props: {
                           return (
                             <div key={reason.id} style={{ borderTop: '1px solid rgba(255,255,255,0.08)', padding: '10px 12px', display: 'grid', gap: 8 }}>
                               <div style={{ position: 'relative', paddingBottom: 42, minHeight: 72 }}>
-                                <div style={{ fontWeight: 600, lineHeight: 1.25 }}>
+                                <div style={{ fontWeight: 600, fontSize: 17, lineHeight: 1.25 }}>
                                   {reason.label}
                                 </div>
                                 {reason.shortDescription ? (
@@ -425,11 +425,11 @@ export default function ReportModal(props: {
                                                 padding: 0,
                                                 margin: 0,
                                                 textAlign: 'left',
-                                                color: '#fff',
-                                                fontSize: 12,
-                                                opacity: 0.82,
-                                                lineHeight: 1.3,
-                                                cursor: 'pointer',
+                                              color: '#fff',
+                                              fontSize: 13,
+                                              opacity: 0.82,
+                                              lineHeight: 1.3,
+                                              cursor: 'pointer',
                                               }}
                                             >
                                               {r.shortDescription}
