@@ -398,16 +398,12 @@ export default function ReportModal(props: {
                                       <div
                                         key={r.id}
                                         style={{
-                                          display: 'grid',
-                                          gridTemplateColumns: '1fr auto',
-                                          gap: 8,
-                                          alignItems: 'start',
                                           padding: '6px 0 6px 10px',
                                           marginLeft: 6,
                                           borderLeft: '3px solid rgba(255,255,255,0.9)',
                                         }}
                                       >
-                                        <div style={{ display: 'grid', gap: 3 }}>
+                                        <div style={{ position: 'relative', paddingBottom: 42, minHeight: 68 }}>
                                           <button
                                             type="button"
                                             onClick={() => openDetail(r.slug, { userFacingRuleId: Number(reason.id), ruleId: Number(r.id) })}
@@ -416,6 +412,8 @@ export default function ReportModal(props: {
                                               border: 'none',
                                               padding: 0,
                                               margin: 0,
+                                              display: 'block',
+                                              width: '100%',
                                               textAlign: 'left',
                                               color: '#fff',
                                               fontWeight: 600,
@@ -431,11 +429,13 @@ export default function ReportModal(props: {
                                               type="button"
                                               onClick={() => openDetail(r.slug, { userFacingRuleId: Number(reason.id), ruleId: Number(r.id) })}
                                               style={{
-                                                background: 'transparent',
-                                                border: 'none',
-                                                padding: 0,
-                                                margin: 0,
-                                                textAlign: 'left',
+                                              background: 'transparent',
+                                              border: 'none',
+                                              padding: 0,
+                                              margin: 0,
+                                              display: 'block',
+                                              width: '100%',
+                                              textAlign: 'left',
                                               color: '#fff',
                                               fontSize: 13,
                                               opacity: 0.82,
@@ -444,25 +444,29 @@ export default function ReportModal(props: {
                                               }}
                                             >
                                               {r.shortDescription}
+                                              <span aria-hidden="true" style={{ display: 'inline-block', width: 94, height: 1 }} />
                                             </button>
                                           ) : null}
+                                          <button
+                                            type="button"
+                                            onClick={() => submitReport({ userFacingRuleId: Number(reason.id), ruleId: Number(r.id), busyKey: `rule:${reason.id}:${r.id}` })}
+                                            disabled={reportedByMe || !!submitBusyKey}
+                                            style={{
+                                              position: 'absolute',
+                                              right: 0,
+                                              bottom: 0,
+                                              background: (reportedByMe || !!submitBusyKey) ? '#333' : '#e53935',
+                                              color: '#fff',
+                                              border: '1px solid rgba(255,255,255,0.22)',
+                                              borderRadius: 10,
+                                              padding: '6px 10px',
+                                              fontSize: 14,
+                                              cursor: (reportedByMe || !!submitBusyKey) ? 'not-allowed' : 'pointer',
+                                            }}
+                                          >
+                                            {ruleBusy ? 'Submitting…' : 'Submit'}
+                                          </button>
                                         </div>
-                                        <button
-                                          type="button"
-                                          onClick={() => submitReport({ userFacingRuleId: Number(reason.id), ruleId: Number(r.id), busyKey: `rule:${reason.id}:${r.id}` })}
-                                          disabled={reportedByMe || !!submitBusyKey}
-                                          style={{
-                                            background: (reportedByMe || !!submitBusyKey) ? '#333' : '#e53935',
-                                            color: '#fff',
-                                            border: '1px solid rgba(255,255,255,0.22)',
-                                            borderRadius: 10,
-                                            padding: '6px 10px',
-                                            fontSize: 14,
-                                            cursor: (reportedByMe || !!submitBusyKey) ? 'not-allowed' : 'pointer',
-                                          }}
-                                        >
-                                          {ruleBusy ? 'Submitting…' : 'Submit'}
-                                        </button>
                                   </div>
                                     )
                                   })}
