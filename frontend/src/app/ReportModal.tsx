@@ -395,7 +395,18 @@ export default function ReportModal(props: {
                                   {(reason.rules || []).map((r) => {
                                     const ruleBusy = submitBusyKey === `rule:${reason.id}:${r.id}`
                                     return (
-                                      <div key={r.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'start', padding: '6px 0' }}>
+                                      <div
+                                        key={r.id}
+                                        style={{
+                                          display: 'grid',
+                                          gridTemplateColumns: '1fr auto',
+                                          gap: 8,
+                                          alignItems: 'start',
+                                          padding: '6px 0 6px 10px',
+                                          marginLeft: 6,
+                                          borderLeft: '3px solid rgba(255,255,255,0.9)',
+                                        }}
+                                      >
                                         <div style={{ display: 'grid', gap: 3 }}>
                                           <button
                                             type="button"
