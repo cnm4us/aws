@@ -522,6 +522,27 @@ export default function ReportModal(props: {
                                           ) : null}
                                           <button
                                             type="button"
+                                            aria-label="More details"
+                                            title="More details"
+                                            onClick={() => openDetail(r.slug, { userFacingRuleId: Number(reason.id), ruleId: Number(r.id) })}
+                                            style={{
+                                              ...secondaryButtonStyle,
+                                              position: 'absolute',
+                                              left: 0,
+                                              bottom: 0,
+                                              width: 40,
+                                              height: 36,
+                                              display: 'inline-flex',
+                                              alignItems: 'center',
+                                              justifyContent: 'center',
+                                              padding: 0,
+                                              cursor: 'pointer',
+                                            }}
+                                          >
+                                            <ChevronIcon direction="right" />
+                                          </button>
+                                          <button
+                                            type="button"
                                             onClick={() => submitReport({ userFacingRuleId: Number(reason.id), ruleId: Number(r.id), busyKey: `rule:${reason.id}:${r.id}` })}
                                             disabled={reportedByMe || !!submitBusyKey}
                                             style={{
