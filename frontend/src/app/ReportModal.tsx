@@ -219,7 +219,7 @@ export default function ReportModal(props: {
         position: 'fixed',
         inset: 0,
         zIndex: 1100,
-        background: 'rgba(0,0,0,0.86)',
+        background: 'rgba(0,0,0,0.5)',
         overflowY: 'auto',
         WebkitOverflowScrolling: 'touch',
         padding: '64px 16px 80px',
@@ -259,6 +259,7 @@ export default function ReportModal(props: {
             title="Close"
             style={{
               ...secondaryButtonStyle,
+              border: 'none',
               color: '#fff',
               width: 40,
               height: 36,
