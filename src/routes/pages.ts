@@ -4117,17 +4117,6 @@ pagesRouter.get('/admin/reports', requireGlobalModerationPage, async (req: any, 
       body += `<div class="reports-modal-body">`
 
       if (modalView === 'inspect') {
-        body += `<div class="section" style="margin:0"><div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px,1fr)); gap:10px">`
-        body += `<div><div class="field-hint">Status</div><div>${escapeHtml(String(rpt.status || '-'))}</div></div>`
-        body += `<div><div class="field-hint">Scope</div><div>${escapeHtml(String(rpt.rule_scope_at_submit || '-'))}</div></div>`
-        body += `<div><div class="field-hint">Space</div><div>${escapeHtml(String(rpt.space_name || rpt.space_slug || '-'))} (#${Number(rpt.space_id || 0)})</div></div>`
-        body += `<div><div class="field-hint">Rule</div><div>${escapeHtml(String(rpt.rule_title || '-'))} (#${Number(rpt.rule_id || 0)})</div></div>`
-        body += `<div><div class="field-hint">Reporter</div><div>${escapeHtml(String(rpt.reporter_display_name || rpt.reporter_email || '-'))} (#${Number(rpt.reporter_user_id || 0)})</div></div>`
-        body += `<div><div class="field-hint">Assignee</div><div>${escapeHtml(String(rpt.assigned_to_display_name || rpt.assigned_to_email || '-'))}${rpt.assigned_to_user_id ? ` (#${Number(rpt.assigned_to_user_id)})` : ''}</div></div>`
-        body += `<div><div class="field-hint">Resolution</div><div>${escapeHtml(resolutionDisplay)}</div></div>`
-        body += `<div><div class="field-hint">Created</div><div>${escapeHtml(String(rpt.created_at || ''))}</div></div>`
-        body += `</div></div>`
-
         const currentStatus = String(rpt.status || 'open')
         const currentAssigneeId = Number(rpt.assigned_to_user_id || 0) > 0 ? Number(rpt.assigned_to_user_id) : null
         if (currentAssigneeId != null && !assigneeById.has(currentAssigneeId)) {
@@ -4158,6 +4147,7 @@ pagesRouter.get('/admin/reports', requireGlobalModerationPage, async (req: any, 
         }
         body += `<form method="post" action="/admin/reports/${Number(rpt.id)}/decision" class="section" style="margin-top:12px">`
         body += `<div class="section-title">Decision Workflow</div>`
+        body += `<div class="field-hint" style="margin-bottom:8px">Report #${Number(rpt.id)}</div>`
         if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
         body += `<input type="hidden" name="return_to" value="${escapeHtml(returnTo)}" />`
         if (isAssignedToOtherModerator) {
@@ -4176,7 +4166,7 @@ pagesRouter.get('/admin/reports', requireGlobalModerationPage, async (req: any, 
         body += `<label>Status<select name="status"${isAssignedToOtherModerator ? ' disabled' : ''}>${statusOptionsHtml}</select></label>`
         body += `<label>Assignee<select name="assigned_to_user_id">${assigneeOptionsHtml}</select></label>`
         body += `<label>Decision<select name="resolution_code"${isAssignedToOtherModerator ? ' disabled' : ''}>${decisionOptions}</select></label>`
-        body += `<label>Decision Note<input type="text" name="decision_note" maxlength="500" value="${escapeHtml(decisionNoteValue)}"${isAssignedToOtherModerator ? ' disabled' : ''} /></label>`
+        body += `<label style="grid-column:1 / -1">Decision Note<textarea name="decision_note" rows="4" maxlength="500"${isAssignedToOtherModerator ? ' disabled' : ''}>${escapeHtml(decisionNoteValue)}</textarea></label>`
         body += `</div>`
         body += `<div class="field-hint" style="margin-top:8px">Choose status for active review flow. Choose a decision code to finalize as resolved/dismissed.</div>`
         body += `<div style="display:flex; gap:8px; margin-top:10px"><button class="btn" type="submit">${isAssignedToOtherModerator ? 'Assign to Me' : 'Apply'}</button></div>`
