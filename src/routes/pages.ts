@@ -3989,6 +3989,25 @@ pagesRouter.get('/admin/reports', requireGlobalModerationPage, async (req: any, 
       if (end) return `→ ${end}`
       return '-'
     }
+    const buildReportPreviewHref = (row: any): string => {
+      const spaceType = String(row?.space_type || '').trim().toLowerCase()
+      const spaceSlug = String(row?.space_slug || '').trim()
+      const isGlobalChannel = spaceType === 'channel' && (spaceSlug === 'global' || spaceSlug === 'global-feed')
+      let basePath = '/'
+      if (spaceType === 'group' && spaceSlug) basePath = `/groups/${encodeURIComponent(spaceSlug)}`
+      else if (spaceType === 'channel' && spaceSlug && !isGlobalChannel) basePath = `/channels/${encodeURIComponent(spaceSlug)}`
+      const params = new URLSearchParams()
+      const pin = String(row?.production_ulid || '').trim()
+      if (pin) params.set('pin', pin)
+      const publicationId = Number(row?.space_publication_id || 0)
+      if (Number.isFinite(publicationId) && publicationId > 0) params.set('publication_id', String(Math.floor(publicationId)))
+      const startSecondsRaw = Number(row?.reported_start_seconds)
+      if (Number.isFinite(startSecondsRaw) && startSecondsRaw >= 0) params.set('t', String(Math.floor(startSecondsRaw)))
+      const endSecondsRaw = Number(row?.reported_end_seconds)
+      if (Number.isFinite(endSecondsRaw) && endSecondsRaw >= 0) params.set('t_end', String(Math.floor(endSecondsRaw)))
+      const qs = params.toString()
+      return qs ? `${basePath}?${qs}` : basePath
+    }
 
     let selected: { report: any; actions: any[] } | null = null
     if (Number.isFinite(reportId) && reportId > 0) {
@@ -4074,10 +4093,12 @@ pagesRouter.get('/admin/reports', requireGlobalModerationPage, async (req: any, 
         const baseHref = `${listHrefBase}&report_id=${encodeURIComponent(String(row.id))}`
         const inspectHref = `${baseHref}&view=inspect`
         const timelineHref = `${baseHref}&view=timeline`
+        const previewModalHref = `${baseHref}&view=preview`
         const reasonText = row.user_facing_rule_label_at_submit
           ? `${String(row.user_facing_group_label_at_submit || 'Reason')} / ${String(row.user_facing_rule_label_at_submit)}`
           : '-'
         const reportedRangeText = formatReportedRange(row.reported_start_seconds, row.reported_end_seconds)
+        const previewHref = buildReportPreviewHref(row)
         const spaceText = `${String(row.space_name || row.space_slug || '-')}${row.space_id ? ` (#${row.space_id})` : ''}`
         const reporterText = `${String(row.reporter_display_name || row.reporter_email || '-')}${row.reporter_user_id ? ` (#${row.reporter_user_id})` : ''}`
         const assigneeText = row.assigned_to_user_id
@@ -4100,6 +4121,7 @@ pagesRouter.get('/admin/reports', requireGlobalModerationPage, async (req: any, 
         body += `<div><div class="field-hint">Status</div><div>${escapeHtml(String(row.status || 'open'))}</div></div>`
         body += `</div>`
         body += `<div style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap">`
+        body += `<a class="btn" href="${previewModalHref}">Preview</a>`
         body += `<a class="btn" href="${inspectHref}">Inspect</a>`
         body += `<a class="btn" href="${timelineHref}">Action Timeline</a>`
         body += `</div>`
@@ -4109,9 +4131,11 @@ pagesRouter.get('/admin/reports', requireGlobalModerationPage, async (req: any, 
     }
     body += `</div>`
 
-    const modalView = view === 'timeline' ? 'timeline' : view === 'inspect' ? 'inspect' : ''
+    const modalView = view === 'timeline' ? 'timeline' : view === 'inspect' ? 'inspect' : view === 'preview' ? 'preview' : ''
     if (selected?.report && modalView) {
       const rpt = selected.report
+      const previewHref = buildReportPreviewHref(rpt)
+      const previewModalHref = `${listHrefBase}&report_id=${encodeURIComponent(String(rpt.id))}&view=preview`
       const closeHref = listHrefBase
       const returnTo = `${listHrefBase}&report_id=${encodeURIComponent(String(rpt.id))}&view=inspect`
       const resolutionLabel = getResolutionCodeLabel(String(rpt.resolution_code || '').trim() || null)
@@ -4127,11 +4151,15 @@ pagesRouter.get('/admin/reports', requireGlobalModerationPage, async (req: any, 
         .reports-modal-body { padding: 12px 14px 14px; }
       </style>`
       body += `<div class="reports-modal-backdrop"></div>`
-      body += `<div class="reports-modal-shell" role="dialog" aria-modal="true" aria-label="${modalView === 'inspect' ? 'Selected Report' : 'Action Timeline'}">`
+      body += `<div class="reports-modal-shell" role="dialog" aria-modal="true" aria-label="${modalView === 'inspect' ? 'Selected Report' : modalView === 'timeline' ? 'Action Timeline' : 'Preview'}">`
       body += `<div class="reports-modal">`
       body += `<div class="reports-modal-head">`
-      body += `<div class="section-title" style="margin:0">${modalView === 'inspect' ? `Selected Report #${Number(rpt.id)}` : `Action Timeline #${Number(rpt.id)}`}</div>`
+      body += `<div class="section-title" style="margin:0">${modalView === 'inspect' ? `Selected Report #${Number(rpt.id)}` : modalView === 'timeline' ? `Action Timeline #${Number(rpt.id)}` : `Preview #${Number(rpt.id)}`}</div>`
+      body += `<div style="display:flex; align-items:center; gap:8px">`
+      if (modalView !== 'preview') body += `<a class="btn" href="${previewModalHref}">Preview</a>`
+      if (modalView === 'preview') body += `<a class="btn" href="${escapeHtml(previewHref)}" target="_blank" rel="noopener">Open New Tab</a>`
       body += `<a class="btn" href="${closeHref}">Close</a>`
+      body += `</div>`
       body += `</div>`
       body += `<div class="reports-modal-body">`
 
@@ -4167,6 +4195,7 @@ pagesRouter.get('/admin/reports', requireGlobalModerationPage, async (req: any, 
         body += `<form method="post" action="/admin/reports/${Number(rpt.id)}/decision" class="section" style="margin-top:12px">`
         body += `<div class="section-title">Decision Workflow</div>`
         body += `<div class="field-hint" style="margin-bottom:8px">Report #${Number(rpt.id)}</div>`
+        body += `<div class="field-hint" style="margin-bottom:8px">Preview: <a href="${previewModalHref}">Open</a></div>`
         body += `<div class="field-hint" style="margin-bottom:8px">Reported Range: ${escapeHtml(formatReportedRange(rpt.reported_start_seconds, rpt.reported_end_seconds))}</div>`
         if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
         body += `<input type="hidden" name="return_to" value="${escapeHtml(returnTo)}" />`
@@ -4200,6 +4229,7 @@ pagesRouter.get('/admin/reports', requireGlobalModerationPage, async (req: any, 
         body += `<div><div class="field-hint">Space</div><div>${escapeHtml(String(rpt.space_name || rpt.space_slug || '-'))} (#${Number(rpt.space_id || 0)})</div></div>`
         body += `<div><div class="field-hint">Rule</div><div>${escapeHtml(String(rpt.rule_title || '-'))} (#${Number(rpt.rule_id || 0)})</div></div>`
         body += `<div><div class="field-hint">Reported Range</div><div>${escapeHtml(formatReportedRange(rpt.reported_start_seconds, rpt.reported_end_seconds))}</div></div>`
+        body += `<div><div class="field-hint">Preview</div><div><a href="${previewModalHref}">Open</a></div></div>`
         body += `</div></div>`
         body += `<div class="section" style="margin-top:12px"><div class="section-title">Action Timeline</div>`
         if (!selected.actions.length) {
@@ -4220,6 +4250,12 @@ pagesRouter.get('/admin/reports', requireGlobalModerationPage, async (req: any, 
           }
           body += `</tbody></table></div>`
         }
+        body += `</div>`
+      }
+
+      if (modalView === 'preview') {
+        body += `<div class="section" style="margin:0; padding:0; border:none; background:transparent">`
+        body += `<iframe src="${escapeHtml(previewHref)}" title="Report Preview #${Number(rpt.id)}" style="width:100%; height:min(78vh, 900px); border:1px solid rgba(255,255,255,0.18); border-radius:10px; background:#000" allow="autoplay; fullscreen; encrypted-media" referrerpolicy="same-origin"></iframe>`
         body += `</div>`
       }
 

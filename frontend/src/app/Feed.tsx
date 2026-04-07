@@ -195,15 +195,33 @@ function isGlobalFeedSlug(slug: string | null | undefined): boolean {
   return s === 'global' || s === 'global-feed'
 }
 
-function readPinFromUrl(): string | null {
+type FeedJumpFromUrl = {
+  pinProductionUlid: string | null
+  publicationId: number | null
+  startSeconds: number | null
+  endSeconds: number | null
+}
+
+function parseQuerySeconds(raw: string | null): number | null {
+  if (raw == null) return null
+  const n = Number(raw)
+  if (!Number.isFinite(n) || n < 0) return null
+  return Math.floor(n)
+}
+
+function readFeedJumpFromUrl(): FeedJumpFromUrl | null {
   try {
     const search = typeof window !== 'undefined' ? (window.location.search || '') : ''
     if (!search) return null
     const params = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search)
-    const pin = params.get('pin')
-    if (!pin) return null
-    const decoded = String(pin).trim()
-    return decoded ? decoded : null
+    const pinRaw = String(params.get('pin') || '').trim()
+    const pinProductionUlid = pinRaw || null
+    const publicationIdRaw = Number(params.get('publication_id') || 0)
+    const publicationId = Number.isFinite(publicationIdRaw) && publicationIdRaw > 0 ? Math.floor(publicationIdRaw) : null
+    const startSeconds = parseQuerySeconds(params.get('t'))
+    const endSeconds = parseQuerySeconds(params.get('t_end'))
+    if (!pinProductionUlid && publicationId == null && startSeconds == null && endSeconds == null) return null
+    return { pinProductionUlid, publicationId, startSeconds, endSeconds }
   } catch {
     return null
   }
@@ -368,10 +386,12 @@ async function fetchSpaceFeed(spaceId: number, opts: {
 async function fetchGlobalFeed(opts: {
   cursor?: string | null
   limit?: number
+  pinProductionUlid?: string | null
   sequenceEngineTag?: FeedSequenceEngineTag
 } = {}): Promise<{ items: UploadItem[]; nextCursor: string | null }> {
   const params = new URLSearchParams({ limit: String(opts.limit ?? 20) })
   if (opts.cursor) params.set('cursor', opts.cursor)
+  if (!opts.cursor && opts.pinProductionUlid) params.set('pin', String(opts.pinProductionUlid))
   const res = await fetch(`/api/feed/global?${params.toString()}`, {
     headers: feedSequenceHeader(opts.sequenceEngineTag),
   })
@@ -906,6 +926,10 @@ export default function Feed() {
   const touchLastXRef = useRef<number>(0)
   const touchLastYRef = useRef<number>(0)
   const touchLastTRef = useRef<number>(0)
+  const urlJumpConsumedRef = useRef<boolean>(false)
+  const urlJumpSeekSecondsRef = useRef<number | null>(null)
+  const urlJumpSeekPublicationIdRef = useRef<number | null>(null)
+  const urlJumpSeekAppliedRef = useRef<boolean>(false)
   const suppressDurableRestoreRef = useRef<boolean>(false)
   const restoringRef = useRef<boolean>(false)
   const itemsFeedKeyRef = useRef<string>('')
@@ -2241,23 +2265,39 @@ export default function Feed() {
         try { debug.time('perf', perfLabel) } catch {}
         setInitialLoading(true)
         setLoadingMore(false)
+        const urlJump = urlJumpConsumedRef.current ? null : readFeedJumpFromUrl()
+        if (urlJump) urlJumpConsumedRef.current = true
+        if (urlJump && urlJump.startSeconds != null) {
+          urlJumpSeekSecondsRef.current = urlJump.startSeconds
+          urlJumpSeekPublicationIdRef.current = urlJump.publicationId ?? null
+          urlJumpSeekAppliedRef.current = false
+        } else if (urlJump && urlJump.startSeconds == null) {
+          urlJumpSeekSecondsRef.current = null
+          urlJumpSeekPublicationIdRef.current = null
+          urlJumpSeekAppliedRef.current = true
+        }
         let nextCursor: string | null = null
         let fetchedItems: UploadItem[] = []
         if (feedMode.kind === 'space') {
-          const pin = readPinFromUrl()
           const { items: page, nextCursor: cursorStr } = await fetchSpaceFeed(feedMode.spaceId, {
-            pinProductionUlid: pin,
+            pinProductionUlid: urlJump?.pinProductionUlid || null,
             sequenceEngineTag: feedSequenceEngineTag,
           })
           fetchedItems = applyMineFilter(page, mineOnly, myUserId)
           nextCursor = cursorStr
         } else if (feedMode.kind === 'global') {
-          const { items: page, nextCursor: cursorStr } = await fetchGlobalFeed({ sequenceEngineTag: feedSequenceEngineTag })
+          const { items: page, nextCursor: cursorStr } = await fetchGlobalFeed({
+            pinProductionUlid: urlJump?.pinProductionUlid || null,
+            sequenceEngineTag: feedSequenceEngineTag,
+          })
           fetchedItems = applyMineFilter(page, mineOnly, myUserId)
           nextCursor = cursorStr
         } else {
           // Fallback: treat as global feed
-          const { items: page, nextCursor: cursorStr } = await fetchGlobalFeed({ sequenceEngineTag: feedSequenceEngineTag })
+          const { items: page, nextCursor: cursorStr } = await fetchGlobalFeed({
+            pinProductionUlid: urlJump?.pinProductionUlid || null,
+            sequenceEngineTag: feedSequenceEngineTag,
+          })
           fetchedItems = applyMineFilter(page, mineOnly, myUserId)
           nextCursor = cursorStr
         }
@@ -2297,8 +2337,16 @@ export default function Feed() {
         // Determine initial index: URL hash > localStorage > default 0
         let targetIndex = 0
         let seekMs: number | null = null
+        const hasUrlJump = Boolean(urlJump)
+        if (urlJump?.publicationId != null) {
+          const byPublication = fetchedItems.findIndex((it) => Number(it.publicationId || 0) === Number(urlJump.publicationId))
+          if (byPublication >= 0) targetIndex = byPublication
+        }
+        if (urlJump?.startSeconds != null) {
+          seekMs = Math.max(0, Math.floor(urlJump.startSeconds * 1000))
+        }
         // Do not restore last video/position when a canonical path is active
-        if (!suppressDurableRestoreRef.current && !canonicalTargetRef.current) {
+        if (!hasUrlJump && !suppressDurableRestoreRef.current && !canonicalTargetRef.current) {
           const last = readLastActive(feedMode)
           if (last) {
             const iPub = last.feedItemId != null ? fetchedItems.findIndex((it) => (it.publicationId ?? null) === last.feedItemId) : -1
@@ -2431,6 +2479,35 @@ export default function Feed() {
       window.removeEventListener('orientationchange', update)
     }
   }, [])
+
+  // URL deep-link seek fallback: applies once when target slide/video is actually ready.
+  useEffect(() => {
+    if (urlJumpSeekAppliedRef.current) return
+    const seekSeconds = urlJumpSeekSecondsRef.current
+    if (seekSeconds == null || seekSeconds < 0) return
+    const targetPublicationId = urlJumpSeekPublicationIdRef.current
+    const activePublicationId = Number((activeItem as any)?.publicationId || 0)
+    if (targetPublicationId != null && targetPublicationId > 0 && activePublicationId !== targetPublicationId) return
+    const v = getVideoEl(activeSequenceIndex)
+    if (!v) return
+    const applySeek = () => {
+      if (urlJumpSeekAppliedRef.current) return
+      try { v.currentTime = Math.max(0, seekSeconds) } catch {}
+      urlJumpSeekAppliedRef.current = true
+    }
+    if ((v as any).readyState >= 1) {
+      applySeek()
+      return
+    }
+    try { v.addEventListener('loadedmetadata', applySeek, { once: true } as any) } catch { try { v.addEventListener('loadedmetadata', applySeek) } catch {} }
+    try { v.addEventListener('canplay', applySeek, { once: true } as any) } catch { try { v.addEventListener('canplay', applySeek) } catch {} }
+    try { v.addEventListener('playing', applySeek, { once: true } as any) } catch { try { v.addEventListener('playing', applySeek) } catch {} }
+    return () => {
+      try { v.removeEventListener('loadedmetadata', applySeek) } catch {}
+      try { v.removeEventListener('canplay', applySeek) } catch {}
+      try { v.removeEventListener('playing', applySeek) } catch {}
+    }
+  }, [activeSequenceIndex, activeItem, items])
 
   useEffect(() => {
     const nexts = [activeSequenceIndex + 1, activeSequenceIndex + 2]

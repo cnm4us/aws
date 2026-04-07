@@ -45,7 +45,7 @@ Status: Active
 - A: Completed
 - B: Completed
 - C: Completed
-- D: Pending
+- D: Completed
 
 ## Phase A — Contract + Data Model
 - Goal:
@@ -100,12 +100,12 @@ Status: Active
 - Goal:
   - Speed up triage by one-click preview to exact report moment.
 - Steps:
-  - [ ] Add `Preview` action to report cards.
-  - [ ] Add `Preview` link in inspect modal and timeline modal headers/sections.
-  - [ ] Build preview URL to publication target:
+  - [x] Add `Preview` action to report cards.
+  - [x] Add `Preview` link in inspect modal and timeline modal headers/sections.
+  - [x] Build preview URL to publication target:
     - include start param when `reported_start_seconds` exists
     - include end param when supported and `reported_end_seconds` exists
-  - [ ] Confirm links work for reports without time range (open at default start).
+  - [x] Confirm links work for reports without time range (open at default start).
 - Test gate:
   - `npm run build`
   - manual click-through from card and both modals.
@@ -128,6 +128,23 @@ Status: Active
     - Added optional payload forwarding of `reported_start_seconds` / `reported_end_seconds` on report submit.
   - Phase C:
     - Exposed captured range in admin reports page cards and selected report/timeline modals in `src/routes/pages.ts`.
+  - Phase D:
+    - Added `Preview` links in report cards and both selected-report modals (`inspect` and `timeline`) in `src/routes/pages.ts`.
+    - Built report preview deep links using space route + optional params:
+      - `pin=<production_ulid>`
+      - `publication_id=<space_publication_id>`
+      - `t=<reported_start_seconds>`
+      - `t_end=<reported_end_seconds>`
+    - Extended report admin queries to include `production_ulid` from `productions` in `src/features/reports/repo.ts`.
+    - Added pinned global-feed API handling:
+      - new repo query `getGlobalFeedPinnedRowByProductionUlid` in `src/features/feeds/repo.ts`
+      - service mapping `getPinnedGlobalFeedItem` in `src/features/feeds/service.ts`
+      - route support for `GET /api/feed/global?pin=...` in `src/routes/spaces.ts`
+    - Extended frontend feed loading to consume preview deep-link query params in `frontend/src/app/Feed.tsx`:
+      - honors `pin` on initial global/space fetch
+      - anchors by `publication_id` when present
+      - seeks by `t` on initial playback when present
+      - accepts `t_end` for forward compatibility
 
 ## Validation
 - Environment: development
@@ -152,6 +169,6 @@ Status: Active
 
 ## Resume Here
 - Next action:
-  - Start Phase A and lock deep-link param format.
+  - Plan complete.
 - Blocking question (if any):
   - none

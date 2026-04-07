@@ -432,6 +432,7 @@ export async function listReportsForAdmin(filters: ReportListFilters, db?: DbLik
             s.slug AS space_slug,
             s.name AS space_name,
             spr.production_id,
+            prod.ulid AS production_ulid,
             spr.reporter_user_id,
             ru.email AS reporter_email,
             ru.display_name AS reporter_display_name,
@@ -461,6 +462,7 @@ export async function listReportsForAdmin(filters: ReportListFilters, db?: DbLik
        JOIN spaces s ON s.id = spr.space_id
        JOIN users ru ON ru.id = spr.reporter_user_id
        JOIN rules r ON r.id = spr.rule_id
+  LEFT JOIN productions prod ON prod.id = spr.production_id
   LEFT JOIN users au ON au.id = spr.assigned_to_user_id
   LEFT JOIN users rvu ON rvu.id = spr.resolved_by_user_id
       ${whereSql}
@@ -481,6 +483,7 @@ export async function getReportById(reportId: number, db?: DbLike): Promise<any 
             s.slug AS space_slug,
             s.name AS space_name,
             spr.production_id,
+            prod.ulid AS production_ulid,
             spr.reporter_user_id,
             ru.email AS reporter_email,
             ru.display_name AS reporter_display_name,
@@ -512,6 +515,7 @@ export async function getReportById(reportId: number, db?: DbLike): Promise<any 
        JOIN spaces s ON s.id = spr.space_id
        JOIN users ru ON ru.id = spr.reporter_user_id
        JOIN rules r ON r.id = spr.rule_id
+  LEFT JOIN productions prod ON prod.id = spr.production_id
   LEFT JOIN rule_versions rv ON rv.id = spr.rule_version_id
   LEFT JOIN users au ON au.id = spr.assigned_to_user_id
   LEFT JOIN users rvu ON rvu.id = spr.resolved_by_user_id

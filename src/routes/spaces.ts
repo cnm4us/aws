@@ -578,6 +578,19 @@ spacesRouter.get('/api/feed/global', async (req, res, next) => {
     const limitRaw = Number(req.query.limit ?? 20)
     const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 100) : 20
     const cursor = typeof req.query.cursor === 'string' ? req.query.cursor : null
+    const pin = typeof req.query.pin === 'string' ? req.query.pin : null
+
+    // Pin is only applied on the first page (cursor absent) to avoid re-pinning on "load more".
+    if (!cursor && pin && pin.trim()) {
+      const pinned = await feedsSvc.getPinnedGlobalFeedItem({ userId, productionUlid: pin })
+      const base = await feedsSvc.getGlobalFeed({ userId, limit: Math.max(1, limit - 1), cursor })
+      if (pinned) {
+        const deduped = base.items.filter((it: any) => Number(it?.publication?.id) !== Number(pinned.publication.id))
+        return res.json({ items: [pinned, ...deduped], nextCursor: base.nextCursor })
+      }
+      return res.json(base)
+    }
+
     const data = await feedsSvc.getGlobalFeed({ userId, limit, cursor })
     res.json(data)
   } catch (err: any) {
