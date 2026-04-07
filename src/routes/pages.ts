@@ -3790,6 +3790,9 @@ pagesRouter.get('/admin/reports', requireGlobalModerationPage, async (req: any, 
     if (Number.isFinite(userId) && userId > 0 && !assigneeById.has(userId)) {
       assigneeById.set(userId, { id: userId, label: userDisplayName })
     }
+    if (Number.isFinite(assignedToUserId) && assignedToUserId > 0 && !assigneeById.has(assignedToUserId)) {
+      assigneeById.set(assignedToUserId, { id: assignedToUserId, label: `User #${assignedToUserId}` })
+    }
 
     const list = await reportsSvc.listReportsForAdmin(userId, {
       status: ['open', 'in_review', 'resolved', 'dismissed'].includes(status) ? (status as any) : null,
@@ -3837,7 +3840,16 @@ pagesRouter.get('/admin/reports', requireGlobalModerationPage, async (req: any, 
     body += `<label>${escapeHtml(spaceSelectLabel)}<select name="space_id"${spaceType ? '' : ' disabled'}>${spaceSelectOptions}</select></label>`
     body += `<label>Rule ID<input type="number" name="rule_id" min="1" value="${escapeHtml(ruleId > 0 ? String(ruleId) : '')}" /></label>`
     body += `<label>Reporter ID<input type="number" name="reporter_user_id" min="1" value="${escapeHtml(reporterUserId > 0 ? String(reporterUserId) : '')}" /></label>`
-    body += `<label>Assignee ID<input type="number" name="assigned_to_user_id" min="1" value="${escapeHtml(assignedToUserId > 0 ? String(assignedToUserId) : '')}" /></label>`
+    const assigneeFilterOptions = (() => {
+      const rows = Array.from(assigneeById.values()).sort((a, b) => a.label.localeCompare(b.label))
+      let html = `<option value=""${assignedToUserId > 0 ? '' : ' selected'}>All</option>`
+      for (const item of rows) {
+        const selected = assignedToUserId === item.id ? ' selected' : ''
+        html += `<option value="${item.id}"${selected}>${escapeHtml(item.label)}</option>`
+      }
+      return html
+    })()
+    body += `<label>Assignee<select name="assigned_to_user_id">${assigneeFilterOptions}</select></label>`
     body += `<label>From<input type="date" name="from" value="${escapeHtml(from)}" /></label>`
     body += `<label>To<input type="date" name="to" value="${escapeHtml(to)}" /></label>`
     body += `<label>Limit<input type="number" name="limit" min="1" max="200" value="${escapeHtml(String(limit))}" /></label>`
