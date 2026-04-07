@@ -3735,6 +3735,8 @@ pagesRouter.get('/admin/reports', requireGlobalModerationPage, async (req: any, 
     const notice = String(q.notice || '').trim()
     const errorText = String(q.error || '').trim()
     const spaceId = Number(q.space_id || 0)
+    const cultureId = Number(q.culture_id || 0)
+    const categoryId = Number(q.category_id || 0)
     const ruleId = Number(q.rule_id || 0)
     const reporterUserId = Number(q.reporter_user_id || 0)
     const assignedToUserId = Number(q.assigned_to_user_id || 0)
@@ -3771,7 +3773,124 @@ pagesRouter.get('/admin/reports', requireGlobalModerationPage, async (req: any, 
       spaceType && Number.isFinite(spaceId) && spaceId > 0 && selectedSpaceList.some((row) => row.id === spaceId)
         ? spaceId
         : 0
-    const listHrefBase = `/admin/reports?status=${encodeURIComponent(status)}&space_type=${encodeURIComponent(spaceType)}&space_id=${encodeURIComponent(selectedSpaceId > 0 ? String(selectedSpaceId) : '')}&rule_id=${encodeURIComponent(ruleId > 0 ? String(ruleId) : '')}&reporter_user_id=${encodeURIComponent(reporterUserId > 0 ? String(reporterUserId) : '')}&assigned_to_user_id=${encodeURIComponent(assignedToUserId > 0 ? String(assignedToUserId) : '')}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&limit=${encodeURIComponent(String(limit))}`
+    const [cultureRows] = selectedSpaceId > 0
+      ? await db.query(
+          `SELECT DISTINCT c.id, c.name
+             FROM cultures c
+             JOIN space_cultures sc ON sc.culture_id = c.id
+            WHERE sc.space_id = ?
+            ORDER BY c.name, c.id`,
+          [selectedSpaceId]
+        )
+      : spaceType
+        ? await db.query(
+            `SELECT DISTINCT c.id, c.name
+               FROM cultures c
+               JOIN space_cultures sc ON sc.culture_id = c.id
+               JOIN spaces sx ON sx.id = sc.space_id
+              WHERE sx.type = ?
+              ORDER BY c.name, c.id`,
+            [spaceType]
+          )
+        : await db.query(`SELECT id, name FROM cultures ORDER BY name, id`)
+    const availableCultures = (cultureRows as any[])
+      .map((row) => ({ id: Number(row.id), name: String(row.name || '').trim() }))
+      .filter((row) => Number.isFinite(row.id) && row.id > 0)
+    const selectedCultureId =
+      Number.isFinite(cultureId) && cultureId > 0 && availableCultures.some((row) => row.id === cultureId)
+        ? cultureId
+        : 0
+
+    const [categoryRows] = selectedCultureId > 0
+      ? await db.query(
+          `SELECT rc.id, rc.name
+             FROM rule_categories rc
+             JOIN culture_categories cc ON cc.category_id = rc.id
+            WHERE cc.culture_id = ?
+            ORDER BY rc.name, rc.id`,
+          [selectedCultureId]
+        )
+      : await db.query(`SELECT id, name FROM rule_categories ORDER BY name, id`)
+    const availableCategories = (categoryRows as any[])
+      .map((row) => ({ id: Number(row.id), name: String(row.name || '').trim() }))
+      .filter((row) => Number.isFinite(row.id) && row.id > 0)
+    const selectedCategoryId =
+      Number.isFinite(categoryId) && categoryId > 0 && availableCategories.some((row) => row.id === categoryId)
+        ? categoryId
+        : 0
+
+    const ruleWhere: string[] = []
+    const ruleParams: any[] = []
+    if (['open', 'in_review', 'resolved', 'dismissed'].includes(status)) {
+      ruleWhere.push(`spr.status = ?`)
+      ruleParams.push(status)
+    }
+    if (spaceType) {
+      ruleWhere.push(`s.type = ?`)
+      ruleParams.push(spaceType)
+    }
+    if (selectedSpaceId > 0) {
+      ruleWhere.push(`spr.space_id = ?`)
+      ruleParams.push(selectedSpaceId)
+    }
+    if (from) {
+      ruleWhere.push(`spr.created_at >= ?`)
+      ruleParams.push(from)
+    }
+    if (to) {
+      ruleWhere.push(`spr.created_at < DATE_ADD(?, INTERVAL 1 DAY)`)
+      ruleParams.push(to)
+    }
+    if (Number.isFinite(reporterUserId) && reporterUserId > 0) {
+      ruleWhere.push(`spr.reporter_user_id = ?`)
+      ruleParams.push(reporterUserId)
+    }
+    if (Number.isFinite(assignedToUserId) && assignedToUserId > 0) {
+      ruleWhere.push(`spr.assigned_to_user_id = ?`)
+      ruleParams.push(assignedToUserId)
+    }
+    if (selectedCultureId > 0) {
+      ruleWhere.push(`EXISTS (SELECT 1 FROM culture_categories cc WHERE cc.culture_id = ? AND cc.category_id = r.category_id)`)
+      ruleParams.push(selectedCultureId)
+    }
+    if (selectedCategoryId > 0) {
+      ruleWhere.push(`r.category_id = ?`)
+      ruleParams.push(selectedCategoryId)
+    }
+    const ruleWhereSql = ruleWhere.length ? `WHERE ${ruleWhere.join(' AND ')}` : ''
+    const [ruleRows] = await db.query(
+      `SELECT DISTINCT r.id, r.title, r.slug
+         FROM space_publication_reports spr
+         JOIN rules r ON r.id = spr.rule_id
+         JOIN spaces s ON s.id = spr.space_id
+       ${ruleWhereSql}
+        ORDER BY r.title, r.id
+        LIMIT 2000`,
+      ruleParams
+    )
+    const availableRules = (ruleRows as any[])
+      .map((row) => ({ id: Number(row.id), title: String(row.title || '').trim(), slug: String(row.slug || '').trim() }))
+      .filter((row) => Number.isFinite(row.id) && row.id > 0)
+    if (Number.isFinite(ruleId) && ruleId > 0 && !availableRules.some((row) => row.id === ruleId)) {
+      const [selectedRuleRows] = await db.query(
+        `SELECT id, title, slug FROM rules WHERE id = ? LIMIT 1`,
+        [ruleId]
+      )
+      const selectedRule = (selectedRuleRows as any[])[0]
+      if (selectedRule) {
+        availableRules.push({
+          id: Number(selectedRule.id),
+          title: String(selectedRule.title || '').trim() || `Rule #${ruleId}`,
+          slug: String(selectedRule.slug || '').trim(),
+        })
+      } else {
+        availableRules.push({ id: ruleId, title: `Rule #${ruleId}`, slug: '' })
+      }
+    }
+    const selectedRuleId =
+      Number.isFinite(ruleId) && ruleId > 0 && availableRules.some((row) => row.id === ruleId)
+        ? ruleId
+        : 0
     const [assigneeRows] = await db.query(
       `SELECT DISTINCT u.id, u.display_name, u.email
          FROM user_roles ur
@@ -3836,13 +3955,16 @@ pagesRouter.get('/admin/reports', requireGlobalModerationPage, async (req: any, 
     if (Number.isFinite(reporterUserId) && reporterUserId > 0 && !reporterById.has(reporterUserId)) {
       reporterById.set(reporterUserId, { id: reporterUserId, label: `User #${reporterUserId}` })
     }
+    const listHrefBase = `/admin/reports?status=${encodeURIComponent(status)}&space_type=${encodeURIComponent(spaceType)}&space_id=${encodeURIComponent(selectedSpaceId > 0 ? String(selectedSpaceId) : '')}&culture_id=${encodeURIComponent(selectedCultureId > 0 ? String(selectedCultureId) : '')}&category_id=${encodeURIComponent(selectedCategoryId > 0 ? String(selectedCategoryId) : '')}&rule_id=${encodeURIComponent(selectedRuleId > 0 ? String(selectedRuleId) : '')}&reporter_user_id=${encodeURIComponent(reporterUserId > 0 ? String(reporterUserId) : '')}&assigned_to_user_id=${encodeURIComponent(assignedToUserId > 0 ? String(assignedToUserId) : '')}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&limit=${encodeURIComponent(String(limit))}`
 
     const list = await reportsSvc.listReportsForAdmin(userId, {
       status: ['open', 'in_review', 'resolved', 'dismissed'].includes(status) ? (status as any) : null,
       scope: null,
       spaceType: spaceType || null,
       spaceId: Number.isFinite(selectedSpaceId) && selectedSpaceId > 0 ? selectedSpaceId : null,
-      ruleId: Number.isFinite(ruleId) && ruleId > 0 ? ruleId : null,
+      cultureId: Number.isFinite(selectedCultureId) && selectedCultureId > 0 && selectedCategoryId <= 0 && selectedRuleId <= 0 ? selectedCultureId : null,
+      categoryId: Number.isFinite(selectedCategoryId) && selectedCategoryId > 0 && selectedRuleId <= 0 ? selectedCategoryId : null,
+      ruleId: Number.isFinite(selectedRuleId) && selectedRuleId > 0 ? selectedRuleId : null,
       reporterUserId: Number.isFinite(reporterUserId) && reporterUserId > 0 ? reporterUserId : null,
       assignedToUserId: Number.isFinite(assignedToUserId) && assignedToUserId > 0 ? assignedToUserId : null,
       from: from || null,
@@ -3881,7 +4003,25 @@ pagesRouter.get('/admin/reports', requireGlobalModerationPage, async (req: any, 
       spaceSelectOptions += `<option value="${sp.id}"${selectedAttr}>${escapeHtml(label)}</option>`
     }
     body += `<label>${escapeHtml(spaceSelectLabel)}<select name="space_id"${spaceType ? ' onchange="this.form.submit()"' : ' disabled'}>${spaceSelectOptions}</select></label>`
-    body += `<label>Rule ID<input type="number" name="rule_id" min="1" value="${escapeHtml(ruleId > 0 ? String(ruleId) : '')}" /></label>`
+    let cultureSelectOptions = `<option value=""${selectedCultureId <= 0 ? ' selected' : ''}>All Cultures</option>`
+    for (const c of availableCultures) {
+      const selectedAttr = selectedCultureId === c.id ? ' selected' : ''
+      cultureSelectOptions += `<option value="${c.id}"${selectedAttr}>${escapeHtml(c.name)}</option>`
+    }
+    body += `<label>Culture<select name="culture_id" onchange="this.form.submit()">${cultureSelectOptions}</select></label>`
+    let categorySelectOptions = `<option value=""${selectedCategoryId <= 0 ? ' selected' : ''}>All Categories</option>`
+    for (const c of availableCategories) {
+      const selectedAttr = selectedCategoryId === c.id ? ' selected' : ''
+      categorySelectOptions += `<option value="${c.id}"${selectedAttr}>${escapeHtml(c.name)}</option>`
+    }
+    body += `<label>Category<select name="category_id" onchange="this.form.submit()">${categorySelectOptions}</select></label>`
+    let ruleSelectOptions = `<option value=""${selectedRuleId <= 0 ? ' selected' : ''}>All Rules</option>`
+    for (const r of availableRules) {
+      const selectedAttr = selectedRuleId === r.id ? ' selected' : ''
+      const ruleLabel = `${r.title}${r.slug ? ` (${r.slug})` : ''}`
+      ruleSelectOptions += `<option value="${r.id}"${selectedAttr}>${escapeHtml(ruleLabel)}</option>`
+    }
+    body += `<label>Rule<select name="rule_id" onchange="this.form.submit()">${ruleSelectOptions}</select></label>`
     const reporterFilterOptions = (() => {
       const rows = Array.from(reporterById.values()).sort((a, b) => a.label.localeCompare(b.label))
       let html = `<option value=""${reporterUserId > 0 ? '' : ' selected'}>All</option>`

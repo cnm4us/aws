@@ -369,6 +369,8 @@ export type ReportListFilters = {
   scope?: ReportScope | null
   spaceType?: 'personal' | 'group' | 'channel' | null
   spaceId?: number | null
+  cultureId?: number | null
+  categoryId?: number | null
   ruleId?: number | null
   reporterUserId?: number | null
   assignedToUserId?: number | null
@@ -386,6 +388,11 @@ export async function listReportsForAdmin(filters: ReportListFilters, db?: DbLik
   if (filters.scope) { where.push(`spr.rule_scope_at_submit = ?`); params.push(filters.scope) }
   if (filters.spaceType) { where.push(`s.type = ?`); params.push(filters.spaceType) }
   if (filters.spaceId != null) { where.push(`spr.space_id = ?`); params.push(filters.spaceId) }
+  if (filters.cultureId != null) {
+    where.push(`EXISTS (SELECT 1 FROM culture_categories cc WHERE cc.culture_id = ? AND cc.category_id = r.category_id)`)
+    params.push(filters.cultureId)
+  }
+  if (filters.categoryId != null) { where.push(`r.category_id = ?`); params.push(filters.categoryId) }
   if (filters.ruleId != null) { where.push(`spr.rule_id = ?`); params.push(filters.ruleId) }
   if (filters.reporterUserId != null) { where.push(`spr.reporter_user_id = ?`); params.push(filters.reporterUserId) }
   if (filters.assignedToUserId != null) { where.push(`spr.assigned_to_user_id = ?`); params.push(filters.assignedToUserId) }
