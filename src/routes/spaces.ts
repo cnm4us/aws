@@ -1,8 +1,11 @@
 import { Router } from 'express';
+import { z } from 'zod'
 import { requireAuth } from '../middleware/auth';
 import * as feedsSvc from '../features/feeds/service'
 import * as followsSvc from '../features/follows/service'
 import * as spacesSvc from '../features/spaces/service'
+import * as reportsSvc from '../features/reports/service'
+import { isResolvedResolutionCode } from '../features/reports/resolution-codes'
 import { DomainError } from '../core/errors'
 import { getPool } from '../db'
 import { can, resolveChecker } from '../security/permissions'
@@ -194,6 +197,104 @@ spacesRouter.get('/api/space/review/channels', requireAuth, async (req, res, nex
     const userId = Number(req.user!.id)
     const items = await listReviewableSpaces(userId, 'channel')
     res.json({ items })
+  } catch (err: any) { next(err) }
+})
+
+const moderationReportsListSchema = z.object({
+  space_id: z.coerce.number().int().positive(),
+  status: z.enum(['open', 'in_review', 'resolved', 'dismissed']).optional(),
+  scope: z.enum(['global', 'space_culture', 'unknown']).optional(),
+  rule_id: z.coerce.number().int().positive().optional(),
+  reporter_user_id: z.coerce.number().int().positive().optional(),
+  assigned_to_user_id: z.coerce.number().int().positive().optional(),
+  from: z.string().trim().min(1).max(32).optional(),
+  to: z.string().trim().min(1).max(32).optional(),
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+  cursor: z.coerce.number().int().positive().optional(),
+})
+
+spacesRouter.get('/api/space/moderation/reports', requireAuth, async (req, res, next) => {
+  try {
+    const parsed = moderationReportsListSchema.safeParse(req.query || {})
+    if (!parsed.success) return res.status(400).json({ error: 'invalid_query', detail: parsed.error.flatten() })
+    const currentUserId = Number(req.user!.id)
+    const data = await reportsSvc.listReportsForSpaceModerator(currentUserId, parsed.data.space_id, {
+      status: parsed.data.status ?? null,
+      scope: parsed.data.scope ?? null,
+      ruleId: parsed.data.rule_id ?? null,
+      reporterUserId: parsed.data.reporter_user_id ?? null,
+      assignedToUserId: parsed.data.assigned_to_user_id ?? null,
+      from: parsed.data.from ?? null,
+      to: parsed.data.to ?? null,
+      limit: parsed.data.limit ?? 50,
+      cursorId: parsed.data.cursor ?? null,
+    })
+    res.json(data)
+  } catch (err: any) { next(err) }
+})
+
+spacesRouter.get('/api/space/moderation/reports/:id', requireAuth, async (req, res, next) => {
+  try {
+    const reportId = Number(req.params.id)
+    if (!Number.isFinite(reportId) || reportId <= 0) return res.status(400).json({ error: 'bad_report_id' })
+    const expectedSpaceIdRaw = Number(req.query?.space_id || 0)
+    const expectedSpaceId = Number.isFinite(expectedSpaceIdRaw) && expectedSpaceIdRaw > 0 ? expectedSpaceIdRaw : null
+    const currentUserId = Number(req.user!.id)
+    const data = await reportsSvc.getReportDetailForSpaceModerator(currentUserId, reportId, expectedSpaceId)
+    res.json(data)
+  } catch (err: any) { next(err) }
+})
+
+const moderationReportStatusSchema = z.object({
+  space_id: z.coerce.number().int().positive().optional(),
+  status: z.enum(['open', 'in_review', 'resolved', 'dismissed']),
+  note: z.string().trim().max(500).optional(),
+})
+
+spacesRouter.post('/api/space/moderation/reports/:id/status', requireAuth, async (req, res, next) => {
+  try {
+    const reportId = Number(req.params.id)
+    if (!Number.isFinite(reportId) || reportId <= 0) return res.status(400).json({ error: 'bad_report_id' })
+    const parsed = moderationReportStatusSchema.safeParse(req.body || {})
+    if (!parsed.success) return res.status(400).json({ error: 'invalid_body', detail: parsed.error.flatten() })
+    const currentUserId = Number(req.user!.id)
+    const data = await reportsSvc.setReportStatusForSpaceModerator({
+      reportId,
+      actorUserId: currentUserId,
+      status: parsed.data.status,
+      note: parsed.data.note ?? null,
+      spaceId: parsed.data.space_id ?? null,
+    })
+    res.json(data)
+  } catch (err: any) { next(err) }
+})
+
+const moderationReportResolveSchema = z.object({
+  space_id: z.coerce.number().int().positive().optional(),
+  resolution_code: z
+    .string()
+    .trim()
+    .min(1)
+    .max(64)
+    .refine((value) => isResolvedResolutionCode(value), { message: 'invalid_resolution_code' }),
+  resolution_note: z.string().trim().max(500).optional(),
+})
+
+spacesRouter.post('/api/space/moderation/reports/:id/resolve', requireAuth, async (req, res, next) => {
+  try {
+    const reportId = Number(req.params.id)
+    if (!Number.isFinite(reportId) || reportId <= 0) return res.status(400).json({ error: 'bad_report_id' })
+    const parsed = moderationReportResolveSchema.safeParse(req.body || {})
+    if (!parsed.success) return res.status(400).json({ error: 'invalid_body', detail: parsed.error.flatten() })
+    const currentUserId = Number(req.user!.id)
+    const data = await reportsSvc.resolveReportForSpaceModerator({
+      reportId,
+      actorUserId: currentUserId,
+      resolutionCode: parsed.data.resolution_code,
+      resolutionNote: parsed.data.resolution_note ?? null,
+      spaceId: parsed.data.space_id ?? null,
+    })
+    res.json(data)
   } catch (err: any) { next(err) }
 })
 

@@ -24,6 +24,7 @@ import { adminMessageRulesetsRouter } from './routes/admin-message-rulesets';
 import { adminMessageJourneysRouter } from './routes/admin-message-journeys';
 import { adminMessageAnalyticsRouter } from './routes/admin-message-analytics';
 import { adminUserFacingRulesRouter } from './routes/admin-user-facing-rules';
+import { adminReportsRouter } from './routes/admin-reports';
 import { feedMessagesRouter } from './routes/feed-messages';
 import { feedActivityRouter } from './routes/feed-activity';
 import { adminFeedAnalyticsRouter } from './routes/admin-feed-analytics';
@@ -101,6 +102,7 @@ export function buildServer(): express.Application {
   app.use(adminMessageJourneysRouter);
   app.use(adminMessageAnalyticsRouter);
   app.use(adminUserFacingRulesRouter);
+  app.use(adminReportsRouter);
   app.use(adminFeedAnalyticsRouter);
   app.use(adminAnalyticsSinkRouter);
   app.use(debugBrowserRouter);

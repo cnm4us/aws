@@ -23,6 +23,12 @@ import * as messageRulesetsSvc from '../features/message-eligibility-rulesets/se
 import * as messageJourneysSvc from '../features/message-journeys/service'
 import * as messageAnalyticsSvc from '../features/message-analytics/service'
 import * as userFacingRulesSvc from '../features/user-facing-rules/service'
+import * as reportsSvc from '../features/reports/service'
+import {
+  ALL_RESOLUTION_CODES,
+  getResolutionTerminalStatus,
+  getResolutionCodeLabel,
+} from '../features/reports/resolution-codes'
 import * as feedActivitySvc from '../features/feed-activity/service'
 import * as paymentsSvc from '../features/payments/service'
 import { getAnalyticsSinkHealth } from '../features/analytics-sink/service'
@@ -168,6 +174,23 @@ async function requireAnySpaceModeratorPage(req: any, res: any, next: any) {
   } catch {
     const from = encodeURIComponent(req.originalUrl || '/');
     return res.redirect(`/forbidden?from=${from}`);
+  }
+}
+
+async function requireGlobalModerationPage(req: any, res: any, next: any) {
+  try {
+    const from = encodeURIComponent(req.originalUrl || '/')
+    if (!req.user || !req.session) return res.redirect(`/forbidden?from=${from}`)
+    const userId = Number(req.user.id)
+    const ok =
+      (await can(userId, PERM.VIDEO_DELETE_ANY)) ||
+      (await can(userId, PERM.FEED_MODERATE_GLOBAL)) ||
+      (await can(userId, PERM.FEED_PUBLISH_GLOBAL))
+    if (!ok) return res.redirect(`/forbidden?from=${from}`)
+    return next()
+  } catch {
+    const from = encodeURIComponent(req.originalUrl || '/')
+    return res.redirect(`/forbidden?from=${from}`)
   }
 }
 
@@ -766,6 +789,7 @@ type AdminNavKey =
   | 'message_ctas'
   | 'message_rulesets'
   | 'user_facing_rules'
+  | 'reports'
   | 'message_journeys'
   | 'journey_inspector'
   | 'payment_providers'
@@ -798,6 +822,7 @@ const ADMIN_NAV_ITEMS: Array<{ key: AdminNavKey; label: string; href: string }> 
   { key: 'message_ctas', label: 'Message CTAs', href: '/admin/message-ctas' },
   { key: 'message_rulesets', label: 'Message Rulesets', href: '/admin/message-rulesets' },
   { key: 'user_facing_rules', label: 'User-Facing Rules', href: '/admin/user-facing-rules' },
+  { key: 'reports', label: 'Reports', href: '/admin/reports' },
   { key: 'message_journeys', label: 'Message Journeys', href: '/admin/message-journeys' },
   { key: 'journey_inspector', label: 'Journey Inspector', href: '/admin/journey-inspector' },
   { key: 'payment_providers', label: 'Payment Providers', href: '/admin/payments/providers' },
@@ -3660,6 +3685,7 @@ pagesRouter.get('/admin', async (_req: any, res: any) => {
     { title: 'Message CTAs', href: '/admin/message-ctas', desc: 'Reusable CTA definitions (intent + executor + config) for in-feed messages' },
     { title: 'Message Rulesets', href: '/admin/message-rulesets', desc: 'Reusable inclusion/exclusion eligibility rulesets for message targeting' },
     { title: 'User-Facing Rules', href: '/admin/user-facing-rules', desc: 'Manage simplified reporting reasons and map them to canonical moderation rules' },
+    { title: 'Reports', href: '/admin/reports', desc: 'Site-wide report inbox with status, assignment, and resolution workflow' },
     { title: 'Message Journeys', href: '/admin/message-journeys', desc: 'Ordered multi-step message journeys that sequence messages per user progression' },
     { title: 'Payment Providers', href: '/admin/payments/providers', desc: 'Configure PSP credentials and sandbox/live mode toggles' },
     { title: 'Payment Catalog', href: '/admin/payments/catalog', desc: 'Manage donation campaigns and subscription plans mapped to PSP products' },
@@ -3687,6 +3713,275 @@ pagesRouter.get('/admin', async (_req: any, res: any) => {
   const doc = renderAdminPage({ title: 'Admin', bodyHtml: body })
   res.set('Content-Type', 'text/html; charset=utf-8')
   res.send(doc)
+})
+
+pagesRouter.get('/admin/reports', requireGlobalModerationPage, async (req: any, res: any) => {
+  try {
+    const userId = Number(req.user?.id)
+    const cookies = parseCookies(req.headers.cookie)
+    const csrfToken = cookies['csrf'] || ''
+    const q = req.query || {}
+    const status = String(q.status || '').trim()
+    const scope = String(q.scope || '').trim()
+    const spaceId = Number(q.space_id || 0)
+    const ruleId = Number(q.rule_id || 0)
+    const reporterUserId = Number(q.reporter_user_id || 0)
+    const assignedToUserId = Number(q.assigned_to_user_id || 0)
+    const from = String(q.from || '').trim()
+    const to = String(q.to || '').trim()
+    const reportId = Number(q.report_id || 0)
+    const limit = Math.max(1, Math.min(200, Number(q.limit || 50)))
+
+    const list = await reportsSvc.listReportsForAdmin(userId, {
+      status: ['open', 'in_review', 'resolved', 'dismissed'].includes(status) ? (status as any) : null,
+      scope: ['global', 'space_culture', 'unknown'].includes(scope) ? (scope as any) : null,
+      spaceId: Number.isFinite(spaceId) && spaceId > 0 ? spaceId : null,
+      ruleId: Number.isFinite(ruleId) && ruleId > 0 ? ruleId : null,
+      reporterUserId: Number.isFinite(reporterUserId) && reporterUserId > 0 ? reporterUserId : null,
+      assignedToUserId: Number.isFinite(assignedToUserId) && assignedToUserId > 0 ? assignedToUserId : null,
+      from: from || null,
+      to: to || null,
+      limit,
+      cursorId: null,
+    })
+
+    let selected: { report: any; actions: any[] } | null = null
+    if (Number.isFinite(reportId) && reportId > 0) {
+      try {
+        selected = await reportsSvc.getReportDetailForAdmin(userId, reportId)
+      } catch {}
+    }
+
+    let body = `<h1>Reports</h1>`
+    body += `<div class="toolbar"><div><span class="pill">Inbox</span></div><div></div></div>`
+    body += `<form method="get" action="/admin/reports" class="section" style="margin:12px 0">`
+    body += `<div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap:10px; align-items:end">`
+    body += `<label>Status<select name="status"><option value=""${!status ? ' selected' : ''}>All</option><option value="open"${status === 'open' ? ' selected' : ''}>Open</option><option value="in_review"${status === 'in_review' ? ' selected' : ''}>In Review</option><option value="resolved"${status === 'resolved' ? ' selected' : ''}>Resolved</option><option value="dismissed"${status === 'dismissed' ? ' selected' : ''}>Dismissed</option></select></label>`
+    body += `<label>Scope<select name="scope"><option value=""${!scope ? ' selected' : ''}>All</option><option value="global"${scope === 'global' ? ' selected' : ''}>Global</option><option value="space_culture"${scope === 'space_culture' ? ' selected' : ''}>Space Culture</option><option value="unknown"${scope === 'unknown' ? ' selected' : ''}>Unknown</option></select></label>`
+    body += `<label>Space ID<input type="number" name="space_id" min="1" value="${escapeHtml(spaceId > 0 ? String(spaceId) : '')}" /></label>`
+    body += `<label>Rule ID<input type="number" name="rule_id" min="1" value="${escapeHtml(ruleId > 0 ? String(ruleId) : '')}" /></label>`
+    body += `<label>Reporter ID<input type="number" name="reporter_user_id" min="1" value="${escapeHtml(reporterUserId > 0 ? String(reporterUserId) : '')}" /></label>`
+    body += `<label>Assignee ID<input type="number" name="assigned_to_user_id" min="1" value="${escapeHtml(assignedToUserId > 0 ? String(assignedToUserId) : '')}" /></label>`
+    body += `<label>From<input type="date" name="from" value="${escapeHtml(from)}" /></label>`
+    body += `<label>To<input type="date" name="to" value="${escapeHtml(to)}" /></label>`
+    body += `<label>Limit<input type="number" name="limit" min="1" max="200" value="${escapeHtml(String(limit))}" /></label>`
+    body += `<div style="display:flex; gap:8px"><button class="btn" type="submit">Filter</button><a class="btn" href="/admin/reports">Reset</a></div>`
+    body += `</div></form>`
+
+    body += `<div class="section"><div class="section-title">Report Rows</div>`
+    if (!list.items.length) {
+      body += `<div class="field-hint">No reports found for current filters.</div>`
+    } else {
+      body += `<div style="overflow:auto"><table><thead><tr><th>ID</th><th>Status</th><th>Scope</th><th>Space</th><th>Reason Snapshot</th><th>Rule</th><th>Reporter</th><th>Assignee</th><th>Created</th><th>Actions</th></tr></thead><tbody>`
+      for (const row of list.items) {
+        const inspectHref = `/admin/reports?status=${encodeURIComponent(status)}&scope=${encodeURIComponent(scope)}&space_id=${encodeURIComponent(spaceId > 0 ? String(spaceId) : '')}&rule_id=${encodeURIComponent(ruleId > 0 ? String(ruleId) : '')}&reporter_user_id=${encodeURIComponent(reporterUserId > 0 ? String(reporterUserId) : '')}&assigned_to_user_id=${encodeURIComponent(assignedToUserId > 0 ? String(assignedToUserId) : '')}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&limit=${encodeURIComponent(String(limit))}&report_id=${encodeURIComponent(String(row.id))}`
+        const reasonText = row.user_facing_rule_label_at_submit
+          ? `${String(row.user_facing_group_label_at_submit || 'Reason')} / ${String(row.user_facing_rule_label_at_submit)}`
+          : '-'
+        const spaceText = `${String(row.space_name || row.space_slug || '-')}${row.space_id ? ` (#${row.space_id})` : ''}`
+        const reporterText = `${String(row.reporter_display_name || row.reporter_email || '-')}${row.reporter_user_id ? ` (#${row.reporter_user_id})` : ''}`
+        const assigneeText = row.assigned_to_user_id
+          ? `${String(row.assigned_to_display_name || row.assigned_to_email || '-')}${` (#${row.assigned_to_user_id})`}`
+          : '-'
+        body += `<tr${Number(row.id) === reportId ? ' style="background:rgba(255,255,255,0.06)"' : ''}>`
+        body += `<td>#${Number(row.id)}</td>`
+        body += `<td>${escapeHtml(String(row.status || 'open'))}</td>`
+        body += `<td>${escapeHtml(String(row.rule_scope_at_submit || 'unknown'))}</td>`
+        body += `<td>${escapeHtml(spaceText)}</td>`
+        body += `<td>${escapeHtml(reasonText)}</td>`
+        body += `<td>${escapeHtml(`${String(row.rule_title || '-')}${row.rule_id ? ` (#${row.rule_id})` : ''}`)}</td>`
+        body += `<td>${escapeHtml(reporterText)}</td>`
+        body += `<td>${escapeHtml(assigneeText)}</td>`
+        body += `<td>${escapeHtml(String(row.created_at || ''))}</td>`
+        body += `<td><a class="btn" href="${inspectHref}">Inspect</a></td>`
+        body += `</tr>`
+      }
+      body += `</tbody></table></div>`
+    }
+    body += `</div>`
+
+    if (selected?.report) {
+      const rpt = selected.report
+      body += `<div class="section"><div class="section-title">Selected Report #${Number(rpt.id)}</div>`
+      body += `<div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px,1fr)); gap:10px">`
+      body += `<div><div class="field-hint">Status</div><div>${escapeHtml(String(rpt.status || '-'))}</div></div>`
+      body += `<div><div class="field-hint">Scope</div><div>${escapeHtml(String(rpt.rule_scope_at_submit || '-'))}</div></div>`
+      body += `<div><div class="field-hint">Space</div><div>${escapeHtml(String(rpt.space_name || rpt.space_slug || '-'))} (#${Number(rpt.space_id || 0)})</div></div>`
+      body += `<div><div class="field-hint">Rule</div><div>${escapeHtml(String(rpt.rule_title || '-'))} (#${Number(rpt.rule_id || 0)})</div></div>`
+      body += `<div><div class="field-hint">Reporter</div><div>${escapeHtml(String(rpt.reporter_display_name || rpt.reporter_email || '-'))} (#${Number(rpt.reporter_user_id || 0)})</div></div>`
+      body += `<div><div class="field-hint">Assignee</div><div>${escapeHtml(String(rpt.assigned_to_display_name || rpt.assigned_to_email || '-'))}${rpt.assigned_to_user_id ? ` (#${Number(rpt.assigned_to_user_id)})` : ''}</div></div>`
+      const resolutionLabel = getResolutionCodeLabel(String(rpt.resolution_code || '').trim() || null)
+      const resolutionDisplay = rpt.resolution_code
+        ? `${resolutionLabel || String(rpt.resolution_code)} (${String(rpt.resolution_code)})`
+        : '-'
+      body += `<div><div class="field-hint">Resolution</div><div>${escapeHtml(resolutionDisplay)}</div></div>`
+      body += `<div><div class="field-hint">Created</div><div>${escapeHtml(String(rpt.created_at || ''))}</div></div>`
+      body += `</div>`
+
+      const currentStatus = String(rpt.status || 'open')
+      const currentAssigneeId = Number(rpt.assigned_to_user_id || 0) > 0 ? Number(rpt.assigned_to_user_id) : null
+      const isAssignedToOtherModerator = Number.isFinite(userId) && currentAssigneeId != null && currentAssigneeId !== userId
+      const selectedDecisionCode = ALL_RESOLUTION_CODES.some((it) => it.code === String(rpt.resolution_code || ''))
+        ? String(rpt.resolution_code || '')
+        : ''
+      const decisionNoteValue = String(rpt.resolution_note || '')
+      let decisionOptions = `<option value=""${!selectedDecisionCode ? ' selected' : ''}>No decision</option>`
+      for (const opt of ALL_RESOLUTION_CODES) {
+        decisionOptions += `<option value="${escapeHtml(opt.code)}"${selectedDecisionCode === opt.code ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
+      }
+      body += `<form method="post" action="/admin/reports/${Number(rpt.id)}/decision" class="section" style="margin-top:12px">`
+      body += `<div class="section-title">Decision Workflow</div>`
+      if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
+      if (isAssignedToOtherModerator) {
+        body += `<div class="field-hint" style="margin-bottom:10px">Assigned to another moderator. To continue, assign this report to your user ID (#${escapeHtml(String(userId))}) and submit.</div>`
+      }
+      let statusOptionsHtml = ''
+      if (currentStatus === 'open' || currentStatus === 'in_review') {
+        statusOptionsHtml += `<option value="open"${currentStatus === 'open' ? ' selected' : ''}>open</option>`
+        statusOptionsHtml += `<option value="in_review"${currentStatus === 'in_review' ? ' selected' : ''}>in_review</option>`
+      } else {
+        statusOptionsHtml += `<option value="" selected>no change (${escapeHtml(currentStatus)})</option>`
+        statusOptionsHtml += `<option value="open">open</option>`
+        statusOptionsHtml += `<option value="in_review">in_review</option>`
+      }
+      body += `<div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px,1fr)); gap:10px">`
+      body += `<label>Status<select name="status"${isAssignedToOtherModerator ? ' disabled' : ''}>${statusOptionsHtml}</select></label>`
+      body += `<label>Assignee User ID (blank = auto-self)<input type="number" name="assigned_to_user_id" min="1" value="${currentAssigneeId ? escapeHtml(String(currentAssigneeId)) : ''}" /></label>`
+      body += `<label>Decision<select name="resolution_code"${isAssignedToOtherModerator ? ' disabled' : ''}>${decisionOptions}</select></label>`
+      body += `<label>Decision Note<input type="text" name="decision_note" maxlength="500" value="${escapeHtml(decisionNoteValue)}"${isAssignedToOtherModerator ? ' disabled' : ''} /></label>`
+      body += `</div>`
+      body += `<div class="field-hint" style="margin-top:8px">Choose status for active review flow. Choose a decision code to finalize as resolved/dismissed.</div>`
+      body += `<div style="display:flex; gap:8px; margin-top:10px"><button class="btn" type="submit">${isAssignedToOtherModerator ? 'Assign to Me' : 'Apply'}</button></div>`
+      body += `</form>`
+
+      body += `<div class="section" style="margin-top:12px"><div class="section-title">Action Timeline</div>`
+      if (!selected.actions.length) {
+        body += `<div class="field-hint">No actions yet.</div>`
+      } else {
+        body += `<div style="overflow:auto"><table><thead><tr><th>ID</th><th>Action</th><th>From</th><th>To</th><th>Actor</th><th>Note</th><th>Created</th></tr></thead><tbody>`
+        for (const a of selected.actions) {
+          const actor = `${String(a.actor_display_name || a.actor_email || '-')}${a.actor_user_id ? ` (#${Number(a.actor_user_id)})` : ''}`
+          body += `<tr>`
+          body += `<td>#${Number(a.id)}</td>`
+          body += `<td>${escapeHtml(String(a.action_type || '-'))}</td>`
+          body += `<td>${escapeHtml(String(a.from_status || '-'))}</td>`
+          body += `<td>${escapeHtml(String(a.to_status || '-'))}</td>`
+          body += `<td>${escapeHtml(actor)}</td>`
+          body += `<td>${escapeHtml(String(a.note || '-'))}</td>`
+          body += `<td>${escapeHtml(String(a.created_at || ''))}</td>`
+          body += `</tr>`
+        }
+        body += `</tbody></table></div>`
+      }
+      body += `</div></div>`
+    }
+
+    const doc = renderAdminPage({ title: 'Reports', bodyHtml: body, active: 'reports' })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.send(doc)
+  } catch (err: any) {
+    logError(req.log || pagesLogger, err, 'admin reports page failed', { path: req.path })
+    const doc = renderAdminPage({ title: 'Reports', bodyHtml: `<h1>Reports</h1><div class="section"><div class="field-hint">${escapeHtml(String(err?.message || 'Failed to load reports'))}</div></div>`, active: 'reports' })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.status(err?.status || 500).send(doc)
+  }
+})
+
+pagesRouter.post('/admin/reports/:id/decision', requireGlobalModerationPage, async (req: any, res: any) => {
+  const reportId = Number(req.params.id)
+  if (!Number.isFinite(reportId) || reportId <= 0) return res.redirect('/admin/reports?error=bad_report_id')
+  try {
+    const actorUserId = Number(req.user.id)
+    const selected = await reportsSvc.getReportDetailForAdmin(actorUserId, reportId)
+    const report = selected.report
+    if (!report) return res.redirect('/admin/reports?error=report_not_found')
+
+    const currentStatus = String(report.status || 'open')
+    const currentAssignedTo = Number(report.assigned_to_user_id || 0) > 0 ? Number(report.assigned_to_user_id) : null
+
+    const rawAssigned = String(req.body?.assigned_to_user_id || '').trim()
+    const requestedAssignedTo = rawAssigned ? Number(rawAssigned) : null
+    if (rawAssigned && (!Number.isFinite(requestedAssignedTo as number) || Number(requestedAssignedTo) <= 0)) {
+      return res.redirect(`/admin/reports?report_id=${reportId}&error=bad_assigned_to_user_id`)
+    }
+
+    const statusRaw = String(req.body?.status || '').trim()
+    const requestedStatus = statusRaw ? statusRaw : null
+    if (requestedStatus && !['open', 'in_review'].includes(requestedStatus)) {
+      return res.redirect(`/admin/reports?report_id=${reportId}&error=bad_status`)
+    }
+
+    const resolutionCode = String(req.body?.resolution_code || '').trim()
+    const terminalStatus = getResolutionTerminalStatus(resolutionCode || null)
+    if (resolutionCode && !terminalStatus) {
+      return res.redirect(`/admin/reports?report_id=${reportId}&error=invalid_resolution_code`)
+    }
+
+    const decisionNote = String(req.body?.decision_note || '').trim() || null
+
+    if (currentAssignedTo != null && currentAssignedTo !== actorUserId) {
+      if (requestedAssignedTo !== actorUserId) {
+        return res.redirect(`/admin/reports?report_id=${reportId}&error=report_assigned_to_other_user`)
+      }
+      await reportsSvc.assignReportForAdmin({
+        reportId,
+        actorUserId,
+        assignedToUserId: actorUserId,
+        note: decisionNote,
+      })
+      return res.redirect(`/admin/reports?report_id=${reportId}&notice=${encodeURIComponent('Report assigned to you.')}`)
+    }
+
+    const effectiveAssignedTo = requestedAssignedTo == null ? actorUserId : requestedAssignedTo
+    let changed = false
+
+    if (effectiveAssignedTo !== currentAssignedTo) {
+      await reportsSvc.assignReportForAdmin({
+        reportId,
+        actorUserId,
+        assignedToUserId: effectiveAssignedTo,
+        note: decisionNote,
+      })
+      changed = true
+    }
+
+    if (terminalStatus === 'resolved') {
+      await reportsSvc.resolveReportForAdmin({
+        reportId,
+        actorUserId,
+        resolutionCode,
+        resolutionNote: decisionNote,
+      })
+      changed = true
+    } else if (terminalStatus === 'dismissed') {
+      await reportsSvc.dismissReportForAdmin({
+        reportId,
+        actorUserId,
+        resolutionCode,
+        resolutionNote: decisionNote,
+      })
+      changed = true
+    } else {
+      const nextStatus = requestedStatus || currentStatus
+      if (nextStatus !== currentStatus) {
+        await reportsSvc.setReportStatusForAdmin({
+          reportId,
+          actorUserId,
+          status: nextStatus as any,
+          note: decisionNote,
+        })
+        changed = true
+      }
+    }
+
+    if (!changed) {
+      return res.redirect(`/admin/reports?report_id=${reportId}&notice=${encodeURIComponent('No changes submitted.')}`)
+    }
+
+    return res.redirect(`/admin/reports?report_id=${reportId}&notice=${encodeURIComponent('Report updated.')}`)
+  } catch (err: any) {
+    return res.redirect(`/admin/reports?report_id=${reportId}&error=${encodeURIComponent(String(err?.message || 'Failed to update report'))}`)
+  }
 })
 
 function toDateTimeLocalValue(raw: any): string {

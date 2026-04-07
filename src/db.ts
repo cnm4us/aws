@@ -3673,7 +3673,32 @@ export async function ensureSchema(db: DB) {
   await db.query(`ALTER TABLE space_publication_reports ADD COLUMN IF NOT EXISTS user_facing_rule_label_at_submit VARCHAR(255) NULL`);
   await db.query(`ALTER TABLE space_publication_reports ADD COLUMN IF NOT EXISTS user_facing_group_key_at_submit VARCHAR(64) NULL`);
   await db.query(`ALTER TABLE space_publication_reports ADD COLUMN IF NOT EXISTS user_facing_group_label_at_submit VARCHAR(128) NULL`);
+  // Report triage lifecycle fields (plan_158B)
+  await db.query(
+    `ALTER TABLE space_publication_reports ADD COLUMN IF NOT EXISTS status ENUM('open','in_review','resolved','dismissed') NOT NULL DEFAULT 'open'`
+  );
+  await db.query(`ALTER TABLE space_publication_reports ADD COLUMN IF NOT EXISTS assigned_to_user_id BIGINT UNSIGNED NULL`);
+  await db.query(`ALTER TABLE space_publication_reports ADD COLUMN IF NOT EXISTS last_action_at DATETIME NULL`);
+  await db.query(`ALTER TABLE space_publication_reports ADD COLUMN IF NOT EXISTS resolved_by_user_id BIGINT UNSIGNED NULL`);
+  await db.query(`ALTER TABLE space_publication_reports ADD COLUMN IF NOT EXISTS resolved_at DATETIME NULL`);
+  await db.query(`ALTER TABLE space_publication_reports ADD COLUMN IF NOT EXISTS resolution_code VARCHAR(64) NULL`);
+  await db.query(`ALTER TABLE space_publication_reports ADD COLUMN IF NOT EXISTS resolution_note VARCHAR(500) NULL`);
+  await db.query(
+    `ALTER TABLE space_publication_reports ADD COLUMN IF NOT EXISTS rule_scope_at_submit ENUM('global','space_culture','unknown') NOT NULL DEFAULT 'unknown'`
+  );
+  // One-time backfill for pre-plan_158 rows.
+  try {
+    await db.query(
+      `UPDATE space_publication_reports
+          SET status = 'open'
+        WHERE status IS NULL OR status = ''`
+    );
+  } catch {}
   try { await db.query(`CREATE INDEX IF NOT EXISTS idx_space_publication_reports_user_facing_rule_created ON space_publication_reports (user_facing_rule_id, created_at)`); } catch {}
+  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_space_publication_reports_status_last_action ON space_publication_reports (status, last_action_at, id)`); } catch {}
+  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_space_publication_reports_scope_status_created ON space_publication_reports (rule_scope_at_submit, status, created_at, id)`); } catch {}
+  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_space_publication_reports_space_status_created ON space_publication_reports (space_id, status, created_at, id)`); } catch {}
+  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_space_publication_reports_rule_created_id ON space_publication_reports (rule_id, created_at, id)`); } catch {}
 
   // Best-effort foreign keys for publication reports
   try {
@@ -3707,8 +3732,67 @@ export async function ensureSchema(db: DB) {
   try {
     await db.query(`
       ALTER TABLE space_publication_reports
+      ADD CONSTRAINT fk_space_publication_reports_assigned_to
+      FOREIGN KEY (assigned_to_user_id) REFERENCES users(id)
+    `);
+  } catch {}
+  try {
+    await db.query(`
+      ALTER TABLE space_publication_reports
+      ADD CONSTRAINT fk_space_publication_reports_resolved_by
+      FOREIGN KEY (resolved_by_user_id) REFERENCES users(id)
+    `);
+  } catch {}
+  try {
+    await db.query(`
+      ALTER TABLE space_publication_reports
       ADD CONSTRAINT fk_space_publication_reports_rule
       FOREIGN KEY (rule_id) REFERENCES rules(id)
+    `);
+  } catch {}
+
+  // Immutable report-triage action log (plan_158B)
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS space_publication_report_actions (
+      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      report_id BIGINT UNSIGNED NOT NULL,
+      actor_user_id BIGINT UNSIGNED NOT NULL,
+      action_type VARCHAR(64) NOT NULL,
+      from_status VARCHAR(32) NULL,
+      to_status VARCHAR(32) NULL,
+      note VARCHAR(500) NULL,
+      detail_json JSON NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      KEY idx_spra_report_created (report_id, created_at, id),
+      KEY idx_spra_actor_created (actor_user_id, created_at, id),
+      KEY idx_spra_action_created (action_type, created_at, id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `);
+  await db.query(`ALTER TABLE space_publication_report_actions ADD COLUMN IF NOT EXISTS report_id BIGINT UNSIGNED NOT NULL`);
+  await db.query(`ALTER TABLE space_publication_report_actions ADD COLUMN IF NOT EXISTS actor_user_id BIGINT UNSIGNED NOT NULL`);
+  await db.query(`ALTER TABLE space_publication_report_actions ADD COLUMN IF NOT EXISTS action_type VARCHAR(64) NOT NULL`);
+  await db.query(`ALTER TABLE space_publication_report_actions ADD COLUMN IF NOT EXISTS from_status VARCHAR(32) NULL`);
+  await db.query(`ALTER TABLE space_publication_report_actions ADD COLUMN IF NOT EXISTS to_status VARCHAR(32) NULL`);
+  await db.query(`ALTER TABLE space_publication_report_actions ADD COLUMN IF NOT EXISTS note VARCHAR(500) NULL`);
+  await db.query(`ALTER TABLE space_publication_report_actions ADD COLUMN IF NOT EXISTS detail_json JSON NULL`);
+  await db.query(`ALTER TABLE space_publication_report_actions ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP`);
+  await db.query(`ALTER TABLE space_publication_report_actions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`);
+  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_spra_report_created ON space_publication_report_actions (report_id, created_at, id)`); } catch {}
+  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_spra_actor_created ON space_publication_report_actions (actor_user_id, created_at, id)`); } catch {}
+  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_spra_action_created ON space_publication_report_actions (action_type, created_at, id)`); } catch {}
+  try {
+    await db.query(`
+      ALTER TABLE space_publication_report_actions
+      ADD CONSTRAINT fk_spra_report
+      FOREIGN KEY (report_id) REFERENCES space_publication_reports(id)
+    `);
+  } catch {}
+  try {
+    await db.query(`
+      ALTER TABLE space_publication_report_actions
+      ADD CONSTRAINT fk_spra_actor
+      FOREIGN KEY (actor_user_id) REFERENCES users(id)
     `);
   } catch {}
   try {

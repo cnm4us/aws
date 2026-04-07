@@ -2,20 +2,26 @@ import { getPool } from '../../db'
 
 type DbLike = { query: (sql: string, params?: any[]) => Promise<any> }
 export type ReportingViewerState = 'anonymous' | 'authenticated'
+export type ReportStatus = 'open' | 'in_review' | 'resolved' | 'dismissed'
+export type ReportScope = 'global' | 'space_culture' | 'unknown'
 
 function visibilityFilterSql(viewerState: ReportingViewerState): { sql: string; params: string[] } {
   if (viewerState === 'authenticated') return { sql: `IN ('public','authenticated')`, params: [] }
   return { sql: `IN ('public')`, params: [] }
 }
 
-export async function getPublishedPublicationSummary(publicationId: number, db?: DbLike): Promise<{ id: number; space_id: number; production_id: number | null } | null> {
+export async function getPublishedPublicationSummary(
+  publicationId: number,
+  db?: DbLike
+): Promise<{ id: number; space_id: number; space_slug: string | null; production_id: number | null } | null> {
   const q = (db as any) || getPool()
   const [rows] = await q.query(
-    `SELECT id, space_id, production_id
-       FROM space_publications
-      WHERE id = ?
-        AND status = 'published'
-        AND published_at IS NOT NULL
+    `SELECT sp.id, sp.space_id, s.slug AS space_slug, sp.production_id
+       FROM space_publications sp
+       JOIN spaces s ON s.id = sp.space_id
+      WHERE sp.id = ?
+        AND sp.status = 'published'
+        AND sp.published_at IS NOT NULL
       LIMIT 1`,
     [publicationId]
   )
@@ -24,6 +30,7 @@ export async function getPublishedPublicationSummary(publicationId: number, db?:
   return {
     id: Number(row.id),
     space_id: Number(row.space_id),
+    space_slug: row.space_slug != null ? String(row.space_slug) : null,
     production_id: row.production_id != null ? Number(row.production_id) : null,
   }
 }
@@ -329,6 +336,7 @@ export async function insertSpacePublicationReport(input: {
   reporterUserId: number
   ruleId: number
   ruleVersionId: number | null
+  ruleScopeAtSubmit?: ReportScope | null
   userFacingRuleId?: number | null
   userFacingRuleLabelAtSubmit?: string | null
   userFacingGroupKeyAtSubmit?: string | null
@@ -337,8 +345,8 @@ export async function insertSpacePublicationReport(input: {
   const db = getPool()
   const [result] = await db.query(
     `INSERT INTO space_publication_reports
-      (space_publication_id, space_id, production_id, reporter_user_id, rule_id, rule_version_id, user_facing_rule_id, user_facing_rule_label_at_submit, user_facing_group_key_at_submit, user_facing_group_label_at_submit)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      (space_publication_id, space_id, production_id, reporter_user_id, rule_id, rule_version_id, rule_scope_at_submit, user_facing_rule_id, user_facing_rule_label_at_submit, user_facing_group_key_at_submit, user_facing_group_label_at_submit)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.spacePublicationId,
       input.spaceId,
@@ -346,6 +354,7 @@ export async function insertSpacePublicationReport(input: {
       input.reporterUserId,
       input.ruleId,
       input.ruleVersionId,
+      input.ruleScopeAtSubmit ?? 'unknown',
       input.userFacingRuleId ?? null,
       input.userFacingRuleLabelAtSubmit ?? null,
       input.userFacingGroupKeyAtSubmit ?? null,
@@ -353,4 +362,223 @@ export async function insertSpacePublicationReport(input: {
     ]
   )
   return Number((result as any).insertId)
+}
+
+export type ReportListFilters = {
+  status?: ReportStatus | null
+  scope?: ReportScope | null
+  spaceId?: number | null
+  ruleId?: number | null
+  reporterUserId?: number | null
+  assignedToUserId?: number | null
+  from?: string | null
+  to?: string | null
+  limit?: number
+  cursorId?: number | null
+}
+
+export async function listReportsForAdmin(filters: ReportListFilters, db?: DbLike): Promise<any[]> {
+  const q = (db as any) || getPool()
+  const where: string[] = []
+  const params: any[] = []
+  if (filters.status) { where.push(`spr.status = ?`); params.push(filters.status) }
+  if (filters.scope) { where.push(`spr.rule_scope_at_submit = ?`); params.push(filters.scope) }
+  if (filters.spaceId != null) { where.push(`spr.space_id = ?`); params.push(filters.spaceId) }
+  if (filters.ruleId != null) { where.push(`spr.rule_id = ?`); params.push(filters.ruleId) }
+  if (filters.reporterUserId != null) { where.push(`spr.reporter_user_id = ?`); params.push(filters.reporterUserId) }
+  if (filters.assignedToUserId != null) { where.push(`spr.assigned_to_user_id = ?`); params.push(filters.assignedToUserId) }
+  if (filters.from) { where.push(`spr.created_at >= ?`); params.push(filters.from) }
+  if (filters.to) { where.push(`spr.created_at < DATE_ADD(?, INTERVAL 1 DAY)`); params.push(filters.to) }
+  if (filters.cursorId != null) { where.push(`spr.id < ?`); params.push(filters.cursorId) }
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
+  const limit = Math.max(1, Math.min(200, Number(filters.limit || 50)))
+  const [rows] = await q.query(
+    `SELECT spr.id,
+            spr.space_publication_id,
+            spr.space_id,
+            s.type AS space_type,
+            s.slug AS space_slug,
+            s.name AS space_name,
+            spr.production_id,
+            spr.reporter_user_id,
+            ru.email AS reporter_email,
+            ru.display_name AS reporter_display_name,
+            spr.rule_id,
+            r.slug AS rule_slug,
+            r.title AS rule_title,
+            spr.status,
+            spr.rule_scope_at_submit,
+            spr.assigned_to_user_id,
+            au.email AS assigned_to_email,
+            au.display_name AS assigned_to_display_name,
+            spr.resolved_by_user_id,
+            rvu.email AS resolved_by_email,
+            rvu.display_name AS resolved_by_display_name,
+            spr.resolution_code,
+            spr.resolution_note,
+            spr.user_facing_rule_id,
+            spr.user_facing_rule_label_at_submit,
+            spr.user_facing_group_key_at_submit,
+            spr.user_facing_group_label_at_submit,
+            spr.created_at,
+            spr.last_action_at,
+            spr.resolved_at
+       FROM space_publication_reports spr
+       JOIN spaces s ON s.id = spr.space_id
+       JOIN users ru ON ru.id = spr.reporter_user_id
+       JOIN rules r ON r.id = spr.rule_id
+  LEFT JOIN users au ON au.id = spr.assigned_to_user_id
+  LEFT JOIN users rvu ON rvu.id = spr.resolved_by_user_id
+      ${whereSql}
+      ORDER BY spr.id DESC
+      LIMIT ${limit}`,
+    params
+  )
+  return rows as any[]
+}
+
+export async function getReportById(reportId: number, db?: DbLike): Promise<any | null> {
+  const q = (db as any) || getPool()
+  const [rows] = await q.query(
+    `SELECT spr.id,
+            spr.space_publication_id,
+            spr.space_id,
+            s.type AS space_type,
+            s.slug AS space_slug,
+            s.name AS space_name,
+            spr.production_id,
+            spr.reporter_user_id,
+            ru.email AS reporter_email,
+            ru.display_name AS reporter_display_name,
+            spr.rule_id,
+            r.slug AS rule_slug,
+            r.title AS rule_title,
+            spr.rule_version_id,
+            rv.version AS rule_version,
+            spr.status,
+            spr.rule_scope_at_submit,
+            spr.assigned_to_user_id,
+            au.email AS assigned_to_email,
+            au.display_name AS assigned_to_display_name,
+            spr.resolved_by_user_id,
+            rvu.email AS resolved_by_email,
+            rvu.display_name AS resolved_by_display_name,
+            spr.resolution_code,
+            spr.resolution_note,
+            spr.user_facing_rule_id,
+            spr.user_facing_rule_label_at_submit,
+            spr.user_facing_group_key_at_submit,
+            spr.user_facing_group_label_at_submit,
+            spr.created_at,
+            spr.last_action_at,
+            spr.resolved_at
+       FROM space_publication_reports spr
+       JOIN spaces s ON s.id = spr.space_id
+       JOIN users ru ON ru.id = spr.reporter_user_id
+       JOIN rules r ON r.id = spr.rule_id
+  LEFT JOIN rule_versions rv ON rv.id = spr.rule_version_id
+  LEFT JOIN users au ON au.id = spr.assigned_to_user_id
+  LEFT JOIN users rvu ON rvu.id = spr.resolved_by_user_id
+      WHERE spr.id = ?
+      LIMIT 1`,
+    [reportId]
+  )
+  return ((rows as any[])[0] || null) as any
+}
+
+export async function getReportByIdForUpdate(reportId: number, db: DbLike): Promise<any | null> {
+  const [rows] = await db.query(
+    `SELECT id,
+            space_id,
+            status,
+            assigned_to_user_id,
+            resolved_by_user_id,
+            resolved_at,
+            resolution_code,
+            resolution_note
+       FROM space_publication_reports
+      WHERE id = ?
+      LIMIT 1
+      FOR UPDATE`,
+    [reportId]
+  )
+  return ((rows as any[])[0] || null) as any
+}
+
+export async function listReportActions(reportId: number, db?: DbLike): Promise<any[]> {
+  const q = (db as any) || getPool()
+  const [rows] = await q.query(
+    `SELECT a.id,
+            a.report_id,
+            a.actor_user_id,
+            u.email AS actor_email,
+            u.display_name AS actor_display_name,
+            a.action_type,
+            a.from_status,
+            a.to_status,
+            a.note,
+            a.detail_json,
+            a.created_at
+       FROM space_publication_report_actions a
+       JOIN users u ON u.id = a.actor_user_id
+      WHERE a.report_id = ?
+      ORDER BY a.id DESC`,
+    [reportId]
+  )
+  return rows as any[]
+}
+
+export async function insertReportAction(input: {
+  reportId: number
+  actorUserId: number
+  actionType: string
+  fromStatus?: string | null
+  toStatus?: string | null
+  note?: string | null
+  detailJson?: any
+}, db: DbLike): Promise<number> {
+  const [result] = await db.query(
+    `INSERT INTO space_publication_report_actions
+      (report_id, actor_user_id, action_type, from_status, to_status, note, detail_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [
+      input.reportId,
+      input.actorUserId,
+      input.actionType,
+      input.fromStatus ?? null,
+      input.toStatus ?? null,
+      input.note ?? null,
+      input.detailJson != null ? JSON.stringify(input.detailJson) : null,
+    ]
+  )
+  return Number((result as any).insertId)
+}
+
+export async function updateReportLifecycle(input: {
+  reportId: number
+  status?: ReportStatus
+  assignedToUserId?: number | null
+  resolvedByUserId?: number | null
+  resolvedAt?: Date | null
+  resolutionCode?: string | null
+  resolutionNote?: string | null
+  touchLastActionAt?: boolean
+}, db: DbLike): Promise<void> {
+  const sets: string[] = []
+  const params: any[] = []
+  if (input.status !== undefined) { sets.push(`status = ?`); params.push(input.status) }
+  if (input.assignedToUserId !== undefined) { sets.push(`assigned_to_user_id = ?`); params.push(input.assignedToUserId) }
+  if (input.resolvedByUserId !== undefined) { sets.push(`resolved_by_user_id = ?`); params.push(input.resolvedByUserId) }
+  if (input.resolvedAt !== undefined) { sets.push(`resolved_at = ?`); params.push(input.resolvedAt) }
+  if (input.resolutionCode !== undefined) { sets.push(`resolution_code = ?`); params.push(input.resolutionCode) }
+  if (input.resolutionNote !== undefined) { sets.push(`resolution_note = ?`); params.push(input.resolutionNote) }
+  if (input.touchLastActionAt !== false) sets.push(`last_action_at = UTC_TIMESTAMP()`)
+  if (!sets.length) return
+  params.push(input.reportId)
+  await db.query(
+    `UPDATE space_publication_reports
+        SET ${sets.join(', ')}
+      WHERE id = ?`,
+    params
+  )
 }
