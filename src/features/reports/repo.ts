@@ -367,6 +367,7 @@ export async function insertSpacePublicationReport(input: {
 export type ReportListFilters = {
   status?: ReportStatus | null
   scope?: ReportScope | null
+  spaceType?: 'personal' | 'group' | 'channel' | null
   spaceId?: number | null
   ruleId?: number | null
   reporterUserId?: number | null
@@ -383,6 +384,7 @@ export async function listReportsForAdmin(filters: ReportListFilters, db?: DbLik
   const params: any[] = []
   if (filters.status) { where.push(`spr.status = ?`); params.push(filters.status) }
   if (filters.scope) { where.push(`spr.rule_scope_at_submit = ?`); params.push(filters.scope) }
+  if (filters.spaceType) { where.push(`s.type = ?`); params.push(filters.spaceType) }
   if (filters.spaceId != null) { where.push(`spr.space_id = ?`); params.push(filters.spaceId) }
   if (filters.ruleId != null) { where.push(`spr.rule_id = ?`); params.push(filters.ruleId) }
   if (filters.reporterUserId != null) { where.push(`spr.reporter_user_id = ?`); params.push(filters.reporterUserId) }

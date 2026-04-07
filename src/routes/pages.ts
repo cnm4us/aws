@@ -3727,7 +3727,11 @@ pagesRouter.get('/admin/reports', requireGlobalModerationPage, async (req: any, 
     const csrfToken = cookies['csrf'] || ''
     const q = req.query || {}
     const status = String(q.status || '').trim()
-    const scope = String(q.scope || '').trim()
+    const spaceTypeRaw = String(q.space_type || '').trim().toLowerCase()
+    const spaceType: 'group' | 'channel' | 'personal' | '' =
+      spaceTypeRaw === 'group' || spaceTypeRaw === 'channel' || spaceTypeRaw === 'personal'
+        ? (spaceTypeRaw as any)
+        : ''
     const notice = String(q.notice || '').trim()
     const errorText = String(q.error || '').trim()
     const spaceId = Number(q.space_id || 0)
@@ -3739,8 +3743,35 @@ pagesRouter.get('/admin/reports', requireGlobalModerationPage, async (req: any, 
     const reportId = Number(q.report_id || 0)
     const view = String(q.view || '').trim().toLowerCase()
     const limit = Math.max(1, Math.min(200, Number(q.limit || 50)))
-    const listHrefBase = `/admin/reports?status=${encodeURIComponent(status)}&scope=${encodeURIComponent(scope)}&space_id=${encodeURIComponent(spaceId > 0 ? String(spaceId) : '')}&rule_id=${encodeURIComponent(ruleId > 0 ? String(ruleId) : '')}&reporter_user_id=${encodeURIComponent(reporterUserId > 0 ? String(reporterUserId) : '')}&assigned_to_user_id=${encodeURIComponent(assignedToUserId > 0 ? String(assignedToUserId) : '')}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&limit=${encodeURIComponent(String(limit))}`
     const db = getPool()
+    const [spaceRows] = await db.query(
+      `SELECT id, type, name, slug
+         FROM spaces
+        WHERE type IN ('group','channel','personal')
+        ORDER BY type, name, id`
+    )
+    const spacesByType: Record<'group' | 'channel' | 'personal', Array<{ id: number; name: string; slug: string }>> = {
+      group: [],
+      channel: [],
+      personal: [],
+    }
+    for (const row of (spaceRows as any[])) {
+      const t = String(row.type || '').trim().toLowerCase()
+      if (t !== 'group' && t !== 'channel' && t !== 'personal') continue
+      const id = Number(row.id)
+      if (!Number.isFinite(id) || id <= 0) continue
+      spacesByType[t].push({
+        id,
+        name: String(row.name || '').trim() || String(row.slug || '').trim() || `Space #${id}`,
+        slug: String(row.slug || '').trim(),
+      })
+    }
+    const selectedSpaceList = spaceType ? spacesByType[spaceType] : []
+    const selectedSpaceId =
+      spaceType && Number.isFinite(spaceId) && spaceId > 0 && selectedSpaceList.some((row) => row.id === spaceId)
+        ? spaceId
+        : 0
+    const listHrefBase = `/admin/reports?status=${encodeURIComponent(status)}&space_type=${encodeURIComponent(spaceType)}&space_id=${encodeURIComponent(selectedSpaceId > 0 ? String(selectedSpaceId) : '')}&rule_id=${encodeURIComponent(ruleId > 0 ? String(ruleId) : '')}&reporter_user_id=${encodeURIComponent(reporterUserId > 0 ? String(reporterUserId) : '')}&assigned_to_user_id=${encodeURIComponent(assignedToUserId > 0 ? String(assignedToUserId) : '')}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&limit=${encodeURIComponent(String(limit))}`
     const [assigneeRows] = await db.query(
       `SELECT DISTINCT u.id, u.display_name, u.email
          FROM user_roles ur
@@ -3762,8 +3793,9 @@ pagesRouter.get('/admin/reports', requireGlobalModerationPage, async (req: any, 
 
     const list = await reportsSvc.listReportsForAdmin(userId, {
       status: ['open', 'in_review', 'resolved', 'dismissed'].includes(status) ? (status as any) : null,
-      scope: ['global', 'space_culture', 'unknown'].includes(scope) ? (scope as any) : null,
-      spaceId: Number.isFinite(spaceId) && spaceId > 0 ? spaceId : null,
+      scope: null,
+      spaceType: spaceType || null,
+      spaceId: Number.isFinite(selectedSpaceId) && selectedSpaceId > 0 ? selectedSpaceId : null,
       ruleId: Number.isFinite(ruleId) && ruleId > 0 ? ruleId : null,
       reporterUserId: Number.isFinite(reporterUserId) && reporterUserId > 0 ? reporterUserId : null,
       assignedToUserId: Number.isFinite(assignedToUserId) && assignedToUserId > 0 ? assignedToUserId : null,
@@ -3787,8 +3819,22 @@ pagesRouter.get('/admin/reports', requireGlobalModerationPage, async (req: any, 
     body += `<form method="get" action="/admin/reports" class="section" style="margin:12px 0">`
     body += `<div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap:10px; align-items:end">`
     body += `<label>Status<select name="status"><option value=""${!status ? ' selected' : ''}>All</option><option value="open"${status === 'open' ? ' selected' : ''}>Open</option><option value="in_review"${status === 'in_review' ? ' selected' : ''}>In Review</option><option value="resolved"${status === 'resolved' ? ' selected' : ''}>Resolved</option><option value="dismissed"${status === 'dismissed' ? ' selected' : ''}>Dismissed</option></select></label>`
-    body += `<label>Scope<select name="scope"><option value=""${!scope ? ' selected' : ''}>All</option><option value="global"${scope === 'global' ? ' selected' : ''}>Global</option><option value="space_culture"${scope === 'space_culture' ? ' selected' : ''}>Space Culture</option><option value="unknown"${scope === 'unknown' ? ' selected' : ''}>Unknown</option></select></label>`
-    body += `<label>Space ID<input type="number" name="space_id" min="1" value="${escapeHtml(spaceId > 0 ? String(spaceId) : '')}" /></label>`
+    body += `<label>Space Type<select name="space_type" onchange="this.form.submit()"><option value=""${!spaceType ? ' selected' : ''}>All</option><option value="group"${spaceType === 'group' ? ' selected' : ''}>Groups</option><option value="channel"${spaceType === 'channel' ? ' selected' : ''}>Channels</option><option value="personal"${spaceType === 'personal' ? ' selected' : ''}>Personal</option></select></label>`
+    const spaceSelectLabel =
+      spaceType === 'group'
+        ? 'Select Group'
+        : spaceType === 'channel'
+          ? 'Select Channel'
+          : spaceType === 'personal'
+            ? 'Select Personal'
+            : 'Select Space'
+    let spaceSelectOptions = `<option value=""${selectedSpaceId <= 0 ? ' selected' : ''}>${escapeHtml(spaceType ? `All ${spaceType === 'group' ? 'Groups' : spaceType === 'channel' ? 'Channels' : 'Personal'}` : 'Choose Space Type')}</option>`
+    for (const sp of selectedSpaceList) {
+      const selectedAttr = selectedSpaceId === sp.id ? ' selected' : ''
+      const label = `${sp.name}${sp.slug ? ` (${sp.slug})` : ''} (#${sp.id})`
+      spaceSelectOptions += `<option value="${sp.id}"${selectedAttr}>${escapeHtml(label)}</option>`
+    }
+    body += `<label>${escapeHtml(spaceSelectLabel)}<select name="space_id"${spaceType ? '' : ' disabled'}>${spaceSelectOptions}</select></label>`
     body += `<label>Rule ID<input type="number" name="rule_id" min="1" value="${escapeHtml(ruleId > 0 ? String(ruleId) : '')}" /></label>`
     body += `<label>Reporter ID<input type="number" name="reporter_user_id" min="1" value="${escapeHtml(reporterUserId > 0 ? String(reporterUserId) : '')}" /></label>`
     body += `<label>Assignee ID<input type="number" name="assigned_to_user_id" min="1" value="${escapeHtml(assignedToUserId > 0 ? String(assignedToUserId) : '')}" /></label>`

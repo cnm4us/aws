@@ -1,6 +1,6 @@
 # Plan 159: Admin Reports Mobile-First Card Inbox
 
-Status: Phase A Complete (2026-04-07) · Phase B Complete (2026-04-07) · Phase C In Progress · Phase D Pending
+Status: Phase A Complete (2026-04-07) · Phase B Complete (2026-04-07) · Phase C Complete (2026-04-07) · Phase D In Progress
 
 ## Feature Reference
 - Feature doc: `none`
@@ -34,8 +34,8 @@ Status: Phase A Complete (2026-04-07) · Phase B Complete (2026-04-07) · Phase 
 ## Phase Status
 - A: Complete
 - B: Complete
-- C: In Progress
-- D: Pending
+- C: Complete
+- D: In Progress
 
 ## Phase A — Contract + Interaction Model
 - Goal:
@@ -139,7 +139,7 @@ Status: Phase A Complete (2026-04-07) · Phase B Complete (2026-04-07) · Phase 
   - Both modal types function without page-layout regressions.
   - Decision form submits continue to work with CSRF and redirect back to selected report.
 
-## Phase C Progress (2026-04-07)
+## Phase C Output (Completed 2026-04-07)
 - Implemented modal routing and rendering:
   - `report_id=<id>&view=inspect|timeline`
   - overlay modal with close control that removes modal params and preserves filter params.
@@ -150,16 +150,18 @@ Status: Phase A Complete (2026-04-07) · Phase B Complete (2026-04-07) · Phase 
 - Build gates passed:
   - `npm run build`
   - `npm run web:build`
-- Pending:
-  - Manual smoke verification of modal open/close and action flow.
 
 ## Phase D — Polish + Smoke Matrix
 - Goal:
   - Stabilize for day-to-day moderation use.
 - Steps:
-  - [ ] Improve mobile spacing/typography for scan speed.
+  - [x] Improve mobile spacing/typography for scan speed.
+  - [x] Replace scope-oriented filtering with operator-centric space-type filtering:
+    - `All`, `Groups`, `Channels`, `Personal`
+    - dependent space selector (`Select Group` / `Select Channel` / `Select Personal`)
+  - [x] Add backend space-type filter support in report list query.
   - [ ] Confirm button hit targets and modal scroll behavior.
-  - [ ] Verify error/notice banners still visible after actions.
+  - [x] Verify error/notice banners still visible after actions.
   - [ ] Add/update brief docs note for `/admin/reports` UX model.
 - Test gate:
   - Smoke matrix:
@@ -173,13 +175,19 @@ Status: Phase A Complete (2026-04-07) · Phase B Complete (2026-04-07) · Phase 
 ## Change Log
 - 2026-04-07 — Phase A locked for card-only inbox + modal routing contract
 - 2026-04-07 — Phase B card-list refactor completed in `src/routes/pages.ts`
-- 2026-04-07 — Phase C modal implementation completed in code; awaiting manual smoke
+- 2026-04-07 — Phase C modal implementation completed in `src/routes/pages.ts`
+- 2026-04-07 — Phase D filter UX update: space type + dependent selector (`src/routes/pages.ts`, `src/features/reports/repo.ts`)
 
 ## Validation
 - Environment: development
-- Commands run: (pending)
-- Evidence files: `src/routes/pages.ts`
-- Known gaps: none yet
+- Commands run:
+  - `npm run build`
+  - `npm run web:build`
+- Evidence files:
+  - `src/routes/pages.ts`
+  - `src/features/reports/repo.ts`
+- Known gaps:
+  - Manual smoke pending for new space-type/dependent selector behavior
 
 ## Open Risks / Deferred
 - Risk:
@@ -191,6 +199,6 @@ Status: Phase A Complete (2026-04-07) · Phase B Complete (2026-04-07) · Phase 
 
 ## Resume Here
 - Next action:
-  - Start Phase C modal views for inspect and action timeline.
+  - Run manual smoke for Phase D and then close plan.
 - Blocking question (if any):
   - none
