@@ -3973,6 +3973,23 @@ pagesRouter.get('/admin/reports', requireGlobalModerationPage, async (req: any, 
       cursorId: null,
     })
 
+    const formatReportSeconds = (value: any): string | null => {
+      const n = Number(value)
+      if (!Number.isFinite(n) || n < 0) return null
+      const total = Math.floor(n)
+      const mm = Math.floor(total / 60)
+      const ss = total % 60
+      return `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`
+    }
+    const formatReportedRange = (startRaw: any, endRaw: any): string => {
+      const start = formatReportSeconds(startRaw)
+      const end = formatReportSeconds(endRaw)
+      if (start && end) return `${start} → ${end}`
+      if (start) return `${start} →`
+      if (end) return `→ ${end}`
+      return '-'
+    }
+
     let selected: { report: any; actions: any[] } | null = null
     if (Number.isFinite(reportId) && reportId > 0) {
       try {
@@ -4060,6 +4077,7 @@ pagesRouter.get('/admin/reports', requireGlobalModerationPage, async (req: any, 
         const reasonText = row.user_facing_rule_label_at_submit
           ? `${String(row.user_facing_group_label_at_submit || 'Reason')} / ${String(row.user_facing_rule_label_at_submit)}`
           : '-'
+        const reportedRangeText = formatReportedRange(row.reported_start_seconds, row.reported_end_seconds)
         const spaceText = `${String(row.space_name || row.space_slug || '-')}${row.space_id ? ` (#${row.space_id})` : ''}`
         const reporterText = `${String(row.reporter_display_name || row.reporter_email || '-')}${row.reporter_user_id ? ` (#${row.reporter_user_id})` : ''}`
         const assigneeText = row.assigned_to_user_id
@@ -4076,6 +4094,7 @@ pagesRouter.get('/admin/reports', requireGlobalModerationPage, async (req: any, 
         body += `<div><div class="field-hint">Created</div><div>${escapeHtml(String(row.created_at || ''))}</div></div>`
         body += `<div><div class="field-hint">Reason</div><div>${escapeHtml(reasonText)}</div></div>`
         body += `<div><div class="field-hint">Rule</div><div>${escapeHtml(`${String(row.rule_title || '-')}${row.rule_id ? ` (#${row.rule_id})` : ''}`)}</div></div>`
+        body += `<div><div class="field-hint">Reported Range</div><div>${escapeHtml(reportedRangeText)}</div></div>`
         body += `<div><div class="field-hint">Assignee</div><div>${escapeHtml(assigneeText)}</div></div>`
         body += `<div><div class="field-hint">Reporter</div><div>${escapeHtml(reporterText)}</div></div>`
         body += `<div><div class="field-hint">Status</div><div>${escapeHtml(String(row.status || 'open'))}</div></div>`
@@ -4148,6 +4167,7 @@ pagesRouter.get('/admin/reports', requireGlobalModerationPage, async (req: any, 
         body += `<form method="post" action="/admin/reports/${Number(rpt.id)}/decision" class="section" style="margin-top:12px">`
         body += `<div class="section-title">Decision Workflow</div>`
         body += `<div class="field-hint" style="margin-bottom:8px">Report #${Number(rpt.id)}</div>`
+        body += `<div class="field-hint" style="margin-bottom:8px">Reported Range: ${escapeHtml(formatReportedRange(rpt.reported_start_seconds, rpt.reported_end_seconds))}</div>`
         if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
         body += `<input type="hidden" name="return_to" value="${escapeHtml(returnTo)}" />`
         if (isAssignedToOtherModerator) {
@@ -4179,6 +4199,7 @@ pagesRouter.get('/admin/reports', requireGlobalModerationPage, async (req: any, 
         body += `<div><div class="field-hint">Resolution</div><div>${escapeHtml(resolutionDisplay)}</div></div>`
         body += `<div><div class="field-hint">Space</div><div>${escapeHtml(String(rpt.space_name || rpt.space_slug || '-'))} (#${Number(rpt.space_id || 0)})</div></div>`
         body += `<div><div class="field-hint">Rule</div><div>${escapeHtml(String(rpt.rule_title || '-'))} (#${Number(rpt.rule_id || 0)})</div></div>`
+        body += `<div><div class="field-hint">Reported Range</div><div>${escapeHtml(formatReportedRange(rpt.reported_start_seconds, rpt.reported_end_seconds))}</div></div>`
         body += `</div></div>`
         body += `<div class="section" style="margin-top:12px"><div class="section-title">Action Timeline</div>`
         if (!selected.actions.length) {

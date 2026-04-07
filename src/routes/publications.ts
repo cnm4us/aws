@@ -23,10 +23,19 @@ const reportSchema = z
     ruleId: z.number().int().positive().optional(),
     userFacingRuleId: z.number().int().positive().optional(),
     note: z.string().max(2000).optional(),
+    reported_start_seconds: z.coerce.number().finite().nonnegative().optional(),
+    reported_end_seconds: z.coerce.number().finite().nonnegative().optional(),
   })
   .refine((v) => Number.isFinite(Number(v.ruleId)) || Number.isFinite(Number(v.userFacingRuleId)), {
     message: 'ruleId_or_userFacingRuleId_required',
   })
+  .refine(
+    (v) =>
+      v.reported_start_seconds == null ||
+      v.reported_end_seconds == null ||
+      Number(v.reported_end_seconds) >= Number(v.reported_start_seconds),
+    { message: 'invalid_report_time_range' }
+  )
 const moderationReportingReasonsSchema = z.object({
   target_type: z.enum(['publication']),
   target_id: z.number().int().positive(),
@@ -38,10 +47,19 @@ const moderationReportSubmitSchema = z
     rule_id: z.number().int().positive().optional(),
     user_facing_rule_id: z.number().int().positive().optional(),
     note: z.string().max(2000).optional(),
+    reported_start_seconds: z.coerce.number().finite().nonnegative().optional(),
+    reported_end_seconds: z.coerce.number().finite().nonnegative().optional(),
   })
   .refine((v) => Number.isFinite(Number(v.rule_id)) || Number.isFinite(Number(v.user_facing_rule_id)), {
     message: 'rule_id_or_user_facing_rule_id_required',
   })
+  .refine(
+    (v) =>
+      v.reported_start_seconds == null ||
+      v.reported_end_seconds == null ||
+      Number(v.reported_end_seconds) >= Number(v.reported_start_seconds),
+    { message: 'invalid_report_time_range' }
+  )
 
 const createPublicationSchema = z.object({
   spaceId: z.number().int().positive(),
@@ -233,6 +251,8 @@ publicationsRouter.post('/api/publications/:id/report', requireAuth, async (req,
     const data = await reportsSvc.submitPublicationReport(publicationId, userId, {
       ruleId: parsed.data.ruleId ?? null,
       userFacingRuleId: parsed.data.userFacingRuleId ?? null,
+      reportedStartSeconds: parsed.data.reported_start_seconds ?? null,
+      reportedEndSeconds: parsed.data.reported_end_seconds ?? null,
     })
     res.json(data)
   } catch (err: any) { next(err) }
@@ -263,6 +283,8 @@ publicationsRouter.post('/api/moderation/reports', requireAuth, async (req, res,
     const data = await reportsSvc.submitPublicationReport(parsed.data.target_id, userId, {
       ruleId: parsed.data.rule_id ?? null,
       userFacingRuleId: parsed.data.user_facing_rule_id ?? null,
+      reportedStartSeconds: parsed.data.reported_start_seconds ?? null,
+      reportedEndSeconds: parsed.data.reported_end_seconds ?? null,
     })
     return res.json(data)
   } catch (err: any) {

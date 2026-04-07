@@ -37,24 +37,27 @@ Status: Active
 - Validation rule:
   - if both set and `end < start`, reject submit with inline validation message.
 - Admin preview links include time parameters when present.
+- Deep-link param shape:
+  - start: `t=<seconds>`
+  - end: `t_end=<seconds>` (optional, ignored where unsupported)
 
 ## Phase Status
-- A: Pending
-- B: Pending
-- C: Pending
+- A: Completed
+- B: Completed
+- C: Completed
 - D: Pending
 
 ## Phase A — Contract + Data Model
 - Goal:
   - Lock payload and schema contract.
 - Steps:
-  - [ ] Add nullable `reported_start_seconds` and `reported_end_seconds` columns to `space_publication_reports`.
-  - [ ] Define valid range and normalization:
+  - [x] Add nullable `reported_start_seconds` and `reported_end_seconds` columns to `space_publication_reports`.
+  - [x] Define valid range and normalization:
     - non-negative integer seconds
     - clamp to duration if available
     - reject when both present and `end < start`
-  - [ ] Extend report API contract to accept optional `reported_start_seconds` and `reported_end_seconds`.
-  - [ ] Define player deep-link param shape:
+  - [x] Extend report API contract to accept optional `reported_start_seconds` and `reported_end_seconds`.
+  - [x] Define player deep-link param shape:
     - preferred start param (`t=<seconds>` or existing equivalent)
     - optional end param if player supports segment range.
 - Test gate:
@@ -110,11 +113,27 @@ Status: Active
   - Admin can jump directly to reported moment where available.
 
 ## Change Log
-- (pending)
+- 2026-04-07:
+  - Added `reported_start_seconds` and `reported_end_seconds` to report schema bootstrap in `src/db.ts`.
+  - Added API request acceptance for optional start/end fields in `src/routes/publications.ts` (both publication and moderation report endpoints).
+  - Added backend normalization/validation in `src/features/reports/service.ts`:
+    - normalize to integer seconds
+    - clamp to publication upload duration when available
+    - reject invalid range (`end < start`)
+  - Persisted fields in report inserts via `src/features/reports/repo.ts`.
+  - Exposed start/end fields in report reads (`myReport`, admin list/detail query rows) for downstream Phase C/D usage.
+  - Phase B:
+    - Added `Start`/`End` capture controls with local per-slide persistence in `frontend/src/app/ReportModal.tsx` + `frontend/src/app/Feed.tsx`.
+    - Added inline validation for invalid range (`end < start`) and submit-block in the modal.
+    - Added optional payload forwarding of `reported_start_seconds` / `reported_end_seconds` on report submit.
+  - Phase C:
+    - Exposed captured range in admin reports page cards and selected report/timeline modals in `src/routes/pages.ts`.
 
 ## Validation
 - Environment: development
-- Commands run: (pending)
+- Commands run:
+  - `npm run build`
+  - `npm run web:build`
 - Evidence files:
   - `src/db.ts`
   - `src/features/reports/*`

@@ -6,6 +6,17 @@ import * as spacesSvc from '../spaces/service'
 import * as repo from './repo'
 import { isDismissedResolutionCode, isResolvedResolutionCode } from './resolution-codes'
 
+function normalizeReportedSeconds(raw: number | null | undefined, maxSeconds: number | null): number | null {
+  if (raw == null) return null
+  const n = Number(raw)
+  if (!Number.isFinite(n) || n < 0) {
+    throw new DomainError('invalid_reported_time_seconds', 'invalid_reported_time_seconds', 400)
+  }
+  const whole = Math.floor(n)
+  if (maxSeconds == null || !Number.isFinite(maxSeconds) || maxSeconds < 0) return whole
+  return Math.max(0, Math.min(whole, Math.floor(maxSeconds)))
+}
+
 export async function getReportingOptionsForPublication(publicationId: number, userId: number) {
   const pub = await repo.getPublishedPublicationSummary(publicationId)
   if (!pub) throw new DomainError('publication_not_found', 'publication_not_found', 404)
@@ -41,6 +52,10 @@ export async function getReportingOptionsForPublication(publicationId: number, u
           ruleId: Number(existingReport.rule_id),
           ruleSlug: existingReport.rule_slug,
           ruleTitle: existingReport.rule_title,
+          reportedStartSeconds:
+            existingReport.reported_start_seconds == null ? null : Number(existingReport.reported_start_seconds),
+          reportedEndSeconds:
+            existingReport.reported_end_seconds == null ? null : Number(existingReport.reported_end_seconds),
           createdAt: existingReport.created_at,
         }
       : null,
@@ -128,6 +143,10 @@ export async function getUserFacingReportingOptionsForPublication(publicationId:
           userFacingRuleLabel: existingReport.user_facing_rule_label_at_submit,
           userFacingGroupKey: existingReport.user_facing_group_key_at_submit,
           userFacingGroupLabel: existingReport.user_facing_group_label_at_submit,
+          reportedStartSeconds:
+            existingReport.reported_start_seconds == null ? null : Number(existingReport.reported_start_seconds),
+          reportedEndSeconds:
+            existingReport.reported_end_seconds == null ? null : Number(existingReport.reported_end_seconds),
           createdAt: existingReport.created_at,
         }
       : null,
@@ -138,7 +157,12 @@ export async function getUserFacingReportingOptionsForPublication(publicationId:
 export async function submitPublicationReport(
   publicationId: number,
   userId: number,
-  input: { ruleId?: number | null; userFacingRuleId?: number | null }
+  input: {
+    ruleId?: number | null
+    userFacingRuleId?: number | null
+    reportedStartSeconds?: number | null
+    reportedEndSeconds?: number | null
+  }
 ) {
   const rawRuleId = input?.ruleId == null ? null : Number(input.ruleId)
   const rawUserFacingRuleId = input?.userFacingRuleId == null ? null : Number(input.userFacingRuleId)
@@ -155,6 +179,11 @@ export async function submitPublicationReport(
   if (!pub) throw new DomainError('publication_not_found', 'publication_not_found', 404)
 
   await spacesSvc.assertCanViewSpaceFeed(pub.space_id, userId)
+  const reportedStartSeconds = normalizeReportedSeconds(input?.reportedStartSeconds ?? null, pub.upload_duration_seconds ?? null)
+  const reportedEndSeconds = normalizeReportedSeconds(input?.reportedEndSeconds ?? null, pub.upload_duration_seconds ?? null)
+  if (reportedStartSeconds != null && reportedEndSeconds != null && reportedEndSeconds < reportedStartSeconds) {
+    throw new DomainError('invalid_report_time_range', 'invalid_report_time_range', 400)
+  }
   let resolvedRule: { rule_id: number; current_version_id: number | null } | null = null
   let resolvedUserFacingSummary:
     | { id: number; label: string; group_key: string | null; group_label: string | null }
@@ -211,6 +240,8 @@ export async function submitPublicationReport(
       userFacingRuleLabelAtSubmit: resolvedUserFacingSummary?.label ?? null,
       userFacingGroupKeyAtSubmit: resolvedUserFacingSummary?.group_key ?? null,
       userFacingGroupLabelAtSubmit: resolvedUserFacingSummary?.group_label ?? null,
+      reportedStartSeconds,
+      reportedEndSeconds,
     })
     return { ok: true, reportId }
   } catch (err: any) {

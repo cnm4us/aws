@@ -855,6 +855,7 @@ export default function Feed() {
   const [commentsOrder, setCommentsOrder] = useState<'oldest' | 'newest'>('newest')
   // Reporting state keyed by publicationId
   const [reportedMap, setReportedMap] = useState<Record<number, boolean>>({})
+  const [reportRangesByPub, setReportRangesByPub] = useState<Record<number, { startSeconds: number | null; endSeconds: number | null }>>({})
   const [reportOpen, setReportOpen] = useState(false)
   const [reportForPub, setReportForPub] = useState<number | null>(null)
   // Global feed "jump to space" modal state
@@ -2465,6 +2466,37 @@ export default function Feed() {
     const v = slide.querySelector('video') as HTMLVideoElement | null
     return v
   }
+
+  const getReportPlaybackSeconds = useCallback((publicationId: number): number | null => {
+    const pubId = Number(publicationId || 0)
+    if (!Number.isFinite(pubId) || pubId <= 0) return null
+    let targetIndex = -1
+    if (Number((activeItem as any)?.publicationId || 0) === pubId) {
+      targetIndex = activeSequenceIndex
+    } else {
+      targetIndex = sequenceItems.findIndex((seq) => Number((seq.item as any)?.publicationId || 0) === pubId)
+    }
+    if (targetIndex < 0) return null
+    const v = getVideoEl(targetIndex)
+    const t = Number(v?.currentTime ?? NaN)
+    if (!Number.isFinite(t) || t < 0) return null
+    return t
+  }, [activeItem, activeSequenceIndex, sequenceItems])
+
+  const setReportRangeForPublication = useCallback(
+    (publicationId: number, next: { startSeconds: number | null; endSeconds: number | null }) => {
+      const pubId = Number(publicationId || 0)
+      if (!Number.isFinite(pubId) || pubId <= 0) return
+      setReportRangesByPub((prev) => ({
+        ...prev,
+        [pubId]: {
+          startSeconds: next.startSeconds ?? null,
+          endSeconds: next.endSeconds ?? null,
+        },
+      }))
+    },
+    []
+  )
 
   // HLS selection is handled inside HLSVideo; keep UA helpers locally if needed later
 
@@ -5429,7 +5461,18 @@ export default function Feed() {
           <LazyReportModal
             publicationId={reportForPub}
             onClose={() => { setReportOpen(false); setReportForPub(null) }}
-            onReported={(pubId) => setReportedMap((m) => ({ ...m, [pubId]: true }))}
+            onReported={(pubId) => {
+              setReportedMap((m) => ({ ...m, [pubId]: true }))
+              setReportRangesByPub((prev) => {
+                if (!(pubId in prev)) return prev
+                const next = { ...prev }
+                delete next[pubId]
+                return next
+              })
+            }}
+            initialRange={reportRangesByPub[reportForPub] || null}
+            onRangeChange={setReportRangeForPublication}
+            getCurrentPlaybackSeconds={getReportPlaybackSeconds}
           />
         </React.Suspense>
       )}

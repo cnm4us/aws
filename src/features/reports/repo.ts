@@ -13,12 +13,19 @@ function visibilityFilterSql(viewerState: ReportingViewerState): { sql: string; 
 export async function getPublishedPublicationSummary(
   publicationId: number,
   db?: DbLike
-): Promise<{ id: number; space_id: number; space_slug: string | null; production_id: number | null } | null> {
+): Promise<{
+  id: number
+  space_id: number
+  space_slug: string | null
+  production_id: number | null
+  upload_duration_seconds: number | null
+} | null> {
   const q = (db as any) || getPool()
   const [rows] = await q.query(
-    `SELECT sp.id, sp.space_id, s.slug AS space_slug, sp.production_id
+    `SELECT sp.id, sp.space_id, s.slug AS space_slug, sp.production_id, u.duration_seconds AS upload_duration_seconds
        FROM space_publications sp
        JOIN spaces s ON s.id = sp.space_id
+  LEFT JOIN uploads u ON u.id = sp.upload_id
       WHERE sp.id = ?
         AND sp.status = 'published'
         AND sp.published_at IS NOT NULL
@@ -32,6 +39,10 @@ export async function getPublishedPublicationSummary(
     space_id: Number(row.space_id),
     space_slug: row.space_slug != null ? String(row.space_slug) : null,
     production_id: row.production_id != null ? Number(row.production_id) : null,
+    upload_duration_seconds:
+      row.upload_duration_seconds != null && Number.isFinite(Number(row.upload_duration_seconds))
+        ? Number(row.upload_duration_seconds)
+        : null,
   }
 }
 
@@ -61,6 +72,8 @@ export async function getUserPublicationReport(
   user_facing_rule_label_at_submit: string | null
   user_facing_group_key_at_submit: string | null
   user_facing_group_label_at_submit: string | null
+  reported_start_seconds: number | null
+  reported_end_seconds: number | null
 } | null> {
   const q = (db as any) || getPool()
   const [rows] = await q.query(
@@ -71,7 +84,9 @@ export async function getUserPublicationReport(
             spr.user_facing_rule_id,
             spr.user_facing_rule_label_at_submit,
             spr.user_facing_group_key_at_submit,
-            spr.user_facing_group_label_at_submit
+            spr.user_facing_group_label_at_submit,
+            spr.reported_start_seconds,
+            spr.reported_end_seconds
        FROM space_publication_reports spr
        JOIN rules r ON r.id = spr.rule_id
       WHERE spr.space_publication_id = ?
@@ -94,6 +109,10 @@ export async function getUserPublicationReport(
       row.user_facing_group_key_at_submit == null ? null : String(row.user_facing_group_key_at_submit),
     user_facing_group_label_at_submit:
       row.user_facing_group_label_at_submit == null ? null : String(row.user_facing_group_label_at_submit),
+    reported_start_seconds:
+      row.reported_start_seconds == null ? null : Number(row.reported_start_seconds),
+    reported_end_seconds:
+      row.reported_end_seconds == null ? null : Number(row.reported_end_seconds),
   }
 }
 
@@ -341,12 +360,14 @@ export async function insertSpacePublicationReport(input: {
   userFacingRuleLabelAtSubmit?: string | null
   userFacingGroupKeyAtSubmit?: string | null
   userFacingGroupLabelAtSubmit?: string | null
+  reportedStartSeconds?: number | null
+  reportedEndSeconds?: number | null
 }): Promise<number> {
   const db = getPool()
   const [result] = await db.query(
     `INSERT INTO space_publication_reports
-      (space_publication_id, space_id, production_id, reporter_user_id, rule_id, rule_version_id, rule_scope_at_submit, user_facing_rule_id, user_facing_rule_label_at_submit, user_facing_group_key_at_submit, user_facing_group_label_at_submit)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      (space_publication_id, space_id, production_id, reporter_user_id, rule_id, rule_version_id, rule_scope_at_submit, user_facing_rule_id, user_facing_rule_label_at_submit, user_facing_group_key_at_submit, user_facing_group_label_at_submit, reported_start_seconds, reported_end_seconds)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.spacePublicationId,
       input.spaceId,
@@ -359,6 +380,8 @@ export async function insertSpacePublicationReport(input: {
       input.userFacingRuleLabelAtSubmit ?? null,
       input.userFacingGroupKeyAtSubmit ?? null,
       input.userFacingGroupLabelAtSubmit ?? null,
+      input.reportedStartSeconds ?? null,
+      input.reportedEndSeconds ?? null,
     ]
   )
   return Number((result as any).insertId)
@@ -429,6 +452,8 @@ export async function listReportsForAdmin(filters: ReportListFilters, db?: DbLik
             spr.user_facing_rule_label_at_submit,
             spr.user_facing_group_key_at_submit,
             spr.user_facing_group_label_at_submit,
+            spr.reported_start_seconds,
+            spr.reported_end_seconds,
             spr.created_at,
             spr.last_action_at,
             spr.resolved_at
@@ -478,6 +503,8 @@ export async function getReportById(reportId: number, db?: DbLike): Promise<any 
             spr.user_facing_rule_label_at_submit,
             spr.user_facing_group_key_at_submit,
             spr.user_facing_group_label_at_submit,
+            spr.reported_start_seconds,
+            spr.reported_end_seconds,
             spr.created_at,
             spr.last_action_at,
             spr.resolved_at

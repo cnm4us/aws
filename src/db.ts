@@ -3660,6 +3660,8 @@ export async function ensureSchema(db: DB) {
       reporter_user_id BIGINT UNSIGNED NOT NULL,
       rule_id BIGINT UNSIGNED NOT NULL,
       rule_version_id BIGINT UNSIGNED NULL,
+      reported_start_seconds INT UNSIGNED NULL,
+      reported_end_seconds INT UNSIGNED NULL,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       UNIQUE KEY uniq_space_publication_reports_pub_reporter (space_publication_id, reporter_user_id),
       KEY idx_space_publication_reports_pub_created (space_publication_id, created_at),
@@ -3673,6 +3675,8 @@ export async function ensureSchema(db: DB) {
   await db.query(`ALTER TABLE space_publication_reports ADD COLUMN IF NOT EXISTS user_facing_rule_label_at_submit VARCHAR(255) NULL`);
   await db.query(`ALTER TABLE space_publication_reports ADD COLUMN IF NOT EXISTS user_facing_group_key_at_submit VARCHAR(64) NULL`);
   await db.query(`ALTER TABLE space_publication_reports ADD COLUMN IF NOT EXISTS user_facing_group_label_at_submit VARCHAR(128) NULL`);
+  await db.query(`ALTER TABLE space_publication_reports ADD COLUMN IF NOT EXISTS reported_start_seconds INT UNSIGNED NULL`);
+  await db.query(`ALTER TABLE space_publication_reports ADD COLUMN IF NOT EXISTS reported_end_seconds INT UNSIGNED NULL`);
   // Report triage lifecycle fields (plan_158B)
   await db.query(
     `ALTER TABLE space_publication_reports ADD COLUMN IF NOT EXISTS status ENUM('open','in_review','resolved','dismissed') NOT NULL DEFAULT 'open'`
@@ -3699,6 +3703,7 @@ export async function ensureSchema(db: DB) {
   try { await db.query(`CREATE INDEX IF NOT EXISTS idx_space_publication_reports_scope_status_created ON space_publication_reports (rule_scope_at_submit, status, created_at, id)`); } catch {}
   try { await db.query(`CREATE INDEX IF NOT EXISTS idx_space_publication_reports_space_status_created ON space_publication_reports (space_id, status, created_at, id)`); } catch {}
   try { await db.query(`CREATE INDEX IF NOT EXISTS idx_space_publication_reports_rule_created_id ON space_publication_reports (rule_id, created_at, id)`); } catch {}
+  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_space_publication_reports_pub_reported_range ON space_publication_reports (space_publication_id, reported_start_seconds, reported_end_seconds, id)`); } catch {}
 
   // Best-effort foreign keys for publication reports
   try {

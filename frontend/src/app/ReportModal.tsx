@@ -54,6 +54,8 @@ type OptionsResponse = {
     userFacingRuleLabel?: string | null
     userFacingGroupKey?: string | null
     userFacingGroupLabel?: string | null
+    reportedStartSeconds?: number | null
+    reportedEndSeconds?: number | null
     createdAt: string
   } | null
   groups: OptionsGroup[]
@@ -79,8 +81,11 @@ export default function ReportModal(props: {
   publicationId: number
   onClose: () => void
   onReported: (publicationId: number) => void
+  initialRange?: { startSeconds: number | null; endSeconds: number | null } | null
+  onRangeChange?: (publicationId: number, next: { startSeconds: number | null; endSeconds: number | null }) => void
+  getCurrentPlaybackSeconds?: (publicationId: number) => number | null
 }) {
-  const { publicationId, onClose, onReported } = props
+  const { publicationId, onClose, onReported, initialRange, onRangeChange, getCurrentPlaybackSeconds } = props
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -97,6 +102,8 @@ export default function ReportModal(props: {
 
   const [submitBusyKey, setSubmitBusyKey] = useState<string | null>(null)
   const [submitError, setSubmitError] = useState<string | null>(null)
+  const [reportedStartSeconds, setReportedStartSeconds] = useState<number | null>(initialRange?.startSeconds ?? null)
+  const [reportedEndSeconds, setReportedEndSeconds] = useState<number | null>(initialRange?.endSeconds ?? null)
 
   useEffect(() => {
     let canceled = false
@@ -128,6 +135,29 @@ export default function ReportModal(props: {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [onClose])
+
+  useEffect(() => {
+    setReportedStartSeconds(initialRange?.startSeconds ?? null)
+    setReportedEndSeconds(initialRange?.endSeconds ?? null)
+  }, [publicationId, initialRange?.startSeconds, initialRange?.endSeconds])
+
+  function applyReportedRange(nextStart: number | null, nextEnd: number | null) {
+    setReportedStartSeconds(nextStart)
+    setReportedEndSeconds(nextEnd)
+    try { onRangeChange?.(publicationId, { startSeconds: nextStart, endSeconds: nextEnd }) } catch {}
+  }
+
+  function captureAtPlayhead(kind: 'start' | 'end') {
+    const raw = getCurrentPlaybackSeconds?.(publicationId)
+    const n = Number(raw)
+    if (!Number.isFinite(n) || n < 0) {
+      setSubmitError('Unable to capture playback time right now.')
+      return
+    }
+    const seconds = Math.max(0, Math.floor(n))
+    if (kind === 'start') applyReportedRange(seconds, reportedEndSeconds)
+    else applyReportedRange(reportedStartSeconds, seconds)
+  }
 
   const flatRules = useMemo(() => {
     const map = new Map<number, OptionsRule>()
@@ -163,6 +193,10 @@ export default function ReportModal(props: {
   async function submitReport(input: { userFacingRuleId?: number | null; ruleId?: number | null; busyKey: string }) {
     if (submitBusyKey) return
     if (options?.reportedByMe) return
+    if (invalidTimeRange) {
+      setSubmitError('End time must be greater than or equal to start time.')
+      return
+    }
     setSubmitBusyKey(input.busyKey)
     setSubmitError(null)
     try {
@@ -170,6 +204,8 @@ export default function ReportModal(props: {
       const payload: Record<string, any> = {}
       if (input.userFacingRuleId != null) payload.userFacingRuleId = Number(input.userFacingRuleId)
       if (input.ruleId != null) payload.ruleId = Number(input.ruleId)
+      if (reportedStartSeconds != null) payload.reported_start_seconds = Number(reportedStartSeconds)
+      if (reportedEndSeconds != null) payload.reported_end_seconds = Number(reportedEndSeconds)
       const res = await fetch(`/api/publications/${publicationId}/report`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(csrf ? { 'x-csrf-token': csrf } : {}) },
@@ -197,6 +233,10 @@ export default function ReportModal(props: {
       ? flatRules.get(Number(options.myReport.ruleId))?.title || null
       : options?.myReport?.ruleTitle || null
   const hasReasons = Array.isArray(options?.groups) && (options?.groups || []).some((g) => Array.isArray(g.reasons) && g.reasons.length > 0)
+  const invalidTimeRange =
+    reportedStartSeconds != null &&
+    reportedEndSeconds != null &&
+    Number(reportedEndSeconds) < Number(reportedStartSeconds)
   const secondaryButtonStyle: React.CSSProperties = {
     background: 'rgba(255,255,255,0.06)',
     color: '#fff',
@@ -210,6 +250,14 @@ export default function ReportModal(props: {
     border: '1px solid rgba(96,165,250,0.95)',
     borderRadius: 10,
     fontWeight: 900,
+  }
+
+  function formatSecondsLabel(seconds: number | null): string {
+    if (seconds == null || !Number.isFinite(seconds) || seconds < 0) return '--:--'
+    const total = Math.floor(seconds)
+    const mm = Math.floor(total / 60)
+    const ss = total % 60
+    return `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`
   }
 
   return (
@@ -359,6 +407,83 @@ export default function ReportModal(props: {
             </div>
           ) : (
             <div style={{ padding: 14, display: 'grid', gap: 10 }}>
+              <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, padding: 10, background: 'rgba(255,255,255,0.04)', display: 'grid', gap: 8 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, padding: 8, background: 'rgba(0,0,0,0.18)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                      <button
+                        type="button"
+                        onClick={() => captureAtPlayhead('start')}
+                        style={{
+                          ...secondaryButtonStyle,
+                          borderRadius: 10,
+                          padding: '6px 10px',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Start
+                      </button>
+                      {reportedStartSeconds != null ? (
+                        <button
+                          type="button"
+                          onClick={() => applyReportedRange(null, reportedEndSeconds)}
+                          style={{
+                            ...secondaryButtonStyle,
+                            borderRadius: 10,
+                            padding: '4px 8px',
+                            fontSize: 12,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Clear
+                        </button>
+                      ) : null}
+                    </div>
+                    <div style={{ marginTop: 8, fontWeight: 700, fontSize: 13, letterSpacing: 0.2 }}>
+                      {formatSecondsLabel(reportedStartSeconds)}
+                    </div>
+                  </div>
+                  <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, padding: 8, background: 'rgba(0,0,0,0.18)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                      <button
+                        type="button"
+                        onClick={() => captureAtPlayhead('end')}
+                        style={{
+                          ...secondaryButtonStyle,
+                          borderRadius: 10,
+                          padding: '6px 10px',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        End
+                      </button>
+                      {reportedEndSeconds != null ? (
+                        <button
+                          type="button"
+                          onClick={() => applyReportedRange(reportedStartSeconds, null)}
+                          style={{
+                            ...secondaryButtonStyle,
+                            borderRadius: 10,
+                            padding: '4px 8px',
+                            fontSize: 12,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Clear
+                        </button>
+                      ) : null}
+                    </div>
+                    <div style={{ marginTop: 8, fontWeight: 700, fontSize: 13, letterSpacing: 0.2 }}>
+                      {formatSecondsLabel(reportedEndSeconds)}
+                    </div>
+                  </div>
+                </div>
+                {invalidTimeRange ? (
+                  <div style={{ color: '#ffb3b3', fontSize: 12 }}>
+                    End time must be greater than or equal to start time.
+                  </div>
+                ) : null}
+              </div>
               {expandedReasonId != null ? (
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
                   <button
