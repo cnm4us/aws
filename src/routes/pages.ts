@@ -3718,6 +3718,11 @@ pagesRouter.get('/admin', async (_req: any, res: any) => {
 pagesRouter.get('/admin/reports', requireGlobalModerationPage, async (req: any, res: any) => {
   try {
     const userId = Number(req.user?.id)
+    const userDisplayName =
+      String(req.user?.display_name || '').trim() ||
+      String(req.user?.displayName || '').trim() ||
+      String(req.user?.email || '').trim() ||
+      `User #${Number.isFinite(userId) && userId > 0 ? userId : ''}`
     const cookies = parseCookies(req.headers.cookie)
     const csrfToken = cookies['csrf'] || ''
     const q = req.query || {}
@@ -3731,6 +3736,26 @@ pagesRouter.get('/admin/reports', requireGlobalModerationPage, async (req: any, 
     const to = String(q.to || '').trim()
     const reportId = Number(q.report_id || 0)
     const limit = Math.max(1, Math.min(200, Number(q.limit || 50)))
+    const db = getPool()
+    const [assigneeRows] = await db.query(
+      `SELECT DISTINCT u.id, u.display_name, u.email
+         FROM user_roles ur
+         JOIN roles r ON r.id = ur.role_id
+         JOIN users u ON u.id = ur.user_id
+        WHERE r.name = 'site_admin'
+        ORDER BY COALESCE(NULLIF(TRIM(u.display_name), ''), u.email), u.id`
+    )
+    const assigneeById = new Map<number, { id: number; label: string }>()
+    for (const row of assigneeRows as any[]) {
+      const id = Number(row.id)
+      if (!Number.isFinite(id) || id <= 0) continue
+      const label = String(row.display_name || '').trim() || String(row.email || '').trim() || `User #${id}`
+      assigneeById.set(id, { id, label })
+    }
+    if (Number.isFinite(userId) && userId > 0 && !assigneeById.has(userId)) {
+      assigneeById.set(userId, { id: userId, label: userDisplayName })
+    }
+    const assigneeOptions = Array.from(assigneeById.values()).sort((a, b) => a.label.localeCompare(b.label))
 
     const list = await reportsSvc.listReportsForAdmin(userId, {
       status: ['open', 'in_review', 'resolved', 'dismissed'].includes(status) ? (status as any) : null,
@@ -3820,6 +3845,23 @@ pagesRouter.get('/admin/reports', requireGlobalModerationPage, async (req: any, 
 
       const currentStatus = String(rpt.status || 'open')
       const currentAssigneeId = Number(rpt.assigned_to_user_id || 0) > 0 ? Number(rpt.assigned_to_user_id) : null
+      if (currentAssigneeId != null && !assigneeById.has(currentAssigneeId)) {
+        const fallbackLabel =
+          String(rpt.assigned_to_display_name || '').trim() ||
+          String(rpt.assigned_to_email || '').trim() ||
+          `User #${currentAssigneeId}`
+        assigneeById.set(currentAssigneeId, { id: currentAssigneeId, label: fallbackLabel })
+      }
+      const assigneeOptionsHtml = (() => {
+        const rows = Array.from(assigneeById.values()).sort((a, b) => a.label.localeCompare(b.label))
+        const selected = currentAssigneeId != null ? currentAssigneeId : (Number.isFinite(userId) && userId > 0 ? userId : null)
+        let html = `<option value="">Auto (${escapeHtml(userDisplayName)})</option>`
+        for (const item of rows) {
+          const suffix = item.id === userId ? ' (You)' : ''
+          html += `<option value="${item.id}"${selected === item.id ? ' selected' : ''}>${escapeHtml(item.label + suffix)}</option>`
+        }
+        return html
+      })()
       const isAssignedToOtherModerator = Number.isFinite(userId) && currentAssigneeId != null && currentAssigneeId !== userId
       const selectedDecisionCode = ALL_RESOLUTION_CODES.some((it) => it.code === String(rpt.resolution_code || ''))
         ? String(rpt.resolution_code || '')
@@ -3846,7 +3888,7 @@ pagesRouter.get('/admin/reports', requireGlobalModerationPage, async (req: any, 
       }
       body += `<div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px,1fr)); gap:10px">`
       body += `<label>Status<select name="status"${isAssignedToOtherModerator ? ' disabled' : ''}>${statusOptionsHtml}</select></label>`
-      body += `<label>Assignee User ID (blank = auto-self)<input type="number" name="assigned_to_user_id" min="1" value="${currentAssigneeId ? escapeHtml(String(currentAssigneeId)) : ''}" /></label>`
+      body += `<label>Assignee<select name="assigned_to_user_id">${assigneeOptionsHtml}</select></label>`
       body += `<label>Decision<select name="resolution_code"${isAssignedToOtherModerator ? ' disabled' : ''}>${decisionOptions}</select></label>`
       body += `<label>Decision Note<input type="text" name="decision_note" maxlength="500" value="${escapeHtml(decisionNoteValue)}"${isAssignedToOtherModerator ? ' disabled' : ''} /></label>`
       body += `</div>`
