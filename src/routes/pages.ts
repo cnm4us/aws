@@ -3793,6 +3793,49 @@ pagesRouter.get('/admin/reports', requireGlobalModerationPage, async (req: any, 
     if (Number.isFinite(assignedToUserId) && assignedToUserId > 0 && !assigneeById.has(assignedToUserId)) {
       assigneeById.set(assignedToUserId, { id: assignedToUserId, label: `User #${assignedToUserId}` })
     }
+    const reporterWhere: string[] = []
+    const reporterParams: any[] = []
+    if (['open', 'in_review', 'resolved', 'dismissed'].includes(status)) {
+      reporterWhere.push(`spr.status = ?`)
+      reporterParams.push(status)
+    }
+    if (spaceType) {
+      reporterWhere.push(`s.type = ?`)
+      reporterParams.push(spaceType)
+    }
+    if (selectedSpaceId > 0) {
+      reporterWhere.push(`spr.space_id = ?`)
+      reporterParams.push(selectedSpaceId)
+    }
+    if (from) {
+      reporterWhere.push(`spr.created_at >= ?`)
+      reporterParams.push(from)
+    }
+    if (to) {
+      reporterWhere.push(`spr.created_at < DATE_ADD(?, INTERVAL 1 DAY)`)
+      reporterParams.push(to)
+    }
+    const reporterWhereSql = reporterWhere.length ? `WHERE ${reporterWhere.join(' AND ')}` : ''
+    const [reporterRows] = await db.query(
+      `SELECT DISTINCT u.id, u.display_name, u.email
+         FROM space_publication_reports spr
+         JOIN users u ON u.id = spr.reporter_user_id
+         JOIN spaces s ON s.id = spr.space_id
+       ${reporterWhereSql}
+        ORDER BY COALESCE(NULLIF(TRIM(u.display_name), ''), u.email), u.id
+        LIMIT 1000`,
+      reporterParams
+    )
+    const reporterById = new Map<number, { id: number; label: string }>()
+    for (const row of (reporterRows as any[])) {
+      const id = Number(row.id)
+      if (!Number.isFinite(id) || id <= 0) continue
+      const label = String(row.display_name || '').trim() || String(row.email || '').trim() || `User #${id}`
+      reporterById.set(id, { id, label })
+    }
+    if (Number.isFinite(reporterUserId) && reporterUserId > 0 && !reporterById.has(reporterUserId)) {
+      reporterById.set(reporterUserId, { id: reporterUserId, label: `User #${reporterUserId}` })
+    }
 
     const list = await reportsSvc.listReportsForAdmin(userId, {
       status: ['open', 'in_review', 'resolved', 'dismissed'].includes(status) ? (status as any) : null,
@@ -3821,7 +3864,7 @@ pagesRouter.get('/admin/reports', requireGlobalModerationPage, async (req: any, 
     if (errorText) body += `<div class="section" style="margin:10px 0; border-color:rgba(220,92,92,0.5)"><div class="field-hint">${escapeHtml(errorText)}</div></div>`
     body += `<form method="get" action="/admin/reports" class="section" style="margin:12px 0">`
     body += `<div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap:10px; align-items:end">`
-    body += `<label>Status<select name="status"><option value=""${!status ? ' selected' : ''}>All</option><option value="open"${status === 'open' ? ' selected' : ''}>Open</option><option value="in_review"${status === 'in_review' ? ' selected' : ''}>In Review</option><option value="resolved"${status === 'resolved' ? ' selected' : ''}>Resolved</option><option value="dismissed"${status === 'dismissed' ? ' selected' : ''}>Dismissed</option></select></label>`
+    body += `<label>Status<select name="status" onchange="this.form.submit()"><option value=""${!status ? ' selected' : ''}>All</option><option value="open"${status === 'open' ? ' selected' : ''}>Open</option><option value="in_review"${status === 'in_review' ? ' selected' : ''}>In Review</option><option value="resolved"${status === 'resolved' ? ' selected' : ''}>Resolved</option><option value="dismissed"${status === 'dismissed' ? ' selected' : ''}>Dismissed</option></select></label>`
     body += `<label>Space Type<select name="space_type" onchange="this.form.submit()"><option value=""${!spaceType ? ' selected' : ''}>All</option><option value="group"${spaceType === 'group' ? ' selected' : ''}>Groups</option><option value="channel"${spaceType === 'channel' ? ' selected' : ''}>Channels</option><option value="personal"${spaceType === 'personal' ? ' selected' : ''}>Personal</option></select></label>`
     const spaceSelectLabel =
       spaceType === 'group'
@@ -3837,9 +3880,18 @@ pagesRouter.get('/admin/reports', requireGlobalModerationPage, async (req: any, 
       const label = `${sp.name}${sp.slug ? ` (${sp.slug})` : ''} (#${sp.id})`
       spaceSelectOptions += `<option value="${sp.id}"${selectedAttr}>${escapeHtml(label)}</option>`
     }
-    body += `<label>${escapeHtml(spaceSelectLabel)}<select name="space_id"${spaceType ? '' : ' disabled'}>${spaceSelectOptions}</select></label>`
+    body += `<label>${escapeHtml(spaceSelectLabel)}<select name="space_id"${spaceType ? ' onchange="this.form.submit()"' : ' disabled'}>${spaceSelectOptions}</select></label>`
     body += `<label>Rule ID<input type="number" name="rule_id" min="1" value="${escapeHtml(ruleId > 0 ? String(ruleId) : '')}" /></label>`
-    body += `<label>Reporter ID<input type="number" name="reporter_user_id" min="1" value="${escapeHtml(reporterUserId > 0 ? String(reporterUserId) : '')}" /></label>`
+    const reporterFilterOptions = (() => {
+      const rows = Array.from(reporterById.values()).sort((a, b) => a.label.localeCompare(b.label))
+      let html = `<option value=""${reporterUserId > 0 ? '' : ' selected'}>All</option>`
+      for (const item of rows) {
+        const selected = reporterUserId === item.id ? ' selected' : ''
+        html += `<option value="${item.id}"${selected}>${escapeHtml(item.label)}</option>`
+      }
+      return html
+    })()
+    body += `<label>Reporter<select name="reporter_user_id" onchange="this.form.submit()">${reporterFilterOptions}</select></label>`
     const assigneeFilterOptions = (() => {
       const rows = Array.from(assigneeById.values()).sort((a, b) => a.label.localeCompare(b.label))
       let html = `<option value=""${assignedToUserId > 0 ? '' : ' selected'}>All</option>`
@@ -3849,9 +3901,9 @@ pagesRouter.get('/admin/reports', requireGlobalModerationPage, async (req: any, 
       }
       return html
     })()
-    body += `<label>Assignee<select name="assigned_to_user_id">${assigneeFilterOptions}</select></label>`
-    body += `<label>From<input type="date" name="from" value="${escapeHtml(from)}" /></label>`
-    body += `<label>To<input type="date" name="to" value="${escapeHtml(to)}" /></label>`
+    body += `<label>Assignee<select name="assigned_to_user_id" onchange="this.form.submit()">${assigneeFilterOptions}</select></label>`
+    body += `<label>From<input type="date" name="from" value="${escapeHtml(from)}" onchange="this.form.submit()" /></label>`
+    body += `<label>To<input type="date" name="to" value="${escapeHtml(to)}" onchange="this.form.submit()" /></label>`
     body += `<label>Limit<input type="number" name="limit" min="1" max="200" value="${escapeHtml(String(limit))}" /></label>`
     body += `<div style="display:flex; gap:8px"><button class="btn" type="submit">Filter</button><a class="btn" href="/admin/reports">Reset</a></div>`
     body += `</div></form>`
