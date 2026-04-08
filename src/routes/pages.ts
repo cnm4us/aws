@@ -3973,6 +3973,41 @@ pagesRouter.get('/admin/reports', requireGlobalModerationPage, async (req: any, 
       cursorId: null,
     })
 
+    const spaceCulturesBySpaceId = new Map<number, Array<{ id: number; name: string }>>()
+    try {
+      const spaceIds = Array.from(
+        new Set(
+          (list.items || [])
+            .map((row: any) => Number(row?.space_id || 0))
+            .filter((id) => Number.isFinite(id) && id > 0)
+        )
+      )
+      if (spaceIds.length) {
+        const placeholders = spaceIds.map(() => '?').join(',')
+        const [spaceCultureRows] = await db.query(
+          `SELECT sc.space_id, c.id AS culture_id, c.name
+             FROM space_cultures sc
+             JOIN cultures c ON c.id = sc.culture_id
+            WHERE sc.space_id IN (${placeholders})
+            ORDER BY c.name, c.id`,
+          spaceIds
+        )
+        for (const row of (spaceCultureRows as any[])) {
+          const sid = Number(row.space_id || 0)
+          if (!Number.isFinite(sid) || sid <= 0) continue
+          const cultureId = Number(row.culture_id || 0)
+          if (!Number.isFinite(cultureId) || cultureId <= 0) continue
+          const name = String(row.name || '').trim()
+          if (!name) continue
+          const arr = spaceCulturesBySpaceId.get(sid) || []
+          if (!arr.some((it) => it.id === cultureId)) {
+            arr.push({ id: cultureId, name })
+            spaceCulturesBySpaceId.set(sid, arr)
+          }
+        }
+      }
+    } catch {}
+
     const formatReportSeconds = (value: any): string | null => {
       const n = Number(value)
       if (!Number.isFinite(n) || n < 0) return null
@@ -4100,6 +4135,12 @@ pagesRouter.get('/admin/reports', requireGlobalModerationPage, async (req: any, 
         const reportedRangeText = formatReportedRange(row.reported_start_seconds, row.reported_end_seconds)
         const previewHref = buildReportPreviewHref(row)
         const spaceText = `${String(row.space_name || row.space_slug || '-')}${row.space_id ? ` (#${row.space_id})` : ''}`
+        const spaceCultures = spaceCulturesBySpaceId.get(Number(row.space_id || 0)) || []
+        const spaceCultureHtml = spaceCultures.length
+          ? spaceCultures
+              .map((c) => `<a href="/admin/cultures/${encodeURIComponent(String(c.id))}">${escapeHtml(c.name)}</a>`)
+              .join(' • ')
+          : 'None'
         const reporterText = `${String(row.reporter_display_name || row.reporter_email || '-')}${row.reporter_user_id ? ` (#${row.reporter_user_id})` : ''}`
         const assigneeText = row.assigned_to_user_id
           ? `${String(row.assigned_to_display_name || row.assigned_to_email || '-')}${` (#${row.assigned_to_user_id})`}`
@@ -4112,6 +4153,7 @@ pagesRouter.get('/admin/reports', requireGlobalModerationPage, async (req: any, 
         body += `</div>`
         body += `<div style="display:grid; grid-template-columns: 1fr; gap:6px">`
         body += `<div><div class="field-hint">Space</div><div>${escapeHtml(spaceText)}</div></div>`
+        body += `<div><div class="field-hint">Cultures</div><div>${spaceCultureHtml}</div></div>`
         body += `<div><div class="field-hint">Created</div><div>${escapeHtml(String(row.created_at || ''))}</div></div>`
         body += `<div><div class="field-hint">Reason</div><div>${escapeHtml(reasonText)}</div></div>`
         body += `<div><div class="field-hint">Rule</div><div>${escapeHtml(`${String(row.rule_title || '-')}${row.rule_id ? ` (#${row.rule_id})` : ''}`)}</div></div>`
