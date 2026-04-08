@@ -46,7 +46,7 @@ Status: Active
 
 ## Phase Status
 - A: Completed
-- B: Pending
+- B: Completed
 - C: Pending
 - D: Pending
 - E: Pending
@@ -82,12 +82,12 @@ Status: Active
 - Goal:
   - Persist/retrieve canonical culture definition JSON.
 - Steps:
-  - [ ] Add DB column to `cultures`:
+  - [x] Add DB column to `cultures`:
     - `definition_json` JSON NULL (or LONGTEXT + JSON_VALID in MySQL mode if needed).
-  - [ ] Extend culture queries/repo methods to read/write `definition_json`.
-  - [ ] On culture read, provide normalized object to routes/service.
-  - [ ] On culture write, validate + normalize before persistence.
-  - [ ] Add bootstrap fallback behavior for old rows:
+  - [x] Extend culture queries/repo methods to read/write `definition_json`.
+  - [x] On culture read, provide normalized object to routes/service.
+  - [x] On culture write, validate + normalize before persistence.
+  - [x] Add bootstrap fallback behavior for old rows:
     - if `definition_json` null, build default v1 object from culture metadata.
 - Test gate:
   - `npm run build`
@@ -193,11 +193,24 @@ Status: Active
     - `id` derived/synced from culture key (fallback to name)
     - `name` synced from culture name when provided
     - `version` defaults to `v1` unless valid explicit value present
+- 2026-04-08:
+  - Completed Phase B persistence wiring:
+    - Added `cultures.definition_json` to schema bootstrap + idempotent ALTER in `src/db.ts`.
+    - Added `src/features/cultures/repo.ts` with:
+      - culture row read (`getCultureById`)
+      - normalized + validated hydration (`getCultureWithDefinition`)
+      - create/save methods enforcing validator contract (`createCulture`, `saveCulture`)
+      - default bootstrap fallback when stored `definition_json` is null or invalid.
+    - Explicit write path now rejects invalid provided `definition_json` payloads.
+  - Added DB-integrated smoke script:
+    - `scripts/culture-definition-v1-db-smoke.ts`
+    - npm script: `cultures:smoke:v1:db`
 
 ## Validation
 - Environment: development
 - Commands run:
   - `npm run cultures:smoke:v1`
+  - `npm run cultures:smoke:v1:db`
   - `npm run build`
 - Evidence files:
   - `agents/features/feature_15_json_for_moderation.md`
@@ -207,7 +220,9 @@ Status: Active
   - `src/features/cultures/validator.ts`
   - `src/features/cultures/payload.ts`
   - `src/features/cultures/defaults.ts`
+  - `src/features/cultures/repo.ts`
   - `scripts/culture-definition-v1-smoke.ts`
+  - `scripts/culture-definition-v1-db-smoke.ts`
 - Known gaps:
   - `cultureKey` currently assumes caller-provided key; DB-level culture key/slug field not yet introduced.
 
@@ -222,6 +237,6 @@ Status: Active
 
 ## Resume Here
 - Next action:
-  - Start Phase B.
+  - Start Phase C.
 - Blocking question (if any):
   - none

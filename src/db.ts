@@ -3259,6 +3259,7 @@ export async function ensureSchema(db: DB) {
       id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
       name VARCHAR(255) NOT NULL,
       description TEXT NULL,
+      definition_json JSON NULL,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       UNIQUE KEY uniq_cultures_name (name)
@@ -3344,6 +3345,7 @@ export async function ensureSchema(db: DB) {
 
   // Ensure cultures can evolve (idempotent best-effort)
   await db.query(`ALTER TABLE cultures ADD COLUMN IF NOT EXISTS description TEXT NULL`);
+  await db.query(`ALTER TABLE cultures ADD COLUMN IF NOT EXISTS definition_json JSON NULL`);
   try {
     await db.query(`ALTER TABLE cultures ADD UNIQUE KEY uniq_cultures_name (name)`);
   } catch {}
