@@ -205,7 +205,12 @@ export async function saveCulture(
 
   const existing = toCultureRecord(existingRow)
   const nextName = String(input.name || existing.name || '').trim()
-  const nextDescription = input.description == null ? null : String(input.description).trim() || null
+  const nextDescription =
+    input.description === undefined
+      ? existing.description
+      : input.description == null
+        ? null
+        : String(input.description).trim() || null
   const metadataContext = metadataContextFromCulture({ name: nextName })
 
   let normalizedDefinition: CultureDefinitionV1

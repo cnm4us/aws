@@ -24,6 +24,19 @@ import * as messageJourneysSvc from '../features/message-journeys/service'
 import * as messageAnalyticsSvc from '../features/message-analytics/service'
 import * as userFacingRulesSvc from '../features/user-facing-rules/service'
 import * as reportsSvc from '../features/reports/service'
+import * as culturesRepo from '../features/cultures/repo'
+import {
+  CULTURE_AI_HINTS,
+  CULTURE_DISRUPTION_SIGNALS,
+  CULTURE_INTERACTION_STYLES,
+  CULTURE_TOLERANCE_LEVELS,
+  CULTURE_TONE_EXPECTATIONS,
+  deriveCultureDefinitionIdFromKey,
+  normalizeCultureDefinitionForValidation,
+  type CultureDefinitionValidationError,
+  type CultureDefinitionV1,
+  validateCultureDefinitionV1,
+} from '../features/cultures'
 import {
   ALL_RESOLUTION_CODES,
   getResolutionTerminalStatus,
@@ -1452,11 +1465,10 @@ pagesRouter.post('/admin/categories/:id/delete', async (req: any, res: any) => {
 
 // -------- Admin: Cultures (server-rendered, minimal JS) --------
 
-function renderCultureForm(opts: { error?: string | null; csrfToken?: string | null; name?: string; description?: string }): string {
+function renderCultureForm(opts: { error?: string | null; csrfToken?: string | null; name?: string }): string {
   const error = opts.error ? String(opts.error) : '';
   const csrfToken = opts.csrfToken ? String(opts.csrfToken) : '';
   const name = opts.name ? String(opts.name) : '';
-  const description = opts.description ? String(opts.description) : '';
 
   let body = `<h1>New Culture</h1>`;
   body += '<div class="toolbar"><div><a href="/admin/cultures">\u2190 Back to cultures</a></div></div>';
@@ -1467,9 +1479,7 @@ function renderCultureForm(opts: { error?: string | null; csrfToken?: string | n
     <input type="text" name="name" value="${escapeHtml(name)}" />
     <div class="field-hint">Unique label for this culture (used by admins; not currently shown to end users).</div>
   </label>`;
-  body += `<label>Description
-    <textarea name="description" style="min-height: 120px">${escapeHtml(description)}</textarea>
-  </label>`;
+  body += `<div class="field-hint">Culture Definition JSON v1 will be auto-initialized using defaults, then editable in the culture detail page.</div>`;
   body += `<div class="actions">
     <button type="submit">Create culture</button>
   </div>`;
@@ -1534,34 +1544,32 @@ pagesRouter.post('/admin/cultures', async (req: any, res: any) => {
   try {
     const body = (req.body || {}) as any;
     const rawName = body.name != null ? String(body.name) : '';
-    const rawDescription = body.description != null ? String(body.description) : '';
     const name = rawName.trim();
-    const description = rawDescription.trim();
 
     if (!name) {
       const cookies = parseCookies(req.headers.cookie);
       const csrfToken = cookies['csrf'] || '';
-      const doc = renderCultureForm({ csrfToken, error: 'Name is required.', name: rawName, description: rawDescription });
+      const doc = renderCultureForm({ csrfToken, error: 'Name is required.', name: rawName });
       res.set('Content-Type', 'text/html; charset=utf-8');
       return res.status(400).send(doc);
     }
     if (name.length > 255) {
       const cookies = parseCookies(req.headers.cookie);
       const csrfToken = cookies['csrf'] || '';
-      const doc = renderCultureForm({ csrfToken, error: 'Name is too long (max 255 characters).', name: rawName, description: rawDescription });
+      const doc = renderCultureForm({ csrfToken, error: 'Name is too long (max 255 characters).', name: rawName });
       res.set('Content-Type', 'text/html; charset=utf-8');
       return res.status(400).send(doc);
     }
 
     const db = getPool();
     try {
-      await db.query(`INSERT INTO cultures (name, description) VALUES (?, ?)`, [name, description ? description : null]);
+      await culturesRepo.createCulture({ name }, db as any);
     } catch (err: any) {
       const msg = String(err?.message || err);
       if (msg.includes('ER_DUP_ENTRY') || msg.includes('uniq_cultures_name')) {
         const cookies = parseCookies(req.headers.cookie);
         const csrfToken = cookies['csrf'] || '';
-        const doc = renderCultureForm({ csrfToken, error: 'A culture with that name already exists.', name: rawName, description: rawDescription });
+        const doc = renderCultureForm({ csrfToken, error: 'A culture with that name already exists.', name: rawName });
         res.set('Content-Type', 'text/html; charset=utf-8');
         return res.status(400).send(doc);
       }
@@ -1591,8 +1599,175 @@ async function listRuleCategoriesForCultures(): Promise<Array<{ id: number; name
   }
 }
 
+function toStringArrayInput(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => String(entry || '').trim())
+      .filter((entry) => entry.length > 0)
+  }
+  if (value == null) return []
+  const single = String(value || '').trim()
+  return single ? [single] : []
+}
+
+function parseCultureDefinitionDraftFromBody(
+  body: any,
+  fallback: CultureDefinitionV1
+): Record<string, unknown> {
+  const toleranceRaw = body?.tolerance ?? {}
+  const toleranceSource =
+    toleranceRaw && typeof toleranceRaw === 'object' && !Array.isArray(toleranceRaw)
+      ? toleranceRaw
+      : body
+  const toleranceValue = (key: string): string | null => {
+    const direct = toleranceSource?.[key]
+    if (direct != null) return String(direct || '').trim()
+    const dot = body?.[`tolerance.${key}`]
+    if (dot != null) return String(dot || '').trim()
+    const bracket = body?.[`tolerance[${key}]`]
+    if (bracket != null) return String(bracket || '').trim()
+    return null
+  }
+
+  const draft: Record<string, unknown> = {
+    id: fallback.id,
+    name: fallback.name,
+    version: body?.definition_version != null ? String(body.definition_version || '').trim() : fallback.version,
+    summary: body?.summary != null ? String(body.summary || '') : fallback.summary || '',
+    interaction_style:
+      body?.interaction_style != null ? String(body.interaction_style || '').trim() : fallback.interaction_style,
+    tone_expectations:
+      body?.tone_expectations != null
+        ? toStringArrayInput(body.tone_expectations)
+        : Array.from(fallback.tone_expectations || []),
+    disruption_signals:
+      body?.disruption_signals != null
+        ? toStringArrayInput(body.disruption_signals)
+        : Array.from(fallback.disruption_signals || []),
+    tolerance: {
+      hostility:
+        toleranceValue('hostility') != null
+          ? String(toleranceValue('hostility') || '').trim()
+          : fallback.tolerance.hostility,
+      confrontation:
+        toleranceValue('confrontation') != null
+          ? String(toleranceValue('confrontation') || '').trim()
+          : fallback.tolerance.confrontation,
+      person_directed_profanity:
+        toleranceValue('person_directed_profanity') != null
+          ? String(toleranceValue('person_directed_profanity') || '').trim()
+          : fallback.tolerance.person_directed_profanity,
+      mockery:
+        toleranceValue('mockery') != null
+          ? String(toleranceValue('mockery') || '').trim()
+          : fallback.tolerance.mockery || '',
+      personal_attacks:
+        toleranceValue('personal_attacks') != null
+          ? String(toleranceValue('personal_attacks') || '').trim()
+          : fallback.tolerance.personal_attacks || '',
+    },
+    ai_hint: body?.ai_hint != null ? String(body.ai_hint || '').trim() : fallback.ai_hint || '',
+    internal_notes:
+      body?.internal_notes != null ? String(body.internal_notes || '') : fallback.internal_notes || '',
+  }
+  return draft
+}
+
+function mergeCultureDefinitionDraft(
+  fallback: CultureDefinitionV1,
+  draft: Record<string, unknown>
+): CultureDefinitionV1 {
+  const tone = Array.isArray(draft.tone_expectations)
+    ? draft.tone_expectations.map((v) => String(v || '').trim()).filter((v) => v.length > 0)
+    : Array.from(fallback.tone_expectations || [])
+  const disruption = Array.isArray(draft.disruption_signals)
+    ? draft.disruption_signals.map((v) => String(v || '').trim()).filter((v) => v.length > 0)
+    : Array.from(fallback.disruption_signals || [])
+  const toleranceDraft =
+    draft.tolerance && typeof draft.tolerance === 'object' && !Array.isArray(draft.tolerance)
+      ? (draft.tolerance as Record<string, unknown>)
+      : {}
+  return {
+    ...fallback,
+    id: draft.id != null ? String(draft.id || '').trim() || fallback.id : fallback.id,
+    name: draft.name != null ? String(draft.name || '').trim() || fallback.name : fallback.name,
+    version:
+      draft.version != null
+        ? (String(draft.version || '').trim() || fallback.version) as any
+        : fallback.version,
+    summary: draft.summary != null ? String(draft.summary || '') : fallback.summary,
+    interaction_style:
+      draft.interaction_style != null
+        ? (String(draft.interaction_style || '').trim() || fallback.interaction_style) as any
+        : fallback.interaction_style,
+    tone_expectations: tone as any,
+    disruption_signals: disruption as any,
+    tolerance: {
+      hostility:
+        toleranceDraft.hostility != null
+          ? (String(toleranceDraft.hostility || '').trim() || fallback.tolerance.hostility) as any
+          : fallback.tolerance.hostility,
+      confrontation:
+        toleranceDraft.confrontation != null
+          ? (String(toleranceDraft.confrontation || '').trim() || fallback.tolerance.confrontation) as any
+          : fallback.tolerance.confrontation,
+      person_directed_profanity:
+        toleranceDraft.person_directed_profanity != null
+          ? (String(toleranceDraft.person_directed_profanity || '').trim() || fallback.tolerance.person_directed_profanity) as any
+          : fallback.tolerance.person_directed_profanity,
+      mockery:
+        toleranceDraft.mockery != null
+          ? (String(toleranceDraft.mockery || '').trim() || fallback.tolerance.mockery || '') as any
+          : fallback.tolerance.mockery,
+      personal_attacks:
+        toleranceDraft.personal_attacks != null
+          ? (String(toleranceDraft.personal_attacks || '').trim() || fallback.tolerance.personal_attacks || '') as any
+          : fallback.tolerance.personal_attacks,
+    },
+    ai_hint: draft.ai_hint != null ? (String(draft.ai_hint || '').trim() as any) : fallback.ai_hint,
+    internal_notes: draft.internal_notes != null ? String(draft.internal_notes || '') : fallback.internal_notes,
+  }
+}
+
+function mapCultureDefinitionPath(path: string): string {
+  if (!path) return '_form'
+  if (path === 'id') return 'id'
+  if (path === 'name') return 'name'
+  if (path === 'version') return 'version'
+  if (path === 'summary') return 'summary'
+  if (path === 'interaction_style') return 'interaction_style'
+  if (path === 'tone_expectations' || path.startsWith('tone_expectations.')) return 'tone_expectations'
+  if (path === 'disruption_signals' || path.startsWith('disruption_signals.')) return 'disruption_signals'
+  if (path === 'ai_hint') return 'ai_hint'
+  if (path === 'internal_notes') return 'internal_notes'
+  if (path === 'tolerance' || path.startsWith('tolerance.')) return path.split('.')[1] || 'tolerance'
+  return '_form'
+}
+
+function groupCultureDefinitionErrors(
+  errors: CultureDefinitionValidationError[]
+): Record<string, string[]> {
+  const grouped: Record<string, string[]> = {}
+  for (const err of errors || []) {
+    const key = mapCultureDefinitionPath(String(err.path || ''))
+    if (!grouped[key]) grouped[key] = []
+    grouped[key].push(String(err.message || 'Invalid value'))
+  }
+  return grouped
+}
+
+function renderCultureFieldErrors(errorsByField: Record<string, string[]>, field: string): string {
+  const items = errorsByField[field] || []
+  if (!items.length) return ''
+  return `<div class="field-hint" style="color:#fda4af">${escapeHtml(items.join(' • '))}</div>`
+}
+
 function renderCultureDetailPage(opts: {
   culture: any;
+  definition: CultureDefinitionV1;
+  definitionSource?: string;
+  definitionValidationErrors?: CultureDefinitionValidationError[];
+  definitionFieldErrors?: Record<string, string[]>;
   categories: Array<{ id: number; name: string; description: string }>;
   assignedCategoryIds: Set<number>;
   csrfToken?: string | null;
@@ -1602,28 +1777,142 @@ function renderCultureDetailPage(opts: {
   const culture = opts.culture ?? {};
   const categories = Array.isArray(opts.categories) ? opts.categories : [];
   const assigned = opts.assignedCategoryIds ?? new Set<number>();
+  const definition = opts.definition;
+  const definitionSource = String(opts.definitionSource || 'stored');
+  const definitionValidationErrors = Array.isArray(opts.definitionValidationErrors)
+    ? opts.definitionValidationErrors
+    : [];
+  const definitionFieldErrors = opts.definitionFieldErrors || {};
   const csrfToken = opts.csrfToken ? String(opts.csrfToken) : '';
   const notice = opts.notice ? String(opts.notice) : '';
   const error = opts.error ? String(opts.error) : '';
 
   const id = culture.id != null ? String(culture.id) : '';
   const nameValue = culture.name ? String(culture.name) : '';
-  const descriptionValue = culture.description ? String(culture.description) : '';
+  const computedDefinitionId = deriveCultureDefinitionIdFromKey(nameValue || definition.name || 'culture');
+  const toneSet = new Set<string>((definition.tone_expectations || []).map((v) => String(v)))
+  const disruptionSet = new Set<string>((definition.disruption_signals || []).map((v) => String(v)))
+  const tolerance = definition.tolerance || {
+    hostility: 'medium',
+    confrontation: 'medium',
+    person_directed_profanity: 'medium',
+  }
 
   let body = `<h1>Culture: ${escapeHtml(nameValue || '(unnamed)')}</h1>`;
   body += '<div class="toolbar"><div><a href="/admin/cultures">\u2190 Back to cultures</a></div></div>';
   if (notice) body += `<div class="success">${escapeHtml(notice)}</div>`;
   if (error) body += `<div class="error">${escapeHtml(error)}</div>`;
+  if (definitionSource === 'default_missing') {
+    body += `<div class="field-hint">No saved culture definition JSON found. This page is showing schema defaults; click Save to persist.</div>`;
+  } else if (definitionSource === 'default_invalid') {
+    body += `<div class="error">Stored culture definition JSON is invalid. Showing defaults until saved.</div>`;
+  }
+  if (definitionValidationErrors.length) {
+    body += `<div class="field-hint" style="color:#fda4af">Definition issues: ${escapeHtml(definitionValidationErrors.map((e) => `${e.path || '(root)'}: ${e.message}`).join(' • '))}</div>`;
+  }
 
   body += `<form method="post" action="/admin/cultures/${escapeHtml(id)}">`;
   if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`;
 
+  body += `<div class="section" style="margin-top: 14px">`;
+  body += `<div class="section-title">Metadata</div>`;
   body += `<label>Name
     <input type="text" name="name" value="${escapeHtml(nameValue)}" />
+    <div class="field-hint">Stable culture label used for admin operations.</div>
+    ${renderCultureFieldErrors(definitionFieldErrors, 'name')}
   </label>`;
-  body += `<label>Description
-    <textarea name="description" style="min-height: 120px">${escapeHtml(descriptionValue)}</textarea>
+  body += `<label>Culture ID
+    <input type="text" value="${escapeHtml(computedDefinitionId)}" readonly />
+    <div class="field-hint">Computed from Name and enforced by schema policy.</div>
+    ${renderCultureFieldErrors(definitionFieldErrors, 'id')}
   </label>`;
+  body += `<label>Definition Version
+    <input type="text" name="definition_version" value="${escapeHtml(String(definition.version || 'v1'))}" />
+    <div class="field-hint">Schema instance version (e.g. v1).</div>
+    ${renderCultureFieldErrors(definitionFieldErrors, 'version')}
+  </label>`;
+  body += `<label>Summary
+    <textarea name="summary" style="min-height: 84px">${escapeHtml(String(definition.summary || ''))}</textarea>
+    <div class="field-hint">Optional human-readable summary for admins/docs.</div>
+    ${renderCultureFieldErrors(definitionFieldErrors, 'summary')}
+  </label>`;
+  body += `</div>`;
+
+  body += `<div class="section" style="margin-top: 14px">`;
+  body += `<div class="section-title">Interaction</div>`;
+  body += `<label>Interaction Style
+    <select name="interaction_style">`;
+  for (const value of CULTURE_INTERACTION_STYLES) {
+    const selected = String(definition.interaction_style || '') === value ? ' selected' : '';
+    body += `<option value="${escapeHtml(value)}"${selected}>${escapeHtml(value)}</option>`;
+  }
+  body += `</select>
+    <div class="field-hint">High-level interaction baseline for the culture.</div>
+    ${renderCultureFieldErrors(definitionFieldErrors, 'interaction_style')}
+  </label>`;
+  body += `<div class="section" style="margin-top: 10px">`;
+  body += `<div class="section-title">Tone Expectations</div>`;
+  body += `<input type="hidden" name="tone_expectations" value="" />`;
+  for (const value of CULTURE_TONE_EXPECTATIONS) {
+    const checked = toneSet.has(value) ? ' checked' : '';
+    body += `<label style="display:flex; gap:10px; align-items:flex-start; margin-top: 6px">`;
+    body += `<input type="checkbox" name="tone_expectations" value="${escapeHtml(value)}"${checked} style="margin-top: 3px" />`;
+    body += `<div>${escapeHtml(value)}</div></label>`;
+  }
+  body += `${renderCultureFieldErrors(definitionFieldErrors, 'tone_expectations')}`;
+  body += `</div>`;
+
+  body += `<div class="section" style="margin-top: 10px">`;
+  body += `<div class="section-title">Disruption Signals</div>`;
+  body += `<input type="hidden" name="disruption_signals" value="" />`;
+  for (const value of CULTURE_DISRUPTION_SIGNALS) {
+    const checked = disruptionSet.has(value) ? ' checked' : '';
+    body += `<label style="display:flex; gap:10px; align-items:flex-start; margin-top: 6px">`;
+    body += `<input type="checkbox" name="disruption_signals" value="${escapeHtml(value)}"${checked} style="margin-top: 3px" />`;
+    body += `<div>${escapeHtml(value)}</div></label>`;
+  }
+  body += `${renderCultureFieldErrors(definitionFieldErrors, 'disruption_signals')}`;
+  body += `</div>`;
+  body += `</div>`;
+
+  const renderToleranceSelect = (fieldName: string, value: string) => {
+    let html = `<label>${escapeHtml(fieldName.replace(/_/g, ' '))}
+      <select name="tolerance.${escapeHtml(fieldName)}">`
+    for (const opt of CULTURE_TOLERANCE_LEVELS) {
+      const selected = value === opt ? ' selected' : ''
+      html += `<option value="${escapeHtml(opt)}"${selected}>${escapeHtml(opt)}</option>`
+    }
+    html += `</select>${renderCultureFieldErrors(definitionFieldErrors, fieldName)}</label>`
+    return html
+  }
+
+  body += `<div class="section" style="margin-top: 14px">`;
+  body += `<div class="section-title">Tolerance</div>`;
+  body += renderToleranceSelect('hostility', String(tolerance.hostility || 'medium'));
+  body += renderToleranceSelect('confrontation', String(tolerance.confrontation || 'medium'));
+  body += renderToleranceSelect('person_directed_profanity', String(tolerance.person_directed_profanity || 'medium'));
+  body += renderToleranceSelect('mockery', String(tolerance.mockery || ''));
+  body += renderToleranceSelect('personal_attacks', String(tolerance.personal_attacks || ''));
+  body += `</div>`;
+
+  body += `<div class="section" style="margin-top: 14px">`;
+  body += `<div class="section-title">AI</div>`;
+  body += `<label>AI Hint
+    <select name="ai_hint">
+      <option value="">(none)</option>`;
+  for (const value of CULTURE_AI_HINTS) {
+    const selected = String(definition.ai_hint || '') === value ? ' selected' : '';
+    body += `<option value="${escapeHtml(value)}"${selected}>${escapeHtml(value)}</option>`;
+  }
+  body += `</select>
+    ${renderCultureFieldErrors(definitionFieldErrors, 'ai_hint')}
+  </label>`;
+  body += `<label>Internal Notes
+    <textarea name="internal_notes" style="min-height: 120px">${escapeHtml(String(definition.internal_notes || ''))}</textarea>
+    <div class="field-hint">Internal moderation guidance only; excluded from AI payload.</div>
+    ${renderCultureFieldErrors(definitionFieldErrors, 'internal_notes')}
+  </label>`;
+  body += `</div>`;
 
   body += `<div class="section" style="margin-top: 14px">`;
   body += `<div class="section-title">Categories</div>`;
@@ -1678,8 +1967,7 @@ pagesRouter.get('/admin/cultures/:id', async (req: any, res: any) => {
     const error = req.query && (req.query as any).error != null ? String((req.query as any).error) : '';
 
     const db = getPool();
-    const [cultureRows] = await db.query(`SELECT id, name, description, updated_at FROM cultures WHERE id = ? LIMIT 1`, [id]);
-    const culture = (cultureRows as any[])[0];
+    const culture = await culturesRepo.getCultureWithDefinition(id, db as any);
     if (!culture) return res.status(404).send('Culture not found');
 
     const categories = await listRuleCategoriesForCultures();
@@ -1689,7 +1977,18 @@ pagesRouter.get('/admin/cultures/:id', async (req: any, res: any) => {
     const cookies = parseCookies(req.headers.cookie);
     const csrfToken = cookies['csrf'] || '';
 
-    const doc = renderCultureDetailPage({ culture, categories, assignedCategoryIds, csrfToken, notice, error });
+    const doc = renderCultureDetailPage({
+      culture,
+      definition: culture.definition,
+      definitionSource: culture.definition_source,
+      definitionValidationErrors: culture.definition_validation_errors || [],
+      definitionFieldErrors: {},
+      categories,
+      assignedCategoryIds,
+      csrfToken,
+      notice,
+      error,
+    });
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.send(doc);
   } catch (err) {
@@ -1706,9 +2005,7 @@ pagesRouter.post('/admin/cultures/:id', async (req: any, res: any) => {
 
     const body = (req.body || {}) as any;
     const rawName = body.name != null ? String(body.name) : '';
-    const rawDescription = body.description != null ? String(body.description) : '';
     const name = rawName.trim();
-    const description = rawDescription.trim();
 
     const rawCategoryIds = (body as any).categoryIds;
     const submittedIds: number[] = Array.isArray(rawCategoryIds)
@@ -1717,47 +2014,76 @@ pagesRouter.post('/admin/cultures/:id', async (req: any, res: any) => {
         ? [Number(rawCategoryIds)].filter((n) => Number.isFinite(n) && n > 0)
         : [];
 
-    if (!name) {
-      const db = getPool();
-      const [cultureRows] = await db.query(`SELECT id, name, description FROM cultures WHERE id = ? LIMIT 1`, [id]);
-      const culture = (cultureRows as any[])[0];
-      if (!culture) return res.status(404).send('Culture not found');
+    const db = getPool() as any;
+    const current = await culturesRepo.getCultureWithDefinition(id, db);
+    if (!current) return res.status(404).send('Culture not found');
 
-      const categories = await listRuleCategoriesForCultures();
-      const cookies = parseCookies(req.headers.cookie);
-      const csrfToken = cookies['csrf'] || '';
-      const assignedCategoryIds = new Set<number>(submittedIds);
-      const doc = renderCultureDetailPage({ culture: { ...culture, name: rawName, description: rawDescription }, categories, assignedCategoryIds, csrfToken, error: 'Name is required.' });
+    const categories = await listRuleCategoriesForCultures();
+    const cookies = parseCookies(req.headers.cookie);
+    const csrfToken = cookies['csrf'] || '';
+
+    if (!name) {
+      const draft = parseCultureDefinitionDraftFromBody(body, current.definition);
+      const doc = renderCultureDetailPage({
+        culture: { ...current, name: rawName },
+        definition: mergeCultureDefinitionDraft(current.definition, draft),
+        definitionSource: current.definition_source,
+        definitionValidationErrors: current.definition_validation_errors || [],
+        definitionFieldErrors: { name: ['Name is required.'] },
+        categories,
+        assignedCategoryIds: new Set<number>(submittedIds),
+        csrfToken,
+        error: 'Name is required.',
+      });
       res.set('Content-Type', 'text/html; charset=utf-8');
       return res.status(400).send(doc);
     }
     if (name.length > 255) {
-      const db = getPool();
-      const [cultureRows] = await db.query(`SELECT id, name, description FROM cultures WHERE id = ? LIMIT 1`, [id]);
-      const culture = (cultureRows as any[])[0];
-      if (!culture) return res.status(404).send('Culture not found');
-
-      const categories = await listRuleCategoriesForCultures();
-      const cookies = parseCookies(req.headers.cookie);
-      const csrfToken = cookies['csrf'] || '';
-      const assignedCategoryIds = new Set<number>(submittedIds);
-      const doc = renderCultureDetailPage({ culture: { ...culture, name: rawName, description: rawDescription }, categories, assignedCategoryIds, csrfToken, error: 'Name is too long (max 255 characters).' });
+      const draft = parseCultureDefinitionDraftFromBody(body, current.definition);
+      const doc = renderCultureDetailPage({
+        culture: { ...current, name: rawName },
+        definition: mergeCultureDefinitionDraft(current.definition, draft),
+        definitionSource: current.definition_source,
+        definitionValidationErrors: current.definition_validation_errors || [],
+        definitionFieldErrors: { name: ['Name is too long (max 255 characters).'] },
+        categories,
+        assignedCategoryIds: new Set<number>(submittedIds),
+        csrfToken,
+        error: 'Name is too long (max 255 characters).',
+      });
       res.set('Content-Type', 'text/html; charset=utf-8');
       return res.status(400).send(doc);
     }
 
-    const db = getPool() as any;
-    conn = await db.getConnection();
-    await conn.beginTransaction();
-
-    const [cultureRows] = await conn.query(`SELECT id, name, description FROM cultures WHERE id = ? LIMIT 1 FOR UPDATE`, [id]);
-    const culture = (cultureRows as any[])[0];
-    if (!culture) {
-      await conn.rollback();
-      return res.status(404).send('Culture not found');
+    const definitionDraft = parseCultureDefinitionDraftFromBody(body, current.definition);
+    const validation = validateCultureDefinitionV1(definitionDraft, {
+      cultureName: name,
+      cultureKey: name,
+    });
+    if (!validation.ok) {
+      const normalizedDraft = normalizeCultureDefinitionForValidation(definitionDraft, {
+        cultureName: name,
+        cultureKey: name,
+      }) as Record<string, unknown>;
+      const doc = renderCultureDetailPage({
+        culture: { ...current, name: rawName },
+        definition: mergeCultureDefinitionDraft(current.definition, normalizedDraft),
+        definitionSource: current.definition_source,
+        definitionValidationErrors: current.definition_validation_errors || [],
+        definitionFieldErrors: groupCultureDefinitionErrors(validation.errors),
+        categories,
+        assignedCategoryIds: new Set<number>(submittedIds),
+        csrfToken,
+        error: 'Culture definition is invalid. Fix the highlighted fields.',
+      });
+      res.set('Content-Type', 'text/html; charset=utf-8');
+      return res.status(400).send(doc);
     }
 
     const uniqueSubmittedIds = Array.from(new Set(submittedIds));
+    conn = await db.getConnection();
+    await conn.beginTransaction();
+
     let validIds: number[] = [];
     if (uniqueSubmittedIds.length) {
       const [catRows] = await conn.query(
@@ -1768,29 +2094,35 @@ pagesRouter.post('/admin/cultures/:id', async (req: any, res: any) => {
     }
 
     try {
-      await conn.query(
-        `UPDATE cultures
-            SET name = ?, description = ?, updated_at = CURRENT_TIMESTAMP
-          WHERE id = ?`,
-        [name, description ? description : null, id]
+      await culturesRepo.saveCulture(
+        id,
+        {
+          name,
+          definition_json: validation.value,
+        },
+        conn
       );
     } catch (err: any) {
       const msg = String(err?.message || err);
       if (msg.includes('ER_DUP_ENTRY') || msg.includes('uniq_cultures_name')) {
         await conn.rollback();
-        const categories = await listRuleCategoriesForCultures();
-        const cookies = parseCookies(req.headers.cookie);
-        const csrfToken = cookies['csrf'] || '';
-        const assignedCategoryIds = new Set<number>(validIds);
         const doc = renderCultureDetailPage({
-          culture: { ...culture, name: rawName, description: rawDescription },
+          culture: { ...current, name: rawName },
+          definition: mergeCultureDefinitionDraft(current.definition, definitionDraft),
+          definitionSource: current.definition_source,
+          definitionValidationErrors: current.definition_validation_errors || [],
+          definitionFieldErrors: {},
           categories,
-          assignedCategoryIds,
+          assignedCategoryIds: new Set<number>(validIds.length ? validIds : submittedIds),
           csrfToken,
           error: 'A culture with that name already exists.',
         });
         res.set('Content-Type', 'text/html; charset=utf-8');
         return res.status(400).send(doc);
+      }
+      if (String(err?.code || '') === 'culture_not_found') {
+        await conn.rollback();
+        return res.status(404).send('Culture not found');
       }
       throw err;
     }

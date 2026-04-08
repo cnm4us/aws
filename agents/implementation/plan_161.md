@@ -47,7 +47,7 @@ Status: Active
 ## Phase Status
 - A: Completed
 - B: Completed
-- C: Pending
+- C: In Progress
 - D: Pending
 - E: Pending
 - F: Pending
@@ -205,6 +205,20 @@ Status: Active
   - Added DB-integrated smoke script:
     - `scripts/culture-definition-v1-db-smoke.ts`
     - npm script: `cultures:smoke:v1:db`
+- 2026-04-08:
+  - Started Phase C structured editor work in `src/routes/pages.ts`:
+    - New culture form now creates a culture with auto-initialized schema-backed definition (no free-text description input).
+    - `/admin/cultures/:id` now renders structured sections:
+      - Metadata (`name`, computed `id`, `version`, `summary`)
+      - Interaction style
+      - Tone expectations
+      - Disruption signals
+      - Tolerance fields
+      - AI hint + internal notes
+      - Existing Categories block (unchanged behavior)
+    - Added form parsing and schema validation via `validateCultureDefinitionV1(...)`.
+    - Added field-level schema error mapping and inline error rendering in the culture editor.
+    - Wired create/detail/update routes to `src/features/cultures/repo.ts` for canonical definition persistence and bootstrap fallback handling.
 
 ## Validation
 - Environment: development
