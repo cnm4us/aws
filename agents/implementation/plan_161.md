@@ -47,8 +47,8 @@ Status: Active
 ## Phase Status
 - A: Completed
 - B: Completed
-- C: In Progress
-- D: Pending
+- C: Completed
+- D: In Progress
 - E: Pending
 - F: Pending
 
@@ -219,6 +219,14 @@ Status: Active
     - Added form parsing and schema validation via `validateCultureDefinitionV1(...)`.
     - Added field-level schema error mapping and inline error rendering in the culture editor.
     - Wired create/detail/update routes to `src/features/cultures/repo.ts` for canonical definition persistence and bootstrap fallback handling.
+- 2026-04-08:
+  - Started Phase D advanced JSON mode in `src/routes/pages.ts`:
+    - Added collapsible `Advanced JSON` details card on `/admin/cultures/:id`.
+    - Added read-only pretty-print preview of canonical JSON.
+    - Added raw JSON textarea + `Validate JSON` and `Apply JSON` submit actions.
+    - Added permission guard (`site_admin` capability check) for raw edit actions; non-editors see read-only state.
+    - Reused canonical validator + field error mapping for advanced mode responses.
+    - Added explicit parse/schema error feedback for raw JSON validation failures.
 
 ## Validation
 - Environment: development

@@ -1768,6 +1768,10 @@ function renderCultureDetailPage(opts: {
   definitionSource?: string;
   definitionValidationErrors?: CultureDefinitionValidationError[];
   definitionFieldErrors?: Record<string, string[]>;
+  advancedJsonCanEdit?: boolean;
+  advancedJsonText?: string;
+  advancedJsonError?: string | null;
+  advancedOpen?: boolean;
   categories: Array<{ id: number; name: string; description: string }>;
   assignedCategoryIds: Set<number>;
   csrfToken?: string | null;
@@ -1783,6 +1787,9 @@ function renderCultureDetailPage(opts: {
     ? opts.definitionValidationErrors
     : [];
   const definitionFieldErrors = opts.definitionFieldErrors || {};
+  const advancedJsonCanEdit = !!opts.advancedJsonCanEdit;
+  const advancedJsonError = opts.advancedJsonError ? String(opts.advancedJsonError) : '';
+  const advancedOpen = !!opts.advancedOpen || !!advancedJsonError;
   const csrfToken = opts.csrfToken ? String(opts.csrfToken) : '';
   const notice = opts.notice ? String(opts.notice) : '';
   const error = opts.error ? String(opts.error) : '';
@@ -1790,6 +1797,8 @@ function renderCultureDetailPage(opts: {
   const id = culture.id != null ? String(culture.id) : '';
   const nameValue = culture.name ? String(culture.name) : '';
   const computedDefinitionId = deriveCultureDefinitionIdFromKey(nameValue || definition.name || 'culture');
+  const prettyDefinitionJson = JSON.stringify(definition, null, 2);
+  const advancedJsonText = opts.advancedJsonText != null ? String(opts.advancedJsonText) : prettyDefinitionJson;
   const toneSet = new Set<string>((definition.tone_expectations || []).map((v) => String(v)))
   const disruptionSet = new Set<string>((definition.disruption_signals || []).map((v) => String(v)))
   const tolerance = definition.tolerance || {
@@ -1914,6 +1923,25 @@ function renderCultureDetailPage(opts: {
   </label>`;
   body += `</div>`;
 
+  body += `<details class="section" style="margin-top: 14px"${advancedOpen ? ' open' : ''}>`;
+  body += `<summary class="section-title" style="cursor:pointer">Advanced JSON</summary>`;
+  body += `<div class="field-hint" style="margin-bottom:8px">Canonical culture JSON. Use structured fields above for normal editing.</div>`;
+  body += `<pre style="margin:0 0 10px 0; max-height: 260px; overflow:auto">${escapeHtml(prettyDefinitionJson)}</pre>`;
+  if (advancedJsonCanEdit) {
+    body += `<label>Raw JSON
+      <textarea name="advanced_definition_json" style="min-height: 220px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace">${escapeHtml(advancedJsonText)}</textarea>
+      <div class="field-hint">Validate checks schema only. Apply validates and uses this JSON for Save.</div>
+    </label>`;
+    if (advancedJsonError) body += `<div class="error">${escapeHtml(advancedJsonError)}</div>`;
+    body += `<div class="actions" style="margin-top: 8px">
+      <button type="submit" name="advanced_action" value="validate_json">Validate JSON</button>
+      <button type="submit" name="advanced_action" value="apply_json">Apply JSON</button>
+    </div>`;
+  } else {
+    body += `<div class="field-hint">Read-only. Raw JSON editing requires site admin permission.</div>`;
+  }
+  body += `</details>`;
+
   body += `<div class="section" style="margin-top: 14px">`;
   body += `<div class="section-title">Categories</div>`;
   body += `<div class="field-hint">Select which rule categories are included in this culture. Users will only see rules from these categories once cultures are attached to spaces.</div>`;
@@ -1976,6 +2004,13 @@ pagesRouter.get('/admin/cultures/:id', async (req: any, res: any) => {
 
     const cookies = parseCookies(req.headers.cookie);
     const csrfToken = cookies['csrf'] || '';
+    let advancedJsonCanEdit = false;
+    try {
+      const userId = Number(req?.user?.id || 0);
+      if (Number.isFinite(userId) && userId > 0) {
+        advancedJsonCanEdit = await can(userId, PERM.VIDEO_DELETE_ANY);
+      }
+    } catch {}
 
     const doc = renderCultureDetailPage({
       culture,
@@ -1983,6 +2018,7 @@ pagesRouter.get('/admin/cultures/:id', async (req: any, res: any) => {
       definitionSource: culture.definition_source,
       definitionValidationErrors: culture.definition_validation_errors || [],
       definitionFieldErrors: {},
+      advancedJsonCanEdit,
       categories,
       assignedCategoryIds,
       csrfToken,
@@ -2021,63 +2057,140 @@ pagesRouter.post('/admin/cultures/:id', async (req: any, res: any) => {
     const categories = await listRuleCategoriesForCultures();
     const cookies = parseCookies(req.headers.cookie);
     const csrfToken = cookies['csrf'] || '';
+    const userId = Number(req?.user?.id || 0);
+    let advancedJsonCanEdit = false;
+    try {
+      if (Number.isFinite(userId) && userId > 0) {
+        advancedJsonCanEdit = await can(userId, PERM.VIDEO_DELETE_ANY);
+      }
+    } catch {}
+    const advancedAction = String(body.advanced_action || '').trim().toLowerCase();
+    const isAdvancedValidate = advancedJsonCanEdit && advancedAction === 'validate_json';
+    const isAdvancedApply = advancedJsonCanEdit && advancedAction === 'apply_json';
+    const advancedJsonTextInput =
+      body.advanced_definition_json != null ? String(body.advanced_definition_json) : '';
+
+    const renderDraftPage = (opts: {
+      status?: number;
+      definition?: CultureDefinitionV1;
+      fieldErrors?: Record<string, string[]>;
+      assignedIds?: Set<number>;
+      error?: string;
+      notice?: string;
+      advancedJsonError?: string;
+      advancedOpen?: boolean;
+    }) => {
+      const definition = opts.definition || current.definition;
+      const doc = renderCultureDetailPage({
+        culture: { ...current, name: rawName },
+        definition,
+        definitionSource: current.definition_source,
+        definitionValidationErrors: current.definition_validation_errors || [],
+        definitionFieldErrors: opts.fieldErrors || {},
+        advancedJsonCanEdit,
+        advancedJsonText:
+          body.advanced_definition_json != null
+            ? advancedJsonTextInput
+            : JSON.stringify(definition, null, 2),
+        advancedJsonError: opts.advancedJsonError || '',
+        advancedOpen: !!opts.advancedOpen || !!opts.advancedJsonError || isAdvancedValidate || isAdvancedApply,
+        categories,
+        assignedCategoryIds: opts.assignedIds || new Set<number>(submittedIds),
+        csrfToken,
+        notice: opts.notice,
+        error: opts.error,
+      });
+      res.set('Content-Type', 'text/html; charset=utf-8');
+      return res.status(Number(opts.status || 400)).send(doc);
+    };
+
+    let definitionToPersist: CultureDefinitionV1 | null = null;
+    let structuredDraft: Record<string, unknown> | null = null;
+
+    if (isAdvancedValidate || isAdvancedApply) {
+      const raw = advancedJsonTextInput.trim();
+      if (!raw) {
+        return renderDraftPage({
+          error: 'Advanced JSON is required.',
+          advancedJsonError: 'Raw JSON is empty.',
+          advancedOpen: true,
+        });
+      }
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(raw);
+      } catch (err: any) {
+        return renderDraftPage({
+          error: 'Advanced JSON is invalid.',
+          advancedJsonError: `JSON parse error: ${String(err?.message || err)}`,
+          advancedOpen: true,
+        });
+      }
+      const advancedValidation = validateCultureDefinitionV1(parsed, {
+        cultureName: name || current.name,
+        cultureKey: name || current.name,
+      });
+      if (!advancedValidation.ok) {
+        const normalizedDraft = normalizeCultureDefinitionForValidation(parsed, {
+          cultureName: name || current.name,
+          cultureKey: name || current.name,
+        }) as Record<string, unknown>;
+        return renderDraftPage({
+          definition: mergeCultureDefinitionDraft(current.definition, normalizedDraft),
+          fieldErrors: groupCultureDefinitionErrors(advancedValidation.errors),
+          error: 'Advanced JSON failed schema validation.',
+          advancedJsonError: advancedValidation.errors
+            .map((e) => `${e.path || '(root)'}: ${e.message}`)
+            .join(' • '),
+          advancedOpen: true,
+        });
+      }
+      if (isAdvancedValidate) {
+        return renderDraftPage({
+          status: 200,
+          definition: advancedValidation.value,
+          notice: 'Advanced JSON is valid. No changes were saved.',
+          advancedOpen: true,
+        });
+      }
+      definitionToPersist = advancedValidation.value;
+    }
 
     if (!name) {
-      const draft = parseCultureDefinitionDraftFromBody(body, current.definition);
-      const doc = renderCultureDetailPage({
-        culture: { ...current, name: rawName },
-        definition: mergeCultureDefinitionDraft(current.definition, draft),
-        definitionSource: current.definition_source,
-        definitionValidationErrors: current.definition_validation_errors || [],
-        definitionFieldErrors: { name: ['Name is required.'] },
-        categories,
-        assignedCategoryIds: new Set<number>(submittedIds),
-        csrfToken,
+      structuredDraft = parseCultureDefinitionDraftFromBody(body, current.definition);
+      return renderDraftPage({
+        definition: mergeCultureDefinitionDraft(current.definition, structuredDraft),
+        fieldErrors: { name: ['Name is required.'] },
         error: 'Name is required.',
       });
-      res.set('Content-Type', 'text/html; charset=utf-8');
-      return res.status(400).send(doc);
     }
     if (name.length > 255) {
-      const draft = parseCultureDefinitionDraftFromBody(body, current.definition);
-      const doc = renderCultureDetailPage({
-        culture: { ...current, name: rawName },
-        definition: mergeCultureDefinitionDraft(current.definition, draft),
-        definitionSource: current.definition_source,
-        definitionValidationErrors: current.definition_validation_errors || [],
-        definitionFieldErrors: { name: ['Name is too long (max 255 characters).'] },
-        categories,
-        assignedCategoryIds: new Set<number>(submittedIds),
-        csrfToken,
+      structuredDraft = parseCultureDefinitionDraftFromBody(body, current.definition);
+      return renderDraftPage({
+        definition: mergeCultureDefinitionDraft(current.definition, structuredDraft),
+        fieldErrors: { name: ['Name is too long (max 255 characters).'] },
         error: 'Name is too long (max 255 characters).',
       });
-      res.set('Content-Type', 'text/html; charset=utf-8');
-      return res.status(400).send(doc);
     }
 
-    const definitionDraft = parseCultureDefinitionDraftFromBody(body, current.definition);
-    const validation = validateCultureDefinitionV1(definitionDraft, {
-      cultureName: name,
-      cultureKey: name,
-    });
-    if (!validation.ok) {
-      const normalizedDraft = normalizeCultureDefinitionForValidation(definitionDraft, {
+    if (!definitionToPersist) {
+      structuredDraft = parseCultureDefinitionDraftFromBody(body, current.definition);
+      const validation = validateCultureDefinitionV1(structuredDraft, {
         cultureName: name,
         cultureKey: name,
-      }) as Record<string, unknown>;
-      const doc = renderCultureDetailPage({
-        culture: { ...current, name: rawName },
-        definition: mergeCultureDefinitionDraft(current.definition, normalizedDraft),
-        definitionSource: current.definition_source,
-        definitionValidationErrors: current.definition_validation_errors || [],
-        definitionFieldErrors: groupCultureDefinitionErrors(validation.errors),
-        categories,
-        assignedCategoryIds: new Set<number>(submittedIds),
-        csrfToken,
-        error: 'Culture definition is invalid. Fix the highlighted fields.',
       });
-      res.set('Content-Type', 'text/html; charset=utf-8');
-      return res.status(400).send(doc);
+      if (!validation.ok) {
+        const normalizedDraft = normalizeCultureDefinitionForValidation(structuredDraft, {
+          cultureName: name,
+          cultureKey: name,
+        }) as Record<string, unknown>;
+        return renderDraftPage({
+          definition: mergeCultureDefinitionDraft(current.definition, normalizedDraft),
+          fieldErrors: groupCultureDefinitionErrors(validation.errors),
+          error: 'Culture definition is invalid. Fix the highlighted fields.',
+        });
+      }
+      definitionToPersist = validation.value;
     }
 
     const uniqueSubmittedIds = Array.from(new Set(submittedIds));
@@ -2098,7 +2211,7 @@ pagesRouter.post('/admin/cultures/:id', async (req: any, res: any) => {
         id,
         {
           name,
-          definition_json: validation.value,
+          definition_json: definitionToPersist,
         },
         conn
       );
@@ -2106,19 +2219,14 @@ pagesRouter.post('/admin/cultures/:id', async (req: any, res: any) => {
       const msg = String(err?.message || err);
       if (msg.includes('ER_DUP_ENTRY') || msg.includes('uniq_cultures_name')) {
         await conn.rollback();
-        const doc = renderCultureDetailPage({
-          culture: { ...current, name: rawName },
-          definition: mergeCultureDefinitionDraft(current.definition, definitionDraft),
-          definitionSource: current.definition_source,
-          definitionValidationErrors: current.definition_validation_errors || [],
-          definitionFieldErrors: {},
-          categories,
-          assignedCategoryIds: new Set<number>(validIds.length ? validIds : submittedIds),
-          csrfToken,
+        const definitionPreview =
+          definitionToPersist ||
+          mergeCultureDefinitionDraft(current.definition, structuredDraft || {});
+        return renderDraftPage({
+          definition: definitionPreview,
+          assignedIds: new Set<number>(validIds.length ? validIds : submittedIds),
           error: 'A culture with that name already exists.',
         });
-        res.set('Content-Type', 'text/html; charset=utf-8');
-        return res.status(400).send(doc);
       }
       if (String(err?.code || '') === 'culture_not_found') {
         await conn.rollback();
