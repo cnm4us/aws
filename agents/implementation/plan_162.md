@@ -36,7 +36,7 @@ Status: Active
 
 ## Phase Status
 - A: Completed
-- B: Pending
+- B: Completed
 - C: Pending
 - D: Pending
 - E: Pending
@@ -149,12 +149,17 @@ Status: Active
 ## Change Log
 - 2026-04-09 — Plan drafted from feature_16 analysis and contract hardening checklist.
 - 2026-04-09 — Phase A completed: added moderation-v2 contract module, frozen enums, zod schemas, idempotency helpers, and contract smoke script.
+- 2026-04-09 — Phase B completed: added moderation evaluation, measurement, judgment, and review tables with indexes and foreign keys.
 
 ## Validation
 - Environment: development
 - Commands run:
   - `npm run build`
   - `npm run moderation:v2:contracts:smoke`
+  - `SHOW CREATE TABLE moderation_evaluations`
+  - `SHOW CREATE TABLE moderation_measurements`
+  - `SHOW CREATE TABLE moderation_judgments`
+  - `SHOW CREATE TABLE moderation_reviews`
 - Evidence files:
   - `agents/features/feature_16_moderation_v2.md`
   - `src/features/moderation-v2/enums.ts`
@@ -163,7 +168,7 @@ Status: Active
   - `src/features/moderation-v2/idempotency.ts`
   - `scripts/moderation-v2-contract-smoke.ts`
 - Known gaps:
-  - No v2 endpoint code or tables implemented yet (Phase B+).
+  - No v2 endpoint code yet (Phase C+).
 
 ## Open Risks / Deferred
 - Risk:
@@ -177,6 +182,6 @@ Status: Active
 
 ## Resume Here
 - Next action:
-  - Start Phase B (evaluation persistence schema tables and indexes).
+  - Start Phase C (measure endpoint + immutable stage-1 persistence).
 - Blocking question (if any):
   - none

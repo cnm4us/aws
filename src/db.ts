@@ -3809,6 +3809,199 @@ export async function ensureSchema(db: DB) {
       FOREIGN KEY (rule_version_id) REFERENCES rule_versions(id)
     `);
   } catch {}
+
+  // Moderation V2 evaluation pipeline (plan_162B): immutable stage artifacts.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS moderation_evaluations (
+      evaluation_id CHAR(26) PRIMARY KEY,
+      report_id BIGINT UNSIGNED NOT NULL,
+      content_id VARCHAR(128) NOT NULL,
+      content_type ENUM('video','comment','account') NOT NULL DEFAULT 'video',
+      status ENUM('created','measured','judged','reviewed','failed') NOT NULL DEFAULT 'created',
+      request_id VARCHAR(120) NULL,
+      measured_at DATETIME NULL,
+      judged_at DATETIME NULL,
+      reviewed_at DATETIME NULL,
+      failed_at DATETIME NULL,
+      final_disposition_source ENUM('ai_accepted','human_override') NULL,
+      final_outcome VARCHAR(32) NULL,
+      final_action_type VARCHAR(64) NULL,
+      metadata_json JSON NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      KEY idx_moderation_evaluations_report_created (report_id, created_at, evaluation_id),
+      KEY idx_moderation_evaluations_status_created (status, created_at, evaluation_id),
+      KEY idx_moderation_evaluations_content (content_id, content_type, created_at, evaluation_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+  await db.query(`ALTER TABLE moderation_evaluations ADD COLUMN IF NOT EXISTS evaluation_id CHAR(26) NOT NULL`)
+  await db.query(`ALTER TABLE moderation_evaluations ADD COLUMN IF NOT EXISTS report_id BIGINT UNSIGNED NOT NULL`)
+  await db.query(`ALTER TABLE moderation_evaluations ADD COLUMN IF NOT EXISTS content_id VARCHAR(128) NOT NULL`)
+  await db.query(`ALTER TABLE moderation_evaluations ADD COLUMN IF NOT EXISTS content_type ENUM('video','comment','account') NOT NULL DEFAULT 'video'`)
+  await db.query(`ALTER TABLE moderation_evaluations ADD COLUMN IF NOT EXISTS status ENUM('created','measured','judged','reviewed','failed') NOT NULL DEFAULT 'created'`)
+  await db.query(`ALTER TABLE moderation_evaluations ADD COLUMN IF NOT EXISTS request_id VARCHAR(120) NULL`)
+  await db.query(`ALTER TABLE moderation_evaluations ADD COLUMN IF NOT EXISTS measured_at DATETIME NULL`)
+  await db.query(`ALTER TABLE moderation_evaluations ADD COLUMN IF NOT EXISTS judged_at DATETIME NULL`)
+  await db.query(`ALTER TABLE moderation_evaluations ADD COLUMN IF NOT EXISTS reviewed_at DATETIME NULL`)
+  await db.query(`ALTER TABLE moderation_evaluations ADD COLUMN IF NOT EXISTS failed_at DATETIME NULL`)
+  await db.query(`ALTER TABLE moderation_evaluations ADD COLUMN IF NOT EXISTS final_disposition_source ENUM('ai_accepted','human_override') NULL`)
+  await db.query(`ALTER TABLE moderation_evaluations ADD COLUMN IF NOT EXISTS final_outcome VARCHAR(32) NULL`)
+  await db.query(`ALTER TABLE moderation_evaluations ADD COLUMN IF NOT EXISTS final_action_type VARCHAR(64) NULL`)
+  await db.query(`ALTER TABLE moderation_evaluations ADD COLUMN IF NOT EXISTS metadata_json JSON NULL`)
+  await db.query(`ALTER TABLE moderation_evaluations ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP`)
+  await db.query(`ALTER TABLE moderation_evaluations ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`)
+  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_moderation_evaluations_report_created ON moderation_evaluations (report_id, created_at, evaluation_id)`); } catch {}
+  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_moderation_evaluations_status_created ON moderation_evaluations (status, created_at, evaluation_id)`); } catch {}
+  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_moderation_evaluations_content ON moderation_evaluations (content_id, content_type, created_at, evaluation_id)`); } catch {}
+  try {
+    await db.query(`
+      ALTER TABLE moderation_evaluations
+      ADD CONSTRAINT fk_moderation_evaluations_report
+      FOREIGN KEY (report_id) REFERENCES space_publication_reports(id)
+    `)
+  } catch {}
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS moderation_measurements (
+      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      evaluation_id CHAR(26) NOT NULL,
+      stage_seq INT UNSIGNED NOT NULL DEFAULT 1,
+      request_snapshot_json JSON NOT NULL,
+      normalized_assessments_json JSON NOT NULL,
+      measurement_meta_json JSON NULL,
+      model_name VARCHAR(128) NULL,
+      duration_ms INT UNSIGNED NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uniq_moderation_measurements_eval_seq (evaluation_id, stage_seq),
+      KEY idx_moderation_measurements_eval_created (evaluation_id, created_at, id),
+      KEY idx_moderation_measurements_model_created (model_name, created_at, id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+  await db.query(`ALTER TABLE moderation_measurements ADD COLUMN IF NOT EXISTS evaluation_id CHAR(26) NOT NULL`)
+  await db.query(`ALTER TABLE moderation_measurements ADD COLUMN IF NOT EXISTS stage_seq INT UNSIGNED NOT NULL DEFAULT 1`)
+  await db.query(`ALTER TABLE moderation_measurements ADD COLUMN IF NOT EXISTS request_snapshot_json JSON NOT NULL`)
+  await db.query(`ALTER TABLE moderation_measurements ADD COLUMN IF NOT EXISTS normalized_assessments_json JSON NOT NULL`)
+  await db.query(`ALTER TABLE moderation_measurements ADD COLUMN IF NOT EXISTS measurement_meta_json JSON NULL`)
+  await db.query(`ALTER TABLE moderation_measurements ADD COLUMN IF NOT EXISTS model_name VARCHAR(128) NULL`)
+  await db.query(`ALTER TABLE moderation_measurements ADD COLUMN IF NOT EXISTS duration_ms INT UNSIGNED NULL`)
+  await db.query(`ALTER TABLE moderation_measurements ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP`)
+  await db.query(`ALTER TABLE moderation_measurements ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`)
+  try { await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_moderation_measurements_eval_seq ON moderation_measurements (evaluation_id, stage_seq)`); } catch {}
+  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_moderation_measurements_eval_created ON moderation_measurements (evaluation_id, created_at, id)`); } catch {}
+  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_moderation_measurements_model_created ON moderation_measurements (model_name, created_at, id)`); } catch {}
+  try {
+    await db.query(`
+      ALTER TABLE moderation_measurements
+      ADD CONSTRAINT fk_moderation_measurements_evaluation
+      FOREIGN KEY (evaluation_id) REFERENCES moderation_evaluations(evaluation_id)
+      ON DELETE CASCADE
+    `)
+  } catch {}
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS moderation_judgments (
+      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      evaluation_id CHAR(26) NOT NULL,
+      stage_seq INT UNSIGNED NOT NULL DEFAULT 1,
+      request_snapshot_json JSON NOT NULL,
+      resolved_policy_json JSON NULL,
+      resolved_culture_json JSON NULL,
+      decision_reasoning_json JSON NOT NULL,
+      ai_judgment_json JSON NOT NULL,
+      judgment_meta_json JSON NULL,
+      model_name VARCHAR(128) NULL,
+      duration_ms INT UNSIGNED NULL,
+      policy_profile_id VARCHAR(64) NULL,
+      policy_profile_version VARCHAR(32) NULL,
+      culture_id VARCHAR(64) NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uniq_moderation_judgments_eval_seq (evaluation_id, stage_seq),
+      KEY idx_moderation_judgments_eval_created (evaluation_id, created_at, id),
+      KEY idx_moderation_judgments_policy_created (policy_profile_id, policy_profile_version, created_at, id),
+      KEY idx_moderation_judgments_culture_created (culture_id, created_at, id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+  await db.query(`ALTER TABLE moderation_judgments ADD COLUMN IF NOT EXISTS evaluation_id CHAR(26) NOT NULL`)
+  await db.query(`ALTER TABLE moderation_judgments ADD COLUMN IF NOT EXISTS stage_seq INT UNSIGNED NOT NULL DEFAULT 1`)
+  await db.query(`ALTER TABLE moderation_judgments ADD COLUMN IF NOT EXISTS request_snapshot_json JSON NOT NULL`)
+  await db.query(`ALTER TABLE moderation_judgments ADD COLUMN IF NOT EXISTS resolved_policy_json JSON NULL`)
+  await db.query(`ALTER TABLE moderation_judgments ADD COLUMN IF NOT EXISTS resolved_culture_json JSON NULL`)
+  await db.query(`ALTER TABLE moderation_judgments ADD COLUMN IF NOT EXISTS decision_reasoning_json JSON NOT NULL`)
+  await db.query(`ALTER TABLE moderation_judgments ADD COLUMN IF NOT EXISTS ai_judgment_json JSON NOT NULL`)
+  await db.query(`ALTER TABLE moderation_judgments ADD COLUMN IF NOT EXISTS judgment_meta_json JSON NULL`)
+  await db.query(`ALTER TABLE moderation_judgments ADD COLUMN IF NOT EXISTS model_name VARCHAR(128) NULL`)
+  await db.query(`ALTER TABLE moderation_judgments ADD COLUMN IF NOT EXISTS duration_ms INT UNSIGNED NULL`)
+  await db.query(`ALTER TABLE moderation_judgments ADD COLUMN IF NOT EXISTS policy_profile_id VARCHAR(64) NULL`)
+  await db.query(`ALTER TABLE moderation_judgments ADD COLUMN IF NOT EXISTS policy_profile_version VARCHAR(32) NULL`)
+  await db.query(`ALTER TABLE moderation_judgments ADD COLUMN IF NOT EXISTS culture_id VARCHAR(64) NULL`)
+  await db.query(`ALTER TABLE moderation_judgments ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP`)
+  await db.query(`ALTER TABLE moderation_judgments ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`)
+  try { await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_moderation_judgments_eval_seq ON moderation_judgments (evaluation_id, stage_seq)`); } catch {}
+  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_moderation_judgments_eval_created ON moderation_judgments (evaluation_id, created_at, id)`); } catch {}
+  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_moderation_judgments_policy_created ON moderation_judgments (policy_profile_id, policy_profile_version, created_at, id)`); } catch {}
+  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_moderation_judgments_culture_created ON moderation_judgments (culture_id, created_at, id)`); } catch {}
+  try {
+    await db.query(`
+      ALTER TABLE moderation_judgments
+      ADD CONSTRAINT fk_moderation_judgments_evaluation
+      FOREIGN KEY (evaluation_id) REFERENCES moderation_evaluations(evaluation_id)
+      ON DELETE CASCADE
+    `)
+  } catch {}
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS moderation_reviews (
+      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      evaluation_id CHAR(26) NOT NULL,
+      review_seq INT UNSIGNED NOT NULL DEFAULT 1,
+      reviewer_user_id BIGINT UNSIGNED NOT NULL,
+      decision ENUM('accept_ai','override_ai') NOT NULL,
+      rationale VARCHAR(2000) NULL,
+      final_outcome VARCHAR(32) NOT NULL,
+      final_action_type VARCHAR(64) NOT NULL,
+      disposition_source ENUM('ai_accepted','human_override') NOT NULL,
+      review_snapshot_json JSON NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uniq_moderation_reviews_eval_seq (evaluation_id, review_seq),
+      KEY idx_moderation_reviews_eval_created (evaluation_id, created_at, id),
+      KEY idx_moderation_reviews_reviewer_created (reviewer_user_id, created_at, id),
+      KEY idx_moderation_reviews_decision_created (decision, created_at, id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+  await db.query(`ALTER TABLE moderation_reviews ADD COLUMN IF NOT EXISTS evaluation_id CHAR(26) NOT NULL`)
+  await db.query(`ALTER TABLE moderation_reviews ADD COLUMN IF NOT EXISTS review_seq INT UNSIGNED NOT NULL DEFAULT 1`)
+  await db.query(`ALTER TABLE moderation_reviews ADD COLUMN IF NOT EXISTS reviewer_user_id BIGINT UNSIGNED NOT NULL`)
+  await db.query(`ALTER TABLE moderation_reviews ADD COLUMN IF NOT EXISTS decision ENUM('accept_ai','override_ai') NOT NULL`)
+  await db.query(`ALTER TABLE moderation_reviews ADD COLUMN IF NOT EXISTS rationale VARCHAR(2000) NULL`)
+  await db.query(`ALTER TABLE moderation_reviews ADD COLUMN IF NOT EXISTS final_outcome VARCHAR(32) NOT NULL`)
+  await db.query(`ALTER TABLE moderation_reviews ADD COLUMN IF NOT EXISTS final_action_type VARCHAR(64) NOT NULL`)
+  await db.query(`ALTER TABLE moderation_reviews ADD COLUMN IF NOT EXISTS disposition_source ENUM('ai_accepted','human_override') NOT NULL`)
+  await db.query(`ALTER TABLE moderation_reviews ADD COLUMN IF NOT EXISTS review_snapshot_json JSON NULL`)
+  await db.query(`ALTER TABLE moderation_reviews ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP`)
+  await db.query(`ALTER TABLE moderation_reviews ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`)
+  try { await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_moderation_reviews_eval_seq ON moderation_reviews (evaluation_id, review_seq)`); } catch {}
+  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_moderation_reviews_eval_created ON moderation_reviews (evaluation_id, created_at, id)`); } catch {}
+  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_moderation_reviews_reviewer_created ON moderation_reviews (reviewer_user_id, created_at, id)`); } catch {}
+  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_moderation_reviews_decision_created ON moderation_reviews (decision, created_at, id)`); } catch {}
+  try {
+    await db.query(`
+      ALTER TABLE moderation_reviews
+      ADD CONSTRAINT fk_moderation_reviews_evaluation
+      FOREIGN KEY (evaluation_id) REFERENCES moderation_evaluations(evaluation_id)
+      ON DELETE CASCADE
+    `)
+  } catch {}
+  try {
+    await db.query(`
+      ALTER TABLE moderation_reviews
+      ADD CONSTRAINT fk_moderation_reviews_reviewer
+      FOREIGN KEY (reviewer_user_id) REFERENCES users(id)
+    `)
+  } catch {}
+
   // User-facing reporting layer (plan_157A).
   await db.query(`
     CREATE TABLE IF NOT EXISTS user_facing_rules (
