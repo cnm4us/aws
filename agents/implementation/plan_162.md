@@ -38,7 +38,7 @@ Status: Active
 - A: Completed
 - B: Completed
 - C: Completed
-- D: Pending
+- D: Completed
 - E: Pending
 - F: Pending
 - G: Pending
@@ -151,6 +151,7 @@ Status: Active
 - 2026-04-09 — Phase A completed: added moderation-v2 contract module, frozen enums, zod schemas, idempotency helpers, and contract smoke script.
 - 2026-04-09 — Phase B completed: added moderation evaluation, measurement, judgment, and review tables with indexes and foreign keys.
 - 2026-04-09 — Phase C completed: added `/api/moderation/measure` route + service + repo, persisted immutable measurement artifacts, and added endpoint smoke script.
+- 2026-04-09 — Phase D completed: added `/api/moderation/judge` route + service + repo flow, server-resolved policy/culture payloads, immutable judgment sequencing, global-safety review floor, and judge smoke coverage for missing refs + no-match dismissal.
 
 ## Validation
 - Environment: development
@@ -158,6 +159,7 @@ Status: Active
   - `npm run build`
   - `npm run moderation:v2:contracts:smoke`
   - `npm run moderation:v2:measure:smoke`
+  - `npm run moderation:v2:judge:smoke`
   - `SHOW CREATE TABLE moderation_evaluations`
   - `SHOW CREATE TABLE moderation_measurements`
   - `SHOW CREATE TABLE moderation_judgments`
@@ -170,11 +172,13 @@ Status: Active
   - `src/features/moderation-v2/idempotency.ts`
   - `src/features/moderation-v2/repo.ts`
   - `src/features/moderation-v2/service.ts`
+  - `src/features/moderation-v2/policy-profiles.ts`
   - `src/routes/moderation-v2.ts`
   - `scripts/moderation-v2-contract-smoke.ts`
   - `scripts/moderation-v2-measure-smoke.ts`
+  - `scripts/moderation-v2-judge-smoke.ts`
 - Known gaps:
-  - Judge/review endpoints and disposition integration not implemented yet (Phase D+).
+  - Review endpoint and disposition integration not implemented yet (Phase E+).
 
 ## Open Risks / Deferred
 - Risk:
@@ -188,6 +192,6 @@ Status: Active
 
 ## Resume Here
 - Next action:
-  - Start Phase D (judge endpoint using evaluation_id + server-resolved policy/culture).
+  - Start Phase E (review endpoint, append-only human decisions, and final disposition integration).
 - Blocking question (if any):
   - none

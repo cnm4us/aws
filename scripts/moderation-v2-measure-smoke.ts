@@ -31,6 +31,17 @@ async function main(): Promise<void> {
   }
   const base = `http://127.0.0.1:${addr.port}`
 
+  async function closeServer(): Promise<void> {
+    try {
+      ;(server as any).closeIdleConnections?.()
+      ;(server as any).closeAllConnections?.()
+    } catch {}
+    await Promise.race([
+      new Promise<void>((resolve) => server.close(() => resolve())),
+      new Promise<void>((resolve) => setTimeout(resolve, 1500)),
+    ])
+  }
+
   try {
     const invalidResp = await fetch(`${base}/api/moderation/measure`, {
       method: 'POST',
@@ -99,7 +110,7 @@ async function main(): Promise<void> {
 
     console.log('[moderation-v2-measure-smoke] ok')
   } finally {
-    await new Promise<void>((resolve) => server.close(() => resolve()))
+    await closeServer()
   }
 }
 
@@ -107,4 +118,3 @@ main().catch((err) => {
   console.error('[moderation-v2-measure-smoke] failed', err)
   process.exit(1)
 })
-

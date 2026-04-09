@@ -1,17 +1,24 @@
 import { DomainError } from '../../core/errors'
 import { getPool } from '../../db'
 import { ulidMonotonic } from '../../utils/ulid'
+import { buildAiCulturePayload } from '../cultures/payload'
+import { getCultureWithDefinitionByDefinitionId } from '../cultures/repo'
 import {
+  moderationJudgeResponseSchema,
   moderationMeasureResponseSchema,
+  type ModerationJudgeRequest,
+  type ModerationJudgeResponse,
   type ModerationMeasureRequest,
   type ModerationMeasureResponse,
 } from './schemas'
-import { buildMeasureIdempotencyKey } from './idempotency'
+import { buildJudgeIdempotencyKey, buildMeasureIdempotencyKey } from './idempotency'
+import { resolveModerationPolicyProfile } from './policy-profiles'
 import * as repo from './repo'
-import type { ModerationConfidenceBand, ModerationSeverity } from './enums'
-import type { ModerationMeasureRequestBody } from './types'
+import type { ModerationActionType, ModerationConfidenceBand, ModerationOutcome, ModerationSeverity } from './enums'
+import type { ModerationJudgeRequestBody, ModerationMeasureRequestBody } from './types'
 
 const MEASUREMENT_MODEL_NAME = 'measurement-heuristic-v1'
+const JUDGMENT_MODEL_NAME = 'judgment-heuristic-v1'
 const MAX_EVIDENCE_TEXT_LENGTH = 280
 
 function normalizeText(value: string): string {
@@ -260,4 +267,299 @@ export async function measureModeration(
   }
 
   return parsed.data
+}
+
+type StoredAssessment = {
+  issue_id: string
+  issue_class: 'global_safety' | 'cultural' | 'unknown'
+  matched: boolean
+  severity: ModerationSeverity
+  confidence: number
+  confidence_band: ModerationConfidenceBand
+  evidence: Array<{ evidence_id: string }>
+}
+
+function asStoredAssessments(raw: unknown): StoredAssessment[] {
+  if (!Array.isArray(raw)) return []
+  const out: StoredAssessment[] = []
+  for (const item of raw as any[]) {
+    if (!item || typeof item !== 'object') continue
+    const issueId = String(item.issue_id || '').trim()
+    if (!issueId) continue
+    const issueClassRaw = String(item.issue_class || '').trim()
+    const issueClass = issueClassRaw === 'global_safety' || issueClassRaw === 'cultural' ? issueClassRaw : 'unknown'
+    const severityRaw = String(item.severity || '').trim() as ModerationSeverity
+    const severity =
+      severityRaw === 'none' || severityRaw === 'mild' || severityRaw === 'moderate' || severityRaw === 'escalated'
+        ? severityRaw
+        : 'none'
+    const confidence = clamp(Number(item.confidence || 0), 0, 1)
+    const confidenceBand = confidenceBandFromScore(confidence)
+    const evidence = Array.isArray(item.evidence)
+      ? item.evidence
+          .map((ev: any) => ({ evidence_id: String(ev?.evidence_id || '').trim() }))
+          .filter((ev: any) => Boolean(ev.evidence_id))
+      : []
+    out.push({
+      issue_id: issueId,
+      issue_class: issueClass,
+      matched: Boolean(item.matched),
+      severity,
+      confidence,
+      confidence_band: confidenceBand,
+      evidence,
+    })
+  }
+  return out
+}
+
+function inferToleranceKey(issueId: string): keyof ReturnType<typeof buildAiCulturePayload>['culture']['tolerance'] | null {
+  const id = normalizeSignalToken(issueId)
+  if (id.includes('hostil')) return 'hostility'
+  if (id.includes('confront')) return 'confrontation'
+  if (id.includes('profan')) return 'person_directed_profanity'
+  if (id.includes('mock')) return 'mockery'
+  if (id.includes('attack') || id.includes('insult')) return 'personal_attacks'
+  return null
+}
+
+function outcomeFromImpact(score: number, policy: ReturnType<typeof resolveModerationPolicyProfile>): ModerationOutcome {
+  if (score <= policy.outcome_thresholds.dismiss.max_score) return 'dismiss'
+  if (score >= policy.outcome_thresholds.uphold.min_score) return 'uphold'
+  if (score >= policy.outcome_thresholds.review.min_score && score <= policy.outcome_thresholds.review.max_score) return 'review'
+  return 'soft_action'
+}
+
+function actionTypeFromOutcome(outcome: ModerationOutcome, primarySeverity: ModerationSeverity, hasGlobalSafety: boolean): ModerationActionType {
+  if (outcome === 'dismiss') return 'none'
+  if (outcome === 'soft_action') return 'content_flag'
+  if (outcome === 'review') return 'human_review'
+  if (hasGlobalSafety && primarySeverity === 'escalated') return 'content_remove'
+  return 'content_flag'
+}
+
+function countMeasuredRules(raw: unknown): number {
+  if (!raw || typeof raw !== 'object') return 0
+  const rules = (raw as any).rules
+  return Array.isArray(rules) ? rules.length : 0
+}
+
+export async function judgeModeration(
+  input: ModerationJudgeRequestBody
+): Promise<ModerationJudgeResponse> {
+  const startedAt = Date.now()
+  const normalizedInput = input as ModerationJudgeRequest
+  const judgedAt = new Date()
+  const idempotencyKey = buildJudgeIdempotencyKey(normalizedInput)
+  const policy = resolveModerationPolicyProfile(normalizedInput.policy_profile_id)
+  const pool = getPool()
+  const conn = await pool.getConnection()
+
+  try {
+    await conn.beginTransaction()
+
+    const evaluation = await repo.getEvaluationByIdForUpdate(normalizedInput.evaluation_id, conn as any)
+    if (!evaluation) throw new DomainError('evaluation_not_found', 'evaluation_not_found', 404)
+    if (evaluation.status === 'reviewed') {
+      throw new DomainError('evaluation_already_reviewed', 'evaluation_already_reviewed', 409)
+    }
+    if (evaluation.status === 'failed') {
+      throw new DomainError('evaluation_failed', 'evaluation_failed', 409)
+    }
+
+    const measurement = await repo.getLatestMeasurementByEvaluationId(normalizedInput.evaluation_id, conn as any)
+    if (!measurement) throw new DomainError('measurement_not_found', 'measurement_not_found', 404)
+
+    const culture = await getCultureWithDefinitionByDefinitionId(normalizedInput.culture_id, conn as any)
+    if (!culture) throw new DomainError('culture_not_found', 'culture_not_found', 404)
+    const aiCulture = buildAiCulturePayload(culture.definition)
+
+    const assessments = asStoredAssessments(measurement.normalized_assessments_json).filter((it) => it.matched)
+    const previousJudgment = await repo.getLatestJudgmentByEvaluationId(normalizedInput.evaluation_id, conn as any)
+    const nextJudgmentStageSeq = (previousJudgment?.stage_seq || 0) + 1
+
+    const issueSummaries: ModerationJudgeResponse['decision_reasoning']['issue_summaries'] = []
+    const dimensionImpacts: ModerationJudgeResponse['decision_reasoning']['dimension_impacts'] = []
+    const reasoningTrace: string[] = []
+
+    let maxImpact = 0
+    let maxConfidence = 0
+    let primary: StoredAssessment | null = null
+    let hasGlobalSafety = false
+
+    for (const a of assessments) {
+      if (a.issue_class === 'global_safety') hasGlobalSafety = true
+      const severityScore = policy.severity_map[a.severity] ?? 0
+      const toleranceKey = inferToleranceKey(a.issue_id)
+      const toleranceValue = toleranceKey ? aiCulture.culture.tolerance[toleranceKey] : null
+      const dimensionWeight = toleranceValue
+        ? policy.tolerance_weight_map[toleranceValue]
+        : aiCulture.culture.interaction_style === 'professional'
+          ? 2.0
+          : 1.5
+      const impactScore = Number((severityScore * dimensionWeight).toFixed(2))
+      if (impactScore >= maxImpact) {
+        maxImpact = impactScore
+        primary = a
+      }
+      maxConfidence = Math.max(maxConfidence, a.confidence)
+
+      issueSummaries.push({
+        issue_id: a.issue_id,
+        issue_class: a.issue_class,
+        matched: a.matched,
+        severity: a.severity,
+        severity_score: severityScore,
+        confidence: Number(a.confidence.toFixed(2)),
+        confidence_band: confidenceBandFromScore(a.confidence),
+        evidence_refs: a.evidence.map((ev) => ev.evidence_id),
+      })
+      dimensionImpacts.push({
+        issue_id: a.issue_id,
+        dimension_path: toleranceKey ? `culture.tolerance.${toleranceKey}` : 'culture.interaction_style',
+        culture_value: toleranceValue || aiCulture.culture.interaction_style,
+        dimension_weight: Number(dimensionWeight.toFixed(2)),
+        impact_score: impactScore,
+        impact_level: confidenceBandFromScore(clamp(impactScore / 6, 0, 1)),
+      })
+      reasoningTrace.push(
+        `Issue ${a.issue_id} severity=${a.severity} score=${severityScore} weight=${Number(dimensionWeight.toFixed(2))} impact=${impactScore}.`
+      )
+    }
+
+    if (!assessments.length) {
+      const evaluatedRuleCount = countMeasuredRules(measurement.request_snapshot_json)
+      maxConfidence = clamp(0.65 + Math.min(evaluatedRuleCount, 6) * 0.05, 0, 0.95)
+      reasoningTrace.push('No matched issues were present in the stored stage-1 measurement artifact.')
+      reasoningTrace.push(
+        `Dismiss outcome retained because ${evaluatedRuleCount || 0} rules were evaluated without any matched issue crossing the judgment threshold.`
+      )
+    }
+
+    const overallConfidence = Number(clamp(maxConfidence, 0, 1).toFixed(2))
+    const overallConfidenceBand = confidenceBandFromScore(overallConfidence)
+    let outcome: ModerationOutcome = assessments.length ? outcomeFromImpact(maxImpact, policy) : 'dismiss'
+    if (assessments.length && policy.confidence_rules.low === 'review' && overallConfidenceBand === 'low') {
+      outcome = 'review'
+      reasoningTrace.push('Low confidence forced review outcome.')
+    }
+    if (hasGlobalSafety && (outcome === 'dismiss' || outcome === 'soft_action')) {
+      outcome = 'review'
+      reasoningTrace.push('Global safety match prevented dismiss/soft_action; raised to review.')
+    }
+
+    const primaryIssue = primary || assessments[0] || null
+    const primarySeverity = primaryIssue?.severity || 'none'
+    const actionType = actionTypeFromOutcome(outcome, primarySeverity, hasGlobalSafety)
+    const durationMs = Math.max(0, Date.now() - startedAt)
+
+    const response: ModerationJudgeResponse = {
+      request_id: normalizedInput.request_id ?? null,
+      evaluation_id: evaluation.evaluation_id,
+      report_id: evaluation.report_id,
+      content_id: evaluation.content_id,
+      decision_reasoning: {
+        issue_summaries: issueSummaries,
+        dimension_impacts: dimensionImpacts,
+        cultural_context: {
+          culture_id: aiCulture.culture.id,
+          culture_name: aiCulture.culture.name,
+          interaction_mode: aiCulture.culture.interaction_style,
+          discourse_mode: null,
+        },
+        confidence_analysis: {
+          overall_confidence: overallConfidence,
+          overall_confidence_band: overallConfidenceBand,
+          confidence_factors: [
+            `matched_issues:${assessments.length}`,
+            `evaluated_rules:${countMeasuredRules(measurement.request_snapshot_json)}`,
+            `max_impact:${Number(maxImpact.toFixed(2))}`,
+            `has_global_safety:${hasGlobalSafety ? 'yes' : 'no'}`,
+          ],
+        },
+        reasoning_trace: reasoningTrace,
+      },
+      ai_judgment: {
+        outcome,
+        action_type: actionType,
+        primary_issue_id: primaryIssue?.issue_id || null,
+        primary_issue_class: primaryIssue?.issue_class || 'unknown',
+        severity_level: primarySeverity,
+        confidence: overallConfidence,
+        confidence_band: overallConfidenceBand,
+        impact_score: Number(maxImpact.toFixed(2)),
+        decision_basis: {
+          policy_profile_id: policy.id,
+          policy_profile_version: policy.version,
+          culture_version: aiCulture.culture.version,
+          low_confidence_forced_review: assessments.length > 0 && overallConfidenceBand === 'low',
+          global_safety_lock: hasGlobalSafety,
+          judgment_stage_seq: nextJudgmentStageSeq,
+          no_matched_issues: assessments.length === 0,
+        },
+        alternative_outcomes_considered: [
+          { outcome: 'dismiss', reason_rejected: 'impact score exceeded dismissal or global safety lock applied' },
+          { outcome: 'review', reason_rejected: outcome === 'review' ? 'selected' : 'threshold produced stronger outcome' },
+        ],
+      },
+      judgment_meta: {
+        model_name: JUDGMENT_MODEL_NAME,
+        judged_at: judgedAt.toISOString(),
+        duration_ms: durationMs,
+        policy_profile_id: policy.id,
+        policy_profile_version: policy.version,
+        culture_id: aiCulture.culture.id,
+      },
+    }
+
+    const parsed = moderationJudgeResponseSchema.safeParse(response)
+    if (!parsed.success) {
+      throw new DomainError('invalid_judgment_output', 'invalid_judgment_output', 500)
+    }
+
+    await repo.insertJudgment(
+      {
+        evaluationId: evaluation.evaluation_id,
+        stageSeq: nextJudgmentStageSeq,
+        requestSnapshotJson: normalizedInput,
+        resolvedPolicyJson: policy,
+        resolvedCultureJson: aiCulture,
+        decisionReasoningJson: parsed.data.decision_reasoning,
+        aiJudgmentJson: parsed.data.ai_judgment,
+        judgmentMetaJson: parsed.data.judgment_meta,
+        modelName: JUDGMENT_MODEL_NAME,
+        durationMs,
+        policyProfileId: policy.id,
+        policyProfileVersion: policy.version,
+        cultureId: aiCulture.culture.id,
+      },
+      conn as any
+    )
+
+    await repo.updateEvaluationJudged(
+      {
+        evaluationId: evaluation.evaluation_id,
+        judgedAt,
+        finalOutcome: parsed.data.ai_judgment.outcome,
+        finalActionType: parsed.data.ai_judgment.action_type,
+        metadataJson: {
+          source: 'api.moderation.judge',
+          idempotency_key: idempotencyKey,
+          judgment_stage_seq: nextJudgmentStageSeq,
+          policy_profile_id: policy.id,
+          policy_profile_version: policy.version,
+          culture_id: aiCulture.culture.id,
+        },
+      },
+      conn as any
+    )
+
+    await conn.commit()
+    return parsed.data
+  } catch (err) {
+    try { await conn.rollback() } catch {}
+    throw err
+  } finally {
+    try { conn.release() } catch {}
+  }
 }

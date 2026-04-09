@@ -157,6 +157,33 @@ export async function getCultureWithDefinition(
   }
 }
 
+export async function getCultureWithDefinitionByDefinitionId(
+  definitionId: string,
+  db?: DbLike
+): Promise<(CultureRecord & { definition: CultureDefinitionV1; definition_source: CultureDefinitionHydrationSource; definition_validation_errors: CultureDefinitionValidationError[] }) | null> {
+  const q = dbOrPool(db)
+  const id = String(definitionId || '').trim()
+  if (!id) return null
+  const [rows] = await q.query(
+    `SELECT id, name, description, definition_json, created_at, updated_at
+       FROM cultures
+      WHERE JSON_UNQUOTE(JSON_EXTRACT(definition_json, '$.id')) = ?
+      ORDER BY id DESC
+      LIMIT 1`,
+    [id]
+  )
+  const row = (rows as any[])[0]
+  if (!row) return null
+  const culture = toCultureRecord(row)
+  const hydrated = hydrateCultureDefinitionWithFallback(culture)
+  return {
+    ...culture,
+    definition: hydrated.definition,
+    definition_source: hydrated.source,
+    definition_validation_errors: hydrated.validationErrors,
+  }
+}
+
 export async function createCulture(
   input: { name: string; description?: string | null; definition_json?: unknown },
   db?: DbLike
