@@ -39,7 +39,7 @@ Status: Active
 - B: Completed
 - C: Completed
 - D: Completed
-- E: Pending
+- E: Completed
 - F: Pending
 - G: Pending
 
@@ -151,7 +151,8 @@ Status: Active
 - 2026-04-09 — Phase A completed: added moderation-v2 contract module, frozen enums, zod schemas, idempotency helpers, and contract smoke script.
 - 2026-04-09 — Phase B completed: added moderation evaluation, measurement, judgment, and review tables with indexes and foreign keys.
 - 2026-04-09 — Phase C completed: added `/api/moderation/measure` route + service + repo, persisted immutable measurement artifacts, and added endpoint smoke script.
-- 2026-04-09 — Phase D completed: added `/api/moderation/judge` route + service + repo flow, server-resolved policy/culture payloads, immutable judgment sequencing, global-safety review floor, and judge smoke coverage for missing refs + no-match dismissal.
+- 2026-04-09 — Phase D completed in commit `b42cd6f`: added `/api/moderation/judge` route + service + repo flow, server-resolved policy/culture payloads, immutable judgment sequencing, global-safety review floor, and judge smoke coverage for missing refs + no-match dismissal.
+- 2026-04-09 — Phase E completed: added authenticated `/api/moderation/review` flow, append-only human review events, derived accept-ai disposition from stored AI judgment artifacts, and linked final disposition updates into report lifecycle status/action history.
 
 ## Validation
 - Environment: development
@@ -160,6 +161,7 @@ Status: Active
   - `npm run moderation:v2:contracts:smoke`
   - `npm run moderation:v2:measure:smoke`
   - `npm run moderation:v2:judge:smoke`
+  - `npm run moderation:v2:review:smoke`
   - `SHOW CREATE TABLE moderation_evaluations`
   - `SHOW CREATE TABLE moderation_measurements`
   - `SHOW CREATE TABLE moderation_judgments`
@@ -177,8 +179,9 @@ Status: Active
   - `scripts/moderation-v2-contract-smoke.ts`
   - `scripts/moderation-v2-measure-smoke.ts`
   - `scripts/moderation-v2-judge-smoke.ts`
+  - `scripts/moderation-v2-review-smoke.ts`
 - Known gaps:
-  - Review endpoint and disposition integration not implemented yet (Phase E+).
+  - Admin surface and traceability UI/telemetry work not implemented yet (Phase F+).
 
 ## Open Risks / Deferred
 - Risk:
@@ -192,6 +195,6 @@ Status: Active
 
 ## Resume Here
 - Next action:
-  - Start Phase E (review endpoint, append-only human decisions, and final disposition integration).
+  - Start Phase F (admin report inspect visibility for v2 artifacts and Jaeger correlation tags).
 - Blocking question (if any):
   - none

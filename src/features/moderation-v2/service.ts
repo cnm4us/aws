@@ -1,21 +1,31 @@
 import { DomainError } from '../../core/errors'
 import { getPool } from '../../db'
+import { can } from '../../security/permissions'
+import { PERM } from '../../security/perm'
 import { ulidMonotonic } from '../../utils/ulid'
 import { buildAiCulturePayload } from '../cultures/payload'
 import { getCultureWithDefinitionByDefinitionId } from '../cultures/repo'
+import * as reportsRepo from '../reports/repo'
 import {
   moderationJudgeResponseSchema,
   moderationMeasureResponseSchema,
+  moderationReviewResponseSchema,
   type ModerationJudgeRequest,
   type ModerationJudgeResponse,
   type ModerationMeasureRequest,
   type ModerationMeasureResponse,
+  type ModerationReviewRequest,
+  type ModerationReviewResponse,
 } from './schemas'
-import { buildJudgeIdempotencyKey, buildMeasureIdempotencyKey } from './idempotency'
+import { buildJudgeIdempotencyKey, buildMeasureIdempotencyKey, buildReviewIdempotencyKey } from './idempotency'
 import { resolveModerationPolicyProfile } from './policy-profiles'
 import * as repo from './repo'
 import type { ModerationActionType, ModerationConfidenceBand, ModerationOutcome, ModerationSeverity } from './enums'
-import type { ModerationJudgeRequestBody, ModerationMeasureRequestBody } from './types'
+import type {
+  ModerationJudgeRequestBody,
+  ModerationMeasureRequestBody,
+  ModerationReviewRequestBody,
+} from './types'
 
 const MEASUREMENT_MODEL_NAME = 'measurement-heuristic-v1'
 const JUDGMENT_MODEL_NAME = 'judgment-heuristic-v1'
@@ -279,6 +289,11 @@ type StoredAssessment = {
   evidence: Array<{ evidence_id: string }>
 }
 
+type StoredAiJudgment = {
+  outcome: ModerationOutcome
+  action_type: ModerationActionType
+}
+
 function asStoredAssessments(raw: unknown): StoredAssessment[] {
   if (!Array.isArray(raw)) return []
   const out: StoredAssessment[] = []
@@ -342,6 +357,95 @@ function countMeasuredRules(raw: unknown): number {
   if (!raw || typeof raw !== 'object') return 0
   const rules = (raw as any).rules
   return Array.isArray(rules) ? rules.length : 0
+}
+
+function asStoredAiJudgment(raw: unknown): StoredAiJudgment | null {
+  if (!raw || typeof raw !== 'object') return null
+  const outcome = String((raw as any).outcome || '').trim()
+  const actionType = String((raw as any).action_type || '').trim()
+  const validOutcome =
+    outcome === 'dismiss' || outcome === 'soft_action' || outcome === 'review' || outcome === 'uphold'
+      ? (outcome as ModerationOutcome)
+      : null
+  const validActionType =
+    actionType === 'none' ||
+    actionType === 'content_flag' ||
+    actionType === 'content_hide' ||
+    actionType === 'content_remove' ||
+    actionType === 'visibility_restrict' ||
+    actionType === 'warning_issue' ||
+    actionType === 'account_temp_suspend' ||
+    actionType === 'account_perm_suspend' ||
+    actionType === 'human_review' ||
+    actionType === 'escalate_trust_safety' ||
+    actionType === 'escalate_legal'
+      ? (actionType as ModerationActionType)
+      : null
+  if (!validOutcome || !validActionType) return null
+  return {
+    outcome: validOutcome,
+    action_type: validActionType,
+  }
+}
+
+async function assertCanReviewModerationReport(userId: number, reportSpaceId: number): Promise<void> {
+  const canGlobal =
+    (await can(userId, PERM.VIDEO_DELETE_ANY)) ||
+    (await can(userId, PERM.FEED_MODERATE_GLOBAL)) ||
+    (await can(userId, PERM.FEED_PUBLISH_GLOBAL))
+  if (canGlobal) return
+  if (!Number.isFinite(reportSpaceId) || reportSpaceId <= 0) {
+    throw new DomainError('forbidden', 'forbidden', 403)
+  }
+  const canSpace =
+    (await can(userId, PERM.VIDEO_APPROVE_SPACE, { spaceId: reportSpaceId })) ||
+    (await can(userId, PERM.VIDEO_PUBLISH_SPACE, { spaceId: reportSpaceId }))
+  if (!canSpace) throw new DomainError('forbidden', 'forbidden', 403)
+}
+
+function mapResolvedResolutionCode(actionType: ModerationActionType): string {
+  switch (actionType) {
+    case 'content_remove':
+      return 'violation_content_removed'
+    case 'content_hide':
+      return 'violation_content_hidden'
+    case 'visibility_restrict':
+      return 'violation_visibility_restricted'
+    case 'warning_issue':
+      return 'violation_warning_issued'
+    case 'account_temp_suspend':
+      return 'violation_temp_suspension'
+    case 'account_perm_suspend':
+      return 'violation_perm_suspension'
+    case 'escalate_trust_safety':
+      return 'violation_escalated_trust_safety'
+    case 'escalate_legal':
+      return 'violation_escalated_legal'
+    case 'content_flag':
+      return 'valid_report_logged_monitoring'
+    case 'none':
+      return 'valid_report_already_handled'
+    case 'human_review':
+      return 'valid_report_logged_monitoring'
+    default:
+      return 'valid_report_logged_monitoring'
+  }
+}
+
+function deriveReportLifecycleFromDisposition(finalOutcome: ModerationOutcome, finalActionType: ModerationActionType): {
+  status: 'in_review' | 'resolved' | 'dismissed'
+  resolutionCode: string | null
+} {
+  if (finalOutcome === 'dismiss') {
+    return { status: 'dismissed', resolutionCode: 'no_violation_found' }
+  }
+  if (finalOutcome === 'review' || finalActionType === 'human_review') {
+    return { status: 'in_review', resolutionCode: null }
+  }
+  return {
+    status: 'resolved',
+    resolutionCode: mapResolvedResolutionCode(finalActionType),
+  }
 }
 
 export async function judgeModeration(
@@ -560,6 +664,180 @@ export async function judgeModeration(
     try { await conn.rollback() } catch {}
     throw err
   } finally {
+    try { conn.release() } catch {}
+  }
+}
+
+export async function reviewModeration(
+  input: ModerationReviewRequestBody,
+  reviewerUserId: number
+): Promise<ModerationReviewResponse> {
+  const startedAt = Date.now()
+  const normalizedInput = input as ModerationReviewRequest
+  const reviewedAt = new Date()
+  const idempotencyKey = buildReviewIdempotencyKey(normalizedInput)
+  const pool = getPool()
+  const conn = await pool.getConnection()
+
+  try {
+    await conn.beginTransaction()
+
+    const evaluation = await repo.getEvaluationByIdForUpdate(normalizedInput.evaluation_id, conn as any)
+    if (!evaluation) throw new DomainError('evaluation_not_found', 'evaluation_not_found', 404)
+    if (evaluation.status === 'failed') throw new DomainError('evaluation_failed', 'evaluation_failed', 409)
+
+    const report = await reportsRepo.getReportByIdForUpdate(evaluation.report_id, conn as any)
+    if (!report) throw new DomainError('report_not_found', 'report_not_found', 404)
+    await assertCanReviewModerationReport(reviewerUserId, Number(report.space_id || 0))
+
+    const latestJudgment = await repo.getLatestJudgmentByEvaluationId(evaluation.evaluation_id, conn as any)
+    if (!latestJudgment) throw new DomainError('judgment_not_found', 'judgment_not_found', 404)
+    const latestAiJudgment = asStoredAiJudgment(latestJudgment.ai_judgment_json)
+    if (!latestAiJudgment) throw new DomainError('judgment_invalid', 'judgment_invalid', 409)
+
+    let finalOutcome: ModerationOutcome
+    let finalActionType: ModerationActionType
+    let dispositionSource: 'ai_accepted' | 'human_override'
+
+    if (normalizedInput.human_review.decision === 'accept_ai') {
+      if (
+        normalizedInput.human_review.final_outcome &&
+        normalizedInput.human_review.final_outcome !== latestAiJudgment.outcome
+      ) {
+        throw new DomainError('accept_ai_outcome_mismatch', 'accept_ai_outcome_mismatch', 409)
+      }
+      if (
+        normalizedInput.human_review.final_action_type &&
+        normalizedInput.human_review.final_action_type !== latestAiJudgment.action_type
+      ) {
+        throw new DomainError('accept_ai_action_mismatch', 'accept_ai_action_mismatch', 409)
+      }
+      finalOutcome = latestAiJudgment.outcome
+      finalActionType = latestAiJudgment.action_type
+      dispositionSource = 'ai_accepted'
+    } else {
+      finalOutcome = normalizedInput.human_review.final_outcome as ModerationOutcome
+      finalActionType = normalizedInput.human_review.final_action_type as ModerationActionType
+      dispositionSource = 'human_override'
+    }
+
+    const latestReview = await repo.getLatestReviewByEvaluationId(evaluation.evaluation_id, conn as any)
+    const nextReviewSeq = (latestReview?.review_seq || 0) + 1
+    const reportLifecycle = deriveReportLifecycleFromDisposition(finalOutcome, finalActionType)
+    const currentReportStatus = String(report.status || 'open')
+
+    await repo.insertReview(
+      {
+        evaluationId: evaluation.evaluation_id,
+        reviewSeq: nextReviewSeq,
+        reviewerUserId,
+        decision: normalizedInput.human_review.decision,
+        rationale: normalizedInput.human_review.rationale ?? null,
+        finalOutcome,
+        finalActionType,
+        dispositionSource,
+        reviewSnapshotJson: {
+          request_id: normalizedInput.request_id ?? null,
+          evaluation_id: evaluation.evaluation_id,
+          latest_judgment_stage_seq: latestJudgment.stage_seq,
+          review_decision: normalizedInput.human_review,
+          final_disposition: {
+            source: dispositionSource,
+            outcome: finalOutcome,
+            action_type: finalActionType,
+          },
+        },
+      },
+      conn as any
+    )
+
+    await repo.updateEvaluationReviewed(
+      {
+        evaluationId: evaluation.evaluation_id,
+        reviewedAt,
+        dispositionSource,
+        finalOutcome,
+        finalActionType,
+        metadataJson: {
+          source: 'api.moderation.review',
+          idempotency_key: idempotencyKey,
+          review_seq: nextReviewSeq,
+          reviewer_user_id: reviewerUserId,
+          latest_judgment_stage_seq: latestJudgment.stage_seq,
+        },
+      },
+      conn as any
+    )
+
+    await reportsRepo.updateReportLifecycle(
+      {
+        reportId: evaluation.report_id,
+        status: reportLifecycle.status,
+        resolvedByUserId:
+          reportLifecycle.status === 'resolved' || reportLifecycle.status === 'dismissed' ? reviewerUserId : null,
+        resolvedAt:
+          reportLifecycle.status === 'resolved' || reportLifecycle.status === 'dismissed' ? reviewedAt : null,
+        resolutionCode: reportLifecycle.resolutionCode,
+        resolutionNote:
+          reportLifecycle.status === 'resolved' || reportLifecycle.status === 'dismissed'
+            ? normalizedInput.human_review.rationale ?? null
+            : null,
+        touchLastActionAt: true,
+      },
+      conn as any
+    )
+
+    await reportsRepo.insertReportAction(
+      {
+        reportId: evaluation.report_id,
+        actorUserId: reviewerUserId,
+        actionType:
+          normalizedInput.human_review.decision === 'accept_ai'
+            ? 'moderation_v2_accept_ai'
+            : 'moderation_v2_override_ai',
+        fromStatus: currentReportStatus,
+        toStatus: reportLifecycle.status,
+        note: normalizedInput.human_review.rationale ?? null,
+        detailJson: {
+          evaluation_id: evaluation.evaluation_id,
+          review_seq: nextReviewSeq,
+          disposition_source: dispositionSource,
+          final_outcome: finalOutcome,
+          final_action_type: finalActionType,
+          latest_judgment_stage_seq: latestJudgment.stage_seq,
+        },
+      },
+      conn as any
+    )
+
+    const response: ModerationReviewResponse = {
+      request_id: normalizedInput.request_id ?? null,
+      evaluation_id: evaluation.evaluation_id,
+      review_status: 'completed',
+      final_disposition: {
+        source: dispositionSource,
+        outcome: finalOutcome,
+        action_type: finalActionType,
+      },
+      review_meta: {
+        reviewed_at: reviewedAt.toISOString(),
+        reviewer_user_id: reviewerUserId,
+      },
+    }
+
+    const parsed = moderationReviewResponseSchema.safeParse(response)
+    if (!parsed.success) {
+      throw new DomainError('invalid_review_output', 'invalid_review_output', 500)
+    }
+
+    await conn.commit()
+    return parsed.data
+  } catch (err) {
+    try { await conn.rollback() } catch {}
+    throw err
+  } finally {
+    const durationMs = Math.max(0, Date.now() - startedAt)
+    void durationMs
     try { conn.release() } catch {}
   }
 }
