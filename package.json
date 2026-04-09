@@ -63,6 +63,7 @@
     "journeys:smoke:reentry": "bash scripts/smoke-journey-reentry.sh",
     "cultures:smoke:v1": "ts-node scripts/culture-definition-v1-smoke.ts",
     "cultures:smoke:v1:db": "ts-node scripts/culture-definition-v1-db-smoke.ts",
+    "moderation:v2:contracts:smoke": "ts-node scripts/moderation-v2-contract-smoke.ts",
     "db:query:donations": "ts-node scripts/db-query-donations.ts",
     "db:query:subscriptions": "ts-node scripts/db-query-subscriptions.ts",
     "db:backfill:donation-amounts": "ts-node scripts/db-backfill-donation-amounts.ts",
