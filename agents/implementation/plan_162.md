@@ -37,7 +37,7 @@ Status: Active
 ## Phase Status
 - A: Completed
 - B: Completed
-- C: Pending
+- C: Completed
 - D: Pending
 - E: Pending
 - F: Pending
@@ -150,12 +150,14 @@ Status: Active
 - 2026-04-09 — Plan drafted from feature_16 analysis and contract hardening checklist.
 - 2026-04-09 — Phase A completed: added moderation-v2 contract module, frozen enums, zod schemas, idempotency helpers, and contract smoke script.
 - 2026-04-09 — Phase B completed: added moderation evaluation, measurement, judgment, and review tables with indexes and foreign keys.
+- 2026-04-09 — Phase C completed: added `/api/moderation/measure` route + service + repo, persisted immutable measurement artifacts, and added endpoint smoke script.
 
 ## Validation
 - Environment: development
 - Commands run:
   - `npm run build`
   - `npm run moderation:v2:contracts:smoke`
+  - `npm run moderation:v2:measure:smoke`
   - `SHOW CREATE TABLE moderation_evaluations`
   - `SHOW CREATE TABLE moderation_measurements`
   - `SHOW CREATE TABLE moderation_judgments`
@@ -166,9 +168,13 @@ Status: Active
   - `src/features/moderation-v2/types.ts`
   - `src/features/moderation-v2/schemas.ts`
   - `src/features/moderation-v2/idempotency.ts`
+  - `src/features/moderation-v2/repo.ts`
+  - `src/features/moderation-v2/service.ts`
+  - `src/routes/moderation-v2.ts`
   - `scripts/moderation-v2-contract-smoke.ts`
+  - `scripts/moderation-v2-measure-smoke.ts`
 - Known gaps:
-  - No v2 endpoint code yet (Phase C+).
+  - Judge/review endpoints and disposition integration not implemented yet (Phase D+).
 
 ## Open Risks / Deferred
 - Risk:
@@ -182,6 +188,6 @@ Status: Active
 
 ## Resume Here
 - Next action:
-  - Start Phase C (measure endpoint + immutable stage-1 persistence).
+  - Start Phase D (judge endpoint using evaluation_id + server-resolved policy/culture).
 - Blocking question (if any):
   - none
