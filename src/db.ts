@@ -3810,6 +3810,43 @@ export async function ensureSchema(db: DB) {
     `);
   } catch {}
 
+  // Moderation V2 policy profile catalog (plan_162G): seeded server-side judgment profiles.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS moderation_policy_profiles (
+      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      policy_profile_id VARCHAR(64) NOT NULL,
+      version VARCHAR(32) NOT NULL,
+      display_name VARCHAR(128) NULL,
+      description VARCHAR(500) NULL,
+      status ENUM('active','inactive') NOT NULL DEFAULT 'active',
+      is_default TINYINT(1) NOT NULL DEFAULT 0,
+      profile_json JSON NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uniq_moderation_policy_profiles_id_version (policy_profile_id, version),
+      KEY idx_moderation_policy_profiles_active (policy_profile_id, status, is_default, updated_at, id),
+      KEY idx_moderation_policy_profiles_default (is_default, status, updated_at, id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+  await db.query(`ALTER TABLE moderation_policy_profiles ADD COLUMN IF NOT EXISTS policy_profile_id VARCHAR(64) NOT NULL`)
+  await db.query(`ALTER TABLE moderation_policy_profiles ADD COLUMN IF NOT EXISTS version VARCHAR(32) NOT NULL`)
+  await db.query(`ALTER TABLE moderation_policy_profiles ADD COLUMN IF NOT EXISTS display_name VARCHAR(128) NULL`)
+  await db.query(`ALTER TABLE moderation_policy_profiles ADD COLUMN IF NOT EXISTS description VARCHAR(500) NULL`)
+  await db.query(`ALTER TABLE moderation_policy_profiles ADD COLUMN IF NOT EXISTS status ENUM('active','inactive') NOT NULL DEFAULT 'active'`)
+  await db.query(`ALTER TABLE moderation_policy_profiles ADD COLUMN IF NOT EXISTS is_default TINYINT(1) NOT NULL DEFAULT 0`)
+  await db.query(`ALTER TABLE moderation_policy_profiles ADD COLUMN IF NOT EXISTS profile_json JSON NOT NULL`)
+  await db.query(`ALTER TABLE moderation_policy_profiles ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP`)
+  await db.query(`ALTER TABLE moderation_policy_profiles ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`)
+  try {
+    await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_moderation_policy_profiles_id_version ON moderation_policy_profiles (policy_profile_id, version)`)
+  } catch {}
+  try {
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_moderation_policy_profiles_active ON moderation_policy_profiles (policy_profile_id, status, is_default, updated_at, id)`)
+  } catch {}
+  try {
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_moderation_policy_profiles_default ON moderation_policy_profiles (is_default, status, updated_at, id)`)
+  } catch {}
+
   // Moderation V2 evaluation pipeline (plan_162B): immutable stage artifacts.
   await db.query(`
     CREATE TABLE IF NOT EXISTS moderation_evaluations (

@@ -19,7 +19,7 @@ import {
   type ModerationReviewResponse,
 } from './schemas'
 import { buildJudgeIdempotencyKey, buildMeasureIdempotencyKey, buildReviewIdempotencyKey } from './idempotency'
-import { resolveModerationPolicyProfile } from './policy-profiles'
+import { resolveModerationPolicyProfile, type ModerationPolicyProfile } from './policy-profiles'
 import * as repo from './repo'
 import type { ModerationActionType, ModerationConfidenceBand, ModerationOutcome, ModerationSeverity } from './enums'
 import type {
@@ -349,7 +349,7 @@ function inferToleranceKey(issueId: string): keyof ReturnType<typeof buildAiCult
   return null
 }
 
-function outcomeFromImpact(score: number, policy: ReturnType<typeof resolveModerationPolicyProfile>): ModerationOutcome {
+function outcomeFromImpact(score: number, policy: ModerationPolicyProfile): ModerationOutcome {
   if (score <= policy.outcome_thresholds.dismiss.max_score) return 'dismiss'
   if (score >= policy.outcome_thresholds.uphold.min_score) return 'uphold'
   if (score >= policy.outcome_thresholds.review.min_score && score <= policy.outcome_thresholds.review.max_score) return 'review'
@@ -475,12 +475,12 @@ export async function judgeModeration(
   const normalizedInput = input as ModerationJudgeRequest
   const judgedAt = new Date()
   const idempotencyKey = buildJudgeIdempotencyKey(normalizedInput)
-  const policy = resolveModerationPolicyProfile(normalizedInput.policy_profile_id)
   const pool = getPool()
   const conn = await pool.getConnection()
 
   try {
     await conn.beginTransaction()
+    const policy = await resolveModerationPolicyProfile(normalizedInput.policy_profile_id, conn as any)
 
     const evaluation = await repo.getEvaluationByIdForUpdate(normalizedInput.evaluation_id, conn as any)
     if (!evaluation) throw new DomainError('evaluation_not_found', 'evaluation_not_found', 404)

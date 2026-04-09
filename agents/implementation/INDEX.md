@@ -33,8 +33,11 @@ This file is a lightweight index for ongoing implementation work.
 - `agents/implementation/plan_145.md` — CTA outcome canonicalization + policy-driven completion architecture
 - `agents/implementation/plan_146.md` — Journey-level eligibility rulesets (remove step-level ruleset gating)
 - `agents/implementation/plan_147.md` — Multi-surface targeting for messages and journeys
+- `agents/implementation/plan_162.md` — Moderation v2 two-stage pipeline rollout and hardening
 
 ## Active / Next
+- Active now: `agents/implementation/plan_162.md`
+- Feature contract: `agents/features/feature_16_moderation_v2.md`
 - Check latest `plan_NN.md` with `Status: Active`.
 - Continue from that plan's `Resume Here` section.
 - If no plan is `Active`, create a new `plan_NN.md` from `PLAN_TEMPLATE.md`.

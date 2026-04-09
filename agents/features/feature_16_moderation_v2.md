@@ -555,6 +555,69 @@ Deliverable
 
 Please produce a discussion-ready feature analysis, not code.
 
+## Phase G Operational Notes
+
+The implementation now treats moderation v2 as an auditable evaluation chain keyed by `evaluation_id`.
+
+### Contract Summary
+
+- `POST /api/moderation/measure`
+  - server generates `evaluation_id`
+  - stores immutable measurement request snapshot plus normalized assessments
+- `POST /api/moderation/judge`
+  - accepts `evaluation_id`, `culture_id`, `policy_profile_id`
+  - resolves measurement snapshot from storage
+  - resolves policy profile server-side
+  - stores immutable judgment request snapshot, resolved policy/culture, reasoning, and `ai_judgment`
+- `POST /api/moderation/review`
+  - accepts `evaluation_id` plus human decision payload
+  - reviewer identity comes from auth session
+  - stores append-only review events
+  - updates effective final disposition on the evaluation and linked report lifecycle state
+
+### Transition Rules
+
+- Evaluation lifecycle:
+  - `created` -> `measured` -> `judged` -> `reviewed`
+- Measurement and judgment rows are append-only and sequenced with `stage_seq`.
+- Review rows are append-only and sequenced with `review_seq`.
+- `request_id` is client correlation only. Joins and replay/debug use `evaluation_id`.
+- Global safety outcomes are enforced server-side during judgment and are not relaxed by culture payloads.
+- `accept_ai` derives final outcome/action from the latest stored AI judgment.
+- `override_ai` requires rationale and writes a superseding review event without mutating older artifacts.
+
+### Audit Model
+
+- Canonical audit spine:
+  - `moderation_evaluations`
+  - `moderation_measurements`
+  - `moderation_judgments`
+  - `moderation_reviews`
+- Linked report lifecycle state remains visible in `space_publication_reports` and `space_publication_report_actions`.
+- Admin inspect surface at `/admin/reports?report_id=<id>&view=inspect` shows:
+  - evaluation id and lifecycle timestamps
+  - latest measurement summary
+  - latest judgment summary
+  - review timeline
+- Jaeger stage spans stamp:
+  - `app.moderation_evaluation_id`
+  - `app.moderation_stage`
+  - `app.moderation_policy_profile_id`
+  - `app.moderation_policy_profile_version`
+  - `app.moderation_culture_id`
+  - `app.moderation_culture_version`
+
+### Dev Operations
+
+- Seed default policy profiles:
+  - `npm run moderation:v2:policy-profiles:seed`
+- Debug one evaluation:
+  - `npm run moderation:v2:evaluation:debug -- --evaluation-id <ULID>`
+  - add `--json` for full artifact output
+  - add `--out-dir <dir>` to write replayable request snapshots
+- End-to-end happy path:
+  - `npm run moderation:v2:pipeline:smoke`
+
 
 
 Feature Support Artifact: Culture With Dimensions Schema (Codex Ready)
@@ -1130,4 +1193,3 @@ Specifically:
 Do not implement code yet.
 Do not jump into an implementation plan yet unless explicitly asked.
 Treat this as a discussion-ready schema artifact.
-

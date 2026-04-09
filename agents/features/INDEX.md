@@ -19,3 +19,6 @@ This index maps durable feature contracts to their files.
 - `11` — `lower-thirds-svg-config-contract` — `agents/features/feature_11_lower-thirds-svg-config-contract.md`
 - `12` — `create-video-object-centric-audio-mvp` — `agents/features/feature_12_create-video-object-centric-audio-mvp.md`
 - `13` — `feed-campaign-inserts` — `agents/features/feature_13_feed-campaign-inserts.md`
+- `14` — `moderation-updates` — `agents/features/feature_14_moderation_updates.md`
+- `15` — `json-for-moderation` — `agents/features/feature_15_json_for_moderation.md`
+- `16` — `moderation-v2` — `agents/features/feature_16_moderation_v2.md`

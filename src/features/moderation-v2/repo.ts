@@ -205,6 +205,54 @@ export async function getEvaluationByIdForUpdate(
   }
 }
 
+export async function getEvaluationById(
+  evaluationId: string,
+  db?: DbLike
+): Promise<EvaluationRow | null> {
+  const q = (db as any) || getPool()
+  const [rows] = await q.query(
+    `SELECT evaluation_id,
+            report_id,
+            content_id,
+            content_type,
+            status,
+            request_id,
+            measured_at,
+            judged_at,
+            reviewed_at,
+            final_disposition_source,
+            final_outcome,
+            final_action_type,
+            metadata_json,
+            created_at,
+            updated_at
+       FROM moderation_evaluations
+      WHERE evaluation_id = ?
+      LIMIT 1`,
+    [evaluationId]
+  )
+  const row = Array.isArray(rows) ? (rows as any[])[0] : null
+  if (!row) return null
+  return {
+    evaluation_id: String(row.evaluation_id),
+    report_id: Number(row.report_id),
+    content_id: String(row.content_id),
+    content_type: String(row.content_type) as ModerationContentType,
+    status: String(row.status) as EvaluationRow['status'],
+    request_id: row.request_id == null ? null : String(row.request_id),
+    measured_at: row.measured_at == null ? null : String(row.measured_at),
+    judged_at: row.judged_at == null ? null : String(row.judged_at),
+    reviewed_at: row.reviewed_at == null ? null : String(row.reviewed_at),
+    final_disposition_source:
+      row.final_disposition_source == null ? null : String(row.final_disposition_source) as EvaluationRow['final_disposition_source'],
+    final_outcome: row.final_outcome == null ? null : String(row.final_outcome),
+    final_action_type: row.final_action_type == null ? null : String(row.final_action_type),
+    metadata_json: parseJsonCell(row.metadata_json),
+    created_at: String(row.created_at),
+    updated_at: String(row.updated_at),
+  }
+}
+
 export async function getLatestEvaluationByReportId(
   reportId: number,
   db?: DbLike
@@ -290,6 +338,41 @@ export async function getLatestMeasurementByEvaluationId(
   }
 }
 
+export async function listMeasurementsByEvaluationId(
+  evaluationId: string,
+  db?: DbLike
+): Promise<MeasurementRow[]> {
+  const q = (db as any) || getPool()
+  const [rows] = await q.query(
+    `SELECT id,
+            evaluation_id,
+            stage_seq,
+            request_snapshot_json,
+            normalized_assessments_json,
+            measurement_meta_json,
+            model_name,
+            duration_ms,
+            created_at
+       FROM moderation_measurements
+      WHERE evaluation_id = ?
+      ORDER BY stage_seq ASC, id ASC`,
+    [evaluationId]
+  )
+  return Array.isArray(rows)
+    ? (rows as any[]).map((row) => ({
+        id: Number(row.id),
+        evaluation_id: String(row.evaluation_id),
+        stage_seq: Number(row.stage_seq),
+        request_snapshot_json: parseJsonCell(row.request_snapshot_json),
+        normalized_assessments_json: parseJsonCell(row.normalized_assessments_json),
+        measurement_meta_json: parseJsonCell(row.measurement_meta_json),
+        model_name: row.model_name == null ? null : String(row.model_name),
+        duration_ms: row.duration_ms == null ? null : Number(row.duration_ms),
+        created_at: String(row.created_at),
+      }))
+    : []
+}
+
 export async function insertJudgment(input: InsertJudgmentInput, db?: DbLike): Promise<void> {
   const q = (db as any) || getPool()
   await q.query(
@@ -350,6 +433,43 @@ export async function getLatestJudgmentByEvaluationId(
     judgment_meta_json: parseJsonCell(row.judgment_meta_json),
     created_at: String(row.created_at),
   }
+}
+
+export async function listJudgmentsByEvaluationId(
+  evaluationId: string,
+  db?: DbLike
+): Promise<JudgmentRow[]> {
+  const q = (db as any) || getPool()
+  const [rows] = await q.query(
+    `SELECT id,
+            evaluation_id,
+            stage_seq,
+            request_snapshot_json,
+            resolved_policy_json,
+            resolved_culture_json,
+            decision_reasoning_json,
+            ai_judgment_json,
+            judgment_meta_json,
+            created_at
+       FROM moderation_judgments
+      WHERE evaluation_id = ?
+      ORDER BY stage_seq ASC, id ASC`,
+    [evaluationId]
+  )
+  return Array.isArray(rows)
+    ? (rows as any[]).map((row) => ({
+        id: Number(row.id),
+        evaluation_id: String(row.evaluation_id),
+        stage_seq: Number(row.stage_seq),
+        request_snapshot_json: parseJsonCell(row.request_snapshot_json),
+        resolved_policy_json: parseJsonCell(row.resolved_policy_json),
+        resolved_culture_json: parseJsonCell(row.resolved_culture_json),
+        decision_reasoning_json: parseJsonCell(row.decision_reasoning_json),
+        ai_judgment_json: parseJsonCell(row.ai_judgment_json),
+        judgment_meta_json: parseJsonCell(row.judgment_meta_json),
+        created_at: String(row.created_at),
+      }))
+    : []
 }
 
 export async function updateEvaluationJudged(input: {

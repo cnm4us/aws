@@ -41,7 +41,7 @@ Status: Active
 - D: Completed
 - E: Completed
 - F: Completed
-- G: Pending
+- G: Completed
 
 ## Phase A — Contract Freeze and Enum Registry
 - Goal:
@@ -153,7 +153,8 @@ Status: Active
 - 2026-04-09 — Phase C completed: added `/api/moderation/measure` route + service + repo, persisted immutable measurement artifacts, and added endpoint smoke script.
 - 2026-04-09 — Phase D completed in commit `b42cd6f`: added `/api/moderation/judge` route + service + repo flow, server-resolved policy/culture payloads, immutable judgment sequencing, global-safety review floor, and judge smoke coverage for missing refs + no-match dismissal.
 - 2026-04-09 — Phase E completed in commit `c67e66d`: added authenticated `/api/moderation/review` flow, append-only human review events, derived accept-ai disposition from stored AI judgment artifacts, and linked final disposition updates into report lifecycle status/action history.
-- 2026-04-09 — Phase F completed: extended `/admin/reports` inspect modal with moderation-v2 evaluation/judgment/review visibility, added OTEL stage tags for measure/judge/review, and added admin inspect smoke coverage plus Jaeger verification.
+- 2026-04-09 — Phase F completed in commit `1b323ec`: extended `/admin/reports` inspect modal with moderation-v2 evaluation/judgment/review visibility, added OTEL stage tags for measure/judge/review, and added admin inspect smoke coverage plus Jaeger verification.
+- 2026-04-09 — Phase G completed: added a seeded moderation policy-profile catalog with DB-backed resolution fallback, evaluation-id debug/replay tooling, a dedicated end-to-end pipeline smoke, and phase-G operational documentation/index updates.
 
 ## Validation
 - Environment: development
@@ -164,6 +165,11 @@ Status: Active
   - `npm run moderation:v2:judge:smoke`
   - `npm run moderation:v2:review:smoke`
   - `npm run moderation:v2:admin-inspect:smoke`
+  - `npm run moderation:v2:policy-profiles:seed`
+  - `npm run moderation:v2:pipeline:smoke`
+  - `npm run moderation:v2:evaluation:debug -- --evaluation-id <ULID>`
+  - `npm run moderation:v2:evaluation:debug -- --evaluation-id <ULID> --json`
+  - `npm run moderation:v2:evaluation:debug -- --evaluation-id <ULID> --out-dir /tmp/modv2-eval-debug`
   - `npm run obs:start`
   - `set -a && source .env.jaeger && set +a && npm run moderation:v2:admin-inspect:smoke`
   - `npm run jaeger:query -- traces --service aws-mediaconvert-service --tag app.operation=moderation.v2.measure --lookback 15m --limit 3 --summary`
@@ -179,17 +185,25 @@ Status: Active
   - `src/features/moderation-v2/types.ts`
   - `src/features/moderation-v2/schemas.ts`
   - `src/features/moderation-v2/idempotency.ts`
+  - `src/features/moderation-v2/debug.ts`
   - `src/features/moderation-v2/repo.ts`
   - `src/features/moderation-v2/service.ts`
   - `src/features/moderation-v2/policy-profiles.ts`
   - `src/features/reports/service.ts`
+  - `src/db.ts`
   - `src/routes/moderation-v2.ts`
   - `src/routes/pages.ts`
   - `scripts/moderation-v2-contract-smoke.ts`
   - `scripts/moderation-v2-measure-smoke.ts`
   - `scripts/moderation-v2-judge-smoke.ts`
   - `scripts/moderation-v2-review-smoke.ts`
+  - `scripts/moderation-v2-pipeline-smoke.ts`
+  - `scripts/moderation-v2-evaluation-debug.ts`
+  - `scripts/seed-moderation-policy-profiles.ts`
   - `scripts/moderation-v2-admin-inspect-smoke.ts`
+  - `agents/features/feature_16_moderation_v2.md`
+  - `agents/features/INDEX.md`
+  - `agents/implementation/INDEX.md`
 - Known gaps:
   - Jaeger validation depends on the local observability stack (`npm run obs:start`) being available before the OTEL-enabled smoke is run.
 
@@ -205,6 +219,6 @@ Status: Active
 
 ## Resume Here
 - Next action:
-  - Start Phase G (stabilization, replay/debug tooling by `evaluation_id`, and docs).
+  - Commit Phase G. After commit, archive `plan_162.md` if no immediate follow-up work remains.
 - Blocking question (if any):
   - none
