@@ -4484,7 +4484,7 @@ pagesRouter.get('/admin/reports', requireGlobalModerationPage, async (req: any, 
       return qs ? `${basePath}?${qs}` : basePath
     }
 
-    let selected: { report: any; actions: any[] } | null = null
+    let selected: { report: any; actions: any[]; moderationV2: any | null } | null = null
     if (Number.isFinite(reportId) && reportId > 0) {
       try {
         selected = await reportsSvc.getReportDetailForAdmin(userId, reportId)
@@ -4648,6 +4648,31 @@ pagesRouter.get('/admin/reports', requireGlobalModerationPage, async (req: any, 
       if (modalView === 'inspect') {
         const currentStatus = String(rpt.status || 'open')
         const currentAssigneeId = Number(rpt.assigned_to_user_id || 0) > 0 ? Number(rpt.assigned_to_user_id) : null
+        const moderationV2 = selected.moderationV2 || null
+        const evaluation = moderationV2?.evaluation || null
+        const latestMeasurement = moderationV2?.latestMeasurement || null
+        const latestJudgment = moderationV2?.latestJudgment || null
+        const reviewTimeline = Array.isArray(moderationV2?.reviews) ? moderationV2.reviews : []
+        const measurementAssessments = Array.isArray(latestMeasurement?.normalized_assessments_json)
+          ? latestMeasurement.normalized_assessments_json
+          : []
+        const measurementMatchedCount = measurementAssessments.filter((item: any) => Boolean(item?.matched)).length
+        const measurementGlobalSafetyCount = measurementAssessments.filter(
+          (item: any) => Boolean(item?.matched) && String(item?.issue_class || '') === 'global_safety'
+        ).length
+        const judgment = latestJudgment?.ai_judgment_json || null
+        const judgmentMeta = latestJudgment?.judgment_meta_json || null
+        const resolvedCulture = latestJudgment?.resolved_culture_json?.culture || null
+        const formatValue = (value: any, fallback = '-'): string => {
+          const text = String(value ?? '').trim()
+          return text || fallback
+        }
+        const formatDateTime = (value: any): string => {
+          const text = String(value ?? '').trim()
+          if (!text) return '-'
+          const dt = new Date(text)
+          return Number.isNaN(dt.getTime()) ? text : dt.toISOString()
+        }
         if (currentAssigneeId != null && !assigneeById.has(currentAssigneeId)) {
           const fallbackLabel =
             String(rpt.assigned_to_display_name || '').trim() ||
@@ -4702,6 +4727,66 @@ pagesRouter.get('/admin/reports', requireGlobalModerationPage, async (req: any, 
         body += `<div class="field-hint" style="margin-top:8px">Choose status for active review flow. Choose a decision code to finalize as resolved/dismissed.</div>`
         body += `<div style="display:flex; gap:8px; margin-top:10px"><button class="btn" type="submit">${isAssignedToOtherModerator ? 'Assign to Me' : 'Apply'}</button></div>`
         body += `</form>`
+
+        body += `<div class="section" style="margin-top:12px">`
+        body += `<div class="section-title">Moderation V2</div>`
+        if (!evaluation) {
+          body += `<div class="field-hint">No moderation v2 artifacts yet.</div>`
+        } else {
+          body += `<div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px,1fr)); gap:10px">`
+          body += `<div class="section" style="margin:0"><div class="section-title" style="font-size:13px">Evaluation</div>`
+          body += `<div class="field-hint">Evaluation ID</div><div>${escapeHtml(formatValue(evaluation.evaluation_id))}</div>`
+          body += `<div class="field-hint" style="margin-top:8px">Stage Status</div><div>${escapeHtml(formatValue(evaluation.status))}</div>`
+          body += `<div class="field-hint" style="margin-top:8px">Measured</div><div>${escapeHtml(formatDateTime(evaluation.measured_at))}</div>`
+          body += `<div class="field-hint" style="margin-top:8px">Judged</div><div>${escapeHtml(formatDateTime(evaluation.judged_at))}</div>`
+          body += `<div class="field-hint" style="margin-top:8px">Reviewed</div><div>${escapeHtml(formatDateTime(evaluation.reviewed_at))}</div>`
+          body += `<div class="field-hint" style="margin-top:8px">Final Disposition</div><div>${escapeHtml(`${formatValue(evaluation.final_disposition_source)} / ${formatValue(evaluation.final_outcome)} / ${formatValue(evaluation.final_action_type)}`)}</div>`
+          body += `</div>`
+
+          body += `<div class="section" style="margin:0"><div class="section-title" style="font-size:13px">Latest Measurement</div>`
+          body += `<div class="field-hint">Stage Seq</div><div>${escapeHtml(formatValue(latestMeasurement?.stage_seq))}</div>`
+          body += `<div class="field-hint" style="margin-top:8px">Assessment Matches</div><div>${escapeHtml(`${measurementMatchedCount} / ${measurementAssessments.length}`)}</div>`
+          body += `<div class="field-hint" style="margin-top:8px">Global Safety Matches</div><div>${escapeHtml(String(measurementGlobalSafetyCount))}</div>`
+          body += `<div class="field-hint" style="margin-top:8px">Model</div><div>${escapeHtml(formatValue(latestMeasurement?.measurement_meta_json?.model_name || latestMeasurement?.model_name))}</div>`
+          body += `<div class="field-hint" style="margin-top:8px">Measured At</div><div>${escapeHtml(formatDateTime(latestMeasurement?.measurement_meta_json?.measured_at || latestMeasurement?.created_at))}</div>`
+          body += `</div>`
+
+          body += `<div class="section" style="margin:0"><div class="section-title" style="font-size:13px">Latest Judgment</div>`
+          body += `<div class="field-hint">Stage Seq</div><div>${escapeHtml(formatValue(latestJudgment?.stage_seq))}</div>`
+          body += `<div class="field-hint" style="margin-top:8px">Outcome</div><div>${escapeHtml(`${formatValue(judgment?.outcome)} / ${formatValue(judgment?.action_type)}`)}</div>`
+          body += `<div class="field-hint" style="margin-top:8px">Confidence</div><div>${escapeHtml(`${formatValue(judgment?.confidence)} (${formatValue(judgment?.confidence_band)})`)}</div>`
+          body += `<div class="field-hint" style="margin-top:8px">Impact</div><div>${escapeHtml(formatValue(judgment?.impact_score))}</div>`
+          body += `<div class="field-hint" style="margin-top:8px">Policy</div><div>${escapeHtml(`${formatValue(judgmentMeta?.policy_profile_id)} @ ${formatValue(judgmentMeta?.policy_profile_version)}`)}</div>`
+          body += `<div class="field-hint" style="margin-top:8px">Culture</div><div>${escapeHtml(`${formatValue(judgmentMeta?.culture_id)} @ ${formatValue(resolvedCulture?.version)}`)}</div>`
+          body += `<div class="field-hint" style="margin-top:8px">Judged At</div><div>${escapeHtml(formatDateTime(judgmentMeta?.judged_at || latestJudgment?.created_at))}</div>`
+          body += `</div>`
+          body += `</div>`
+
+          body += `<div class="section" style="margin-top:12px">`
+          body += `<div class="section-title">Review Timeline</div>`
+          if (!reviewTimeline.length) {
+            body += `<div class="field-hint">No moderation reviews yet.</div>`
+          } else {
+            body += `<div style="overflow:auto"><table><thead><tr><th>Seq</th><th>Decision</th><th>Disposition</th><th>Reviewer</th><th>Rationale</th><th>Created</th></tr></thead><tbody>`
+            for (const review of reviewTimeline) {
+              const reviewerLabel =
+                String(review?.reviewer_display_name || '').trim() ||
+                String(review?.reviewer_email || '').trim() ||
+                (Number(review?.reviewer_user_id || 0) > 0 ? `User #${Number(review.reviewer_user_id)}` : '-')
+              body += `<tr>`
+              body += `<td>${escapeHtml(formatValue(review?.review_seq))}</td>`
+              body += `<td>${escapeHtml(formatValue(review?.decision))}</td>`
+              body += `<td>${escapeHtml(`${formatValue(review?.disposition_source)} / ${formatValue(review?.final_outcome)} / ${formatValue(review?.final_action_type)}`)}</td>`
+              body += `<td>${escapeHtml(reviewerLabel)}</td>`
+              body += `<td>${escapeHtml(formatValue(review?.rationale))}</td>`
+              body += `<td>${escapeHtml(formatDateTime(review?.created_at))}</td>`
+              body += `</tr>`
+            }
+            body += `</tbody></table></div>`
+          }
+          body += `</div>`
+        }
+        body += `</div>`
       }
 
       if (modalView === 'timeline') {

@@ -2,6 +2,7 @@ import { DomainError } from '../../core/errors'
 import { getPool } from '../../db'
 import { can } from '../../security/permissions'
 import { PERM } from '../../security/perm'
+import * as moderationV2Repo from '../moderation-v2/repo'
 import * as spacesSvc from '../spaces/service'
 import * as repo from './repo'
 import { isDismissedResolutionCode, isResolvedResolutionCode } from './resolution-codes'
@@ -287,6 +288,22 @@ async function assertCanSpaceModerateReports(userId: number, spaceId: number) {
   if (!ok) throw new DomainError('forbidden', 'forbidden', 403)
 }
 
+async function getModerationV2DetailForReport(reportId: number): Promise<any | null> {
+  const evaluation = await moderationV2Repo.getLatestEvaluationByReportId(reportId)
+  if (!evaluation) return null
+  const [latestMeasurement, latestJudgment, reviews] = await Promise.all([
+    moderationV2Repo.getLatestMeasurementByEvaluationId(evaluation.evaluation_id),
+    moderationV2Repo.getLatestJudgmentByEvaluationId(evaluation.evaluation_id),
+    moderationV2Repo.listReviewsByEvaluationId(evaluation.evaluation_id),
+  ])
+  return {
+    evaluation,
+    latestMeasurement,
+    latestJudgment,
+    reviews,
+  }
+}
+
 export async function listReportsForAdmin(
   currentUserId: number,
   filters: repo.ReportListFilters
@@ -301,12 +318,15 @@ export async function listReportsForAdmin(
   }
 }
 
-export async function getReportDetailForAdmin(currentUserId: number, reportId: number): Promise<{ report: any; actions: any[] }> {
+export async function getReportDetailForAdmin(currentUserId: number, reportId: number): Promise<{ report: any; actions: any[]; moderationV2: any | null }> {
   await assertCanGlobalModerateReports(currentUserId)
   const report = await repo.getReportById(reportId)
   if (!report) throw new DomainError('report_not_found', 'report_not_found', 404)
-  const actions = await repo.listReportActions(reportId)
-  return { report, actions }
+  const [actions, moderationV2] = await Promise.all([
+    repo.listReportActions(reportId),
+    getModerationV2DetailForReport(reportId),
+  ])
+  return { report, actions, moderationV2 }
 }
 
 export async function listReportsForSpaceModerator(
@@ -332,7 +352,7 @@ export async function getReportDetailForSpaceModerator(
   currentUserId: number,
   reportId: number,
   expectedSpaceId?: number | null
-): Promise<{ report: any; actions: any[] }> {
+): Promise<{ report: any; actions: any[]; moderationV2: any | null }> {
   const report = await repo.getReportById(reportId)
   if (!report) throw new DomainError('report_not_found', 'report_not_found', 404)
   const reportSpaceId = Number(report.space_id || 0)
@@ -340,8 +360,11 @@ export async function getReportDetailForSpaceModerator(
     throw new DomainError('forbidden', 'forbidden', 403)
   }
   await assertCanSpaceModerateReports(currentUserId, reportSpaceId)
-  const actions = await repo.listReportActions(reportId)
-  return { report, actions }
+  const [actions, moderationV2] = await Promise.all([
+    repo.listReportActions(reportId),
+    getModerationV2DetailForReport(reportId),
+  ])
+  return { report, actions, moderationV2 }
 }
 
 type ReportMutationInput = {

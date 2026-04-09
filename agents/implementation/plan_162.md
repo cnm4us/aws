@@ -40,7 +40,7 @@ Status: Active
 - C: Completed
 - D: Completed
 - E: Completed
-- F: Pending
+- F: Completed
 - G: Pending
 
 ## Phase A — Contract Freeze and Enum Registry
@@ -152,7 +152,8 @@ Status: Active
 - 2026-04-09 — Phase B completed: added moderation evaluation, measurement, judgment, and review tables with indexes and foreign keys.
 - 2026-04-09 — Phase C completed: added `/api/moderation/measure` route + service + repo, persisted immutable measurement artifacts, and added endpoint smoke script.
 - 2026-04-09 — Phase D completed in commit `b42cd6f`: added `/api/moderation/judge` route + service + repo flow, server-resolved policy/culture payloads, immutable judgment sequencing, global-safety review floor, and judge smoke coverage for missing refs + no-match dismissal.
-- 2026-04-09 — Phase E completed: added authenticated `/api/moderation/review` flow, append-only human review events, derived accept-ai disposition from stored AI judgment artifacts, and linked final disposition updates into report lifecycle status/action history.
+- 2026-04-09 — Phase E completed in commit `c67e66d`: added authenticated `/api/moderation/review` flow, append-only human review events, derived accept-ai disposition from stored AI judgment artifacts, and linked final disposition updates into report lifecycle status/action history.
+- 2026-04-09 — Phase F completed: extended `/admin/reports` inspect modal with moderation-v2 evaluation/judgment/review visibility, added OTEL stage tags for measure/judge/review, and added admin inspect smoke coverage plus Jaeger verification.
 
 ## Validation
 - Environment: development
@@ -162,6 +163,12 @@ Status: Active
   - `npm run moderation:v2:measure:smoke`
   - `npm run moderation:v2:judge:smoke`
   - `npm run moderation:v2:review:smoke`
+  - `npm run moderation:v2:admin-inspect:smoke`
+  - `npm run obs:start`
+  - `set -a && source .env.jaeger && set +a && npm run moderation:v2:admin-inspect:smoke`
+  - `npm run jaeger:query -- traces --service aws-mediaconvert-service --tag app.operation=moderation.v2.measure --lookback 15m --limit 3 --summary`
+  - `npm run jaeger:query -- traces --service aws-mediaconvert-service --tag app.operation=moderation.v2.judge --lookback 15m --limit 3 --summary`
+  - `npm run jaeger:query -- traces --service aws-mediaconvert-service --tag app.operation=moderation.v2.review --lookback 15m --limit 5 --summary`
   - `SHOW CREATE TABLE moderation_evaluations`
   - `SHOW CREATE TABLE moderation_measurements`
   - `SHOW CREATE TABLE moderation_judgments`
@@ -175,13 +182,16 @@ Status: Active
   - `src/features/moderation-v2/repo.ts`
   - `src/features/moderation-v2/service.ts`
   - `src/features/moderation-v2/policy-profiles.ts`
+  - `src/features/reports/service.ts`
   - `src/routes/moderation-v2.ts`
+  - `src/routes/pages.ts`
   - `scripts/moderation-v2-contract-smoke.ts`
   - `scripts/moderation-v2-measure-smoke.ts`
   - `scripts/moderation-v2-judge-smoke.ts`
   - `scripts/moderation-v2-review-smoke.ts`
+  - `scripts/moderation-v2-admin-inspect-smoke.ts`
 - Known gaps:
-  - Admin surface and traceability UI/telemetry work not implemented yet (Phase F+).
+  - Jaeger validation depends on the local observability stack (`npm run obs:start`) being available before the OTEL-enabled smoke is run.
 
 ## Open Risks / Deferred
 - Risk:
@@ -195,6 +205,6 @@ Status: Active
 
 ## Resume Here
 - Next action:
-  - Start Phase F (admin report inspect visibility for v2 artifacts and Jaeger correlation tags).
+  - Start Phase G (stabilization, replay/debug tooling by `evaluation_id`, and docs).
 - Blocking question (if any):
   - none

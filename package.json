@@ -67,6 +67,7 @@
     "moderation:v2:measure:smoke": "ts-node scripts/moderation-v2-measure-smoke.ts",
     "moderation:v2:judge:smoke": "ts-node scripts/moderation-v2-judge-smoke.ts",
     "moderation:v2:review:smoke": "ts-node scripts/moderation-v2-review-smoke.ts",
+    "moderation:v2:admin-inspect:smoke": "ts-node scripts/moderation-v2-admin-inspect-smoke.ts",
     "db:query:donations": "ts-node scripts/db-query-donations.ts",
     "db:query:subscriptions": "ts-node scripts/db-query-subscriptions.ts",
     "db:backfill:donation-amounts": "ts-node scripts/db-backfill-donation-amounts.ts",

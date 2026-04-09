@@ -46,6 +46,16 @@ type EvaluationRow = {
   content_id: string
   content_type: ModerationContentType
   status: 'created' | 'measured' | 'judged' | 'reviewed' | 'failed'
+  request_id?: string | null
+  measured_at?: string | null
+  judged_at?: string | null
+  reviewed_at?: string | null
+  final_disposition_source?: 'ai_accepted' | 'human_override' | null
+  final_outcome?: string | null
+  final_action_type?: string | null
+  metadata_json?: any
+  created_at?: string
+  updated_at?: string
 }
 
 type MeasurementRow = {
@@ -64,6 +74,10 @@ type JudgmentRow = {
   id: number
   evaluation_id: string
   stage_seq: number
+  request_snapshot_json: any
+  resolved_policy_json: any
+  resolved_culture_json: any
+  decision_reasoning_json: any
   ai_judgment_json: any
   judgment_meta_json: any
   created_at: string
@@ -74,6 +88,8 @@ type ReviewRow = {
   evaluation_id: string
   review_seq: number
   reviewer_user_id: number
+  reviewer_email: string | null
+  reviewer_display_name: string | null
   decision: 'accept_ai' | 'override_ai'
   rationale: string | null
   final_outcome: string
@@ -189,6 +205,55 @@ export async function getEvaluationByIdForUpdate(
   }
 }
 
+export async function getLatestEvaluationByReportId(
+  reportId: number,
+  db?: DbLike
+): Promise<EvaluationRow | null> {
+  const q = (db as any) || getPool()
+  const [rows] = await q.query(
+    `SELECT evaluation_id,
+            report_id,
+            content_id,
+            content_type,
+            status,
+            request_id,
+            measured_at,
+            judged_at,
+            reviewed_at,
+            final_disposition_source,
+            final_outcome,
+            final_action_type,
+            metadata_json,
+            created_at,
+            updated_at
+       FROM moderation_evaluations
+      WHERE report_id = ?
+      ORDER BY created_at DESC, evaluation_id DESC
+      LIMIT 1`,
+    [reportId]
+  )
+  const row = Array.isArray(rows) ? (rows as any[])[0] : null
+  if (!row) return null
+  return {
+    evaluation_id: String(row.evaluation_id),
+    report_id: Number(row.report_id),
+    content_id: String(row.content_id),
+    content_type: String(row.content_type) as ModerationContentType,
+    status: String(row.status) as EvaluationRow['status'],
+    request_id: row.request_id == null ? null : String(row.request_id),
+    measured_at: row.measured_at == null ? null : String(row.measured_at),
+    judged_at: row.judged_at == null ? null : String(row.judged_at),
+    reviewed_at: row.reviewed_at == null ? null : String(row.reviewed_at),
+    final_disposition_source:
+      row.final_disposition_source == null ? null : String(row.final_disposition_source) as EvaluationRow['final_disposition_source'],
+    final_outcome: row.final_outcome == null ? null : String(row.final_outcome),
+    final_action_type: row.final_action_type == null ? null : String(row.final_action_type),
+    metadata_json: parseJsonCell(row.metadata_json),
+    created_at: String(row.created_at),
+    updated_at: String(row.updated_at),
+  }
+}
+
 export async function getLatestMeasurementByEvaluationId(
   evaluationId: string,
   db?: DbLike
@@ -255,7 +320,16 @@ export async function getLatestJudgmentByEvaluationId(
 ): Promise<JudgmentRow | null> {
   const q = (db as any) || getPool()
   const [rows] = await q.query(
-    `SELECT id, evaluation_id, stage_seq, ai_judgment_json, judgment_meta_json, created_at
+    `SELECT id,
+            evaluation_id,
+            stage_seq,
+            request_snapshot_json,
+            resolved_policy_json,
+            resolved_culture_json,
+            decision_reasoning_json,
+            ai_judgment_json,
+            judgment_meta_json,
+            created_at
        FROM moderation_judgments
       WHERE evaluation_id = ?
       ORDER BY stage_seq DESC, id DESC
@@ -268,6 +342,10 @@ export async function getLatestJudgmentByEvaluationId(
     id: Number(row.id),
     evaluation_id: String(row.evaluation_id),
     stage_seq: Number(row.stage_seq),
+    request_snapshot_json: parseJsonCell(row.request_snapshot_json),
+    resolved_policy_json: parseJsonCell(row.resolved_policy_json),
+    resolved_culture_json: parseJsonCell(row.resolved_culture_json),
+    decision_reasoning_json: parseJsonCell(row.decision_reasoning_json),
     ai_judgment_json: parseJsonCell(row.ai_judgment_json),
     judgment_meta_json: parseJsonCell(row.judgment_meta_json),
     created_at: String(row.created_at),
@@ -332,6 +410,8 @@ export async function getLatestReviewByEvaluationId(
     evaluation_id: String(row.evaluation_id),
     review_seq: Number(row.review_seq),
     reviewer_user_id: Number(row.reviewer_user_id),
+    reviewer_email: null,
+    reviewer_display_name: null,
     decision: String(row.decision) as ReviewRow['decision'],
     rationale: row.rationale == null ? null : String(row.rationale),
     final_outcome: String(row.final_outcome),
@@ -340,6 +420,50 @@ export async function getLatestReviewByEvaluationId(
     review_snapshot_json: parseJsonCell(row.review_snapshot_json),
     created_at: String(row.created_at),
   }
+}
+
+export async function listReviewsByEvaluationId(
+  evaluationId: string,
+  db?: DbLike
+): Promise<ReviewRow[]> {
+  const q = (db as any) || getPool()
+  const [rows] = await q.query(
+    `SELECT r.id,
+            r.evaluation_id,
+            r.review_seq,
+            r.reviewer_user_id,
+            u.email AS reviewer_email,
+            u.display_name AS reviewer_display_name,
+            r.decision,
+            r.rationale,
+            r.final_outcome,
+            r.final_action_type,
+            r.disposition_source,
+            r.review_snapshot_json,
+            r.created_at
+       FROM moderation_reviews r
+  LEFT JOIN users u ON u.id = r.reviewer_user_id
+      WHERE r.evaluation_id = ?
+      ORDER BY r.review_seq ASC, r.id ASC`,
+    [evaluationId]
+  )
+  return Array.isArray(rows)
+    ? (rows as any[]).map((row) => ({
+        id: Number(row.id),
+        evaluation_id: String(row.evaluation_id),
+        review_seq: Number(row.review_seq),
+        reviewer_user_id: Number(row.reviewer_user_id),
+        reviewer_email: row.reviewer_email == null ? null : String(row.reviewer_email),
+        reviewer_display_name: row.reviewer_display_name == null ? null : String(row.reviewer_display_name),
+        decision: String(row.decision) as ReviewRow['decision'],
+        rationale: row.rationale == null ? null : String(row.rationale),
+        final_outcome: String(row.final_outcome),
+        final_action_type: String(row.final_action_type),
+        disposition_source: String(row.disposition_source) as ReviewRow['disposition_source'],
+        review_snapshot_json: parseJsonCell(row.review_snapshot_json),
+        created_at: String(row.created_at),
+      }))
+    : []
 }
 
 export async function insertReview(input: {

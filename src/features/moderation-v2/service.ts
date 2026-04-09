@@ -1,4 +1,5 @@
 import { DomainError } from '../../core/errors'
+import { context, trace } from '@opentelemetry/api'
 import { getPool } from '../../db'
 import { can } from '../../security/permissions'
 import { PERM } from '../../security/perm'
@@ -218,6 +219,16 @@ export async function measureModeration(
   if (!parsed.success) {
     throw new DomainError('invalid_measurement_output', 'invalid_measurement_output', 500)
   }
+
+  annotateModerationV2Span({
+    'app.operation': 'moderation.v2.measure',
+    'app.operation_detail': 'moderation.v2.measure',
+    'app.moderation_stage': 'measure',
+    'app.moderation_evaluation_id': evaluationId,
+    'app.report_id': reportId,
+    'app.content_id': contentId,
+    'app.outcome': 'success',
+  })
 
   const pool = getPool()
   const conn = await pool.getConnection()
@@ -448,6 +459,15 @@ function deriveReportLifecycleFromDisposition(finalOutcome: ModerationOutcome, f
   }
 }
 
+function annotateModerationV2Span(attrs: Record<string, unknown>): void {
+  const span = trace.getSpan(context.active())
+  if (!span) return
+  for (const [key, value] of Object.entries(attrs)) {
+    if (value == null || value === '') continue
+    span.setAttribute(key, String(value))
+  }
+}
+
 export async function judgeModeration(
   input: ModerationJudgeRequestBody
 ): Promise<ModerationJudgeResponse> {
@@ -620,6 +640,22 @@ export async function judgeModeration(
     if (!parsed.success) {
       throw new DomainError('invalid_judgment_output', 'invalid_judgment_output', 500)
     }
+
+    annotateModerationV2Span({
+      'app.operation': 'moderation.v2.judge',
+      'app.operation_detail': 'moderation.v2.judge',
+      'app.moderation_stage': 'judge',
+      'app.moderation_evaluation_id': evaluation.evaluation_id,
+      'app.report_id': evaluation.report_id,
+      'app.moderation_policy_profile_id': policy.id,
+      'app.moderation_policy_profile_version': policy.version,
+      'app.moderation_culture_id': aiCulture.culture.id,
+      'app.moderation_culture_version': aiCulture.culture.version,
+      'app.moderation_judgment_stage_seq': nextJudgmentStageSeq,
+      'app.moderation_judgment_outcome': parsed.data.ai_judgment.outcome,
+      'app.moderation_judgment_action_type': parsed.data.ai_judgment.action_type,
+      'app.outcome': 'success',
+    })
 
     await repo.insertJudgment(
       {
@@ -829,6 +865,27 @@ export async function reviewModeration(
     if (!parsed.success) {
       throw new DomainError('invalid_review_output', 'invalid_review_output', 500)
     }
+
+    annotateModerationV2Span({
+      'app.operation': 'moderation.v2.review',
+      'app.operation_detail': 'moderation.v2.review',
+      'app.moderation_stage': 'review',
+      'app.moderation_evaluation_id': evaluation.evaluation_id,
+      'app.report_id': evaluation.report_id,
+      'app.moderation_review_seq': nextReviewSeq,
+      'app.moderation_review_decision': normalizedInput.human_review.decision,
+      'app.moderation_final_disposition_source': dispositionSource,
+      'app.moderation_final_outcome': finalOutcome,
+      'app.moderation_final_action_type': finalActionType,
+      'app.moderation_policy_profile_id':
+        latestJudgment.resolved_policy_json?.id || latestJudgment.judgment_meta_json?.policy_profile_id || null,
+      'app.moderation_policy_profile_version':
+        latestJudgment.resolved_policy_json?.version || latestJudgment.judgment_meta_json?.policy_profile_version || null,
+      'app.moderation_culture_id':
+        latestJudgment.resolved_culture_json?.culture?.id || latestJudgment.judgment_meta_json?.culture_id || null,
+      'app.moderation_culture_version': latestJudgment.resolved_culture_json?.culture?.version || null,
+      'app.outcome': 'success',
+    })
 
     await conn.commit()
     return parsed.data
