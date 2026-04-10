@@ -14,11 +14,14 @@ export const CULTURE_TONE_EXPECTATIONS = [
   'non_confrontational',
   'friendly',
   'calm',
-  'constructive',
-  'light',
-  'courteous',
-  'patient',
   'inclusive',
+  'empathetic',
+  'constructive',
+  'measured',
+  'informational',
+  'playful',
+  'direct',
+  'rigorous',
 ] as const
 
 export const CULTURE_DISRUPTION_SIGNALS = [

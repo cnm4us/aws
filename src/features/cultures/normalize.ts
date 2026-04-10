@@ -71,6 +71,28 @@ function normalizeUniqueStringArray(value: unknown): string[] | undefined {
   return next
 }
 
+function normalizeToneExpectation(value: unknown): string | undefined {
+  const next = normalizeOptionalString(value)
+  if (!next) return undefined
+  if (next === 'courteous') return 'respectful'
+  if (next === 'patient') return 'measured'
+  if (next === 'light') return 'playful'
+  return next
+}
+
+function normalizeToneExpectations(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const next: string[] = []
+  const seen = new Set<string>()
+  for (const raw of value) {
+    const normalized = normalizeToneExpectation(raw)
+    if (!normalized || seen.has(normalized)) continue
+    seen.add(normalized)
+    next.push(normalized)
+  }
+  return next
+}
+
 export function deriveCultureDefinitionIdFromKey(raw: string): string {
   const source = String(raw || '').trim().toLowerCase()
   const withUnderscores = source
@@ -172,7 +194,7 @@ export function normalizeCultureDefinitionInput(
   normalized.emotional_intensity =
     normalizeEmotionalIntensity(source.emotional_intensity) || 'medium'
 
-  const tone = normalizeUniqueStringArray(source.tone_expectations)
+  const tone = normalizeToneExpectations(source.tone_expectations)
   if (tone) normalized.tone_expectations = tone
 
   const disruption = normalizeUniqueStringArray(source.disruption_signals)
