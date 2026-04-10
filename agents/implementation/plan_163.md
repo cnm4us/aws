@@ -1,6 +1,6 @@
 # Plan 163: Moderation Admin IA Consolidation
 
-Status: Active
+Status: Complete
 
 ## Feature Reference
 - Feature doc: `none`
@@ -41,7 +41,7 @@ Status: Active
 - B: Complete
 - C: Complete
 - D: Complete
-- E: In Progress
+- E: Complete
 
 ## Phase A — Route Contract and Navigation Skeleton
 - Goal:
@@ -134,6 +134,7 @@ Status: Active
 - 2026-04-10 — Phase D implementation started: added canonical rules path constants for list/detail/edit/new/new-version/delete flows, moved rules list/detail/edit/version/new/create/delete handling to canonical `/admin/moderation/rules*` routes, changed legacy rules GET routes into query-preserving redirects, kept legacy POST paths accepted for compatibility, updated rule-related backlinks and form actions to canonical moderation paths, and switched the shared moderation subnav plus moderation hub so rules now point to canonical routes.
 - 2026-04-10 — Phase D completed after manual verification of canonical rules routes and legacy redirect behavior.
 - 2026-04-10 — Phase E implementation started: updated active docs to treat `/admin/moderation/*` as canonical, added a focused moderation admin route smoke/checklist in `tests/suites/api-curl/`, and documented the legacy redirect retirement policy.
+- 2026-04-10 — Phase E completed after manual verification of the updated moderation admin docs and route smoke/checklist references.
 
 ## Validation
 - Environment:
@@ -169,6 +170,6 @@ Status: Active
 
 ## Resume Here
 - Next action:
-  - Manually verify the moderation admin route smoke/checklist and confirm the updated docs/readme references are coherent; if clean, mark Phase E complete and commit.
+  - Follow-on work moves to `agents/implementation/plan_164.md`.
 - Blocking question (if any):
   - none
