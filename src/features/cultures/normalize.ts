@@ -197,6 +197,10 @@ export function normalizeCultureDefinitionInput(
   const tone = normalizeToneExpectations(source.tone_expectations)
   if (tone) normalized.tone_expectations = tone
 
+  const positiveSignals = normalizeUniqueStringArray(source.positive_signals)
+  if (positiveSignals) normalized.positive_signals = positiveSignals
+  else normalized.positive_signals = []
+
   const disruption = normalizeUniqueStringArray(source.disruption_signals)
   if (disruption) normalized.disruption_signals = disruption
 

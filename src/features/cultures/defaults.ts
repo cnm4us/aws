@@ -25,6 +25,7 @@ export function createDefaultCultureDefinitionV1(
     interaction_mode: 'mixed',
     emotional_intensity: 'medium',
     tone_expectations: [],
+    positive_signals: [],
     disruption_signals: [],
     content_boundaries: {
       sexual_content: 'moderate',

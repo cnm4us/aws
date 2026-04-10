@@ -34,6 +34,7 @@ import {
   CULTURE_EMOTIONAL_INTENSITY_LEVELS,
   CULTURE_INTERACTION_STYLES,
   CULTURE_INTERACTION_MODES,
+  CULTURE_POSITIVE_SIGNALS,
   CULTURE_TOLERANCE_LEVELS,
   CULTURE_TONE_EXPECTATIONS,
   deriveCultureDefinitionIdFromKey,
@@ -1672,6 +1673,10 @@ function parseCultureDefinitionDraftFromBody(
       body?.tone_expectations != null
         ? toStringArrayInput(body.tone_expectations)
         : Array.from(fallback.tone_expectations || []),
+    positive_signals:
+      body?.positive_signals != null
+        ? toStringArrayInput(body.positive_signals)
+        : Array.from(fallback.positive_signals || []),
     disruption_signals:
       body?.disruption_signals != null
         ? toStringArrayInput(body.disruption_signals)
@@ -1726,6 +1731,9 @@ function mergeCultureDefinitionDraft(
   const tone = Array.isArray(draft.tone_expectations)
     ? draft.tone_expectations.map((v) => String(v || '').trim()).filter((v) => v.length > 0)
     : Array.from(fallback.tone_expectations || [])
+  const positiveSignals = Array.isArray(draft.positive_signals)
+    ? draft.positive_signals.map((v) => String(v || '').trim()).filter((v) => v.length > 0)
+    : Array.from(fallback.positive_signals || [])
   const disruption = Array.isArray(draft.disruption_signals)
     ? draft.disruption_signals.map((v) => String(v || '').trim()).filter((v) => v.length > 0)
     : Array.from(fallback.disruption_signals || [])
@@ -1769,6 +1777,7 @@ function mergeCultureDefinitionDraft(
         ? (String(draft.emotional_intensity || '').trim() || fallback.emotional_intensity) as any
         : fallback.emotional_intensity,
     tone_expectations: tone as any,
+    positive_signals: positiveSignals as any,
     disruption_signals: disruption as any,
     content_boundaries: {
       sexual_content:
@@ -1823,6 +1832,7 @@ function mapCultureDefinitionPath(path: string): string {
   if (path === 'interaction_mode') return 'interaction_mode'
   if (path === 'emotional_intensity') return 'emotional_intensity'
   if (path === 'tone_expectations' || path.startsWith('tone_expectations.')) return 'tone_expectations'
+  if (path === 'positive_signals' || path.startsWith('positive_signals.')) return 'positive_signals'
   if (path === 'disruption_signals' || path.startsWith('disruption_signals.')) return 'disruption_signals'
   if (path === 'content_boundaries' || path.startsWith('content_boundaries.')) {
     return path.split('.')[1] || 'content_boundaries'
@@ -1889,6 +1899,7 @@ function renderCultureDetailPage(opts: {
   const prettyDefinitionJson = JSON.stringify(definition, null, 2);
   const advancedJsonText = opts.advancedJsonText != null ? String(opts.advancedJsonText) : prettyDefinitionJson;
   const toneSet = new Set<string>((definition.tone_expectations || []).map((v) => String(v)))
+  const positiveSignalsSet = new Set<string>((definition.positive_signals || []).map((v) => String(v)))
   const disruptionSet = new Set<string>((definition.disruption_signals || []).map((v) => String(v)))
   const contentBoundaries = definition.content_boundaries || {
     sexual_content: 'moderate',
@@ -2003,6 +2014,18 @@ function renderCultureDetailPage(opts: {
     body += `<div>${escapeHtml(value)}</div></label>`;
   }
   body += `${renderCultureFieldErrors(definitionFieldErrors, 'tone_expectations')}`;
+  body += `</div>`;
+
+  body += `<div class="section" style="margin-top: 10px">`;
+  body += `<div class="section-title">Positive Signals</div>`;
+  body += `<input type="hidden" name="positive_signals" value="" />`;
+  for (const value of CULTURE_POSITIVE_SIGNALS) {
+    const checked = positiveSignalsSet.has(value) ? ' checked' : '';
+    body += `<label style="display:flex; gap:10px; align-items:flex-start; margin-top: 6px">`;
+    body += `<input type="checkbox" name="positive_signals" value="${escapeHtml(value)}"${checked} style="margin-top: 3px" />`;
+    body += `<div>${escapeHtml(value)}</div></label>`;
+  }
+  body += `${renderCultureFieldErrors(definitionFieldErrors, 'positive_signals')}`;
   body += `</div>`;
 
   body += `<div class="section" style="margin-top: 10px">`;

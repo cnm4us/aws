@@ -24,6 +24,25 @@ export const CULTURE_TONE_EXPECTATIONS = [
   'rigorous',
 ] as const
 
+export const CULTURE_POSITIVE_SIGNALS = [
+  'friendly_sharing',
+  'encouraging_responses',
+  'respectful_disagreement',
+  'helpful_suggestions',
+  'welcoming_language',
+  'lighthearted_engagement',
+  'supportive_acknowledgment',
+  'curious_questions',
+  'reasoned_argument',
+  'clear_explanation',
+  'source_attribution',
+  'evidence_reference',
+  'clear_fact_opinion_separation',
+  'measured_delivery',
+  'playful_exaggeration',
+  'clearly_signaled_satire',
+] as const
+
 export const CULTURE_DISRUPTION_SIGNALS = [
   'person_directed_hostility',
   'dismissive_language',
@@ -56,6 +75,7 @@ export const CULTURE_AI_HINTS = [
 
 export type CultureInteractionStyle = (typeof CULTURE_INTERACTION_STYLES)[number]
 export type CultureToneExpectation = (typeof CULTURE_TONE_EXPECTATIONS)[number]
+export type CulturePositiveSignal = (typeof CULTURE_POSITIVE_SIGNALS)[number]
 export type CultureDisruptionSignal = (typeof CULTURE_DISRUPTION_SIGNALS)[number]
 export type CultureToleranceLevel = (typeof CULTURE_TOLERANCE_LEVELS)[number]
 export type CultureContentBoundaryLevel = (typeof CULTURE_CONTENT_BOUNDARY_LEVELS)[number]
@@ -92,6 +112,7 @@ export type CultureDefinitionV1 = {
   interaction_mode: CultureInteractionMode
   emotional_intensity: CultureEmotionalIntensityLevel
   tone_expectations: CultureToneExpectation[]
+  positive_signals: CulturePositiveSignal[]
   disruption_signals: CultureDisruptionSignal[]
   content_boundaries: CultureContentBoundaries
   tolerance: CultureTolerance
@@ -118,6 +139,7 @@ export type CultureAiPayload = {
     interaction_mode: CultureInteractionMode
     emotional_intensity: CultureEmotionalIntensityLevel
     tone_expectations: CultureToneExpectation[]
+    positive_signals: CulturePositiveSignal[]
     disruption_signals: CultureDisruptionSignal[]
     content_boundaries: CultureContentBoundaries
     tolerance: CultureTolerance

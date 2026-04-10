@@ -12,6 +12,7 @@ export function buildAiCulturePayload(definition: CultureDefinitionV1): CultureA
       interaction_mode: definition.interaction_mode,
       emotional_intensity: definition.emotional_intensity,
       tone_expectations: [...definition.tone_expectations],
+      positive_signals: [...definition.positive_signals],
       disruption_signals: [...definition.disruption_signals],
       content_boundaries: {
         sexual_content: definition.content_boundaries.sexual_content,

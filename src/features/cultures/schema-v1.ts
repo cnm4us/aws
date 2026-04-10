@@ -7,6 +7,7 @@ import {
   CULTURE_EMOTIONAL_INTENSITY_LEVELS,
   CULTURE_INTERACTION_STYLES,
   CULTURE_INTERACTION_MODES,
+  CULTURE_POSITIVE_SIGNALS,
   CULTURE_TOLERANCE_LEVELS,
   CULTURE_TONE_EXPECTATIONS,
 } from './types'
@@ -30,6 +31,7 @@ export const CULTURE_DEFINITION_SCHEMA_V1 = {
     'interaction_mode',
     'emotional_intensity',
     'tone_expectations',
+    'positive_signals',
     'disruption_signals',
     'content_boundaries',
     'tolerance',
@@ -99,6 +101,16 @@ export const CULTURE_DEFINITION_SCHEMA_V1 = {
       items: {
         type: 'string',
         enum: [...CULTURE_TONE_EXPECTATIONS],
+      },
+      uniqueItems: true,
+    },
+    positive_signals: {
+      type: 'array',
+      title: 'Positive Signals',
+      description: 'Observable behaviors that align well with this culture.',
+      items: {
+        type: 'string',
+        enum: [...CULTURE_POSITIVE_SIGNALS],
       },
       uniqueItems: true,
     },
