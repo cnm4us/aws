@@ -48,12 +48,17 @@ export const CULTURE_DISRUPTION_SIGNALS = [
   'dismissive_language',
   'aggressive_commands',
   'needless_escalation',
-  'taunting',
   'contemptuous_tone',
   'mocking_targeted_participant',
   'shaming_language',
   'insult_like_framing',
   'repeated_confrontation',
+  'absence_of_attribution',
+  'unsupported_factual_assertion',
+  'provocative_derailment',
+  'audience_incitement_style_framing',
+  'bad_faith_argumentation',
+  'degrading_sarcasm',
 ] as const
 
 export const CULTURE_TOLERANCE_LEVELS = ['very_low', 'low', 'medium', 'high'] as const

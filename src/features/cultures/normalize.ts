@@ -93,6 +93,26 @@ function normalizeToneExpectations(value: unknown): string[] | undefined {
   return next
 }
 
+function normalizeDisruptionSignal(value: unknown): string | undefined {
+  const next = normalizeOptionalString(value)
+  if (!next) return undefined
+  if (next === 'taunting') return 'degrading_sarcasm'
+  return next
+}
+
+function normalizeDisruptionSignals(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const next: string[] = []
+  const seen = new Set<string>()
+  for (const raw of value) {
+    const normalized = normalizeDisruptionSignal(raw)
+    if (!normalized || seen.has(normalized)) continue
+    seen.add(normalized)
+    next.push(normalized)
+  }
+  return next
+}
+
 export function deriveCultureDefinitionIdFromKey(raw: string): string {
   const source = String(raw || '').trim().toLowerCase()
   const withUnderscores = source
@@ -201,7 +221,7 @@ export function normalizeCultureDefinitionInput(
   if (positiveSignals) normalized.positive_signals = positiveSignals
   else normalized.positive_signals = []
 
-  const disruption = normalizeUniqueStringArray(source.disruption_signals)
+  const disruption = normalizeDisruptionSignals(source.disruption_signals)
   if (disruption) normalized.disruption_signals = disruption
 
   const aiHint = normalizeAiHint(source.ai_hint)
