@@ -3476,6 +3476,126 @@ export async function ensureSchema(db: DB) {
     `);
   } catch {}
 
+  // Global moderation signals registry (plan_164A): shared signal vocabulary for rules and cultures.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS moderation_signals (
+      signal_id VARCHAR(128) PRIMARY KEY,
+      label VARCHAR(255) NOT NULL,
+      short_description VARCHAR(500) NULL,
+      long_description TEXT NULL,
+      status ENUM('draft','active','inactive','archived') NOT NULL DEFAULT 'draft',
+      metadata_json JSON NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      KEY idx_moderation_signals_status_label (status, label, signal_id),
+      KEY idx_moderation_signals_updated (updated_at, signal_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+  await db.query(`ALTER TABLE moderation_signals ADD COLUMN IF NOT EXISTS signal_id VARCHAR(128) NOT NULL`)
+  await db.query(`ALTER TABLE moderation_signals ADD COLUMN IF NOT EXISTS label VARCHAR(255) NOT NULL`)
+  await db.query(`ALTER TABLE moderation_signals ADD COLUMN IF NOT EXISTS short_description VARCHAR(500) NULL`)
+  await db.query(`ALTER TABLE moderation_signals ADD COLUMN IF NOT EXISTS long_description TEXT NULL`)
+  await db.query(`ALTER TABLE moderation_signals ADD COLUMN IF NOT EXISTS status ENUM('draft','active','inactive','archived') NOT NULL DEFAULT 'draft'`)
+  await db.query(`ALTER TABLE moderation_signals ADD COLUMN IF NOT EXISTS metadata_json JSON NULL`)
+  await db.query(`ALTER TABLE moderation_signals ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP`)
+  await db.query(`ALTER TABLE moderation_signals ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`)
+  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_moderation_signals_status_label ON moderation_signals (status, label, signal_id)`); } catch {}
+  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_moderation_signals_updated ON moderation_signals (updated_at, signal_id)`); } catch {}
+
+  // Rules ↔ Signals (many-to-many)
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS rule_signals (
+      rule_id BIGINT UNSIGNED NOT NULL,
+      signal_id VARCHAR(128) NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (rule_id, signal_id),
+      KEY idx_rule_signals_signal (signal_id, rule_id),
+      KEY idx_rule_signals_rule (rule_id, signal_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+  await db.query(`ALTER TABLE rule_signals ADD COLUMN IF NOT EXISTS rule_id BIGINT UNSIGNED NOT NULL`)
+  await db.query(`ALTER TABLE rule_signals ADD COLUMN IF NOT EXISTS signal_id VARCHAR(128) NOT NULL`)
+  await db.query(`ALTER TABLE rule_signals ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP`)
+  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_rule_signals_signal ON rule_signals (signal_id, rule_id)`); } catch {}
+  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_rule_signals_rule ON rule_signals (rule_id, signal_id)`); } catch {}
+
+  // Cultures ↔ Positive Signals (many-to-many)
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS culture_positive_signals (
+      culture_id BIGINT UNSIGNED NOT NULL,
+      signal_id VARCHAR(128) NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (culture_id, signal_id),
+      KEY idx_culture_positive_signals_signal (signal_id, culture_id),
+      KEY idx_culture_positive_signals_culture (culture_id, signal_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+  await db.query(`ALTER TABLE culture_positive_signals ADD COLUMN IF NOT EXISTS culture_id BIGINT UNSIGNED NOT NULL`)
+  await db.query(`ALTER TABLE culture_positive_signals ADD COLUMN IF NOT EXISTS signal_id VARCHAR(128) NOT NULL`)
+  await db.query(`ALTER TABLE culture_positive_signals ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP`)
+  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_culture_positive_signals_signal ON culture_positive_signals (signal_id, culture_id)`); } catch {}
+  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_culture_positive_signals_culture ON culture_positive_signals (culture_id, signal_id)`); } catch {}
+
+  // Cultures ↔ Disruption Signals (many-to-many)
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS culture_disruption_signals (
+      culture_id BIGINT UNSIGNED NOT NULL,
+      signal_id VARCHAR(128) NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (culture_id, signal_id),
+      KEY idx_culture_disruption_signals_signal (signal_id, culture_id),
+      KEY idx_culture_disruption_signals_culture (culture_id, signal_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+  await db.query(`ALTER TABLE culture_disruption_signals ADD COLUMN IF NOT EXISTS culture_id BIGINT UNSIGNED NOT NULL`)
+  await db.query(`ALTER TABLE culture_disruption_signals ADD COLUMN IF NOT EXISTS signal_id VARCHAR(128) NOT NULL`)
+  await db.query(`ALTER TABLE culture_disruption_signals ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP`)
+  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_culture_disruption_signals_signal ON culture_disruption_signals (signal_id, culture_id)`); } catch {}
+  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_culture_disruption_signals_culture ON culture_disruption_signals (culture_id, signal_id)`); } catch {}
+
+  try {
+    await db.query(`
+      ALTER TABLE rule_signals
+      ADD CONSTRAINT fk_rule_signals_rule
+      FOREIGN KEY (rule_id) REFERENCES rules(id)
+    `)
+  } catch {}
+  try {
+    await db.query(`
+      ALTER TABLE rule_signals
+      ADD CONSTRAINT fk_rule_signals_signal
+      FOREIGN KEY (signal_id) REFERENCES moderation_signals(signal_id)
+    `)
+  } catch {}
+  try {
+    await db.query(`
+      ALTER TABLE culture_positive_signals
+      ADD CONSTRAINT fk_culture_positive_signals_culture
+      FOREIGN KEY (culture_id) REFERENCES cultures(id)
+    `)
+  } catch {}
+  try {
+    await db.query(`
+      ALTER TABLE culture_positive_signals
+      ADD CONSTRAINT fk_culture_positive_signals_signal
+      FOREIGN KEY (signal_id) REFERENCES moderation_signals(signal_id)
+    `)
+  } catch {}
+  try {
+    await db.query(`
+      ALTER TABLE culture_disruption_signals
+      ADD CONSTRAINT fk_culture_disruption_signals_culture
+      FOREIGN KEY (culture_id) REFERENCES cultures(id)
+    `)
+  } catch {}
+  try {
+    await db.query(`
+      ALTER TABLE culture_disruption_signals
+      ADD CONSTRAINT fk_culture_disruption_signals_signal
+      FOREIGN KEY (signal_id) REFERENCES moderation_signals(signal_id)
+    `)
+  } catch {}
+
   await db.query(`
     CREATE TABLE IF NOT EXISTS space_publications (
       id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,

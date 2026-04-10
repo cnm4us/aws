@@ -25,6 +25,7 @@ import * as messageAnalyticsSvc from '../features/message-analytics/service'
 import * as userFacingRulesSvc from '../features/user-facing-rules/service'
 import * as reportsSvc from '../features/reports/service'
 import * as culturesRepo from '../features/cultures/repo'
+import * as moderationSignalsSvc from '../features/moderation-signals/service'
 import {
   CULTURE_AI_HINTS,
   CULTURE_CREDIBILITY_EXPECTATIONS,
@@ -830,8 +831,9 @@ type ModerationAdminNavKey =
   | 'moderation_rules'
   | 'moderation_categories'
   | 'moderation_cultures'
+  | 'moderation_signals'
 
-type ModerationAdminSectionKey = 'rules' | 'categories' | 'cultures'
+type ModerationAdminSectionKey = 'rules' | 'categories' | 'cultures' | 'signals'
 
 function joinAdminPath(root: string, suffix = ''): string {
   const trimmedSuffix = String(suffix || '').trim()
@@ -847,11 +849,13 @@ const MODERATION_ADMIN_ROUTES = {
     rules: '/admin/moderation/rules',
     categories: '/admin/moderation/categories',
     cultures: '/admin/moderation/cultures',
+    signals: '/admin/moderation/signals',
   },
   legacy: {
     rules: '/admin/rules',
     categories: '/admin/categories',
     cultures: '/admin/cultures',
+    signals: '/admin/moderation/signals',
   },
 } as const
 
@@ -874,6 +878,12 @@ const MODERATION_CULTURE_ADMIN_PATHS = {
   new: getModerationAdminSectionPath('cultures', 'new'),
   detail: getModerationAdminSectionPath('cultures', ':id'),
   delete: getModerationAdminSectionPath('cultures', ':id/delete'),
+} as const
+
+const MODERATION_SIGNAL_ADMIN_PATHS = {
+  list: getModerationAdminSectionPath('signals'),
+  new: getModerationAdminSectionPath('signals', 'new'),
+  detail: getModerationAdminSectionPath('signals', ':id'),
 } as const
 
 const LEGACY_CULTURE_ADMIN_PATHS = {
@@ -948,6 +958,11 @@ function renderModerationAdminSubnav(opts: {
       key: 'moderation_cultures',
       label: 'Cultures',
       href: getModerationAdminSectionPath('cultures', '', { legacy: !canonicalSections.cultures }),
+    },
+    {
+      key: 'moderation_signals',
+      label: 'Signals',
+      href: getModerationAdminSectionPath('signals', '', { legacy: !canonicalSections.signals }),
     },
   ]
 
@@ -4761,6 +4776,11 @@ pagesRouter.get('/admin/moderation', async (_req: any, res: any) => {
       href: MODERATION_CULTURE_ADMIN_PATHS.list,
       desc: 'Manage moderation culture profiles and assign category coverage.',
     },
+    {
+      title: 'Signals',
+      href: MODERATION_SIGNAL_ADMIN_PATHS.list,
+      desc: 'Global moderation signal registry for rule linkage, culture linkage, and future mapping.',
+    },
   ]
 
   let body = '<h1>Moderation</h1>'
@@ -4784,7 +4804,74 @@ pagesRouter.get('/admin/moderation', async (_req: any, res: any) => {
     title: 'Moderation',
     bodyHtml: body,
     active: 'moderation',
-    canonicalSections: { rules: true, categories: true, cultures: true },
+    canonicalSections: { rules: true, categories: true, cultures: true, signals: true },
+  })
+  res.set('Content-Type', 'text/html; charset=utf-8')
+  res.send(doc)
+})
+
+pagesRouter.get('/admin/moderation/signals', async (_req: any, res: any) => {
+  let overview: Awaited<ReturnType<typeof moderationSignalsSvc.getSignalRegistryOverview>> | null = null
+  let overviewError = ''
+  try {
+    overview = await moderationSignalsSvc.getSignalRegistryOverview()
+  } catch (err: any) {
+    overviewError = String(err?.message || 'signal_registry_unavailable')
+  }
+
+  let body = '<h1>Moderation Signals</h1>'
+  body += '<div class="section">'
+  body += '<div class="section-title">Status</div>'
+  body += '<p>This Phase A page establishes the global moderation signal registry as a first-class moderation subsystem surface. Rule linkage, culture linkage, and full CRUD workflows land in the next phases.</p>'
+  body += '</div>'
+
+  body += '<div class="section">'
+  body += '<div class="section-title">Planned Responsibilities</div>'
+  body += '<ul>'
+  body += '<li>Define the canonical moderation signal vocabulary once globally.</li>'
+  body += '<li>Support explicit many-to-many linkage from rules to signals.</li>'
+  body += '<li>Support explicit many-to-many linkage from cultures to positive and disruption signals.</li>'
+  body += '<li>Leave a future-safe home for signal-to-dimension mapping.</li>'
+  body += '</ul>'
+  body += '</div>'
+
+  if (overview) {
+    body += '<div class="section">'
+    body += '<div class="section-title">Registry Snapshot</div>'
+    body += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">'
+    body += `<span class="pill">Total ${escapeHtml(String(overview.counts.total))}</span>`
+    body += `<span class="pill">Active ${escapeHtml(String(overview.counts.active))}</span>`
+    body += `<span class="pill">Draft ${escapeHtml(String(overview.counts.draft))}</span>`
+    body += `<span class="pill">Inactive ${escapeHtml(String(overview.counts.inactive))}</span>`
+    body += `<span class="pill">Archived ${escapeHtml(String(overview.counts.archived))}</span>`
+    body += '</div>'
+    if (overview.signals.length) {
+      body += '<table><thead><tr><th>Signal ID</th><th>Label</th><th>Status</th><th>Usage</th></tr></thead><tbody>'
+      for (const signal of overview.signals) {
+        body += '<tr>'
+        body += `<td><code>${escapeHtml(signal.signal_id)}</code></td>`
+        body += `<td>${escapeHtml(signal.label)}</td>`
+        body += `<td>${escapeHtml(signal.status)}</td>`
+        body += `<td>${escapeHtml(String(signal.usage_counts.total))}</td>`
+        body += '</tr>'
+      }
+      body += '</tbody></table>'
+    } else {
+      body += '<p class="field-hint">No signals have been seeded yet. Phase A includes the registry storage and seed helpers; operator workflows land next.</p>'
+    }
+    body += '</div>'
+  } else if (overviewError) {
+    body += '<div class="section">'
+    body += '<div class="section-title">Registry Snapshot</div>'
+    body += `<div class="banner warn">Unable to load the signal registry yet: ${escapeHtml(overviewError)}</div>`
+    body += '</div>'
+  }
+
+  const doc = renderModerationAdminPage({
+    title: 'Moderation Signals',
+    bodyHtml: body,
+    active: 'moderation_signals',
+    canonicalSections: { rules: true, categories: true, cultures: true, signals: true },
   })
   res.set('Content-Type', 'text/html; charset=utf-8')
   res.send(doc)
