@@ -39,7 +39,7 @@ Status: Active
 - A: Complete
 - B: Complete
 - C: Complete
-- D: Pending
+- D: In Progress
 - E: Pending
 
 ## Phase A — Route Contract and Navigation Skeleton
@@ -130,6 +130,7 @@ Status: Active
 - 2026-04-10 — Phase B completed: added `/admin/moderation` hub page, collapsed the main admin nav to a single `Moderation` item, replaced the `/admin` tile trio with a single moderation tile, and rendered the moderation subnav on existing legacy rules/categories/cultures pages so navigation remains coherent during the transition.
 - 2026-04-10 — Phase C implementation started: added canonical category/culture path constants, converted category and culture GET handlers to canonical `/admin/moderation/categories*` and `/admin/moderation/cultures*` routes, changed legacy category/culture GET routes into query-preserving redirects, kept legacy POST endpoints accepted for compatibility, updated category/culture form actions and related-object links to canonical moderation paths, and switched mixed moderation subnav rendering so categories/cultures now point to canonical routes while rules remains on the legacy path pending Phase D.
 - 2026-04-10 — Phase C completed after manual verification of canonical category/culture routes and legacy redirect behavior.
+- 2026-04-10 — Phase D implementation started: added canonical rules path constants for list/detail/edit/new/new-version/delete flows, moved rules list/detail/edit/version/new/create/delete handling to canonical `/admin/moderation/rules*` routes, changed legacy rules GET routes into query-preserving redirects, kept legacy POST paths accepted for compatibility, updated rule-related backlinks and form actions to canonical moderation paths, and switched the shared moderation subnav plus moderation hub so rules now point to canonical routes.
 
 ## Validation
 - Environment:
@@ -145,6 +146,7 @@ Status: Active
   - `src/routes/pages.ts`
 - Known gaps:
   - Route-by-route migration complexity for rules is estimated from current page code, but execution may uncover additional hardcoded links or styling assumptions.
+  - Phase D still needs manual verification of rules list/detail/edit/new-version/delete flows on canonical routes and of legacy `/admin/rules*` redirect behavior before it can be marked complete.
 
 ## Open Risks / Deferred
 - Risk:
@@ -158,6 +160,6 @@ Status: Active
 
 ## Resume Here
 - Next action:
-  - Start Phase D by moving rules to canonical `/admin/moderation/rules*` routes, then convert legacy `/admin/rules*` into compatibility redirects.
+  - Manually verify canonical `/admin/moderation/rules*` flows plus legacy `/admin/rules*` redirects; if clean, mark Phase D complete and commit.
 - Blocking question (if any):
   - none

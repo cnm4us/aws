@@ -883,6 +883,24 @@ const LEGACY_CULTURE_ADMIN_PATHS = {
   delete: getModerationAdminSectionPath('cultures', ':id/delete', { legacy: true }),
 } as const
 
+const MODERATION_RULE_ADMIN_PATHS = {
+  list: getModerationAdminSectionPath('rules'),
+  new: getModerationAdminSectionPath('rules', 'new'),
+  detail: getModerationAdminSectionPath('rules', ':id'),
+  edit: getModerationAdminSectionPath('rules', ':id/edit'),
+  delete: getModerationAdminSectionPath('rules', ':id/delete'),
+  versionNew: getModerationAdminSectionPath('rules', ':id/versions/new'),
+} as const
+
+const LEGACY_RULE_ADMIN_PATHS = {
+  list: getModerationAdminSectionPath('rules', '', { legacy: true }),
+  new: getModerationAdminSectionPath('rules', 'new', { legacy: true }),
+  detail: getModerationAdminSectionPath('rules', ':id', { legacy: true }),
+  edit: getModerationAdminSectionPath('rules', ':id/edit', { legacy: true }),
+  delete: getModerationAdminSectionPath('rules', ':id/delete', { legacy: true }),
+  versionNew: getModerationAdminSectionPath('rules', ':id/versions/new', { legacy: true }),
+} as const
+
 function getModerationAdminRoot(
   section: ModerationAdminSectionKey,
   opts?: { legacy?: boolean }
@@ -1193,7 +1211,7 @@ function renderCategoryForm(opts: { error?: string | null; csrfToken?: string | 
     title: 'New Category',
     bodyHtml: body,
     active: 'moderation_categories',
-    canonicalSections: { categories: true, cultures: true },
+    canonicalSections: { rules: true, categories: true, cultures: true },
   });
 }
 
@@ -1277,7 +1295,7 @@ function renderCategoryDetailPage(opts: {
   } else {
     body += `<ul style="margin: 0; padding-left: 18px">`;
     for (const r of linkedRules) {
-      body += `<li><a href="/admin/rules/${encodeURIComponent(String(r.id))}">${escapeHtml(String(r.title || `Rule #${r.id}`))}</a></li>`;
+      body += `<li><a href="${escapeHtml(getModerationAdminSectionPath('rules', encodeURIComponent(String(r.id))))}">${escapeHtml(String(r.title || `Rule #${r.id}`))}</a></li>`;
     }
     body += `</ul>`;
   }
@@ -1287,7 +1305,7 @@ function renderCategoryDetailPage(opts: {
     title: 'Category',
     bodyHtml: body,
     active: 'moderation_categories',
-    canonicalSections: { categories: true, cultures: true },
+    canonicalSections: { rules: true, categories: true, cultures: true },
   });
 }
 
@@ -1395,7 +1413,7 @@ async function handleModerationCategoriesList(req: any, res: any) {
       title: 'Categories',
       bodyHtml: body,
       active: 'moderation_categories',
-      canonicalSections: { categories: true, cultures: true },
+      canonicalSections: { rules: true, categories: true, cultures: true },
     });
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.send(doc);
@@ -1674,7 +1692,7 @@ function renderCultureForm(opts: { error?: string | null; csrfToken?: string | n
     title: 'New Culture',
     bodyHtml: body,
     active: 'moderation_cultures',
-    canonicalSections: { categories: true, cultures: true },
+    canonicalSections: { rules: true, categories: true, cultures: true },
   });
 }
 
@@ -1718,7 +1736,7 @@ async function handleModerationCulturesList(req: any, res: any) {
       title: 'Cultures',
       bodyHtml: body,
       active: 'moderation_cultures',
-      canonicalSections: { categories: true, cultures: true },
+      canonicalSections: { rules: true, categories: true, cultures: true },
     });
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.send(doc);
@@ -2444,7 +2462,7 @@ function renderCultureDetailPage(opts: {
     title: 'Culture',
     bodyHtml: body,
     active: 'moderation_cultures',
-    canonicalSections: { categories: true, cultures: true },
+    canonicalSections: { rules: true, categories: true, cultures: true },
   });
 }
 
@@ -2924,13 +2942,14 @@ function renderRuleDraftEditPage(opts: {
   const guidanceModeratorsId = `rule_draft_guidance_moderators_${String(rule.id)}`;
   const guidanceAgentsId = `rule_draft_guidance_agents_${String(rule.id)}`;
 
+  const ruleId = encodeURIComponent(String(rule.id))
   let body = `<h1>Edit Draft: ${escapeHtml(String(rule.slug || rule.title || 'Rule'))}</h1>`;
-  body += '<div class="toolbar"><div><a href="/admin/rules">\u2190 Back to rules</a></div></div>';
+  body += `<div class="toolbar"><div><a href="${escapeHtml(MODERATION_RULE_ADMIN_PATHS.list)}">\u2190 Back to rules</a></div></div>`;
   if (notice) {
     body += `<div class="success">${escapeHtml(notice)}</div>`;
   }
 
-  body += `<form method="post" action="/admin/rules/${escapeHtml(String(rule.id))}/edit">`;
+  body += `<form method="post" action="${escapeHtml(getModerationAdminSectionPath('rules', `${ruleId}/edit`))}">`;
   if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`;
 
   body += `<label>Title
@@ -3007,7 +3026,7 @@ function renderRuleDraftEditPage(opts: {
     title: 'Edit Rule Draft',
     bodyHtml: body,
     active: 'moderation_rules',
-    canonicalSections: { categories: true, cultures: true },
+    canonicalSections: { rules: true, categories: true, cultures: true },
   });
 }
 
@@ -3035,7 +3054,7 @@ function renderRuleListPage(
     qs.set('sort', key);
     qs.set('dir', nextDir);
     const arrow = isActive ? (dir === 'asc' ? ' ▲' : ' ▼') : '';
-    return `<a href="/admin/rules?${escapeHtml(qs.toString())}">${escapeHtml(label)}${arrow}</a>`;
+    return `<a href="${escapeHtml(`${MODERATION_RULE_ADMIN_PATHS.list}?${qs.toString()}`)}">${escapeHtml(label)}${arrow}</a>`;
   };
 
   let body = `<style>
@@ -3050,7 +3069,7 @@ function renderRuleListPage(
     -webkit-backdrop-filter: blur(10px);
     box-shadow: 0 10px 28px rgba(0,0,0,0.38), inset 0 1px 0 rgba(255,255,255,0.06);
   }
-  .rules-nebula .section a[href^="/admin/rules/"]:not(.card-btn){ color:#ffd60a; }
+  .rules-nebula .section a[href^="${escapeHtml(MODERATION_RULE_ADMIN_PATHS.detail.replace(':id', ''))}"]:not(.card-btn){ color:#ffd60a; }
   .rules-nebula .card-btn{
     display:inline-flex; align-items:center; justify-content:center; gap:8px;
     padding:7px 12px; border-radius:999px; border:1px solid rgba(255,255,255,0.32);
@@ -3064,7 +3083,7 @@ function renderRuleListPage(
   </style>`;
   body += `<div class="rules-nebula"><div class="rules-nebula-bg"></div><div class="rules-nebula-content">`;
   body += '<h1>Rules</h1>';
-  body += '<div class="toolbar"><div><span class="pill">Rules</span></div><div><a href="/admin/rules/new" class="card-btn card-btn-open">New rule</a></div></div>';
+  body += `<div class="toolbar"><div><span class="pill">Rules</span></div><div><a href="${escapeHtml(MODERATION_RULE_ADMIN_PATHS.new)}" class="card-btn card-btn-open">New rule</a></div></div>`;
   body += `<div class="toolbar" style="margin-top: 10px"><div><label style="display:flex; gap:10px; align-items:center; margin:0"><span style="opacity:0.85">Category</span><select name="categoryId" onchange="(function(sel){const qs=new URLSearchParams(window.location.search); if(sel.value){qs.set('categoryId', sel.value)} else {qs.delete('categoryId')} window.location.search=qs.toString()})(this)"><option value=""${selectedCategoryId === '' ? ' selected' : ''}>All</option>${categories
     .map((c) => {
       const id = String(c.id);
@@ -3100,8 +3119,8 @@ function renderRuleListPage(
       const confirmName = escapeHtml(titleRaw || `Rule #${id}`);
       body += `<div class="section" style="margin-top: 12px">`;
       body += `<div style="display:flex; align-items:flex-start; justify-content:space-between; gap:10px">`;
-      body += `<a href="/admin/rules/${id}" style="font-size: 1.15rem; font-weight: 700; line-height: 1.25; text-decoration: none">${title}</a>`;
-      body += `<a href="/admin/rules/${id}/edit" class="card-btn card-btn-open" style="white-space:nowrap">Edit Draft</a>`;
+      body += `<a href="${escapeHtml(getModerationAdminSectionPath('rules', encodeURIComponent(String(id))))}" style="font-size: 1.15rem; font-weight: 700; line-height: 1.25; text-decoration: none">${title}</a>`;
+      body += `<a href="${escapeHtml(getModerationAdminSectionPath('rules', `${encodeURIComponent(String(id))}/edit`))}" class="card-btn card-btn-open" style="white-space:nowrap">Edit Draft</a>`;
       body += `</div>`;
       body += `<div style="display:grid; gap:7px; margin-top: 10px">`;
       body += `<div><strong>Category:</strong> ${category || '-'}</div>`;
@@ -3111,7 +3130,7 @@ function renderRuleListPage(
       body += `<div><strong>Draft:</strong> ${draftPending ? '<span class="pill">Draft pending</span>' : escapeHtml(draftLabel)}</div>`;
       body += `</div>`;
       body += `<div style="display:flex; justify-content:flex-end; margin-top: 12px">`;
-      body += `<form method="post" action="/admin/rules/${id}/delete" style="margin:0; display:inline" onsubmit="return confirm('Delete rule \\'${confirmName}\\'? This cannot be undone.');">`;
+      body += `<form method="post" action="${escapeHtml(getModerationAdminSectionPath('rules', `${encodeURIComponent(String(id))}/delete`))}" style="margin:0; display:inline" onsubmit="return confirm('Delete rule \\'${confirmName}\\'? This cannot be undone.');">`;
       if (csrf) {
         body += `<input type="hidden" name="csrf" value="${escapeHtml(csrf)}" />`;
       }
@@ -3126,7 +3145,7 @@ function renderRuleListPage(
     title: 'Rules',
     bodyHtml: body,
     active: 'moderation_rules',
-    canonicalSections: { categories: true, cultures: true },
+    canonicalSections: { rules: true, categories: true, cultures: true },
   });
 }
 
@@ -3174,11 +3193,15 @@ function renderRuleForm(opts: {
     ? String(rule.guidance_agents_html)
     : '';
   const changeSummaryValue = rule.change_summary ? String(rule.change_summary) : '';
-  const baseAction = isEdit ? `/admin/rules/${rule.id}` : '/admin/rules';
-  const action = isNewVersion ? `/admin/rules/${rule.id}/versions/new` : baseAction;
+  const baseAction = isEdit
+    ? getModerationAdminSectionPath('rules', encodeURIComponent(String(rule.id)))
+    : MODERATION_RULE_ADMIN_PATHS.list;
+  const action = isNewVersion
+    ? getModerationAdminSectionPath('rules', `${encodeURIComponent(String(rule.id))}/versions/new`)
+    : baseAction;
 
   let body = `<h1>${escapeHtml(title)}</h1>`;
-  body += '<div class="toolbar"><div><a href="/admin/rules">\u2190 Back to rules</a></div></div>';
+  body += `<div class="toolbar"><div><a href="${escapeHtml(MODERATION_RULE_ADMIN_PATHS.list)}">\u2190 Back to rules</a></div></div>`;
   if (error) {
     body += `<div class="error">${escapeHtml(error)}</div>`;
   } else if (success) {
@@ -3281,11 +3304,11 @@ function renderRuleForm(opts: {
     title,
     bodyHtml: body,
     active: 'moderation_rules',
-    canonicalSections: { categories: true, cultures: true },
+    canonicalSections: { rules: true, categories: true, cultures: true },
   });
 }
 
-pagesRouter.get('/admin/rules', async (req: any, res: any) => {
+async function handleModerationRulesList(req: any, res: any) {
   try {
     const db = getPool();
     const categories = await listRuleCategories();
@@ -3348,9 +3371,14 @@ pagesRouter.get('/admin/rules', async (req: any, res: any) => {
     logError(req.log || pagesLogger, err, 'admin rules list failed', { path: req.path })
     res.status(500).send('Failed to load rules');
   }
-});
+}
 
-pagesRouter.get('/admin/rules/:id/edit', async (req: any, res: any) => {
+pagesRouter.get(MODERATION_RULE_ADMIN_PATHS.list, handleModerationRulesList);
+pagesRouter.get(LEGACY_RULE_ADMIN_PATHS.list, (req: any, res: any) =>
+  redirectToAdminPath(req, res, MODERATION_RULE_ADMIN_PATHS.list)
+);
+
+async function handleModerationRuleEditForm(req: any, res: any) {
   try {
     const id = Number(req.params.id);
     if (!Number.isFinite(id) || id <= 0) return res.status(404).send('Rule not found');
@@ -3380,9 +3408,18 @@ pagesRouter.get('/admin/rules/:id/edit', async (req: any, res: any) => {
     logError(req.log || pagesLogger, err, 'admin rule draft load failed', { path: req.path })
     res.status(500).send('Failed to load rule draft');
   }
-});
+}
 
-pagesRouter.post('/admin/rules/:id/edit', async (req: any, res: any) => {
+pagesRouter.get(MODERATION_RULE_ADMIN_PATHS.edit, handleModerationRuleEditForm);
+pagesRouter.get(LEGACY_RULE_ADMIN_PATHS.edit, (req: any, res: any) =>
+  redirectToAdminPath(
+    req,
+    res,
+    getModerationAdminSectionPath('rules', `${encodeURIComponent(String(req.params.id || ''))}/edit`)
+  )
+);
+
+async function handleModerationRuleEdit(req: any, res: any) {
   let conn: any = null;
   try {
     const id = Number(req.params.id);
@@ -3391,7 +3428,9 @@ pagesRouter.post('/admin/rules/:id/edit', async (req: any, res: any) => {
     const action = req.body && (req.body as any).action ? String((req.body as any).action) : '';
     if (action !== 'save' && action !== 'publish') {
       const notice = 'Unknown action.';
-      return res.redirect(`/admin/rules/${encodeURIComponent(String(id))}/edit?notice=${encodeURIComponent(notice)}`);
+      return res.redirect(
+        `${getModerationAdminSectionPath('rules', `${encodeURIComponent(String(id))}/edit`)}?notice=${encodeURIComponent(notice)}`
+      );
     }
 
     const body = (req.body || {}) as any;
@@ -3606,12 +3645,14 @@ pagesRouter.post('/admin/rules/:id/edit', async (req: any, res: any) => {
 
       await conn.commit();
       return res.redirect(
-        `/admin/rules/${encodeURIComponent(String(id))}/edit?notice=${encodeURIComponent(`Published v${nextVersion}.`)}`
+        `${getModerationAdminSectionPath('rules', `${encodeURIComponent(String(id))}/edit`)}?notice=${encodeURIComponent(`Published v${nextVersion}.`)}`
       );
     }
 
     await conn.commit();
-    res.redirect(`/admin/rules/${encodeURIComponent(String(id))}/edit?notice=${encodeURIComponent('Draft saved.')}`);
+    res.redirect(
+      `${getModerationAdminSectionPath('rules', `${encodeURIComponent(String(id))}/edit`)}?notice=${encodeURIComponent('Draft saved.')}`
+    );
   } catch (err) {
     try { if (conn) await conn.rollback(); } catch {}
     logError(req.log || pagesLogger, err, 'admin save rule draft failed', { path: req.path })
@@ -3619,9 +3660,14 @@ pagesRouter.post('/admin/rules/:id/edit', async (req: any, res: any) => {
   } finally {
     try { if (conn) conn.release(); } catch {}
   }
-});
+}
 
-pagesRouter.post('/admin/rules/:id/delete', async (req: any, res: any) => {
+pagesRouter.post(
+  [MODERATION_RULE_ADMIN_PATHS.edit, LEGACY_RULE_ADMIN_PATHS.edit],
+  handleModerationRuleEdit
+);
+
+async function handleModerationRuleDelete(req: any, res: any) {
   let conn: any = null;
   try {
     const id = Number(req.params.id);
@@ -3652,7 +3698,7 @@ pagesRouter.post('/admin/rules/:id/delete', async (req: any, res: any) => {
     await conn.query(`DELETE FROM rules WHERE id = ?`, [id]);
     await conn.commit();
 
-    res.redirect('/admin/rules');
+    res.redirect(MODERATION_RULE_ADMIN_PATHS.list);
   } catch (err) {
     try { if (conn) await conn.rollback(); } catch {}
     logError(req.log || pagesLogger, err, 'admin delete rule failed', { path: req.path })
@@ -3660,18 +3706,28 @@ pagesRouter.post('/admin/rules/:id/delete', async (req: any, res: any) => {
   } finally {
     try { if (conn) conn.release(); } catch {}
   }
-});
+}
 
-pagesRouter.get('/admin/rules/new', async (req: any, res: any) => {
+pagesRouter.post(
+  [MODERATION_RULE_ADMIN_PATHS.delete, LEGACY_RULE_ADMIN_PATHS.delete],
+  handleModerationRuleDelete
+);
+
+async function handleModerationRulesNew(req: any, res: any) {
   const categories = await listRuleCategories();
   const cookies = parseCookies(req.headers.cookie);
   const csrfToken = cookies['csrf'] || '';
   const doc = renderRuleForm({ rule: {}, categories, error: null, success: null, csrfToken });
   res.set('Content-Type', 'text/html; charset=utf-8');
   res.send(doc);
-});
+}
 
-pagesRouter.post('/admin/rules', async (req: any, res: any) => {
+pagesRouter.get(MODERATION_RULE_ADMIN_PATHS.new, handleModerationRulesNew);
+pagesRouter.get(LEGACY_RULE_ADMIN_PATHS.new, (req: any, res: any) =>
+  redirectToAdminPath(req, res, MODERATION_RULE_ADMIN_PATHS.new)
+);
+
+async function handleModerationRulesCreate(req: any, res: any) {
   try {
     const body = (req.body || {}) as any;
     const rawSlug = String(body.slug || '');
@@ -3788,14 +3844,19 @@ pagesRouter.post('/admin/rules', async (req: any, res: any) => {
       throw err;
     }
 
-    res.redirect('/admin/rules');
+    res.redirect(MODERATION_RULE_ADMIN_PATHS.list);
   } catch (err) {
     logError(req.log || pagesLogger, err, 'admin create rule failed', { path: req.path })
     res.status(500).send('Failed to create rule');
   }
-});
+}
 
-pagesRouter.get('/admin/rules/:id', async (req: any, res: any) => {
+pagesRouter.post(
+  [MODERATION_RULE_ADMIN_PATHS.list, LEGACY_RULE_ADMIN_PATHS.list],
+  handleModerationRulesCreate
+);
+
+async function handleModerationRuleDetail(req: any, res: any) {
   try {
     const id = Number(req.params.id);
     if (!Number.isFinite(id) || id <= 0) return res.status(404).send('Rule not found');
@@ -3823,8 +3884,9 @@ pagesRouter.get('/admin/rules/:id', async (req: any, res: any) => {
     const currentPublishedAt = currentVersionRow && currentVersionRow.created_at ? String(currentVersionRow.created_at) : '';
     const hasUnpublishedDraft = !!draftUpdatedAt && (currentPublishedAt ? draftUpdatedAt > currentPublishedAt : true);
 
+    const ruleId = encodeURIComponent(String(rule.id));
     let body = `<h1>Rule: ${escapeHtml(rule.slug || rule.title || '')}</h1>`;
-    body += '<div class="toolbar"><div><a href="/admin/rules">\u2190 Back to rules</a></div><div><a href="/admin/rules/' + escapeHtml(String(rule.id)) + '/edit">Edit Draft</a> &nbsp; <a href="/admin/rules/' + escapeHtml(String(rule.id)) + '/versions/new">New version</a></div></div>';
+    body += `<div class="toolbar"><div><a href="${escapeHtml(MODERATION_RULE_ADMIN_PATHS.list)}">\u2190 Back to rules</a></div><div><a href="${escapeHtml(getModerationAdminSectionPath('rules', `${ruleId}/edit`))}">Edit Draft</a> &nbsp; <a href="${escapeHtml(getModerationAdminSectionPath('rules', `${ruleId}/versions/new`))}">New version</a></div></div>`;
     body += `<p><span class="pill">Visibility: ${escapeHtml(String(rule.visibility || 'public'))}</span></p>`;
     if (draftUpdatedAt) {
       body += `<p><strong>Draft last saved:</strong> ${escapeHtml(draftUpdatedAt)} ${hasUnpublishedDraft ? '<span class="pill">Draft pending</span>' : ''}</p>`;
@@ -3847,7 +3909,7 @@ pagesRouter.get('/admin/rules/:id', async (req: any, res: any) => {
       title: 'Rule detail',
       bodyHtml: body,
       active: 'moderation_rules',
-      canonicalSections: { categories: true, cultures: true },
+      canonicalSections: { rules: true, categories: true, cultures: true },
     });
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.send(doc);
@@ -3855,9 +3917,18 @@ pagesRouter.get('/admin/rules/:id', async (req: any, res: any) => {
     logError(req.log || pagesLogger, err, 'admin rule detail failed', { path: req.path })
     res.status(500).send('Failed to load rule');
   }
-});
+}
 
-pagesRouter.get('/admin/rules/:id/versions/new', async (req: any, res: any) => {
+pagesRouter.get(MODERATION_RULE_ADMIN_PATHS.detail, handleModerationRuleDetail);
+pagesRouter.get(LEGACY_RULE_ADMIN_PATHS.detail, (req: any, res: any) =>
+  redirectToAdminPath(
+    req,
+    res,
+    getModerationAdminSectionPath('rules', encodeURIComponent(String(req.params.id || '')))
+  )
+);
+
+async function handleModerationRuleVersionNewForm(req: any, res: any) {
   try {
     const id = Number(req.params.id);
     if (!Number.isFinite(id) || id <= 0) return res.status(404).send('Rule not found');
@@ -3922,9 +3993,18 @@ pagesRouter.get('/admin/rules/:id/versions/new', async (req: any, res: any) => {
     logError(req.log || pagesLogger, err, 'admin new rule version form failed', { path: req.path })
     res.status(500).send('Failed to load version form');
   }
-});
+}
 
-pagesRouter.post('/admin/rules/:id/versions/new', async (req: any, res: any) => {
+pagesRouter.get(MODERATION_RULE_ADMIN_PATHS.versionNew, handleModerationRuleVersionNewForm);
+pagesRouter.get(LEGACY_RULE_ADMIN_PATHS.versionNew, (req: any, res: any) =>
+  redirectToAdminPath(
+    req,
+    res,
+    getModerationAdminSectionPath('rules', `${encodeURIComponent(String(req.params.id || ''))}/versions/new`)
+  )
+);
+
+async function handleModerationRuleVersionCreate(req: any, res: any) {
   try {
     const id = Number(req.params.id);
     if (!Number.isFinite(id) || id <= 0) return res.status(404).send('Rule not found');
@@ -4013,12 +4093,17 @@ pagesRouter.post('/admin/rules/:id/versions/new', async (req: any, res: any) => 
       [versionId, userId, rule.id]
     );
 
-    res.redirect(`/admin/rules/${rule.id}`);
+    res.redirect(getModerationAdminSectionPath('rules', encodeURIComponent(String(rule.id))));
   } catch (err) {
     logError(req.log || pagesLogger, err, 'admin create rule version failed', { path: req.path })
     res.status(500).send('Failed to create rule version');
   }
-});
+}
+
+pagesRouter.post(
+  [MODERATION_RULE_ADMIN_PATHS.versionNew, LEGACY_RULE_ADMIN_PATHS.versionNew],
+  handleModerationRuleVersionCreate
+);
 
 async function loadPageParentOptions(): Promise<Array<{ id: number; title: string; path: string }>> {
   const db = getPool()
@@ -4663,7 +4748,7 @@ pagesRouter.get('/admin/moderation', async (_req: any, res: any) => {
   const tiles: Array<{ title: string; href: string; desc: string }> = [
     {
       title: 'Rules',
-      href: getModerationAdminSectionPath('rules', '', { legacy: true }),
+      href: MODERATION_RULE_ADMIN_PATHS.list,
       desc: 'Edit rules, drafts, published versions, and moderation guidance.',
     },
     {
@@ -4699,7 +4784,7 @@ pagesRouter.get('/admin/moderation', async (_req: any, res: any) => {
     title: 'Moderation',
     bodyHtml: body,
     active: 'moderation',
-    canonicalSections: { categories: true, cultures: true },
+    canonicalSections: { rules: true, categories: true, cultures: true },
   })
   res.set('Content-Type', 'text/html; charset=utf-8')
   res.send(doc)
