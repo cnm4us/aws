@@ -12,7 +12,7 @@ Current State
 
 We currently have an admin route:
 
-/admin/cultures/:id
+/admin/moderation/cultures/:id
 
 This route includes a simple Description field for a culture.
 
@@ -108,7 +108,7 @@ Instead, produce a discussion-ready feature analysis for this proposed system an
 Specifically, I want you to:
 
 1. Review the proposed approach and identify the strongest implementation path for a schema-constrained culture editor in our current stack.
-2. Recommend a UI architecture for /admin/cultures/:id that renders the culture JSON object as structured sections/cards rather than raw text.
+2. Recommend a UI architecture for /admin/moderation/cultures/:id that renders the culture JSON object as structured sections/cards rather than raw text.
 3. Recommend a data model for storing the culture definition JSON in the database.
 4. Recommend how to validate the JSON schema on both client and server.
 5. Recommend how to generate the slim AI-facing culture payload from the stored canonical culture object.

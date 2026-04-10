@@ -34,13 +34,14 @@ Status: Active
 - Main admin left-nav becomes a single `Moderation` entry rather than retaining three separate entries.
 - Moderation pages get a local/shared moderation nav so operators can move between subsystem tools without returning to the global admin index.
 - This phase is route/nav consolidation only; no moderation contract or persistence changes are bundled into it.
+- Legacy moderation redirects should remain until active operator docs and smoke checklists no longer treat the old top-level paths as canonical, and any future removal should happen in a separate follow-up after at least one stable planning cycle.
 
 ## Phase Status
 - A: Complete
 - B: Complete
 - C: Complete
-- D: In Progress
-- E: Pending
+- D: Complete
+- E: In Progress
 
 ## Phase A — Route Contract and Navigation Skeleton
 - Goal:
@@ -131,22 +132,30 @@ Status: Active
 - 2026-04-10 — Phase C implementation started: added canonical category/culture path constants, converted category and culture GET handlers to canonical `/admin/moderation/categories*` and `/admin/moderation/cultures*` routes, changed legacy category/culture GET routes into query-preserving redirects, kept legacy POST endpoints accepted for compatibility, updated category/culture form actions and related-object links to canonical moderation paths, and switched mixed moderation subnav rendering so categories/cultures now point to canonical routes while rules remains on the legacy path pending Phase D.
 - 2026-04-10 — Phase C completed after manual verification of canonical category/culture routes and legacy redirect behavior.
 - 2026-04-10 — Phase D implementation started: added canonical rules path constants for list/detail/edit/new/new-version/delete flows, moved rules list/detail/edit/version/new/create/delete handling to canonical `/admin/moderation/rules*` routes, changed legacy rules GET routes into query-preserving redirects, kept legacy POST paths accepted for compatibility, updated rule-related backlinks and form actions to canonical moderation paths, and switched the shared moderation subnav plus moderation hub so rules now point to canonical routes.
+- 2026-04-10 — Phase D completed after manual verification of canonical rules routes and legacy redirect behavior.
+- 2026-04-10 — Phase E implementation started: updated active docs to treat `/admin/moderation/*` as canonical, added a focused moderation admin route smoke/checklist in `tests/suites/api-curl/`, and documented the legacy redirect retirement policy.
 
 ## Validation
 - Environment:
   - development
 - Commands run:
   - `npm run build`
+  - `npm run check:agents:docs`
 - Evidence files:
   - `agents/README.md`
+  - `agents/features/feature_15_json_for_moderation.md`
   - `agents/implementation_planning.md`
   - `agents/implementation/PLAN_TEMPLATE.md`
   - `agents/implementation/INDEX.md`
+  - `agents/implementation/plan_161.md`
   - `agents/implementation/plan_163.md`
+  - `tests/suites/api-curl/README.md`
+  - `tests/suites/api-curl/moderation-admin-routes-smoke.md`
+  - `README.md`
   - `src/routes/pages.ts`
 - Known gaps:
-  - Route-by-route migration complexity for rules is estimated from current page code, but execution may uncover additional hardcoded links or styling assumptions.
-  - Phase D still needs manual verification of rules list/detail/edit/new-version/delete flows on canonical routes and of legacy `/admin/rules*` redirect behavior before it can be marked complete.
+  - `npm run check:agents:docs` still fails due pre-existing invalid or missing `Status` headers in older plan files (`plan_138.md`, `plan_140.md`, `plan_141.md`, `plan_142.md`, `plan_148.md`, `plan_149.md`, `plan_150.md`, `plan_151.md`, `plan_152.md`, `plan_153.md`, `plan_154.md`, `plan_155.md`, `plan_156.md`, `plan_157.md`, `plan_158.md`, `plan_159.md`), not because of this plan’s changes.
+  - Historical artifacts under `agents/implementation/archives/` and `tests/runs/legacy/` intentionally retain older route references as historical records.
 
 ## Open Risks / Deferred
 - Risk:
@@ -160,6 +169,6 @@ Status: Active
 
 ## Resume Here
 - Next action:
-  - Manually verify canonical `/admin/moderation/rules*` flows plus legacy `/admin/rules*` redirects; if clean, mark Phase D complete and commit.
+  - Manually verify the moderation admin route smoke/checklist and confirm the updated docs/readme references are coherent; if clean, mark Phase E complete and commit.
 - Blocking question (if any):
   - none

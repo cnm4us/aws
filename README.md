@@ -28,13 +28,17 @@ Admin + CMS surfaces (server-rendered)
 - Admin users: /admin/users
 - Admin settings: /admin/settings (stub; coming soon)
 - Admin dev: /admin/dev
+- Admin moderation hub: /admin/moderation
+- Admin moderation rules: /admin/moderation/rules
+- Admin moderation categories: /admin/moderation/categories
+- Admin moderation cultures: /admin/moderation/cultures
 - Admin pages editor: /admin/pages
-- Admin rules editor: /admin/rules
-- Admin cultures editor: /admin/cultures
-- Admin categories: /admin/categories
 - Admin groups/channels: /admin/groups and /admin/channels (create/edit includes Culture assignment + review settings)
 - Public pages: / and /pages/:slug (path-like slugs, max 4 segments)
 - Public rules: /rules/:slug and /rules/:slug/v:1
+
+Legacy admin moderation aliases
+- `/admin/rules`, `/admin/categories`, and `/admin/cultures` remain available as compatibility redirects to the canonical `/admin/moderation/*` pages.
 
 Space console (separate bundle, space_admin / space_moderator)
 - Space admin landing: /space/admin

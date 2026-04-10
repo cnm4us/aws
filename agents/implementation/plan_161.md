@@ -7,7 +7,7 @@ Status: Active
 
 ## Context
 - Problem statement:
-  - `/admin/cultures/:id` currently stores free-text `description`.
+  - `/admin/moderation/cultures/:id` currently stores free-text `description`.
   - Moderation AI needs deterministic, structured culture context rather than prose.
   - We need a constrained JSON culture definition as canonical source for AI payloads.
 - In scope:
@@ -102,7 +102,7 @@ Status: Active
 - Goal:
   - Replace free-text description editing with schema-constrained cards/sections.
 - Steps:
-  - [ ] Refactor `/admin/cultures/:id` form renderer in `src/routes/pages.ts`:
+  - [ ] Refactor `/admin/moderation/cultures/:id` form renderer in `src/routes/pages.ts`:
     - remove primary free-text description editor
     - render sections:
       - Metadata (`id`, `name`, `version`, optional `summary`)
@@ -129,7 +129,7 @@ Status: Active
 - Goal:
   - Provide optional raw JSON view/edit for power users without making it primary path.
 - Steps:
-  - [ ] Add collapsible "Advanced JSON" card to `/admin/cultures/:id`.
+  - [ ] Add collapsible "Advanced JSON" card to `/admin/moderation/cultures/:id`.
   - [ ] Show current canonical JSON pretty-printed.
   - [ ] Add optional raw edit textarea + `Validate JSON` and `Apply` actions.
   - [ ] Guard advanced editing with `site_admin` check (read-only otherwise).
@@ -172,7 +172,7 @@ Status: Active
 - Test gate:
   - `npm run build`
   - backfill dry-run + apply in dev DB
-  - manual verify `/admin/cultures` and `/admin/cultures/:id` remain stable
+  - manual verify `/admin/moderation/cultures` and `/admin/moderation/cultures/:id` remain stable
 - Acceptance:
   - Existing data is migrated; editor + payload path documented and stable.
 
@@ -208,7 +208,7 @@ Status: Active
 - 2026-04-08:
   - Started Phase C structured editor work in `src/routes/pages.ts`:
     - New culture form now creates a culture with auto-initialized schema-backed definition (no free-text description input).
-    - `/admin/cultures/:id` now renders structured sections:
+    - `/admin/moderation/cultures/:id` now renders structured sections:
       - Metadata (`name`, computed `id`, `version`, `summary`)
       - Interaction style
       - Tone expectations
@@ -221,7 +221,7 @@ Status: Active
     - Wired create/detail/update routes to `src/features/cultures/repo.ts` for canonical definition persistence and bootstrap fallback handling.
 - 2026-04-08:
   - Started Phase D advanced JSON mode in `src/routes/pages.ts`:
-    - Added collapsible `Advanced JSON` details card on `/admin/cultures/:id`.
+    - Added collapsible `Advanced JSON` details card on `/admin/moderation/cultures/:id`.
     - Added read-only pretty-print preview of canonical JSON.
     - Added raw JSON textarea + `Validate JSON` and `Apply JSON` submit actions.
     - Added permission guard (`site_admin` capability check) for raw edit actions; non-editors see read-only state.
