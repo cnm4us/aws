@@ -1,9 +1,10 @@
 export const CULTURE_INTERACTION_STYLES = [
   'low_conflict',
   'supportive',
-  'adversarial',
   'debate',
-  'professional',
+  'structured',
+  'broadcast',
+  'playful',
   'mixed',
 ] as const
 

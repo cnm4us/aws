@@ -15,6 +15,14 @@ function normalizeOptionalString(value: unknown): string | undefined {
   return next.length ? next : undefined
 }
 
+function normalizeInteractionStyle(value: unknown): string | undefined {
+  const next = normalizeOptionalString(value)
+  if (!next) return undefined
+  if (next === 'adversarial') return 'debate'
+  if (next === 'professional') return 'structured'
+  return next
+}
+
 function normalizeRequiredString(value: unknown): string | undefined {
   const next = normalizeOptionalString(value)
   return next && next.length ? next : undefined
@@ -116,7 +124,7 @@ export function normalizeCultureDefinitionInput(
   if (internalNotes) normalized.internal_notes = internalNotes
   else if (typeof source.internal_notes === 'string') delete normalized.internal_notes
 
-  const interactionStyle = normalizeOptionalString(source.interaction_style)
+  const interactionStyle = normalizeInteractionStyle(source.interaction_style)
   if (interactionStyle) normalized.interaction_style = interactionStyle
 
   const tone = normalizeUniqueStringArray(source.tone_expectations)

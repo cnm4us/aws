@@ -518,7 +518,7 @@ export async function judgeModeration(
       const toleranceValue = toleranceKey ? aiCulture.culture.tolerance[toleranceKey] : null
       const dimensionWeight = toleranceValue
         ? policy.tolerance_weight_map[toleranceValue]
-        : aiCulture.culture.interaction_style === 'professional'
+        : aiCulture.culture.interaction_style === 'structured' || aiCulture.culture.interaction_style === 'broadcast'
           ? 2.0
           : 1.5
       const impactScore = Number((severityScore * dimensionWeight).toFixed(2))
