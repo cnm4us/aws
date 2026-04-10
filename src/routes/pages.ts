@@ -30,12 +30,10 @@ import {
   CULTURE_AI_HINTS,
   CULTURE_CREDIBILITY_EXPECTATIONS,
   CULTURE_CONTENT_BOUNDARY_LEVELS,
-  CULTURE_DISRUPTION_SIGNALS,
   CULTURE_DISCOURSE_MODES,
   CULTURE_EMOTIONAL_INTENSITY_LEVELS,
   CULTURE_INTERACTION_STYLES,
   CULTURE_INTERACTION_MODES,
-  CULTURE_POSITIVE_SIGNALS,
   CULTURE_TOLERANCE_LEVELS,
   CULTURE_TONE_EXPECTATIONS,
   deriveCultureDefinitionIdFromKey,
@@ -1718,6 +1716,7 @@ async function handleModerationCulturesList(req: any, res: any) {
     const error = req.query && (req.query as any).error != null ? String((req.query as any).error) : '';
 
     const db = getPool();
+    await culturesRepo.backfillAllCultureSignalMemberships(db as any)
     const [rows] = await db.query(
       `SELECT c.id, c.name, c.updated_at, COUNT(cc.category_id) AS category_count
          FROM cultures c
@@ -1842,6 +1841,68 @@ async function listRuleCategoriesForCultures(): Promise<Array<{ id: number; name
   } catch {
     return [];
   }
+}
+
+type CultureSignalOption = {
+  signal_id: string
+  label: string
+  status: string
+  description: string
+  positive_role: boolean
+  disruption_role: boolean
+}
+
+async function listCultureSignalOptions(): Promise<CultureSignalOption[]> {
+  try {
+    const signals = await moderationSignals.listSignalsForAdmin({ status: 'all', limit: 500 })
+    const hasRole = (signal: any, role: 'positive' | 'disruption') => {
+      const metadata = signal?.metadata_json && typeof signal.metadata_json === 'object'
+        ? (signal.metadata_json as Record<string, unknown>)
+        : {}
+      const cultureRoles = Array.isArray(metadata.culture_roles)
+        ? metadata.culture_roles.map((value) => String(value || '').trim().toLowerCase())
+        : []
+      if (cultureRoles.includes(role)) return true
+      const seedSources = Array.isArray(metadata.seed_sources)
+        ? metadata.seed_sources.map((value) => String(value || '').trim().toLowerCase())
+        : []
+      if (role === 'positive' && seedSources.includes('culture_positive')) return true
+      if (role === 'disruption' && seedSources.includes('culture_disruption')) return true
+      const backfilledFrom = String(metadata.backfilled_from || '').trim().toLowerCase()
+      if (role === 'positive' && backfilledFrom.includes('positive')) return true
+      if (role === 'disruption' && backfilledFrom.includes('disruption')) return true
+      return false
+    }
+    return signals.map((signal) => ({
+      signal_id: signal.signal_id,
+      label: signal.label,
+      status: signal.status,
+      description: signal.short_description || signal.long_description || '',
+      positive_role: hasRole(signal, 'positive'),
+      disruption_role: hasRole(signal, 'disruption'),
+    }))
+  } catch {
+    return []
+  }
+}
+
+function validateCultureSignalsAgainstRegistry(
+  definition: CultureDefinitionV1,
+  signalOptions: CultureSignalOption[]
+): Record<string, string[]> {
+  const known = new Set(signalOptions.map((signal) => signal.signal_id))
+  const errors: Record<string, string[]> = {}
+  const checkField = (field: 'positive_signals' | 'disruption_signals', values: string[]) => {
+    const missing = Array.from(new Set(values.map((value) => String(value || '').trim()).filter((value) => value && !known.has(value))))
+    if (missing.length) {
+      errors[field] = [
+        `Unknown signals: ${missing.join(', ')}. Select signals from the global registry.`,
+      ]
+    }
+  }
+  checkField('positive_signals', Array.from(definition.positive_signals || []))
+  checkField('disruption_signals', Array.from(definition.disruption_signals || []))
+  return errors
 }
 
 function toStringArrayInput(value: unknown): string[] {
@@ -2172,6 +2233,7 @@ function renderCultureDetailPage(opts: {
   advancedJsonError?: string | null;
   advancedOpen?: boolean;
   categories: Array<{ id: number; name: string; description: string }>;
+  signalOptions: CultureSignalOption[];
   assignedCategoryIds: Set<number>;
   csrfToken?: string | null;
   notice?: string | null;
@@ -2179,6 +2241,7 @@ function renderCultureDetailPage(opts: {
 }): string {
   const culture = opts.culture ?? {};
   const categories = Array.isArray(opts.categories) ? opts.categories : [];
+  const signalOptions = Array.isArray(opts.signalOptions) ? opts.signalOptions : [];
   const assigned = opts.assignedCategoryIds ?? new Set<number>();
   const definition = opts.definition;
   const definitionSource = String(opts.definitionSource || 'stored');
@@ -2201,6 +2264,28 @@ function renderCultureDetailPage(opts: {
   const toneSet = new Set<string>((definition.tone_expectations || []).map((v) => String(v)))
   const positiveSignalsSet = new Set<string>((definition.positive_signals || []).map((v) => String(v)))
   const disruptionSet = new Set<string>((definition.disruption_signals || []).map((v) => String(v)))
+  const buildRoleOptions = (role: 'positive' | 'disruption', selected: Set<string>) => {
+    const seeded = signalOptions.filter((option) => role === 'positive' ? option.positive_role : option.disruption_role)
+    const byId = new Map(signalOptions.map((option) => [option.signal_id, option]))
+    const out = [...seeded]
+    const seen = new Set(out.map((option) => option.signal_id))
+    for (const signalId of selected) {
+      if (seen.has(signalId)) continue
+      const existing = byId.get(signalId)
+      out.push(existing || {
+        signal_id: signalId,
+        label: signalId,
+        status: 'active',
+        description: 'Currently selected but not yet role-tagged in registry metadata.',
+        positive_role: role === 'positive',
+        disruption_role: role === 'disruption',
+      })
+      seen.add(signalId)
+    }
+    return out
+  }
+  const positiveSignalOptions = buildRoleOptions('positive', positiveSignalsSet)
+  const disruptionSignalOptions = buildRoleOptions('disruption', disruptionSet)
   const contentBoundaries = definition.content_boundaries || {
     sexual_content: 'moderate',
     graphic_violence: 'moderate',
@@ -2278,25 +2363,30 @@ function renderCultureDetailPage(opts: {
 
   body += `<div class="section" style="margin-top: 10px">`;
   body += `<div class="section-title">Positive Signals</div>`;
+  body += `<div class="field-hint">Registry-backed global signals. Culture membership is stored relationally and projected back into this definition view.</div>`;
   body += `<input type="hidden" name="positive_signals" value="" />`;
-  for (const value of CULTURE_POSITIVE_SIGNALS) {
+  for (const signal of positiveSignalOptions) {
+    const value = signal.signal_id
     const checked = positiveSignalsSet.has(value) ? ' checked' : '';
     body += `<label style="display:flex; gap:10px; align-items:flex-start; margin-top: 6px">`;
     body += `<input type="checkbox" name="positive_signals" value="${escapeHtml(value)}"${checked} style="margin-top: 3px" />`;
-    body += `<div>${escapeHtml(value)}</div></label>`;
+    body += `<div><div>${escapeHtml(signal.label)}</div><div class="field-hint"><code>${escapeHtml(value)}</code>${signal.description ? ` • ${escapeHtml(signal.description)}` : ''}${signal.status ? ` • ${escapeHtml(formatModerationSignalStatus(signal.status))}` : ''}</div></div></label>`;
   }
+  if (!positiveSignalOptions.length) body += `<div class="field-hint">No positive-role signals are available yet. Tag or seed positive signals in the registry before editing this section.</div>`;
   body += `${renderCultureFieldErrors(definitionFieldErrors, 'positive_signals')}`;
   body += `</div>`;
 
   body += `<div class="section" style="margin-top: 10px">`;
   body += `<div class="section-title">Disruption Signals</div>`;
   body += `<input type="hidden" name="disruption_signals" value="" />`;
-  for (const value of CULTURE_DISRUPTION_SIGNALS) {
+  for (const signal of disruptionSignalOptions) {
+    const value = signal.signal_id
     const checked = disruptionSet.has(value) ? ' checked' : '';
     body += `<label style="display:flex; gap:10px; align-items:flex-start; margin-top: 6px">`;
     body += `<input type="checkbox" name="disruption_signals" value="${escapeHtml(value)}"${checked} style="margin-top: 3px" />`;
-    body += `<div>${escapeHtml(value)}</div></label>`;
+    body += `<div><div>${escapeHtml(signal.label)}</div><div class="field-hint"><code>${escapeHtml(value)}</code>${signal.description ? ` • ${escapeHtml(signal.description)}` : ''}${signal.status ? ` • ${escapeHtml(formatModerationSignalStatus(signal.status))}` : ''}</div></div></label>`;
   }
+  if (!disruptionSignalOptions.length) body += `<div class="field-hint">No disruption-role signals are available yet. Tag or seed disruption signals in the registry before editing this section.</div>`;
   body += `${renderCultureFieldErrors(definitionFieldErrors, 'disruption_signals')}`;
   body += `</div>`;
   body += `</div>`;
@@ -2495,6 +2585,7 @@ async function handleModerationCultureDetail(req: any, res: any) {
     if (!culture) return res.status(404).send('Culture not found');
 
     const categories = await listRuleCategoriesForCultures();
+    const signalOptions = await listCultureSignalOptions();
     const [assignedRows] = await db.query(`SELECT category_id FROM culture_categories WHERE culture_id = ?`, [id]);
     const assignedCategoryIds = new Set<number>((assignedRows as any[]).map((r) => Number(r.category_id)).filter((n) => Number.isFinite(n) && n > 0));
 
@@ -2516,6 +2607,7 @@ async function handleModerationCultureDetail(req: any, res: any) {
       definitionFieldErrors: {},
       advancedJsonCanEdit,
       categories,
+      signalOptions,
       assignedCategoryIds,
       csrfToken,
       notice,
@@ -2560,6 +2652,7 @@ async function handleModerationCultureUpdate(req: any, res: any) {
     if (!current) return res.status(404).send('Culture not found');
 
     const categories = await listRuleCategoriesForCultures();
+    const signalOptions = await listCultureSignalOptions();
     const cookies = parseCookies(req.headers.cookie);
     const csrfToken = cookies['csrf'] || '';
     const userId = Number(req?.user?.id || 0);
@@ -2600,6 +2693,7 @@ async function handleModerationCultureUpdate(req: any, res: any) {
         advancedJsonError: opts.advancedJsonError || '',
         advancedOpen: !!opts.advancedOpen || !!opts.advancedJsonError || isAdvancedValidate || isAdvancedApply,
         categories,
+        signalOptions,
         assignedCategoryIds: opts.assignedIds || new Set<number>(submittedIds),
         csrfToken,
         notice: opts.notice,
@@ -2651,6 +2745,16 @@ async function handleModerationCultureUpdate(req: any, res: any) {
           advancedOpen: true,
         });
       }
+      const signalRegistryErrors = validateCultureSignalsAgainstRegistry(advancedValidation.value, signalOptions)
+      if (Object.keys(signalRegistryErrors).length) {
+        return renderDraftPage({
+          definition: advancedValidation.value,
+          fieldErrors: signalRegistryErrors,
+          error: 'Advanced JSON references unknown signals.',
+          advancedJsonError: Object.values(signalRegistryErrors).flat().join(' • '),
+          advancedOpen: true,
+        })
+      }
       if (isAdvancedValidate) {
         return renderDraftPage({
           status: 200,
@@ -2696,6 +2800,14 @@ async function handleModerationCultureUpdate(req: any, res: any) {
           error: 'Culture definition is invalid. Fix the highlighted fields.',
         });
       }
+      const signalRegistryErrors = validateCultureSignalsAgainstRegistry(validation.value, signalOptions)
+      if (Object.keys(signalRegistryErrors).length) {
+        return renderDraftPage({
+          definition: validation.value,
+          fieldErrors: signalRegistryErrors,
+          error: 'Culture definition references unknown signals. Select signals from the registry.',
+        })
+      }
       definitionToPersist = validation.value;
     }
 
@@ -2737,6 +2849,22 @@ async function handleModerationCultureUpdate(req: any, res: any) {
       if (String(err?.code || '') === 'culture_not_found') {
         await conn.rollback();
         return res.status(404).send('Culture not found');
+      }
+      if (String(err?.code || '') === 'unknown_culture_signal_ids') {
+        await conn.rollback();
+        const definitionPreview =
+          definitionToPersist ||
+          mergeCultureDefinitionDraft(current.definition, structuredDraft || {});
+        const field = String(err?.field || '_form')
+        const signalIds = Array.isArray(err?.signalIds) ? err.signalIds.map((id: unknown) => String(id)) : []
+        return renderDraftPage({
+          definition: definitionPreview,
+          assignedIds: new Set<number>(validIds.length ? validIds : submittedIds),
+          fieldErrors: {
+            [field]: [`Unknown signals: ${signalIds.join(', ')}. Select signals from the registry.`],
+          },
+          error: 'Culture definition references unknown signals. Select signals from the registry.',
+        });
       }
       throw err;
     }

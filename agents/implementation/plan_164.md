@@ -40,7 +40,7 @@ Status: Active
 ## Phase Status
 - A: Complete
 - B: Complete
-- C: Pending
+- C: In Progress
 - D: Pending
 - E: Pending
 - F: Pending
@@ -139,6 +139,7 @@ Status: Active
 - 2026-04-10 — Plan drafted for global moderation signals: registry UI under `/admin/moderation/signals`, relational culture signal storage, rule contracts that reference canonical signal IDs directly, moderation-v2 compatibility work, and follow-on hooks for future signal-to-dimension mapping.
 - 2026-04-10 — Phase A completed: added the moderation signals persistence layer (`moderation_signals`, `rule_signals`, `culture_positive_signals`, `culture_disruption_signals`), a new moderation-signals feature module with seed/backfill helpers, and the moderation admin route/nav foundation plus placeholder `/admin/moderation/signals` page.
 - 2026-04-10 — Phase B in progress: replaced the placeholder signal page with a real searchable registry list, baseline seeding action, create flow, detail/edit page, status workflow controls, and linked usage sections for rules and cultures.
+- 2026-04-10 — Phase C in progress: culture signal membership now backfills into relational tables, culture load/save projects positive/disruption signals from relational storage, schema/types accept canonical registry IDs, and the culture editor now renders registry-backed signal selections with registry-backed validation.
 
 ## Validation
 - Environment:
@@ -146,6 +147,7 @@ Status: Active
 - Commands run:
   - `npm run build`
   - `npm run build` (after Phase B UI implementation)
+  - `npm run build` (after Phase C culture relationalization work)
 - Evidence files:
   - `agents/features/feature_17_moderation_signals_rules.md`
   - `src/features/moderation-signals/types.ts`
@@ -156,6 +158,7 @@ Status: Active
 - Known gaps:
   - Exact saved rule contract field shape for canonical signal IDs still needs to be applied in the rule editor and migration path during Phase D.
   - Existing rule signal content may include freeform strings that do not map cleanly to one canonical signal ID; Phase D needs an explicit review path for ambiguous cases.
+  - Phase C still needs manual verification of `/admin/moderation/cultures/:id` save/reload behavior, advanced JSON projection, and registry-backed signal selection before it can be marked complete.
 
 ## Open Risks / Deferred
 - Risk:
@@ -171,6 +174,6 @@ Status: Active
 
 ## Resume Here
 - Next action:
-  - Start Phase C by backfilling culture signal arrays into relational tables and making culture load/save flows use relational signal membership as the canonical source.
+  - Manually verify the Phase C culture editor behavior and, if it holds up, mark Phase C complete before moving into rule signal linkage in Phase D.
 - Blocking question (if any):
   - none

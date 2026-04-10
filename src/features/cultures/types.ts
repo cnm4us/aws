@@ -61,6 +61,8 @@ export const CULTURE_DISRUPTION_SIGNALS = [
   'degrading_sarcasm',
 ] as const
 
+export const CULTURE_SIGNAL_ID_PATTERN = '^[a-z][a-z0-9_\\-]*$' as const
+
 export const CULTURE_TOLERANCE_LEVELS = ['very_low', 'low', 'medium', 'high'] as const
 export const CULTURE_CONTENT_BOUNDARY_LEVELS = ['restricted', 'moderate', 'open'] as const
 export const CULTURE_DISCOURSE_MODES = ['structured', 'expressive'] as const
@@ -80,8 +82,9 @@ export const CULTURE_AI_HINTS = [
 
 export type CultureInteractionStyle = (typeof CULTURE_INTERACTION_STYLES)[number]
 export type CultureToneExpectation = (typeof CULTURE_TONE_EXPECTATIONS)[number]
-export type CulturePositiveSignal = (typeof CULTURE_POSITIVE_SIGNALS)[number]
-export type CultureDisruptionSignal = (typeof CULTURE_DISRUPTION_SIGNALS)[number]
+export type CultureSignalId = string
+export type CulturePositiveSignal = CultureSignalId
+export type CultureDisruptionSignal = CultureSignalId
 export type CultureToleranceLevel = (typeof CULTURE_TOLERANCE_LEVELS)[number]
 export type CultureContentBoundaryLevel = (typeof CULTURE_CONTENT_BOUNDARY_LEVELS)[number]
 export type CultureDiscourseMode = (typeof CULTURE_DISCOURSE_MODES)[number]

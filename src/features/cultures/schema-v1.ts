@@ -2,12 +2,11 @@ import {
   CULTURE_AI_HINTS,
   CULTURE_CREDIBILITY_EXPECTATIONS,
   CULTURE_CONTENT_BOUNDARY_LEVELS,
-  CULTURE_DISRUPTION_SIGNALS,
   CULTURE_DISCOURSE_MODES,
   CULTURE_EMOTIONAL_INTENSITY_LEVELS,
   CULTURE_INTERACTION_STYLES,
   CULTURE_INTERACTION_MODES,
-  CULTURE_POSITIVE_SIGNALS,
+  CULTURE_SIGNAL_ID_PATTERN,
   CULTURE_TOLERANCE_LEVELS,
   CULTURE_TONE_EXPECTATIONS,
 } from './types'
@@ -110,7 +109,7 @@ export const CULTURE_DEFINITION_SCHEMA_V1 = {
       description: 'Observable behaviors that align well with this culture.',
       items: {
         type: 'string',
-        enum: [...CULTURE_POSITIVE_SIGNALS],
+        pattern: CULTURE_SIGNAL_ID_PATTERN,
       },
       uniqueItems: true,
     },
@@ -121,7 +120,7 @@ export const CULTURE_DEFINITION_SCHEMA_V1 = {
         'Signals that indicate content is drifting away from the expected culture tone.',
       items: {
         type: 'string',
-        enum: [...CULTURE_DISRUPTION_SIGNALS],
+        pattern: CULTURE_SIGNAL_ID_PATTERN,
       },
       uniqueItems: true,
     },

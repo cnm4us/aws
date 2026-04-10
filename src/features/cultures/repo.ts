@@ -1,6 +1,7 @@
 import { getPool } from '../../db'
 import { createDefaultCultureDefinitionV1 } from './defaults'
 import { deriveCultureDefinitionIdFromKey } from './normalize'
+import * as moderationSignals from '../moderation-signals'
 import {
   assertCultureDefinitionV1,
 } from './validator'
@@ -29,6 +30,12 @@ export type CultureDefinitionHydration = {
   definition: CultureDefinitionV1
   source: CultureDefinitionHydrationSource
   validationErrors: CultureDefinitionValidationError[]
+}
+
+export type CultureWithDefinitionRecord = CultureRecord & {
+  definition: CultureDefinitionV1
+  definition_source: CultureDefinitionHydrationSource
+  definition_validation_errors: CultureDefinitionValidationError[]
 }
 
 function dbOrPool(db?: DbLike): DbLike {
@@ -71,6 +78,101 @@ function toCultureRecord(row: any): CultureRecord {
     created_at: row.created_at != null ? String(row.created_at) : undefined,
     updated_at: row.updated_at != null ? String(row.updated_at) : undefined,
   }
+}
+
+async function projectCultureDefinitionSignals(
+  cultureId: number,
+  definition: CultureDefinitionV1,
+  db?: DbLike
+): Promise<CultureDefinitionV1> {
+  const q = dbOrPool(db)
+  const storedPositive = Array.from(definition.positive_signals || [])
+  const storedDisruption = Array.from(definition.disruption_signals || [])
+
+  let positive = await moderationSignals.listCulturePositiveSignalIds(cultureId, q)
+  if (!positive.length && storedPositive.length) {
+    const ensured = await moderationSignals.ensureSignalsExist(storedPositive, 'culture_definition_positive_backfill')
+    await moderationSignals.replaceCulturePositiveSignals(cultureId, ensured, q)
+    positive = await moderationSignals.listCulturePositiveSignalIds(cultureId, q)
+  }
+
+  let disruption = await moderationSignals.listCultureDisruptionSignalIds(cultureId, q)
+  if (!disruption.length && storedDisruption.length) {
+    const ensured = await moderationSignals.ensureSignalsExist(storedDisruption, 'culture_definition_disruption_backfill')
+    await moderationSignals.replaceCultureDisruptionSignals(cultureId, ensured, q)
+    disruption = await moderationSignals.listCultureDisruptionSignalIds(cultureId, q)
+  }
+
+  return {
+    ...definition,
+    positive_signals: positive as any,
+    disruption_signals: disruption as any,
+  }
+}
+
+async function syncCultureDefinitionSignals(
+  cultureId: number,
+  definition: CultureDefinitionV1,
+  db?: DbLike
+): Promise<CultureDefinitionV1> {
+  const q = dbOrPool(db)
+  const resolveExistingSignalIds = async (rawIds: string[], field: 'positive_signals' | 'disruption_signals') => {
+    const resolved: string[] = []
+    const missing: string[] = []
+    for (const rawId of rawIds) {
+      const signal = await moderationSignals.getSignalById(rawId, q)
+      if (!signal) {
+        missing.push(String(rawId || '').trim())
+        continue
+      }
+      resolved.push(signal.signal_id)
+    }
+    if (missing.length) {
+      const err = new Error(`unknown_${field}`) as Error & {
+        code?: string
+        field?: string
+        signalIds?: string[]
+      }
+      err.code = 'unknown_culture_signal_ids'
+      err.field = field
+      err.signalIds = missing
+      throw err
+    }
+    return resolved
+  }
+
+  const resolvedPositive = await resolveExistingSignalIds(
+    Array.from(definition.positive_signals || []),
+    'positive_signals'
+  )
+  const resolvedDisruption = await resolveExistingSignalIds(
+    Array.from(definition.disruption_signals || []),
+    'disruption_signals'
+  )
+  await moderationSignals.replaceCulturePositiveSignals(cultureId, resolvedPositive, q)
+  await moderationSignals.replaceCultureDisruptionSignals(cultureId, resolvedDisruption, q)
+  return {
+    ...definition,
+    positive_signals: resolvedPositive as any,
+    disruption_signals: resolvedDisruption as any,
+  }
+}
+
+export async function backfillAllCultureSignalMemberships(db?: DbLike): Promise<number> {
+  const q = dbOrPool(db)
+  const [rows] = await q.query(
+    `SELECT id, name, description, definition_json, created_at, updated_at
+       FROM cultures
+      ORDER BY id ASC`
+  )
+  let count = 0
+  for (const row of rows as any[]) {
+    const culture = toCultureRecord(row)
+    const hydrated = hydrateCultureDefinitionWithFallback(culture)
+    await projectCultureDefinitionSignals(culture.id, hydrated.definition, q)
+    count += 1
+  }
+  return count
 }
 
 export function hydrateCultureDefinition(
@@ -145,13 +247,14 @@ export async function getCultureById(
 export async function getCultureWithDefinition(
   cultureId: number,
   db?: DbLike
-): Promise<(CultureRecord & { definition: CultureDefinitionV1; definition_source: CultureDefinitionHydrationSource; definition_validation_errors: CultureDefinitionValidationError[] }) | null> {
+): Promise<CultureWithDefinitionRecord | null> {
   const culture = await getCultureById(cultureId, db)
   if (!culture) return null
   const hydrated = hydrateCultureDefinitionWithFallback(culture)
+  const definition = await projectCultureDefinitionSignals(culture.id, hydrated.definition, db)
   return {
     ...culture,
-    definition: hydrated.definition,
+    definition,
     definition_source: hydrated.source,
     definition_validation_errors: hydrated.validationErrors,
   }
@@ -160,7 +263,7 @@ export async function getCultureWithDefinition(
 export async function getCultureWithDefinitionByDefinitionId(
   definitionId: string,
   db?: DbLike
-): Promise<(CultureRecord & { definition: CultureDefinitionV1; definition_source: CultureDefinitionHydrationSource; definition_validation_errors: CultureDefinitionValidationError[] }) | null> {
+): Promise<CultureWithDefinitionRecord | null> {
   const q = dbOrPool(db)
   const id = String(definitionId || '').trim()
   if (!id) return null
@@ -176,9 +279,10 @@ export async function getCultureWithDefinitionByDefinitionId(
   if (!row) return null
   const culture = toCultureRecord(row)
   const hydrated = hydrateCultureDefinitionWithFallback(culture)
+  const definition = await projectCultureDefinitionSignals(culture.id, hydrated.definition, q)
   return {
     ...culture,
-    definition: hydrated.definition,
+    definition,
     definition_source: hydrated.source,
     definition_validation_errors: hydrated.validationErrors,
   }
@@ -202,7 +306,11 @@ export async function createCulture(
      VALUES (?, ?, ?)`,
     [name, description, JSON.stringify(definition)]
   )
-  return Number((result as any).insertId || 0)
+  const cultureId = Number((result as any).insertId || 0)
+  if (cultureId > 0) {
+    await syncCultureDefinitionSignals(cultureId, definition, q)
+  }
+  return cultureId
 }
 
 export async function saveCulture(
@@ -266,14 +374,16 @@ export async function saveCulture(
     [nextName, nextDescription, JSON.stringify(normalizedDefinition), cultureId]
   )
 
+  const projectedDefinition = await syncCultureDefinitionSignals(cultureId, normalizedDefinition, q)
+
   return {
     culture: {
       ...existing,
       name: nextName,
       description: nextDescription,
-      definition_json: normalizedDefinition,
+      definition_json: projectedDefinition,
     },
-    definition: normalizedDefinition,
+    definition: projectedDefinition,
     definitionSource,
     definitionValidationErrors,
   }

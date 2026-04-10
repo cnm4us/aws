@@ -161,3 +161,31 @@ export async function getSignalAdminDetail(signalId: string) {
 export async function saveSignal(input: ModerationSignalUpsertInput) {
   return repo.upsertSignal(input)
 }
+
+export async function ensureSignalsExist(
+  signalIds: Iterable<string>,
+  source: string
+): Promise<string[]> {
+  const ensured = new Set<string>()
+  for (const rawSignalId of signalIds) {
+    const candidate = String(rawSignalId || '').trim()
+    if (!candidate) continue
+    const existing = await repo.getSignalById(candidate)
+    if (existing) {
+      ensured.add(existing.signal_id)
+      continue
+    }
+    const saved = await repo.upsertSignal({
+      signal_id: candidate,
+      label: candidate
+        .split(/[_-]+/)
+        .filter(Boolean)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(' '),
+      status: 'draft',
+      metadata_json: { backfilled_from: source },
+    })
+    ensured.add(saved.signal_id)
+  }
+  return Array.from(ensured)
+}
