@@ -36,7 +36,7 @@ Status: Active
 - This phase is route/nav consolidation only; no moderation contract or persistence changes are bundled into it.
 
 ## Phase Status
-- A: Pending
+- A: Complete
 - B: Pending
 - C: Pending
 - D: Pending
@@ -126,17 +126,19 @@ Status: Active
 
 ## Change Log
 - 2026-04-10 — Plan drafted for moderation admin IA consolidation: `/admin/moderation` hub, canonical moderation-prefixed authoring routes, global nav collapse to one `Moderation` entry, and moderation-local secondary navigation.
+- 2026-04-10 — Phase A completed: added moderation admin route helpers/constants, moderation-specific admin active keys, and a reusable moderation subnav renderer in `src/routes/pages.ts`; audited current hardcoded route touchpoints in admin nav, admin hub tiles, rules pages, category pages, culture pages, related-object links, delete redirects, and the rules page CSS selector keyed to `/admin/rules/`.
 
 ## Validation
 - Environment:
   - development
 - Commands run:
-  - none yet; planning only
+  - `npm run build`
 - Evidence files:
   - `agents/README.md`
   - `agents/implementation_planning.md`
   - `agents/implementation/PLAN_TEMPLATE.md`
   - `agents/implementation/INDEX.md`
+  - `agents/implementation/plan_163.md`
   - `src/routes/pages.ts`
 - Known gaps:
   - Route-by-route migration complexity for rules is estimated from current page code, but execution may uncover additional hardcoded links or styling assumptions.
@@ -153,6 +155,6 @@ Status: Active
 
 ## Resume Here
 - Next action:
-  - Start Phase A by introducing moderation route/nav helpers and auditing hardcoded links in `src/routes/pages.ts`.
+  - Start Phase B by adding `/admin/moderation` hub UI and collapsing the main admin left nav to a single `Moderation` entry.
 - Blocking question (if any):
   - none

@@ -796,6 +796,10 @@ type AdminNavKey =
   | 'rules'
   | 'categories'
   | 'cultures'
+  | 'moderation'
+  | 'moderation_rules'
+  | 'moderation_categories'
+  | 'moderation_cultures'
   | 'pages'
 	| 'audio'
 	| 'video_library'
@@ -820,6 +824,85 @@ type AdminNavKey =
   | 'dev_tools'
 	| 'settings'
 	| 'dev';
+
+type ModerationAdminNavKey =
+  | 'moderation'
+  | 'moderation_rules'
+  | 'moderation_categories'
+  | 'moderation_cultures'
+
+type ModerationAdminSectionKey = 'rules' | 'categories' | 'cultures'
+
+function joinAdminPath(root: string, suffix = ''): string {
+  const trimmedSuffix = String(suffix || '').trim()
+  if (!trimmedSuffix) return root
+  return `${root}${trimmedSuffix.startsWith('/') ? trimmedSuffix : `/${trimmedSuffix}`}`
+}
+
+// Route contract for the moderation admin migration. Canonical moderation-prefixed
+// paths land later; legacy roots remain addressable during the transition.
+const MODERATION_ADMIN_ROUTES = {
+  hub: '/admin/moderation',
+  canonical: {
+    rules: '/admin/moderation/rules',
+    categories: '/admin/moderation/categories',
+    cultures: '/admin/moderation/cultures',
+  },
+  legacy: {
+    rules: '/admin/rules',
+    categories: '/admin/categories',
+    cultures: '/admin/cultures',
+  },
+} as const
+
+function getModerationAdminRoot(
+  section: ModerationAdminSectionKey,
+  opts?: { legacy?: boolean }
+): string {
+  if (opts?.legacy) return MODERATION_ADMIN_ROUTES.legacy[section]
+  return MODERATION_ADMIN_ROUTES.canonical[section]
+}
+
+function getModerationAdminSectionPath(
+  section: ModerationAdminSectionKey,
+  suffix = '',
+  opts?: { legacy?: boolean }
+): string {
+  return joinAdminPath(getModerationAdminRoot(section, opts), suffix)
+}
+
+function renderModerationAdminSubnav(opts: {
+  active?: ModerationAdminNavKey
+  legacy?: boolean
+} = {}): string {
+  const items: Array<{ key: ModerationAdminNavKey; label: string; href: string }> = [
+    { key: 'moderation', label: 'Moderation', href: MODERATION_ADMIN_ROUTES.hub },
+    {
+      key: 'moderation_rules',
+      label: 'Rules',
+      href: getModerationAdminSectionPath('rules', '', { legacy: !!opts.legacy }),
+    },
+    {
+      key: 'moderation_categories',
+      label: 'Categories',
+      href: getModerationAdminSectionPath('categories', '', { legacy: !!opts.legacy }),
+    },
+    {
+      key: 'moderation_cultures',
+      label: 'Cultures',
+      href: getModerationAdminSectionPath('cultures', '', { legacy: !!opts.legacy }),
+    },
+  ]
+
+  const nav = items
+    .map((item) => {
+      const cls = item.key === opts.active ? 'pill active' : 'pill'
+      return `<a href="${escapeHtml(item.href)}" class="${cls}">${escapeHtml(item.label)}</a>`
+    })
+    .join('')
+
+  return `<div class="toolbar"><div style="display:flex; flex-wrap:wrap; gap:8px">${nav}</div></div>`
+}
 
 const ADMIN_NAV_ITEMS: Array<{ key: AdminNavKey; label: string; href: string }> = [
   { key: 'review', label: 'Review', href: '/admin/review' },
