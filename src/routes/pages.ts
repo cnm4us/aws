@@ -909,9 +909,7 @@ const ADMIN_NAV_ITEMS: Array<{ key: AdminNavKey; label: string; href: string }> 
   { key: 'users', label: 'Users', href: '/admin/users' },
   { key: 'groups', label: 'Groups', href: '/admin/groups' },
   { key: 'channels', label: 'Channels', href: '/admin/channels' },
-  { key: 'rules', label: 'Rules', href: '/admin/rules' },
-  { key: 'categories', label: 'Categories', href: '/admin/categories' },
-  { key: 'cultures', label: 'Cultures', href: '/admin/cultures' },
+  { key: 'moderation', label: 'Moderation', href: MODERATION_ADMIN_ROUTES.hub },
   { key: 'pages', label: 'Pages', href: '/admin/pages' },
 	{ key: 'audio', label: 'Audio', href: '/admin/audio' },
 	{ key: 'video_library', label: 'Video Library', href: '/admin/video-library' },
@@ -986,6 +984,17 @@ ${opts.bodyHtml}
     </div>
   </body>
 </html>`;
+}
+
+function renderModerationAdminPage(opts: {
+  title: string
+  bodyHtml: string
+  active?: ModerationAdminNavKey
+  legacy?: boolean
+}): string {
+  const active = opts.active || 'moderation'
+  const bodyHtml = `${renderModerationAdminSubnav({ active, legacy: !!opts.legacy })}${opts.bodyHtml}`
+  return renderAdminPage({ title: opts.title, bodyHtml, active: 'moderation' })
 }
 
 pagesRouter.get('/admin/pages', async (req: any, res: any) => {
@@ -1141,7 +1150,12 @@ function renderCategoryForm(opts: { error?: string | null; csrfToken?: string | 
     <button type="submit">Create category</button>
   </div>`;
   body += `</form>`;
-  return renderAdminPage({ title: 'New Category', bodyHtml: body, active: 'categories' });
+  return renderModerationAdminPage({
+    title: 'New Category',
+    bodyHtml: body,
+    active: 'moderation_categories',
+    legacy: true,
+  });
 }
 
 function renderCategoryDetailPage(opts: {
@@ -1230,7 +1244,12 @@ function renderCategoryDetailPage(opts: {
   }
   body += `</div>`;
 
-  return renderAdminPage({ title: 'Category', bodyHtml: body, active: 'categories' });
+  return renderModerationAdminPage({
+    title: 'Category',
+    bodyHtml: body,
+    active: 'moderation_categories',
+    legacy: true,
+  });
 }
 
 async function loadCategoryUsageLinks(
@@ -1333,7 +1352,12 @@ pagesRouter.get('/admin/categories', async (req: any, res: any) => {
     }
     body += `</div></div>`;
 
-    const doc = renderAdminPage({ title: 'Categories', bodyHtml: body, active: 'categories' });
+    const doc = renderModerationAdminPage({
+      title: 'Categories',
+      bodyHtml: body,
+      active: 'moderation_categories',
+      legacy: true,
+    });
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.send(doc);
   } catch (err) {
@@ -1573,7 +1597,12 @@ function renderCultureForm(opts: { error?: string | null; csrfToken?: string | n
     <button type="submit">Create culture</button>
   </div>`;
   body += `</form>`;
-  return renderAdminPage({ title: 'New Culture', bodyHtml: body, active: 'cultures' });
+  return renderModerationAdminPage({
+    title: 'New Culture',
+    bodyHtml: body,
+    active: 'moderation_cultures',
+    legacy: true,
+  });
 }
 
 pagesRouter.get('/admin/cultures', async (req: any, res: any) => {
@@ -1612,7 +1641,12 @@ pagesRouter.get('/admin/cultures', async (req: any, res: any) => {
       body += `<div class="field-hint" style="margin-top: 10px">Category assignment is configured in the culture detail page.</div>`;
     }
 
-    const doc = renderAdminPage({ title: 'Cultures', bodyHtml: body, active: 'cultures' });
+    const doc = renderModerationAdminPage({
+      title: 'Cultures',
+      bodyHtml: body,
+      active: 'moderation_cultures',
+      legacy: true,
+    });
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.send(doc);
   } catch (err) {
@@ -2318,7 +2352,12 @@ function renderCultureDetailPage(opts: {
   }
   body += `</div>`;
 
-  return renderAdminPage({ title: 'Culture', bodyHtml: body, active: 'cultures' });
+  return renderModerationAdminPage({
+    title: 'Culture',
+    bodyHtml: body,
+    active: 'moderation_cultures',
+    legacy: true,
+  });
 }
 
 pagesRouter.get('/admin/cultures/:id', async (req: any, res: any) => {
@@ -2853,7 +2892,12 @@ function renderRuleDraftEditPage(opts: {
 <script src="/admin/ckeditor_markdown.js"></script>
 `;
 
-  return renderAdminPage({ title: 'Edit Rule Draft', bodyHtml: body, active: 'rules' });
+  return renderModerationAdminPage({
+    title: 'Edit Rule Draft',
+    bodyHtml: body,
+    active: 'moderation_rules',
+    legacy: true,
+  });
 }
 
 function renderRuleListPage(
@@ -2967,7 +3011,12 @@ function renderRuleListPage(
     }
   }
   body += `</div></div>`;
-  return renderAdminPage({ title: 'Rules', bodyHtml: body, active: 'rules' });
+  return renderModerationAdminPage({
+    title: 'Rules',
+    bodyHtml: body,
+    active: 'moderation_rules',
+    legacy: true,
+  });
 }
 
 function renderRuleForm(opts: {
@@ -3117,7 +3166,12 @@ function renderRuleForm(opts: {
 <script src="/admin/ckeditor_markdown.js"></script>
 `;
 
-  return renderAdminPage({ title, bodyHtml: body, active: 'rules' });
+  return renderModerationAdminPage({
+    title,
+    bodyHtml: body,
+    active: 'moderation_rules',
+    legacy: true,
+  });
 }
 
 pagesRouter.get('/admin/rules', async (req: any, res: any) => {
@@ -3678,7 +3732,12 @@ pagesRouter.get('/admin/rules/:id', async (req: any, res: any) => {
       body += '</tbody></table>';
     }
 
-    const doc = renderAdminPage({ title: 'Rule detail', bodyHtml: body, active: 'rules' });
+    const doc = renderModerationAdminPage({
+      title: 'Rule detail',
+      bodyHtml: body,
+      active: 'moderation_rules',
+      legacy: true,
+    });
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.send(doc);
   } catch (err) {
@@ -4448,9 +4507,7 @@ pagesRouter.get('/admin', async (_req: any, res: any) => {
     { title: 'Users', href: '/admin/users', desc: 'Manage user roles, suspensions, and space roles' },
     { title: 'Groups', href: '/admin/groups', desc: 'Manage group spaces (settings, cultures, review)' },
     { title: 'Channels', href: '/admin/channels', desc: 'Manage channel spaces (settings, cultures, review)' },
-    { title: 'Rules', href: '/admin/rules', desc: 'Edit rules and drafts; view versions' },
-    { title: 'Categories', href: '/admin/categories', desc: 'Create/update/delete categories (safe delete)' },
-    { title: 'Cultures', href: '/admin/cultures', desc: 'Create/update cultures and assign categories' },
+    { title: 'Moderation', href: MODERATION_ADMIN_ROUTES.hub, desc: 'Rules, categories, cultures, and future moderation subsystem tools' },
     { title: 'Pages', href: '/admin/pages', desc: 'Edit CMS pages (Markdown)' },
     { title: 'Audio', href: '/admin/audio', desc: 'System audio library (curated, selectable by users)' },
     { title: 'Video Library', href: '/admin/video-library', desc: 'System video library (source videos for clipping)' },
@@ -4487,6 +4544,52 @@ pagesRouter.get('/admin', async (_req: any, res: any) => {
   body += '</div></div>'
 
   const doc = renderAdminPage({ title: 'Admin', bodyHtml: body })
+  res.set('Content-Type', 'text/html; charset=utf-8')
+  res.send(doc)
+})
+
+pagesRouter.get('/admin/moderation', async (_req: any, res: any) => {
+  const tiles: Array<{ title: string; href: string; desc: string }> = [
+    {
+      title: 'Rules',
+      href: getModerationAdminSectionPath('rules', '', { legacy: true }),
+      desc: 'Edit rules, drafts, published versions, and moderation guidance.',
+    },
+    {
+      title: 'Categories',
+      href: getModerationAdminSectionPath('categories', '', { legacy: true }),
+      desc: 'Create and maintain moderation categories with safe-delete constraints.',
+    },
+    {
+      title: 'Cultures',
+      href: getModerationAdminSectionPath('cultures', '', { legacy: true }),
+      desc: 'Manage moderation culture profiles and assign category coverage.',
+    },
+  ]
+
+  let body = '<h1>Moderation</h1>'
+  body += '<div class="section">'
+  body += '<div class="section-title">Overview</div>'
+  body += '<p>Moderation is now treated as a dedicated admin subsystem. Use the sections below to manage rules, categories, and moderation culture profiles. Additional moderation tools will land here as the system expands.</p>'
+  body += '</div>'
+  body += '<div class="section">'
+  body += '<div class="section-title">Sections</div>'
+  body += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px">'
+  for (const tile of tiles) {
+    body += `<a href="${escapeHtml(tile.href)}" class="section" style="display:block;text-decoration:none;color:inherit">`
+    body += `<div style="font-size:1.05rem;font-weight:700">${escapeHtml(tile.title)}</div>`
+    body += `<div class="field-hint" style="margin-top:6px">${escapeHtml(tile.desc)}</div>`
+    body += `</a>`
+  }
+  body += '</div>'
+  body += '</div>'
+
+  const doc = renderModerationAdminPage({
+    title: 'Moderation',
+    bodyHtml: body,
+    active: 'moderation',
+    legacy: true,
+  })
   res.set('Content-Type', 'text/html; charset=utf-8')
   res.send(doc)
 })
