@@ -25,7 +25,7 @@ import * as messageAnalyticsSvc from '../features/message-analytics/service'
 import * as userFacingRulesSvc from '../features/user-facing-rules/service'
 import * as reportsSvc from '../features/reports/service'
 import * as culturesRepo from '../features/cultures/repo'
-import * as moderationSignalsSvc from '../features/moderation-signals/service'
+import * as moderationSignals from '../features/moderation-signals'
 import {
   CULTURE_AI_HINTS,
   CULTURE_CREDIBILITY_EXPECTATIONS,
@@ -884,6 +884,7 @@ const MODERATION_SIGNAL_ADMIN_PATHS = {
   list: getModerationAdminSectionPath('signals'),
   new: getModerationAdminSectionPath('signals', 'new'),
   detail: getModerationAdminSectionPath('signals', ':id'),
+  edit: getModerationAdminSectionPath('signals', ':id/edit'),
 } as const
 
 const LEGACY_CULTURE_ADMIN_PATHS = {
@@ -4810,72 +4811,596 @@ pagesRouter.get('/admin/moderation', async (_req: any, res: any) => {
   res.send(doc)
 })
 
-pagesRouter.get('/admin/moderation/signals', async (_req: any, res: any) => {
-  let overview: Awaited<ReturnType<typeof moderationSignalsSvc.getSignalRegistryOverview>> | null = null
-  let overviewError = ''
+function parseModerationSignalMetadataInput(raw: unknown): {
+  value: Record<string, unknown> | null
+  error: string | null
+  text: string
+} {
+  const text = String(raw == null ? '' : raw).trim()
+  if (!text) return { value: null, error: null, text: '' }
   try {
-    overview = await moderationSignalsSvc.getSignalRegistryOverview()
+    const parsed = JSON.parse(text)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return {
+        value: null,
+        error: 'Metadata JSON must be an object.',
+        text,
+      }
+    }
+    return {
+      value: parsed as Record<string, unknown>,
+      error: null,
+      text: JSON.stringify(parsed, null, 2),
+    }
   } catch (err: any) {
-    overviewError = String(err?.message || 'signal_registry_unavailable')
+    return {
+      value: null,
+      error: `Metadata JSON parse error: ${String(err?.message || err)}`,
+      text,
+    }
   }
+}
+
+function normalizeModerationSignalStatusInput(value: unknown): string {
+  const normalized = String(value || '').trim().toLowerCase()
+  if ((moderationSignals.MODERATION_SIGNAL_STATUSES as readonly string[]).includes(normalized)) {
+    return normalized
+  }
+  return 'draft'
+}
+
+function formatModerationSignalStatus(status: string): string {
+  return String(status || '')
+    .split(/[_-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
+
+function buildModerationSignalFormState(source?: any) {
+  return {
+    signal_id: String(source?.signal_id || '').trim(),
+    label: String(source?.label || '').trim(),
+    short_description:
+      source?.short_description == null ? '' : String(source.short_description),
+    long_description:
+      source?.long_description == null ? '' : String(source.long_description),
+    status: normalizeModerationSignalStatusInput(source?.status || 'draft'),
+    metadata_text:
+      source?.metadata_text != null
+        ? String(source.metadata_text)
+        : source?.metadata_json != null
+          ? JSON.stringify(source.metadata_json, null, 2)
+          : '',
+  }
+}
+
+function renderModerationSignalFormFields(opts: {
+  state: ReturnType<typeof buildModerationSignalFormState>
+  mode: 'new' | 'detail'
+  metadataError?: string | null
+}) {
+  const state = opts.state
+  const readOnlyId = opts.mode === 'detail'
+  let body = ''
+  body += `<label>Signal ID
+    <input type="text" name="signal_id" value="${escapeHtml(state.signal_id)}"${readOnlyId ? ' readonly' : ''} />
+    <div class="field-hint">${readOnlyId ? 'Stable canonical identifier. Changing the ID is intentionally blocked once created.' : 'Lowercase signal ID using letters, numbers, and underscores.'}</div>
+  </label>`
+  body += `<label>Label
+    <input type="text" name="label" value="${escapeHtml(state.label)}" />
+    <div class="field-hint">Human-readable admin label for the global signal.</div>
+  </label>`
+  body += `<label>Short Description
+    <textarea name="short_description" style="min-height:90px">${escapeHtml(state.short_description)}</textarea>
+    <div class="field-hint">One-line explanation used in lists and quick admin scans.</div>
+  </label>`
+  body += `<label>Long Description / Guidance
+    <textarea name="long_description" style="min-height:160px">${escapeHtml(state.long_description)}</textarea>
+    <div class="field-hint">Longer usage guidance, nuance, and interpretation notes for operators.</div>
+  </label>`
+  body += `<label>Status
+    <select name="status">`
+  for (const value of moderationSignals.MODERATION_SIGNAL_STATUSES) {
+    const selected = state.status === value ? ' selected' : ''
+    body += `<option value="${escapeHtml(value)}"${selected}>${escapeHtml(formatModerationSignalStatus(value))}</option>`
+  }
+  body += `</select>
+    <div class="field-hint">Use status transitions instead of hard delete. Inactive and archived signals remain auditable.</div>
+  </label>`
+  body += `<label>Metadata JSON
+    <textarea name="metadata_json" style="min-height:180px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace">${escapeHtml(state.metadata_text)}</textarea>
+    <div class="field-hint">Optional future-safe metadata object for examples, mapping hints, or admin-only annotations.</div>
+  </label>`
+  if (opts.metadataError) {
+    body += `<div class="error">${escapeHtml(String(opts.metadataError))}</div>`
+  }
+  return body
+}
+
+function renderModerationSignalListPage(opts: {
+  counts: Awaited<ReturnType<typeof moderationSignals.getSignalRegistryOverview>>['counts']
+  signals: Awaited<ReturnType<typeof moderationSignals.listSignalsForAdmin>>
+  query: string
+  statusFilter: string
+  notice?: string
+  error?: string
+  csrfToken?: string
+}) {
+  const query = String(opts.query || '')
+  const statusFilter = String(opts.statusFilter || 'all')
+  const notice = String(opts.notice || '')
+  const error = String(opts.error || '')
+  const csrfToken = String(opts.csrfToken || '')
 
   let body = '<h1>Moderation Signals</h1>'
-  body += '<div class="section">'
-  body += '<div class="section-title">Status</div>'
-  body += '<p>This Phase A page establishes the global moderation signal registry as a first-class moderation subsystem surface. Rule linkage, culture linkage, and full CRUD workflows land in the next phases.</p>'
-  body += '</div>'
+  body += `<div class="toolbar"><div><span class="pill">Global Registry</span></div><div style="display:flex; gap:8px; flex-wrap:wrap"><form method="post" action="${escapeHtml(MODERATION_SIGNAL_ADMIN_PATHS.list)}" style="margin:0"><input type="hidden" name="action" value="seed_baseline" />${csrfToken ? `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />` : ''}<button type="submit">Seed Baseline Signals</button></form><a href="${escapeHtml(MODERATION_SIGNAL_ADMIN_PATHS.new)}" class="btn">New signal</a></div></div>`
+  if (notice) body += `<div class="success">${escapeHtml(notice)}</div>`
+  if (error) body += `<div class="error">${escapeHtml(error)}</div>`
 
   body += '<div class="section">'
-  body += '<div class="section-title">Planned Responsibilities</div>'
-  body += '<ul>'
-  body += '<li>Define the canonical moderation signal vocabulary once globally.</li>'
-  body += '<li>Support explicit many-to-many linkage from rules to signals.</li>'
-  body += '<li>Support explicit many-to-many linkage from cultures to positive and disruption signals.</li>'
-  body += '<li>Leave a future-safe home for signal-to-dimension mapping.</li>'
-  body += '</ul>'
+  body += '<div class="section-title">Registry Summary</div>'
+  body += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">'
+  body += `<span class="pill">Total ${escapeHtml(String(opts.counts.total))}</span>`
+  body += `<span class="pill">Active ${escapeHtml(String(opts.counts.active))}</span>`
+  body += `<span class="pill">Draft ${escapeHtml(String(opts.counts.draft))}</span>`
+  body += `<span class="pill">Inactive ${escapeHtml(String(opts.counts.inactive))}</span>`
+  body += `<span class="pill">Archived ${escapeHtml(String(opts.counts.archived))}</span>`
+  body += `<span class="pill">Future mappings 0</span>`
+  body += '</div>'
+  body += '<div class="field-hint">Signals are defined globally here, then reused by rules, cultures, and future judgment mapping layers. Hard delete remains intentionally unavailable in v1.</div>'
   body += '</div>'
 
-  if (overview) {
-    body += '<div class="section">'
-    body += '<div class="section-title">Registry Snapshot</div>'
-    body += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">'
-    body += `<span class="pill">Total ${escapeHtml(String(overview.counts.total))}</span>`
-    body += `<span class="pill">Active ${escapeHtml(String(overview.counts.active))}</span>`
-    body += `<span class="pill">Draft ${escapeHtml(String(overview.counts.draft))}</span>`
-    body += `<span class="pill">Inactive ${escapeHtml(String(overview.counts.inactive))}</span>`
-    body += `<span class="pill">Archived ${escapeHtml(String(overview.counts.archived))}</span>`
-    body += '</div>'
-    if (overview.signals.length) {
-      body += '<table><thead><tr><th>Signal ID</th><th>Label</th><th>Status</th><th>Usage</th></tr></thead><tbody>'
-      for (const signal of overview.signals) {
-        body += '<tr>'
-        body += `<td><code>${escapeHtml(signal.signal_id)}</code></td>`
-        body += `<td>${escapeHtml(signal.label)}</td>`
-        body += `<td>${escapeHtml(signal.status)}</td>`
-        body += `<td>${escapeHtml(String(signal.usage_counts.total))}</td>`
-        body += '</tr>'
-      }
-      body += '</tbody></table>'
-    } else {
-      body += '<p class="field-hint">No signals have been seeded yet. Phase A includes the registry storage and seed helpers; operator workflows land next.</p>'
-    }
-    body += '</div>'
-  } else if (overviewError) {
-    body += '<div class="section">'
-    body += '<div class="section-title">Registry Snapshot</div>'
-    body += `<div class="banner warn">Unable to load the signal registry yet: ${escapeHtml(overviewError)}</div>`
-    body += '</div>'
+  body += `<form method="get" action="${escapeHtml(MODERATION_SIGNAL_ADMIN_PATHS.list)}" class="section">`
+  body += '<div class="section-title">Search & Filter</div>'
+  body += '<div style="display:grid;grid-template-columns:2fr 1fr auto;gap:12px;align-items:end">'
+  body += `<label style="margin:0">Search
+    <input type="text" name="q" value="${escapeHtml(query)}" placeholder="signal ID, label, or description" />
+  </label>`
+  body += '<label style="margin:0">Status<select name="status">'
+  body += `<option value="all"${statusFilter === 'all' ? ' selected' : ''}>All statuses</option>`
+  for (const value of moderationSignals.MODERATION_SIGNAL_STATUSES) {
+    const selected = statusFilter === value ? ' selected' : ''
+    body += `<option value="${escapeHtml(value)}"${selected}>${escapeHtml(formatModerationSignalStatus(value))}</option>`
   }
+  body += '</select></label>'
+  body += '<div class="actions" style="margin:0"><button type="submit">Apply</button></div>'
+  body += '</div>'
+  body += '</form>'
 
-  const doc = renderModerationAdminPage({
+  body += '<div class="section">'
+  body += '<div class="section-title">Signals</div>'
+  if (!opts.signals.length) {
+    body += '<div class="field-hint">No signals matched the current filter. Use Seed Baseline Signals to load the current shared vocabulary, or create a new signal manually.</div>'
+  } else {
+    body += '<table><thead><tr><th>Signal</th><th>Status</th><th>Description</th><th>Rules</th><th>Positive Cultures</th><th>Disruption Cultures</th><th>Future Mapping</th></tr></thead><tbody>'
+    for (const signal of opts.signals) {
+      const detailHref = getModerationAdminSectionPath('signals', encodeURIComponent(signal.signal_id))
+      body += '<tr>'
+      body += `<td><div style="display:grid;gap:4px"><a href="${escapeHtml(detailHref)}"><strong>${escapeHtml(signal.label)}</strong></a><code>${escapeHtml(signal.signal_id)}</code></div></td>`
+      body += `<td>${escapeHtml(formatModerationSignalStatus(signal.status))}</td>`
+      body += `<td>${escapeHtml(signal.short_description || signal.long_description || '-')}</td>`
+      body += `<td>${escapeHtml(String(signal.usage_counts.rules))}</td>`
+      body += `<td>${escapeHtml(String(signal.usage_counts.culture_positive))}</td>`
+      body += `<td>${escapeHtml(String(signal.usage_counts.culture_disruption))}</td>`
+      body += `<td>${escapeHtml(String(signal.usage_counts.future_mappings))}</td>`
+      body += '</tr>'
+    }
+    body += '</tbody></table>'
+  }
+  body += '</div>'
+
+  return renderModerationAdminPage({
     title: 'Moderation Signals',
     bodyHtml: body,
     active: 'moderation_signals',
     canonicalSections: { rules: true, categories: true, cultures: true, signals: true },
   })
-  res.set('Content-Type', 'text/html; charset=utf-8')
-  res.send(doc)
+}
+
+function renderModerationSignalNewPage(opts: {
+  state?: ReturnType<typeof buildModerationSignalFormState>
+  error?: string
+  notice?: string
+  metadataError?: string | null
+  csrfToken?: string
+}) {
+  const state = opts.state || buildModerationSignalFormState()
+  const error = String(opts.error || '')
+  const notice = String(opts.notice || '')
+  const csrfToken = String(opts.csrfToken || '')
+  let body = '<h1>New Moderation Signal</h1>'
+  body += `<div class="toolbar"><div><a href="${escapeHtml(MODERATION_SIGNAL_ADMIN_PATHS.list)}">← Back to signals</a></div></div>`
+  if (notice) body += `<div class="success">${escapeHtml(notice)}</div>`
+  if (error) body += `<div class="error">${escapeHtml(error)}</div>`
+  body += `<form method="post" action="${escapeHtml(MODERATION_SIGNAL_ADMIN_PATHS.new)}">`
+  if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
+  body += '<div class="section"><div class="section-title">Signal</div>'
+  body += renderModerationSignalFormFields({ state, mode: 'new', metadataError: opts.metadataError })
+  body += '</div>'
+  body += '<div class="actions"><button type="submit">Create signal</button></div>'
+  body += '</form>'
+  return renderModerationAdminPage({
+    title: 'New Moderation Signal',
+    bodyHtml: body,
+    active: 'moderation_signals',
+    canonicalSections: { rules: true, categories: true, cultures: true, signals: true },
+  })
+}
+
+function renderModerationSignalDetailPage(opts: {
+  signal: Awaited<ReturnType<typeof moderationSignals.getSignalAdminDetail>>['signal']
+  usage: Awaited<ReturnType<typeof moderationSignals.getSignalAdminDetail>>['usage']
+  state?: ReturnType<typeof buildModerationSignalFormState>
+  error?: string
+  notice?: string
+  metadataError?: string | null
+  csrfToken?: string
+}) {
+  const signal = opts.signal
+  const usage = opts.usage
+  const state = opts.state || buildModerationSignalFormState(signal || {})
+  const error = String(opts.error || '')
+  const notice = String(opts.notice || '')
+  const csrfToken = String(opts.csrfToken || '')
+  const signalId = String(signal?.signal_id || state.signal_id || '')
+  let body = `<h1>Moderation Signal: ${escapeHtml(signal?.label || signalId || 'Signal')}</h1>`
+  body += `<div class="toolbar"><div><a href="${escapeHtml(MODERATION_SIGNAL_ADMIN_PATHS.list)}">← Back to signals</a></div><div><a href="${escapeHtml(getModerationAdminSectionPath('signals', `${encodeURIComponent(signalId)}/edit`))}">Direct edit URL</a></div></div>`
+  if (notice) body += `<div class="success">${escapeHtml(notice)}</div>`
+  if (error) body += `<div class="error">${escapeHtml(error)}</div>`
+
+  body += '<div class="section">'
+  body += '<div class="section-title">Usage Summary</div>'
+  body += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">'
+  body += `<span class="pill">Rules ${escapeHtml(String(signal?.usage_counts.rules || 0))}</span>`
+  body += `<span class="pill">Positive cultures ${escapeHtml(String(signal?.usage_counts.culture_positive || 0))}</span>`
+  body += `<span class="pill">Disruption cultures ${escapeHtml(String(signal?.usage_counts.culture_disruption || 0))}</span>`
+  body += `<span class="pill">Future mappings ${escapeHtml(String(signal?.usage_counts.future_mappings || 0))}</span>`
+  body += `<span class="pill">Total usage ${escapeHtml(String(signal?.usage_counts.total || 0))}</span>`
+  body += '</div>'
+  body += `<div class="field-hint">Signal ID: <code>${escapeHtml(signalId)}</code>${signal?.created_at ? ` &nbsp;•&nbsp; Created ${escapeHtml(String(signal.created_at))}` : ''}${signal?.updated_at ? ` &nbsp;•&nbsp; Updated ${escapeHtml(String(signal.updated_at))}` : ''}</div>`
+  body += '</div>'
+
+  body += `<form method="post" action="${escapeHtml(getModerationAdminSectionPath('signals', encodeURIComponent(signalId)))}">`
+  if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
+  body += '<div class="section"><div class="section-title">Edit Signal</div>'
+  body += renderModerationSignalFormFields({ state, mode: 'detail', metadataError: opts.metadataError })
+  body += '</div>'
+  body += '<div class="actions">'
+  body += '<button type="submit" name="action" value="save">Save</button>'
+  body += `<button type="submit" name="action" value="activate"${state.status === 'active' ? ' disabled' : ''}>Activate</button>`
+  body += `<button type="submit" name="action" value="deactivate"${state.status === 'inactive' ? ' disabled' : ''}>Deactivate</button>`
+  body += `<button type="submit" name="action" value="mark_draft"${state.status === 'draft' ? ' disabled' : ''}>Mark Draft</button>`
+  body += `<button type="submit" name="action" value="archive"${state.status === 'archived' ? ' disabled' : ''}>Archive</button>`
+  body += '</div>'
+  body += '</form>'
+
+  body += '<div class="section">'
+  body += '<div class="section-title">Linked Rules</div>'
+  if (!usage.rules.length) {
+    body += '<div class="field-hint">No rules currently reference this signal.</div>'
+  } else {
+    body += '<ul>'
+    for (const row of usage.rules) {
+      const href = getModerationAdminSectionPath('rules', encodeURIComponent(String(row.id)))
+      body += `<li><a href="${escapeHtml(href)}">${escapeHtml(row.title || row.slug || `Rule #${row.id}`)}</a> <span class="field-hint">#${escapeHtml(String(row.id))}${row.category_name ? ` • ${escapeHtml(row.category_name)}` : ''}${row.current_version != null ? ` • v${escapeHtml(String(row.current_version))}` : ''}</span></li>`
+    }
+    body += '</ul>'
+  }
+  body += '</div>'
+
+  body += '<div class="section">'
+  body += '<div class="section-title">Linked Cultures</div>'
+  body += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px">'
+  body += '<div>'
+  body += '<div style="font-weight:700;margin-bottom:6px">Positive Signals</div>'
+  if (!usage.culture_positive.length) {
+    body += '<div class="field-hint">No cultures currently mark this as a positive signal.</div>'
+  } else {
+    body += '<ul>'
+    for (const culture of usage.culture_positive) {
+      const href = getModerationAdminSectionPath('cultures', encodeURIComponent(String(culture.id)))
+      body += `<li><a href="${escapeHtml(href)}">${escapeHtml(culture.name)}</a> <span class="field-hint">#${escapeHtml(String(culture.id))}</span></li>`
+    }
+    body += '</ul>'
+  }
+  body += '</div>'
+  body += '<div>'
+  body += '<div style="font-weight:700;margin-bottom:6px">Disruption Signals</div>'
+  if (!usage.culture_disruption.length) {
+    body += '<div class="field-hint">No cultures currently mark this as a disruption signal.</div>'
+  } else {
+    body += '<ul>'
+    for (const culture of usage.culture_disruption) {
+      const href = getModerationAdminSectionPath('cultures', encodeURIComponent(String(culture.id)))
+      body += `<li><a href="${escapeHtml(href)}">${escapeHtml(culture.name)}</a> <span class="field-hint">#${escapeHtml(String(culture.id))}</span></li>`
+    }
+    body += '</ul>'
+  }
+  body += '</div>'
+  body += '</div>'
+  body += '</div>'
+
+  body += '<div class="section">'
+  body += '<div class="section-title">Danger Zone</div>'
+  if ((signal?.usage_counts.total || 0) > 0) {
+    body += '<div class="field-hint">Hard delete is blocked because this signal is currently referenced. Use inactive or archived status instead.</div>'
+  } else {
+    body += '<div class="field-hint">Hard delete is intentionally deferred in v1. Use archived status instead of removing the record.</div>'
+  }
+  body += '</div>'
+
+  return renderModerationAdminPage({
+    title: `Moderation Signal: ${signal?.label || signalId}`,
+    bodyHtml: body,
+    active: 'moderation_signals',
+    canonicalSections: { rules: true, categories: true, cultures: true, signals: true },
+  })
+}
+
+async function handleModerationSignalsList(req: any, res: any) {
+  try {
+    const query = String((req.query as any)?.q || '').trim()
+    const statusFilterRaw = String((req.query as any)?.status || 'all').trim().toLowerCase()
+    const statusFilter =
+      statusFilterRaw === 'all' || (moderationSignals.MODERATION_SIGNAL_STATUSES as readonly string[]).includes(statusFilterRaw)
+        ? statusFilterRaw
+        : 'all'
+    const notice = String((req.query as any)?.notice || '')
+    const error = String((req.query as any)?.error || '')
+    const cookies = parseCookies(req.headers.cookie)
+    const csrfToken = cookies['csrf'] || ''
+
+    const [counts, signals] = await Promise.all([
+      moderationSignals.getSignalRegistryOverview().then((result) => result.counts),
+      moderationSignals.listSignalsForAdmin({
+        status: statusFilter as any,
+        search: query,
+        limit: 250,
+      }),
+    ])
+    const doc = renderModerationSignalListPage({
+      counts,
+      signals,
+      query,
+      statusFilter,
+      notice,
+      error,
+      csrfToken,
+    })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.send(doc)
+  } catch (err) {
+    logError(req.log || pagesLogger, err, 'admin moderation signals list failed', { path: req.path })
+    res.status(500).send('Failed to load moderation signals')
+  }
+}
+
+pagesRouter.get(MODERATION_SIGNAL_ADMIN_PATHS.list, handleModerationSignalsList)
+
+pagesRouter.post(MODERATION_SIGNAL_ADMIN_PATHS.list, async (req: any, res: any) => {
+  try {
+    const action = String((req.body as any)?.action || '').trim().toLowerCase()
+    if (action !== 'seed_baseline') {
+      return res.redirect(`${MODERATION_SIGNAL_ADMIN_PATHS.list}?error=${encodeURIComponent('Unsupported action.')}`)
+    }
+    const result = await moderationSignals.ensureBaselineSignals()
+    return res.redirect(
+      `${MODERATION_SIGNAL_ADMIN_PATHS.list}?notice=${encodeURIComponent(`Seeded or refreshed ${result.seeded} baseline signals.`)}`
+    )
+  } catch (err) {
+    logError(req.log || pagesLogger, err, 'admin moderation signals seed failed', { path: req.path })
+    return res.redirect(`${MODERATION_SIGNAL_ADMIN_PATHS.list}?error=${encodeURIComponent('Failed to seed baseline signals.')}`)
+  }
 })
+
+pagesRouter.get(MODERATION_SIGNAL_ADMIN_PATHS.new, async (req: any, res: any) => {
+  try {
+    const cookies = parseCookies(req.headers.cookie)
+    const csrfToken = cookies['csrf'] || ''
+    const doc = renderModerationSignalNewPage({
+      csrfToken,
+      notice: String((req.query as any)?.notice || ''),
+      error: String((req.query as any)?.error || ''),
+    })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.send(doc)
+  } catch (err) {
+    logError(req.log || pagesLogger, err, 'admin moderation signal new failed', { path: req.path })
+    res.status(500).send('Failed to load new signal form')
+  }
+})
+
+pagesRouter.post(MODERATION_SIGNAL_ADMIN_PATHS.new, async (req: any, res: any) => {
+  try {
+    const cookies = parseCookies(req.headers.cookie)
+    const csrfToken = cookies['csrf'] || ''
+    const state = buildModerationSignalFormState({
+      ...req.body,
+      metadata_text: (req.body as any)?.metadata_json,
+    })
+    const metadata = parseModerationSignalMetadataInput((req.body as any)?.metadata_json)
+    if (metadata.error) {
+      const doc = renderModerationSignalNewPage({
+        csrfToken,
+        state,
+        error: 'Metadata JSON is invalid.',
+        metadataError: metadata.error,
+      })
+      res.set('Content-Type', 'text/html; charset=utf-8')
+      return res.status(400).send(doc)
+    }
+    if (!state.signal_id) {
+      const doc = renderModerationSignalNewPage({
+        csrfToken,
+        state,
+        error: 'Signal ID is required.',
+      })
+      res.set('Content-Type', 'text/html; charset=utf-8')
+      return res.status(400).send(doc)
+    }
+    if (!state.label) {
+      const doc = renderModerationSignalNewPage({
+        csrfToken,
+        state,
+        error: 'Label is required.',
+      })
+      res.set('Content-Type', 'text/html; charset=utf-8')
+      return res.status(400).send(doc)
+    }
+    const existing = await moderationSignals.getSignalAdminDetail(state.signal_id)
+    if (existing.signal) {
+      const doc = renderModerationSignalNewPage({
+        csrfToken,
+        state,
+        error: 'A signal with that ID already exists.',
+      })
+      res.set('Content-Type', 'text/html; charset=utf-8')
+      return res.status(400).send(doc)
+    }
+    const saved = await moderationSignals.saveSignal({
+      signal_id: state.signal_id,
+      label: state.label,
+      short_description: state.short_description || null,
+      long_description: state.long_description || null,
+      status: state.status as any,
+      metadata_json: metadata.value,
+    })
+    return res.redirect(
+      `${getModerationAdminSectionPath('signals', encodeURIComponent(saved.signal_id))}?notice=${encodeURIComponent('Signal created.')}`
+    )
+  } catch (err: any) {
+    logError(req.log || pagesLogger, err, 'admin moderation signal create failed', { path: req.path })
+    const cookies = parseCookies(req.headers.cookie)
+    const csrfToken = cookies['csrf'] || ''
+    const state = buildModerationSignalFormState({
+      ...req.body,
+      metadata_text: (req.body as any)?.metadata_json,
+    })
+    const doc = renderModerationSignalNewPage({
+      csrfToken,
+      state,
+      error: String(err?.message || 'Failed to create signal.'),
+    })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    return res.status(500).send(doc)
+  }
+})
+
+async function handleModerationSignalDetail(req: any, res: any) {
+  try {
+    const signalId = String(req.params.id || '').trim()
+    const cookies = parseCookies(req.headers.cookie)
+    const csrfToken = cookies['csrf'] || ''
+    const detail = await moderationSignals.getSignalAdminDetail(signalId)
+    if (!detail.signal) return res.status(404).send('Signal not found')
+    const doc = renderModerationSignalDetailPage({
+      signal: detail.signal,
+      usage: detail.usage,
+      csrfToken,
+      notice: String((req.query as any)?.notice || ''),
+      error: String((req.query as any)?.error || ''),
+    })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.send(doc)
+  } catch (err) {
+    logError(req.log || pagesLogger, err, 'admin moderation signal detail failed', { path: req.path })
+    res.status(500).send('Failed to load signal')
+  }
+}
+
+pagesRouter.get(MODERATION_SIGNAL_ADMIN_PATHS.detail, handleModerationSignalDetail)
+pagesRouter.get(MODERATION_SIGNAL_ADMIN_PATHS.edit, handleModerationSignalDetail)
+
+async function handleModerationSignalUpdate(req: any, res: any) {
+  try {
+    const signalId = String(req.params.id || '').trim()
+    const cookies = parseCookies(req.headers.cookie)
+    const csrfToken = cookies['csrf'] || ''
+    const existing = await moderationSignals.getSignalAdminDetail(signalId)
+    if (!existing.signal) return res.status(404).send('Signal not found')
+
+    const action = String((req.body as any)?.action || 'save').trim().toLowerCase()
+    const state = buildModerationSignalFormState({
+      ...existing.signal,
+      ...req.body,
+      signal_id: existing.signal.signal_id,
+      metadata_text: (req.body as any)?.metadata_json,
+    })
+    const metadata = parseModerationSignalMetadataInput((req.body as any)?.metadata_json)
+    if (metadata.error) {
+      const doc = renderModerationSignalDetailPage({
+        signal: existing.signal,
+        usage: existing.usage,
+        csrfToken,
+        state,
+        error: 'Metadata JSON is invalid.',
+        metadataError: metadata.error,
+      })
+      res.set('Content-Type', 'text/html; charset=utf-8')
+      return res.status(400).send(doc)
+    }
+    if (!state.label) {
+      const doc = renderModerationSignalDetailPage({
+        signal: existing.signal,
+        usage: existing.usage,
+        csrfToken,
+        state,
+        error: 'Label is required.',
+      })
+      res.set('Content-Type', 'text/html; charset=utf-8')
+      return res.status(400).send(doc)
+    }
+
+    let nextStatus = state.status
+    if (action === 'activate') nextStatus = 'active'
+    else if (action === 'deactivate') nextStatus = 'inactive'
+    else if (action === 'archive') nextStatus = 'archived'
+    else if (action === 'mark_draft') nextStatus = 'draft'
+
+    await moderationSignals.saveSignal({
+      signal_id: existing.signal.signal_id,
+      label: state.label,
+      short_description: state.short_description || null,
+      long_description: state.long_description || null,
+      status: nextStatus as any,
+      metadata_json: metadata.value,
+    })
+
+    const notice =
+      action === 'save'
+        ? 'Signal saved.'
+        : `Signal status updated to ${formatModerationSignalStatus(nextStatus)}.`
+    return res.redirect(
+      `${getModerationAdminSectionPath('signals', encodeURIComponent(existing.signal.signal_id))}?notice=${encodeURIComponent(notice)}`
+    )
+  } catch (err: any) {
+    logError(req.log || pagesLogger, err, 'admin moderation signal update failed', { path: req.path })
+    const signalId = String(req.params.id || '').trim()
+    const cookies = parseCookies(req.headers.cookie)
+    const csrfToken = cookies['csrf'] || ''
+    const existing = await moderationSignals.getSignalAdminDetail(signalId)
+    if (!existing.signal) return res.status(404).send('Signal not found')
+    const state = buildModerationSignalFormState({
+      ...existing.signal,
+      ...req.body,
+      signal_id: existing.signal.signal_id,
+      metadata_text: (req.body as any)?.metadata_json,
+    })
+    const doc = renderModerationSignalDetailPage({
+      signal: existing.signal,
+      usage: existing.usage,
+      csrfToken,
+      state,
+      error: String(err?.message || 'Failed to save signal.'),
+    })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    return res.status(500).send(doc)
+  }
+}
+
+pagesRouter.post(MODERATION_SIGNAL_ADMIN_PATHS.detail, handleModerationSignalUpdate)
+pagesRouter.post(MODERATION_SIGNAL_ADMIN_PATHS.edit, handleModerationSignalUpdate)
 
 pagesRouter.get('/admin/reports', requireGlobalModerationPage, async (req: any, res: any) => {
   try {

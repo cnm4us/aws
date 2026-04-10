@@ -3,7 +3,11 @@ import {
   CULTURE_POSITIVE_SIGNALS,
 } from '../cultures/types'
 import * as repo from './repo'
-import type { ModerationSignalSeed, ModerationSignalWithUsage } from './types'
+import type {
+  ModerationSignalSeed,
+  ModerationSignalUpsertInput,
+  ModerationSignalWithUsage,
+} from './types'
 
 function titleizeSignalId(signalId: string): string {
   return String(signalId || '')
@@ -137,4 +141,23 @@ export async function getSignalRegistryOverview(): Promise<{
     repo.listSignals({ status: 'all', limit: 24 }),
   ])
   return { counts, signals }
+}
+
+export async function listSignalsForAdmin(params?: Parameters<typeof repo.listSignals>[0]) {
+  return repo.listSignals(params)
+}
+
+export async function getSignalAdminDetail(signalId: string) {
+  const [signal, usage] = await Promise.all([
+    repo.getSignalById(signalId),
+    repo.getSignalUsageDetail(signalId),
+  ])
+  return {
+    signal,
+    usage,
+  }
+}
+
+export async function saveSignal(input: ModerationSignalUpsertInput) {
+  return repo.upsertSignal(input)
 }

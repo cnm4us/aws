@@ -1,11 +1,15 @@
 import { getPool } from '../../db'
 import type {
+  ModerationSignalCultureUsage,
   ModerationSignalRecord,
+  ModerationSignalRuleUsage,
   ModerationSignalStatus,
   ModerationSignalUpsertInput,
+  ModerationSignalUsageDetail,
   ModerationSignalUsageCounts,
   ModerationSignalWithUsage,
 } from './types'
+import { MODERATION_SIGNAL_STATUSES } from './types'
 
 type DbLike = { query: (sql: string, params?: any[]) => Promise<any> }
 
@@ -70,13 +74,26 @@ function toSignalWithUsage(row: any): ModerationSignalWithUsage {
     rules: Math.max(0, Number(row.rule_count || 0)),
     culture_positive: Math.max(0, Number(row.culture_positive_count || 0)),
     culture_disruption: Math.max(0, Number(row.culture_disruption_count || 0)),
+    future_mappings: 0,
     total: 0,
   }
-  usageCounts.total = usageCounts.rules + usageCounts.culture_positive + usageCounts.culture_disruption
+  usageCounts.total =
+    usageCounts.rules +
+    usageCounts.culture_positive +
+    usageCounts.culture_disruption +
+    usageCounts.future_mappings
   return {
     ...base,
     usage_counts: usageCounts,
   }
+}
+
+function normalizeSignalStatus(value: string): ModerationSignalStatus {
+  const normalized = String(value || '').trim().toLowerCase()
+  if ((MODERATION_SIGNAL_STATUSES as readonly string[]).includes(normalized)) {
+    return normalized as ModerationSignalStatus
+  }
+  throw new Error('invalid_signal_status')
 }
 
 export async function listSignals(params?: {
@@ -201,7 +218,7 @@ export async function upsertSignal(
     input.short_description == null ? null : String(input.short_description).trim() || null
   const longDescription =
     input.long_description == null ? null : String(input.long_description).trim() || null
-  const status = String(input.status || 'draft').trim().toLowerCase() || 'draft'
+  const status = normalizeSignalStatus(String(input.status || 'draft') || 'draft')
   const metadataJson = input.metadata_json == null ? null : input.metadata_json
   await q.query(
     `
@@ -323,5 +340,97 @@ export async function getSignalRegistryCounts(db?: DbLike): Promise<{
     draft: Math.max(0, Number(row.draft || 0)),
     inactive: Math.max(0, Number(row.inactive || 0)),
     archived: Math.max(0, Number(row.archived || 0)),
+  }
+}
+
+export async function listSignalRuleUsage(
+  signalId: string,
+  db?: DbLike
+): Promise<ModerationSignalRuleUsage[]> {
+  const q = dbOrPool(db)
+  const normalized = normalizeSignalId(signalId)
+  if (!normalized) return []
+  const [rows] = await q.query(
+    `
+      SELECT
+        r.id,
+        r.slug,
+        r.title,
+        rc.name AS category_name,
+        rv.version AS current_version
+      FROM rule_signals rs
+      JOIN rules r
+        ON r.id = rs.rule_id
+ LEFT JOIN rule_categories rc
+        ON rc.id = r.category_id
+ LEFT JOIN rule_versions rv
+        ON rv.id = r.current_version_id
+     WHERE rs.signal_id = ?
+     ORDER BY r.title ASC, r.slug ASC, r.id ASC
+    `,
+    [normalized]
+  )
+  return (rows as any[]).map((row) => ({
+    id: Number(row.id),
+    slug: String(row.slug || ''),
+    title: String(row.title || ''),
+    category_name: row.category_name == null ? null : String(row.category_name),
+    current_version:
+      row.current_version == null ? null : Math.max(0, Number(row.current_version || 0)) || null,
+  }))
+}
+
+async function listSignalCultureUsageByTable(
+  tableName: 'culture_positive_signals' | 'culture_disruption_signals',
+  signalId: string,
+  db?: DbLike
+): Promise<ModerationSignalCultureUsage[]> {
+  const q = dbOrPool(db)
+  const normalized = normalizeSignalId(signalId)
+  if (!normalized) return []
+  const [rows] = await q.query(
+    `
+      SELECT c.id, c.name
+      FROM ${tableName} cs
+      JOIN cultures c
+        ON c.id = cs.culture_id
+     WHERE cs.signal_id = ?
+     ORDER BY c.name ASC, c.id ASC
+    `,
+    [normalized]
+  )
+  return (rows as any[]).map((row) => ({
+    id: Number(row.id),
+    name: String(row.name || ''),
+  }))
+}
+
+export async function listSignalPositiveCultureUsage(
+  signalId: string,
+  db?: DbLike
+): Promise<ModerationSignalCultureUsage[]> {
+  return listSignalCultureUsageByTable('culture_positive_signals', signalId, db)
+}
+
+export async function listSignalDisruptionCultureUsage(
+  signalId: string,
+  db?: DbLike
+): Promise<ModerationSignalCultureUsage[]> {
+  return listSignalCultureUsageByTable('culture_disruption_signals', signalId, db)
+}
+
+export async function getSignalUsageDetail(
+  signalId: string,
+  db?: DbLike
+): Promise<ModerationSignalUsageDetail> {
+  const [rules, culturePositive, cultureDisruption] = await Promise.all([
+    listSignalRuleUsage(signalId, db),
+    listSignalPositiveCultureUsage(signalId, db),
+    listSignalDisruptionCultureUsage(signalId, db),
+  ])
+  return {
+    rules,
+    culture_positive: culturePositive,
+    culture_disruption: cultureDisruption,
   }
 }

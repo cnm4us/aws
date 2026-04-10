@@ -39,7 +39,7 @@ Status: Active
 
 ## Phase Status
 - A: Complete
-- B: Pending
+- B: Complete
 - C: Pending
 - D: Pending
 - E: Pending
@@ -138,12 +138,14 @@ Status: Active
 ## Change Log
 - 2026-04-10 — Plan drafted for global moderation signals: registry UI under `/admin/moderation/signals`, relational culture signal storage, rule contracts that reference canonical signal IDs directly, moderation-v2 compatibility work, and follow-on hooks for future signal-to-dimension mapping.
 - 2026-04-10 — Phase A completed: added the moderation signals persistence layer (`moderation_signals`, `rule_signals`, `culture_positive_signals`, `culture_disruption_signals`), a new moderation-signals feature module with seed/backfill helpers, and the moderation admin route/nav foundation plus placeholder `/admin/moderation/signals` page.
+- 2026-04-10 — Phase B in progress: replaced the placeholder signal page with a real searchable registry list, baseline seeding action, create flow, detail/edit page, status workflow controls, and linked usage sections for rules and cultures.
 
 ## Validation
 - Environment:
   - development
 - Commands run:
   - `npm run build`
+  - `npm run build` (after Phase B UI implementation)
 - Evidence files:
   - `agents/features/feature_17_moderation_signals_rules.md`
   - `src/features/moderation-signals/types.ts`
@@ -169,6 +171,6 @@ Status: Active
 
 ## Resume Here
 - Next action:
-  - Start Phase B by turning `/admin/moderation/signals` from a placeholder page into the full registry list/create/detail/edit operator UI.
+  - Start Phase C by backfilling culture signal arrays into relational tables and making culture load/save flows use relational signal membership as the canonical source.
 - Blocking question (if any):
   - none

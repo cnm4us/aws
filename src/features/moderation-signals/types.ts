@@ -22,11 +22,31 @@ export type ModerationSignalUsageCounts = {
   rules: number
   culture_positive: number
   culture_disruption: number
+  future_mappings: number
   total: number
 }
 
 export type ModerationSignalWithUsage = ModerationSignalRecord & {
   usage_counts: ModerationSignalUsageCounts
+}
+
+export type ModerationSignalRuleUsage = {
+  id: number
+  slug: string
+  title: string
+  category_name: string | null
+  current_version: number | null
+}
+
+export type ModerationSignalCultureUsage = {
+  id: number
+  name: string
+}
+
+export type ModerationSignalUsageDetail = {
+  rules: ModerationSignalRuleUsage[]
+  culture_positive: ModerationSignalCultureUsage[]
+  culture_disruption: ModerationSignalCultureUsage[]
 }
 
 export type ModerationSignalUpsertInput = {
