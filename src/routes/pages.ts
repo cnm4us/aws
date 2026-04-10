@@ -1616,6 +1616,67 @@ function toStringArrayInput(value: unknown): string[] {
   return single ? [single] : []
 }
 
+function toCultureEditorJson(definition: CultureDefinitionV1): Record<string, unknown> {
+  const source = definition as unknown as Record<string, unknown>
+  const dimensions = {
+    tolerance: definition.tolerance,
+    content_boundaries: definition.content_boundaries,
+    discourse_mode: definition.discourse_mode,
+    credibility_expectation: definition.credibility_expectation,
+    interaction_mode: definition.interaction_mode,
+    emotional_intensity: definition.emotional_intensity,
+  }
+
+  return {
+    ...source,
+    dimensions,
+    tolerance: undefined,
+    content_boundaries: undefined,
+    discourse_mode: undefined,
+    credibility_expectation: undefined,
+    interaction_mode: undefined,
+    emotional_intensity: undefined,
+  }
+}
+
+function stringifyCultureEditorJson(definition: CultureDefinitionV1): string {
+  return JSON.stringify(toCultureEditorJson(definition), (_key, value) => {
+    if (value === undefined) return undefined
+    return value
+  }, 2)
+}
+
+function expandCultureEditorJsonDimensions(input: unknown): unknown {
+  if (typeof input !== 'object' || input == null || Array.isArray(input)) return input
+  const source = input as Record<string, unknown>
+  const dimensions =
+    typeof source.dimensions === 'object' &&
+    source.dimensions != null &&
+    !Array.isArray(source.dimensions)
+      ? (source.dimensions as Record<string, unknown>)
+      : null
+  if (!dimensions) return input
+
+  const expanded: Record<string, unknown> = { ...source }
+  const fields = [
+    'tolerance',
+    'content_boundaries',
+    'discourse_mode',
+    'credibility_expectation',
+    'interaction_mode',
+    'emotional_intensity',
+  ] as const
+
+  for (const field of fields) {
+    if (expanded[field] === undefined && dimensions[field] !== undefined) {
+      expanded[field] = dimensions[field]
+    }
+  }
+
+  delete expanded.dimensions
+  return expanded
+}
+
 function parseCultureDefinitionDraftFromBody(
   body: any,
   fallback: CultureDefinitionV1
@@ -1896,7 +1957,7 @@ function renderCultureDetailPage(opts: {
   const id = culture.id != null ? String(culture.id) : '';
   const nameValue = culture.name ? String(culture.name) : '';
   const computedDefinitionId = deriveCultureDefinitionIdFromKey(nameValue || definition.name || 'culture');
-  const prettyDefinitionJson = JSON.stringify(definition, null, 2);
+  const prettyDefinitionJson = stringifyCultureEditorJson(definition);
   const advancedJsonText = opts.advancedJsonText != null ? String(opts.advancedJsonText) : prettyDefinitionJson;
   const toneSet = new Set<string>((definition.tone_expectations || []).map((v) => String(v)))
   const positiveSignalsSet = new Set<string>((definition.positive_signals || []).map((v) => String(v)))
@@ -2115,12 +2176,12 @@ function renderCultureDetailPage(opts: {
 
   body += `<details class="section" style="margin-top: 14px"${advancedOpen ? ' open' : ''}>`;
   body += `<summary class="section-title" style="cursor:pointer">Advanced JSON</summary>`;
-  body += `<div class="field-hint" style="margin-bottom:8px">Canonical culture JSON. Use structured fields above for normal editing.</div>`;
+  body += `<div class="field-hint" style="margin-bottom:8px">Editor JSON view. Dimensions are grouped here for readability; Validate and Apply flatten them back into the canonical stored schema.</div>`;
   body += `<pre style="margin:0 0 10px 0; max-height: 260px; overflow:auto">${escapeHtml(prettyDefinitionJson)}</pre>`;
   if (advancedJsonCanEdit) {
     body += `<label>Raw JSON
       <textarea name="advanced_definition_json" style="min-height: 220px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace">${escapeHtml(advancedJsonText)}</textarea>
-      <div class="field-hint">Validate checks schema only. Apply validates and uses this JSON for Save.</div>
+      <div class="field-hint">Validate checks schema after expanding grouped dimensions. Apply validates and uses the expanded JSON for Save.</div>
     </label>`;
     if (advancedJsonError) body += `<div class="error">${escapeHtml(advancedJsonError)}</div>`;
     body += `<div class="actions" style="margin-top: 8px">
@@ -2282,7 +2343,7 @@ pagesRouter.post('/admin/cultures/:id', async (req: any, res: any) => {
         advancedJsonText:
           body.advanced_definition_json != null
             ? advancedJsonTextInput
-            : JSON.stringify(definition, null, 2),
+            : stringifyCultureEditorJson(definition),
         advancedJsonError: opts.advancedJsonError || '',
         advancedOpen: !!opts.advancedOpen || !!opts.advancedJsonError || isAdvancedValidate || isAdvancedApply,
         categories,
@@ -2317,6 +2378,7 @@ pagesRouter.post('/admin/cultures/:id', async (req: any, res: any) => {
           advancedOpen: true,
         });
       }
+      parsed = expandCultureEditorJsonDimensions(parsed);
       const advancedValidation = validateCultureDefinitionV1(parsed, {
         cultureName: name || current.name,
         cultureKey: name || current.name,
