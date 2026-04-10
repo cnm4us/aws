@@ -38,7 +38,7 @@ Status: Active
 ## Phase Status
 - A: Complete
 - B: Complete
-- C: In Progress
+- C: Complete
 - D: Pending
 - E: Pending
 
@@ -129,6 +129,7 @@ Status: Active
 - 2026-04-10 — Phase A completed: added moderation admin route helpers/constants, moderation-specific admin active keys, and a reusable moderation subnav renderer in `src/routes/pages.ts`; audited current hardcoded route touchpoints in admin nav, admin hub tiles, rules pages, category pages, culture pages, related-object links, delete redirects, and the rules page CSS selector keyed to `/admin/rules/`.
 - 2026-04-10 — Phase B completed: added `/admin/moderation` hub page, collapsed the main admin nav to a single `Moderation` item, replaced the `/admin` tile trio with a single moderation tile, and rendered the moderation subnav on existing legacy rules/categories/cultures pages so navigation remains coherent during the transition.
 - 2026-04-10 — Phase C implementation started: added canonical category/culture path constants, converted category and culture GET handlers to canonical `/admin/moderation/categories*` and `/admin/moderation/cultures*` routes, changed legacy category/culture GET routes into query-preserving redirects, kept legacy POST endpoints accepted for compatibility, updated category/culture form actions and related-object links to canonical moderation paths, and switched mixed moderation subnav rendering so categories/cultures now point to canonical routes while rules remains on the legacy path pending Phase D.
+- 2026-04-10 — Phase C completed after manual verification of canonical category/culture routes and legacy redirect behavior.
 
 ## Validation
 - Environment:
@@ -144,7 +145,6 @@ Status: Active
   - `src/routes/pages.ts`
 - Known gaps:
   - Route-by-route migration complexity for rules is estimated from current page code, but execution may uncover additional hardcoded links or styling assumptions.
-  - Phase C still needs manual verification of category/culture list, detail, create, update, delete, and legacy redirect behavior before it can be marked complete.
 
 ## Open Risks / Deferred
 - Risk:
@@ -158,6 +158,6 @@ Status: Active
 
 ## Resume Here
 - Next action:
-  - Manually verify canonical `/admin/moderation/categories*` and `/admin/moderation/cultures*` flows plus legacy `/admin/categories*` and `/admin/cultures*` redirects; if clean, mark Phase C complete and commit.
+  - Start Phase D by moving rules to canonical `/admin/moderation/rules*` routes, then convert legacy `/admin/rules*` into compatibility redirects.
 - Blocking question (if any):
   - none
