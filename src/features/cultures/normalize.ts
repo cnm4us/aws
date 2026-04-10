@@ -32,6 +32,10 @@ function normalizeAiHint(value: unknown): string | undefined {
   return next
 }
 
+function normalizeContentBoundaryLevel(value: unknown): string | undefined {
+  return normalizeOptionalString(value)
+}
+
 function normalizeRequiredString(value: unknown): string | undefined {
   const next = normalizeOptionalString(value)
   return next && next.length ? next : undefined
@@ -116,6 +120,15 @@ function normalizeTolerance(raw: unknown): Record<string, unknown> | undefined {
   return tolerance
 }
 
+function normalizeContentBoundaries(raw: unknown): Record<string, unknown> {
+  const source = isRecord(raw) ? raw : {}
+  return {
+    sexual_content: normalizeContentBoundaryLevel(source.sexual_content) || 'moderate',
+    graphic_violence: normalizeContentBoundaryLevel(source.graphic_violence) || 'moderate',
+    strong_language: normalizeContentBoundaryLevel(source.strong_language) || 'moderate',
+  }
+}
+
 export function normalizeCultureDefinitionInput(
   input: unknown,
   context: CultureDefinitionMetadataContext = {}
@@ -145,6 +158,8 @@ export function normalizeCultureDefinitionInput(
   const aiHint = normalizeAiHint(source.ai_hint)
   if (aiHint) normalized.ai_hint = aiHint
   else if (typeof source.ai_hint === 'string') delete normalized.ai_hint
+
+  normalized.content_boundaries = normalizeContentBoundaries(source.content_boundaries)
 
   const tolerance = normalizeTolerance(source.tolerance)
   if (tolerance) normalized.tolerance = tolerance

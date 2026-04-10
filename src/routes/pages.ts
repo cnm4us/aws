@@ -27,6 +27,7 @@ import * as reportsSvc from '../features/reports/service'
 import * as culturesRepo from '../features/cultures/repo'
 import {
   CULTURE_AI_HINTS,
+  CULTURE_CONTENT_BOUNDARY_LEVELS,
   CULTURE_DISRUPTION_SIGNALS,
   CULTURE_INTERACTION_STYLES,
   CULTURE_TOLERANCE_LEVELS,
@@ -1614,6 +1615,21 @@ function parseCultureDefinitionDraftFromBody(
   body: any,
   fallback: CultureDefinitionV1
 ): Record<string, unknown> {
+  const contentBoundariesRaw = body?.content_boundaries ?? {}
+  const contentBoundariesSource =
+    contentBoundariesRaw && typeof contentBoundariesRaw === 'object' && !Array.isArray(contentBoundariesRaw)
+      ? contentBoundariesRaw
+      : body
+  const contentBoundaryValue = (key: string): string | null => {
+    const direct = contentBoundariesSource?.[key]
+    if (direct != null) return String(direct || '').trim()
+    const dot = body?.[`content_boundaries.${key}`]
+    if (dot != null) return String(dot || '').trim()
+    const bracket = body?.[`content_boundaries[${key}]`]
+    if (bracket != null) return String(bracket || '').trim()
+    return null
+  }
+
   const toleranceRaw = body?.tolerance ?? {}
   const toleranceSource =
     toleranceRaw && typeof toleranceRaw === 'object' && !Array.isArray(toleranceRaw)
@@ -1644,6 +1660,20 @@ function parseCultureDefinitionDraftFromBody(
       body?.disruption_signals != null
         ? toStringArrayInput(body.disruption_signals)
         : Array.from(fallback.disruption_signals || []),
+    content_boundaries: {
+      sexual_content:
+        contentBoundaryValue('sexual_content') != null
+          ? String(contentBoundaryValue('sexual_content') || '').trim()
+          : fallback.content_boundaries.sexual_content,
+      graphic_violence:
+        contentBoundaryValue('graphic_violence') != null
+          ? String(contentBoundaryValue('graphic_violence') || '').trim()
+          : fallback.content_boundaries.graphic_violence,
+      strong_language:
+        contentBoundaryValue('strong_language') != null
+          ? String(contentBoundaryValue('strong_language') || '').trim()
+          : fallback.content_boundaries.strong_language,
+    },
     tolerance: {
       hostility:
         toleranceValue('hostility') != null
@@ -1683,6 +1713,12 @@ function mergeCultureDefinitionDraft(
   const disruption = Array.isArray(draft.disruption_signals)
     ? draft.disruption_signals.map((v) => String(v || '').trim()).filter((v) => v.length > 0)
     : Array.from(fallback.disruption_signals || [])
+  const contentBoundariesDraft =
+    draft.content_boundaries &&
+    typeof draft.content_boundaries === 'object' &&
+    !Array.isArray(draft.content_boundaries)
+      ? (draft.content_boundaries as Record<string, unknown>)
+      : {}
   const toleranceDraft =
     draft.tolerance && typeof draft.tolerance === 'object' && !Array.isArray(draft.tolerance)
       ? (draft.tolerance as Record<string, unknown>)
@@ -1702,6 +1738,20 @@ function mergeCultureDefinitionDraft(
         : fallback.interaction_style,
     tone_expectations: tone as any,
     disruption_signals: disruption as any,
+    content_boundaries: {
+      sexual_content:
+        contentBoundariesDraft.sexual_content != null
+          ? (String(contentBoundariesDraft.sexual_content || '').trim() || fallback.content_boundaries.sexual_content) as any
+          : fallback.content_boundaries.sexual_content,
+      graphic_violence:
+        contentBoundariesDraft.graphic_violence != null
+          ? (String(contentBoundariesDraft.graphic_violence || '').trim() || fallback.content_boundaries.graphic_violence) as any
+          : fallback.content_boundaries.graphic_violence,
+      strong_language:
+        contentBoundariesDraft.strong_language != null
+          ? (String(contentBoundariesDraft.strong_language || '').trim() || fallback.content_boundaries.strong_language) as any
+          : fallback.content_boundaries.strong_language,
+    },
     tolerance: {
       hostility:
         toleranceDraft.hostility != null
@@ -1738,6 +1788,9 @@ function mapCultureDefinitionPath(path: string): string {
   if (path === 'interaction_style') return 'interaction_style'
   if (path === 'tone_expectations' || path.startsWith('tone_expectations.')) return 'tone_expectations'
   if (path === 'disruption_signals' || path.startsWith('disruption_signals.')) return 'disruption_signals'
+  if (path === 'content_boundaries' || path.startsWith('content_boundaries.')) {
+    return path.split('.')[1] || 'content_boundaries'
+  }
   if (path === 'ai_hint') return 'ai_hint'
   if (path === 'internal_notes') return 'internal_notes'
   if (path === 'tolerance' || path.startsWith('tolerance.')) return path.split('.')[1] || 'tolerance'
@@ -1801,6 +1854,11 @@ function renderCultureDetailPage(opts: {
   const advancedJsonText = opts.advancedJsonText != null ? String(opts.advancedJsonText) : prettyDefinitionJson;
   const toneSet = new Set<string>((definition.tone_expectations || []).map((v) => String(v)))
   const disruptionSet = new Set<string>((definition.disruption_signals || []).map((v) => String(v)))
+  const contentBoundaries = definition.content_boundaries || {
+    sexual_content: 'moderate',
+    graphic_violence: 'moderate',
+    strong_language: 'moderate',
+  }
   const tolerance = definition.tolerance || {
     hostility: 'medium',
     confrontation: 'medium',
@@ -1882,6 +1940,24 @@ function renderCultureDetailPage(opts: {
   }
   body += `${renderCultureFieldErrors(definitionFieldErrors, 'disruption_signals')}`;
   body += `</div>`;
+  body += `</div>`;
+
+  const renderContentBoundarySelect = (fieldName: string, value: string) => {
+    let html = `<label>${escapeHtml(fieldName.replace(/_/g, ' '))}
+      <select name="content_boundaries.${escapeHtml(fieldName)}">`
+    for (const opt of CULTURE_CONTENT_BOUNDARY_LEVELS) {
+      const selected = value === opt ? ' selected' : ''
+      html += `<option value="${escapeHtml(opt)}"${selected}>${escapeHtml(opt)}</option>`
+    }
+    html += `</select>${renderCultureFieldErrors(definitionFieldErrors, fieldName)}</label>`
+    return html
+  }
+
+  body += `<div class="section" style="margin-top: 14px">`;
+  body += `<div class="section-title">Content Boundaries</div>`;
+  body += renderContentBoundarySelect('sexual_content', String(contentBoundaries.sexual_content || 'moderate'));
+  body += renderContentBoundarySelect('graphic_violence', String(contentBoundaries.graphic_violence || 'moderate'));
+  body += renderContentBoundarySelect('strong_language', String(contentBoundaries.strong_language || 'moderate'));
   body += `</div>`;
 
   const renderToleranceSelect = (fieldName: string, value: string) => {

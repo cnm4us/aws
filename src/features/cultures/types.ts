@@ -35,6 +35,7 @@ export const CULTURE_DISRUPTION_SIGNALS = [
 ] as const
 
 export const CULTURE_TOLERANCE_LEVELS = ['very_low', 'low', 'medium', 'high'] as const
+export const CULTURE_CONTENT_BOUNDARY_LEVELS = ['restricted', 'moderate', 'open'] as const
 
 export const CULTURE_AI_HINTS = [
   'low_conflict_environment',
@@ -50,6 +51,7 @@ export type CultureInteractionStyle = (typeof CULTURE_INTERACTION_STYLES)[number
 export type CultureToneExpectation = (typeof CULTURE_TONE_EXPECTATIONS)[number]
 export type CultureDisruptionSignal = (typeof CULTURE_DISRUPTION_SIGNALS)[number]
 export type CultureToleranceLevel = (typeof CULTURE_TOLERANCE_LEVELS)[number]
+export type CultureContentBoundaryLevel = (typeof CULTURE_CONTENT_BOUNDARY_LEVELS)[number]
 export type CultureAiHint = (typeof CULTURE_AI_HINTS)[number]
 
 export type CultureDefinitionVersion = `v${number}`
@@ -62,6 +64,12 @@ export type CultureTolerance = {
   personal_attacks?: CultureToleranceLevel
 }
 
+export type CultureContentBoundaries = {
+  sexual_content: CultureContentBoundaryLevel
+  graphic_violence: CultureContentBoundaryLevel
+  strong_language: CultureContentBoundaryLevel
+}
+
 export type CultureDefinitionV1 = {
   id: string
   name: string
@@ -70,6 +78,7 @@ export type CultureDefinitionV1 = {
   interaction_style: CultureInteractionStyle
   tone_expectations: CultureToneExpectation[]
   disruption_signals: CultureDisruptionSignal[]
+  content_boundaries: CultureContentBoundaries
   tolerance: CultureTolerance
   ai_hint?: CultureAiHint
   internal_notes?: string
@@ -91,6 +100,7 @@ export type CultureAiPayload = {
     interaction_style: CultureInteractionStyle
     tone_expectations: CultureToneExpectation[]
     disruption_signals: CultureDisruptionSignal[]
+    content_boundaries: CultureContentBoundaries
     tolerance: CultureTolerance
     ai_hint?: CultureAiHint
   }

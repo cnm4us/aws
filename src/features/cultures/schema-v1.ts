@@ -1,5 +1,6 @@
 import {
   CULTURE_AI_HINTS,
+  CULTURE_CONTENT_BOUNDARY_LEVELS,
   CULTURE_DISRUPTION_SIGNALS,
   CULTURE_INTERACTION_STYLES,
   CULTURE_TOLERANCE_LEVELS,
@@ -22,6 +23,7 @@ export const CULTURE_DEFINITION_SCHEMA_V1 = {
     'interaction_style',
     'tone_expectations',
     'disruption_signals',
+    'content_boundaries',
     'tolerance',
   ],
   properties: {
@@ -76,6 +78,26 @@ export const CULTURE_DEFINITION_SCHEMA_V1 = {
         enum: [...CULTURE_DISRUPTION_SIGNALS],
       },
       uniqueItems: true,
+    },
+    content_boundaries: {
+      type: 'object',
+      title: 'Content Boundaries',
+      additionalProperties: false,
+      required: ['sexual_content', 'graphic_violence', 'strong_language'],
+      properties: {
+        sexual_content: {
+          type: 'string',
+          enum: [...CULTURE_CONTENT_BOUNDARY_LEVELS],
+        },
+        graphic_violence: {
+          type: 'string',
+          enum: [...CULTURE_CONTENT_BOUNDARY_LEVELS],
+        },
+        strong_language: {
+          type: 'string',
+          enum: [...CULTURE_CONTENT_BOUNDARY_LEVELS],
+        },
+      },
     },
     tolerance: {
       type: 'object',

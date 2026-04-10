@@ -9,6 +9,11 @@ export function buildAiCulturePayload(definition: CultureDefinitionV1): CultureA
       interaction_style: definition.interaction_style,
       tone_expectations: [...definition.tone_expectations],
       disruption_signals: [...definition.disruption_signals],
+      content_boundaries: {
+        sexual_content: definition.content_boundaries.sexual_content,
+        graphic_violence: definition.content_boundaries.graphic_violence,
+        strong_language: definition.content_boundaries.strong_language,
+      },
       tolerance: {
         hostility: definition.tolerance.hostility,
         confrontation: definition.tolerance.confrontation,

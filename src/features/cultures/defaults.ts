@@ -22,6 +22,11 @@ export function createDefaultCultureDefinitionV1(
     interaction_style: 'mixed',
     tone_expectations: [],
     disruption_signals: [],
+    content_boundaries: {
+      sexual_content: 'moderate',
+      graphic_violence: 'moderate',
+      strong_language: 'moderate',
+    },
     tolerance: {
       hostility: 'medium',
       confrontation: 'medium',
