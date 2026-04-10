@@ -36,6 +36,10 @@ export const CULTURE_DISRUPTION_SIGNALS = [
 
 export const CULTURE_TOLERANCE_LEVELS = ['very_low', 'low', 'medium', 'high'] as const
 export const CULTURE_CONTENT_BOUNDARY_LEVELS = ['restricted', 'moderate', 'open'] as const
+export const CULTURE_DISCOURSE_MODES = ['structured', 'expressive'] as const
+export const CULTURE_CREDIBILITY_EXPECTATIONS = ['low', 'medium', 'high'] as const
+export const CULTURE_INTERACTION_MODES = ['broadcast', 'discussion', 'mixed'] as const
+export const CULTURE_EMOTIONAL_INTENSITY_LEVELS = ['low', 'medium', 'high'] as const
 
 export const CULTURE_AI_HINTS = [
   'low_conflict_environment',
@@ -52,6 +56,10 @@ export type CultureToneExpectation = (typeof CULTURE_TONE_EXPECTATIONS)[number]
 export type CultureDisruptionSignal = (typeof CULTURE_DISRUPTION_SIGNALS)[number]
 export type CultureToleranceLevel = (typeof CULTURE_TOLERANCE_LEVELS)[number]
 export type CultureContentBoundaryLevel = (typeof CULTURE_CONTENT_BOUNDARY_LEVELS)[number]
+export type CultureDiscourseMode = (typeof CULTURE_DISCOURSE_MODES)[number]
+export type CultureCredibilityExpectation = (typeof CULTURE_CREDIBILITY_EXPECTATIONS)[number]
+export type CultureInteractionMode = (typeof CULTURE_INTERACTION_MODES)[number]
+export type CultureEmotionalIntensityLevel = (typeof CULTURE_EMOTIONAL_INTENSITY_LEVELS)[number]
 export type CultureAiHint = (typeof CULTURE_AI_HINTS)[number]
 
 export type CultureDefinitionVersion = `v${number}`
@@ -76,6 +84,10 @@ export type CultureDefinitionV1 = {
   version: CultureDefinitionVersion
   summary?: string
   interaction_style: CultureInteractionStyle
+  discourse_mode: CultureDiscourseMode
+  credibility_expectation: CultureCredibilityExpectation
+  interaction_mode: CultureInteractionMode
+  emotional_intensity: CultureEmotionalIntensityLevel
   tone_expectations: CultureToneExpectation[]
   disruption_signals: CultureDisruptionSignal[]
   content_boundaries: CultureContentBoundaries
@@ -98,6 +110,10 @@ export type CultureAiPayload = {
     name: string
     version: CultureDefinitionVersion
     interaction_style: CultureInteractionStyle
+    discourse_mode: CultureDiscourseMode
+    credibility_expectation: CultureCredibilityExpectation
+    interaction_mode: CultureInteractionMode
+    emotional_intensity: CultureEmotionalIntensityLevel
     tone_expectations: CultureToneExpectation[]
     disruption_signals: CultureDisruptionSignal[]
     content_boundaries: CultureContentBoundaries

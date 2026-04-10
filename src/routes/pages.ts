@@ -27,9 +27,13 @@ import * as reportsSvc from '../features/reports/service'
 import * as culturesRepo from '../features/cultures/repo'
 import {
   CULTURE_AI_HINTS,
+  CULTURE_CREDIBILITY_EXPECTATIONS,
   CULTURE_CONTENT_BOUNDARY_LEVELS,
   CULTURE_DISRUPTION_SIGNALS,
+  CULTURE_DISCOURSE_MODES,
+  CULTURE_EMOTIONAL_INTENSITY_LEVELS,
   CULTURE_INTERACTION_STYLES,
+  CULTURE_INTERACTION_MODES,
   CULTURE_TOLERANCE_LEVELS,
   CULTURE_TONE_EXPECTATIONS,
   deriveCultureDefinitionIdFromKey,
@@ -1652,6 +1656,18 @@ function parseCultureDefinitionDraftFromBody(
     summary: body?.summary != null ? String(body.summary || '') : fallback.summary || '',
     interaction_style:
       body?.interaction_style != null ? String(body.interaction_style || '').trim() : fallback.interaction_style,
+    discourse_mode:
+      body?.discourse_mode != null ? String(body.discourse_mode || '').trim() : fallback.discourse_mode,
+    credibility_expectation:
+      body?.credibility_expectation != null
+        ? String(body.credibility_expectation || '').trim()
+        : fallback.credibility_expectation,
+    interaction_mode:
+      body?.interaction_mode != null ? String(body.interaction_mode || '').trim() : fallback.interaction_mode,
+    emotional_intensity:
+      body?.emotional_intensity != null
+        ? String(body.emotional_intensity || '').trim()
+        : fallback.emotional_intensity,
     tone_expectations:
       body?.tone_expectations != null
         ? toStringArrayInput(body.tone_expectations)
@@ -1736,6 +1752,22 @@ function mergeCultureDefinitionDraft(
       draft.interaction_style != null
         ? (String(draft.interaction_style || '').trim() || fallback.interaction_style) as any
         : fallback.interaction_style,
+    discourse_mode:
+      draft.discourse_mode != null
+        ? (String(draft.discourse_mode || '').trim() || fallback.discourse_mode) as any
+        : fallback.discourse_mode,
+    credibility_expectation:
+      draft.credibility_expectation != null
+        ? (String(draft.credibility_expectation || '').trim() || fallback.credibility_expectation) as any
+        : fallback.credibility_expectation,
+    interaction_mode:
+      draft.interaction_mode != null
+        ? (String(draft.interaction_mode || '').trim() || fallback.interaction_mode) as any
+        : fallback.interaction_mode,
+    emotional_intensity:
+      draft.emotional_intensity != null
+        ? (String(draft.emotional_intensity || '').trim() || fallback.emotional_intensity) as any
+        : fallback.emotional_intensity,
     tone_expectations: tone as any,
     disruption_signals: disruption as any,
     content_boundaries: {
@@ -1786,6 +1818,10 @@ function mapCultureDefinitionPath(path: string): string {
   if (path === 'version') return 'version'
   if (path === 'summary') return 'summary'
   if (path === 'interaction_style') return 'interaction_style'
+  if (path === 'discourse_mode') return 'discourse_mode'
+  if (path === 'credibility_expectation') return 'credibility_expectation'
+  if (path === 'interaction_mode') return 'interaction_mode'
+  if (path === 'emotional_intensity') return 'emotional_intensity'
   if (path === 'tone_expectations' || path.startsWith('tone_expectations.')) return 'tone_expectations'
   if (path === 'disruption_signals' || path.startsWith('disruption_signals.')) return 'disruption_signals'
   if (path === 'content_boundaries' || path.startsWith('content_boundaries.')) {
@@ -1916,6 +1952,46 @@ function renderCultureDetailPage(opts: {
   body += `</select>
     <div class="field-hint">High-level interaction baseline for the culture.</div>
     ${renderCultureFieldErrors(definitionFieldErrors, 'interaction_style')}
+  </label>`;
+  body += `<label>Discourse Mode
+    <select name="discourse_mode">`;
+  for (const value of CULTURE_DISCOURSE_MODES) {
+    const selected = String(definition.discourse_mode || '') === value ? ' selected' : '';
+    body += `<option value="${escapeHtml(value)}"${selected}>${escapeHtml(value)}</option>`;
+  }
+  body += `</select>
+    <div class="field-hint">Whether the culture expects reasoned structure or allows more performative expression.</div>
+    ${renderCultureFieldErrors(definitionFieldErrors, 'discourse_mode')}
+  </label>`;
+  body += `<label>Credibility Expectation
+    <select name="credibility_expectation">`;
+  for (const value of CULTURE_CREDIBILITY_EXPECTATIONS) {
+    const selected = String(definition.credibility_expectation || '') === value ? ' selected' : '';
+    body += `<option value="${escapeHtml(value)}"${selected}>${escapeHtml(value)}</option>`;
+  }
+  body += `</select>
+    <div class="field-hint">Expected level of support signals for factual assertions.</div>
+    ${renderCultureFieldErrors(definitionFieldErrors, 'credibility_expectation')}
+  </label>`;
+  body += `<label>Interaction Mode
+    <select name="interaction_mode">`;
+  for (const value of CULTURE_INTERACTION_MODES) {
+    const selected = String(definition.interaction_mode || '') === value ? ' selected' : '';
+    body += `<option value="${escapeHtml(value)}"${selected}>${escapeHtml(value)}</option>`;
+  }
+  body += `</select>
+    <div class="field-hint">Whether communication is mainly speaker-to-audience, participant-to-participant, or both.</div>
+    ${renderCultureFieldErrors(definitionFieldErrors, 'interaction_mode')}
+  </label>`;
+  body += `<label>Emotional Intensity
+    <select name="emotional_intensity">`;
+  for (const value of CULTURE_EMOTIONAL_INTENSITY_LEVELS) {
+    const selected = String(definition.emotional_intensity || '') === value ? ' selected' : '';
+    body += `<option value="${escapeHtml(value)}"${selected}>${escapeHtml(value)}</option>`;
+  }
+  body += `</select>
+    <div class="field-hint">Expected or tolerated level of emotional intensity in delivery.</div>
+    ${renderCultureFieldErrors(definitionFieldErrors, 'emotional_intensity')}
   </label>`;
   body += `<div class="section" style="margin-top: 10px">`;
   body += `<div class="section-title">Tone Expectations</div>`;

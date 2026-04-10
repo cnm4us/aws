@@ -20,6 +20,10 @@ export function createDefaultCultureDefinitionV1(
     version,
     summary: '',
     interaction_style: 'mixed',
+    discourse_mode: 'expressive',
+    credibility_expectation: 'medium',
+    interaction_mode: 'mixed',
+    emotional_intensity: 'medium',
     tone_expectations: [],
     disruption_signals: [],
     content_boundaries: {

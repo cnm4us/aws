@@ -1,8 +1,12 @@
 import {
   CULTURE_AI_HINTS,
+  CULTURE_CREDIBILITY_EXPECTATIONS,
   CULTURE_CONTENT_BOUNDARY_LEVELS,
   CULTURE_DISRUPTION_SIGNALS,
+  CULTURE_DISCOURSE_MODES,
+  CULTURE_EMOTIONAL_INTENSITY_LEVELS,
   CULTURE_INTERACTION_STYLES,
+  CULTURE_INTERACTION_MODES,
   CULTURE_TOLERANCE_LEVELS,
   CULTURE_TONE_EXPECTATIONS,
 } from './types'
@@ -21,6 +25,10 @@ export const CULTURE_DEFINITION_SCHEMA_V1 = {
     'name',
     'version',
     'interaction_style',
+    'discourse_mode',
+    'credibility_expectation',
+    'interaction_mode',
+    'emotional_intensity',
     'tone_expectations',
     'disruption_signals',
     'content_boundaries',
@@ -57,6 +65,32 @@ export const CULTURE_DEFINITION_SCHEMA_V1 = {
       title: 'Interaction Style',
       enum: [...CULTURE_INTERACTION_STYLES],
       description: 'High-level interaction baseline for the culture.',
+    },
+    discourse_mode: {
+      type: 'string',
+      title: 'Discourse Mode',
+      enum: [...CULTURE_DISCOURSE_MODES],
+      description:
+        'Whether the culture expects reasoned structure or allows more performative expression.',
+    },
+    credibility_expectation: {
+      type: 'string',
+      title: 'Credibility Expectation',
+      enum: [...CULTURE_CREDIBILITY_EXPECTATIONS],
+      description: 'Expected level of support signals for factual assertions.',
+    },
+    interaction_mode: {
+      type: 'string',
+      title: 'Interaction Mode',
+      enum: [...CULTURE_INTERACTION_MODES],
+      description:
+        'Whether communication is primarily speaker-to-audience, participant-to-participant, or both.',
+    },
+    emotional_intensity: {
+      type: 'string',
+      title: 'Emotional Intensity',
+      enum: [...CULTURE_EMOTIONAL_INTENSITY_LEVELS],
+      description: 'Expected or tolerated level of emotional intensity in delivery.',
     },
     tone_expectations: {
       type: 'array',

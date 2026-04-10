@@ -23,6 +23,22 @@ function normalizeInteractionStyle(value: unknown): string | undefined {
   return next
 }
 
+function normalizeDiscourseMode(value: unknown): string | undefined {
+  return normalizeOptionalString(value)
+}
+
+function normalizeCredibilityExpectation(value: unknown): string | undefined {
+  return normalizeOptionalString(value)
+}
+
+function normalizeInteractionMode(value: unknown): string | undefined {
+  return normalizeOptionalString(value)
+}
+
+function normalizeEmotionalIntensity(value: unknown): string | undefined {
+  return normalizeOptionalString(value)
+}
+
 function normalizeAiHint(value: unknown): string | undefined {
   const next = normalizeOptionalString(value)
   if (!next) return undefined
@@ -148,6 +164,13 @@ export function normalizeCultureDefinitionInput(
 
   const interactionStyle = normalizeInteractionStyle(source.interaction_style)
   if (interactionStyle) normalized.interaction_style = interactionStyle
+
+  normalized.discourse_mode = normalizeDiscourseMode(source.discourse_mode) || 'expressive'
+  normalized.credibility_expectation =
+    normalizeCredibilityExpectation(source.credibility_expectation) || 'medium'
+  normalized.interaction_mode = normalizeInteractionMode(source.interaction_mode) || 'mixed'
+  normalized.emotional_intensity =
+    normalizeEmotionalIntensity(source.emotional_intensity) || 'medium'
 
   const tone = normalizeUniqueStringArray(source.tone_expectations)
   if (tone) normalized.tone_expectations = tone

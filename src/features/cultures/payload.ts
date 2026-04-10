@@ -7,6 +7,10 @@ export function buildAiCulturePayload(definition: CultureDefinitionV1): CultureA
       name: definition.name,
       version: definition.version,
       interaction_style: definition.interaction_style,
+      discourse_mode: definition.discourse_mode,
+      credibility_expectation: definition.credibility_expectation,
+      interaction_mode: definition.interaction_mode,
+      emotional_intensity: definition.emotional_intensity,
       tone_expectations: [...definition.tone_expectations],
       disruption_signals: [...definition.disruption_signals],
       content_boundaries: {
