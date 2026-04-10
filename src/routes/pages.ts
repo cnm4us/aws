@@ -1964,46 +1964,6 @@ function renderCultureDetailPage(opts: {
     <div class="field-hint">High-level interaction baseline for the culture.</div>
     ${renderCultureFieldErrors(definitionFieldErrors, 'interaction_style')}
   </label>`;
-  body += `<label>Discourse Mode
-    <select name="discourse_mode">`;
-  for (const value of CULTURE_DISCOURSE_MODES) {
-    const selected = String(definition.discourse_mode || '') === value ? ' selected' : '';
-    body += `<option value="${escapeHtml(value)}"${selected}>${escapeHtml(value)}</option>`;
-  }
-  body += `</select>
-    <div class="field-hint">Whether the culture expects reasoned structure or allows more performative expression.</div>
-    ${renderCultureFieldErrors(definitionFieldErrors, 'discourse_mode')}
-  </label>`;
-  body += `<label>Credibility Expectation
-    <select name="credibility_expectation">`;
-  for (const value of CULTURE_CREDIBILITY_EXPECTATIONS) {
-    const selected = String(definition.credibility_expectation || '') === value ? ' selected' : '';
-    body += `<option value="${escapeHtml(value)}"${selected}>${escapeHtml(value)}</option>`;
-  }
-  body += `</select>
-    <div class="field-hint">Expected level of support signals for factual assertions.</div>
-    ${renderCultureFieldErrors(definitionFieldErrors, 'credibility_expectation')}
-  </label>`;
-  body += `<label>Interaction Mode
-    <select name="interaction_mode">`;
-  for (const value of CULTURE_INTERACTION_MODES) {
-    const selected = String(definition.interaction_mode || '') === value ? ' selected' : '';
-    body += `<option value="${escapeHtml(value)}"${selected}>${escapeHtml(value)}</option>`;
-  }
-  body += `</select>
-    <div class="field-hint">Whether communication is mainly speaker-to-audience, participant-to-participant, or both.</div>
-    ${renderCultureFieldErrors(definitionFieldErrors, 'interaction_mode')}
-  </label>`;
-  body += `<label>Emotional Intensity
-    <select name="emotional_intensity">`;
-  for (const value of CULTURE_EMOTIONAL_INTENSITY_LEVELS) {
-    const selected = String(definition.emotional_intensity || '') === value ? ' selected' : '';
-    body += `<option value="${escapeHtml(value)}"${selected}>${escapeHtml(value)}</option>`;
-  }
-  body += `</select>
-    <div class="field-hint">Expected or tolerated level of emotional intensity in delivery.</div>
-    ${renderCultureFieldErrors(definitionFieldErrors, 'emotional_intensity')}
-  </label>`;
   body += `<div class="section" style="margin-top: 10px">`;
   body += `<div class="section-title">Tone Expectations</div>`;
   body += `<input type="hidden" name="tone_expectations" value="" />`;
@@ -2041,6 +2001,25 @@ function renderCultureDetailPage(opts: {
   body += `</div>`;
   body += `</div>`;
 
+  const renderDimensionSelect = (opts: {
+    fieldName: string
+    label: string
+    value: string
+    help: string
+    options: readonly string[]
+  }) => {
+    let html = `<label>${escapeHtml(opts.label)}
+      <select name="${escapeHtml(opts.fieldName)}">`
+    for (const opt of opts.options) {
+      const selected = opts.value === opt ? ' selected' : ''
+      html += `<option value="${escapeHtml(opt)}"${selected}>${escapeHtml(opt)}</option>`
+    }
+    html += `</select>
+      <div class="field-hint">${escapeHtml(opts.help)}</div>
+      ${renderCultureFieldErrors(definitionFieldErrors, opts.fieldName)}</label>`
+    return html
+  }
+
   const renderContentBoundarySelect = (fieldName: string, value: string) => {
     let html = `<label>${escapeHtml(fieldName.replace(/_/g, ' '))}
       <select name="content_boundaries.${escapeHtml(fieldName)}">`
@@ -2053,6 +2032,41 @@ function renderCultureDetailPage(opts: {
   }
 
   body += `<div class="section" style="margin-top: 14px">`;
+  body += `<div class="section-title">Dimensions</div>`;
+  body += `<div class="field-hint">Structured culture dimensions that capture boundaries, discourse expectations, interaction mode, and tolerance.</div>`;
+  body += `<div class="section" style="margin-top: 10px">`;
+  body += `<div class="section-title">Modes</div>`;
+  body += renderDimensionSelect({
+    fieldName: 'discourse_mode',
+    label: 'Discourse Mode',
+    value: String(definition.discourse_mode || 'expressive'),
+    help: 'Whether the culture expects reasoned structure or allows more performative expression.',
+    options: CULTURE_DISCOURSE_MODES,
+  });
+  body += renderDimensionSelect({
+    fieldName: 'credibility_expectation',
+    label: 'Credibility Expectation',
+    value: String(definition.credibility_expectation || 'medium'),
+    help: 'Expected level of support signals for factual assertions.',
+    options: CULTURE_CREDIBILITY_EXPECTATIONS,
+  });
+  body += renderDimensionSelect({
+    fieldName: 'interaction_mode',
+    label: 'Interaction Mode',
+    value: String(definition.interaction_mode || 'mixed'),
+    help: 'Whether communication is mainly speaker-to-audience, participant-to-participant, or both.',
+    options: CULTURE_INTERACTION_MODES,
+  });
+  body += renderDimensionSelect({
+    fieldName: 'emotional_intensity',
+    label: 'Emotional Intensity',
+    value: String(definition.emotional_intensity || 'medium'),
+    help: 'Expected or tolerated level of emotional intensity in delivery.',
+    options: CULTURE_EMOTIONAL_INTENSITY_LEVELS,
+  });
+  body += `</div>`;
+
+  body += `<div class="section" style="margin-top: 10px">`;
   body += `<div class="section-title">Content Boundaries</div>`;
   body += renderContentBoundarySelect('sexual_content', String(contentBoundaries.sexual_content || 'moderate'));
   body += renderContentBoundarySelect('graphic_violence', String(contentBoundaries.graphic_violence || 'moderate'));
@@ -2070,13 +2084,14 @@ function renderCultureDetailPage(opts: {
     return html
   }
 
-  body += `<div class="section" style="margin-top: 14px">`;
+  body += `<div class="section" style="margin-top: 10px">`;
   body += `<div class="section-title">Tolerance</div>`;
   body += renderToleranceSelect('hostility', String(tolerance.hostility || 'medium'));
   body += renderToleranceSelect('confrontation', String(tolerance.confrontation || 'medium'));
   body += renderToleranceSelect('person_directed_profanity', String(tolerance.person_directed_profanity || 'medium'));
   body += renderToleranceSelect('mockery', String(tolerance.mockery || ''));
   body += renderToleranceSelect('personal_attacks', String(tolerance.personal_attacks || ''));
+  body += `</div>`;
   body += `</div>`;
 
   body += `<div class="section" style="margin-top: 14px">`;
