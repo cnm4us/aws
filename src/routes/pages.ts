@@ -1820,7 +1820,7 @@ function renderCultureDetailPage(opts: {
     body += `<div class="field-hint" style="color:#fda4af">Definition issues: ${escapeHtml(definitionValidationErrors.map((e) => `${e.path || '(root)'}: ${e.message}`).join(' • '))}</div>`;
   }
 
-  body += `<form method="post" action="/admin/cultures/${escapeHtml(id)}">`;
+  body += `<form method="post" action="/admin/cultures/${escapeHtml(id)}" id="culture-edit-form">`;
   if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`;
 
   body += `<div class="section" style="margin-top: 14px">`;
@@ -1965,21 +1965,22 @@ function renderCultureDetailPage(opts: {
   }
   body += `</div>`;
 
-  body += `<div class="actions">
-    <button type="submit">Save</button>
-  </div>`;
-  body += `</form>`;
-
   const assignedCount = assigned.size;
+  body += `<div class="actions">`;
+  body += `<button type="submit">Save</button>`;
+  body += `</form>`;
+  body += `<form method="post" action="/admin/cultures/${escapeHtml(id)}/delete" style="display:inline-block; margin:0" onsubmit="return confirm('Delete culture \\'${escapeHtml(nameValue || 'this culture')}\\'? This cannot be undone.');">`;
+  if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`;
+  body += `<button type="submit" class="danger"${assignedCount > 0 ? ' disabled title="Remove category associations before deleting this culture."' : ''}>Delete</button>`;
+  body += `</form>`;
+  body += `</div>`;
+
   body += `<div class="section" style="margin-top: 18px">`;
   body += `<div class="section-title">Danger Zone</div>`;
   if (assignedCount > 0) {
     body += `<div class="field-hint">To delete this culture, remove all category associations first.</div>`;
   } else {
-    body += `<form method="post" action="/admin/cultures/${escapeHtml(id)}/delete" style="margin-top: 10px" onsubmit="return confirm('Delete culture \\'${escapeHtml(nameValue || 'this culture')}\\'? This cannot be undone.');">`;
-    if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`;
-    body += `<button type="submit" class="danger">Delete culture</button>`;
-    body += `</form>`;
+    body += `<div class="field-hint">Delete is available next to Save.</div>`;
   }
   body += `</div>`;
 
