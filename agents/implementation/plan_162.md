@@ -154,7 +154,7 @@ Status: Active
 - 2026-04-09 — Phase D completed in commit `b42cd6f`: added `/api/moderation/judge` route + service + repo flow, server-resolved policy/culture payloads, immutable judgment sequencing, global-safety review floor, and judge smoke coverage for missing refs + no-match dismissal.
 - 2026-04-09 — Phase E completed in commit `c67e66d`: added authenticated `/api/moderation/review` flow, append-only human review events, derived accept-ai disposition from stored AI judgment artifacts, and linked final disposition updates into report lifecycle status/action history.
 - 2026-04-09 — Phase F completed in commit `1b323ec`: extended `/admin/reports` inspect modal with moderation-v2 evaluation/judgment/review visibility, added OTEL stage tags for measure/judge/review, and added admin inspect smoke coverage plus Jaeger verification.
-- 2026-04-09 — Phase G completed: added a seeded moderation policy-profile catalog with DB-backed resolution fallback, evaluation-id debug/replay tooling, a dedicated end-to-end pipeline smoke, and phase-G operational documentation/index updates.
+- 2026-04-09 — Phase G completed in commit `3ee258e`: added a seeded moderation policy-profile catalog with DB-backed resolution fallback, evaluation-id debug/replay tooling, a dedicated end-to-end pipeline smoke, and phase-G operational documentation/index updates.
 
 ## Validation
 - Environment: development
