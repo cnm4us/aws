@@ -855,6 +855,34 @@ const MODERATION_ADMIN_ROUTES = {
   },
 } as const
 
+const MODERATION_CATEGORY_ADMIN_PATHS = {
+  list: getModerationAdminSectionPath('categories'),
+  new: getModerationAdminSectionPath('categories', 'new'),
+  detail: getModerationAdminSectionPath('categories', ':id'),
+  delete: getModerationAdminSectionPath('categories', ':id/delete'),
+} as const
+
+const LEGACY_CATEGORY_ADMIN_PATHS = {
+  list: getModerationAdminSectionPath('categories', '', { legacy: true }),
+  new: getModerationAdminSectionPath('categories', 'new', { legacy: true }),
+  detail: getModerationAdminSectionPath('categories', ':id', { legacy: true }),
+  delete: getModerationAdminSectionPath('categories', ':id/delete', { legacy: true }),
+} as const
+
+const MODERATION_CULTURE_ADMIN_PATHS = {
+  list: getModerationAdminSectionPath('cultures'),
+  new: getModerationAdminSectionPath('cultures', 'new'),
+  detail: getModerationAdminSectionPath('cultures', ':id'),
+  delete: getModerationAdminSectionPath('cultures', ':id/delete'),
+} as const
+
+const LEGACY_CULTURE_ADMIN_PATHS = {
+  list: getModerationAdminSectionPath('cultures', '', { legacy: true }),
+  new: getModerationAdminSectionPath('cultures', 'new', { legacy: true }),
+  detail: getModerationAdminSectionPath('cultures', ':id', { legacy: true }),
+  delete: getModerationAdminSectionPath('cultures', ':id/delete', { legacy: true }),
+} as const
+
 function getModerationAdminRoot(
   section: ModerationAdminSectionKey,
   opts?: { legacy?: boolean }
@@ -871,26 +899,37 @@ function getModerationAdminSectionPath(
   return joinAdminPath(getModerationAdminRoot(section, opts), suffix)
 }
 
+function buildPreservedQuerySuffix(req: any): string {
+  const original = String(req?.originalUrl || '')
+  const idx = original.indexOf('?')
+  return idx >= 0 ? original.slice(idx) : ''
+}
+
+function redirectToAdminPath(req: any, res: any, targetPath: string) {
+  return res.redirect(`${targetPath}${buildPreservedQuerySuffix(req)}`)
+}
+
 function renderModerationAdminSubnav(opts: {
   active?: ModerationAdminNavKey
-  legacy?: boolean
+  canonicalSections?: Partial<Record<ModerationAdminSectionKey, boolean>>
 } = {}): string {
+  const canonicalSections = opts.canonicalSections || {}
   const items: Array<{ key: ModerationAdminNavKey; label: string; href: string }> = [
     { key: 'moderation', label: 'Moderation', href: MODERATION_ADMIN_ROUTES.hub },
     {
       key: 'moderation_rules',
       label: 'Rules',
-      href: getModerationAdminSectionPath('rules', '', { legacy: !!opts.legacy }),
+      href: getModerationAdminSectionPath('rules', '', { legacy: !canonicalSections.rules }),
     },
     {
       key: 'moderation_categories',
       label: 'Categories',
-      href: getModerationAdminSectionPath('categories', '', { legacy: !!opts.legacy }),
+      href: getModerationAdminSectionPath('categories', '', { legacy: !canonicalSections.categories }),
     },
     {
       key: 'moderation_cultures',
       label: 'Cultures',
-      href: getModerationAdminSectionPath('cultures', '', { legacy: !!opts.legacy }),
+      href: getModerationAdminSectionPath('cultures', '', { legacy: !canonicalSections.cultures }),
     },
   ]
 
@@ -990,10 +1029,10 @@ function renderModerationAdminPage(opts: {
   title: string
   bodyHtml: string
   active?: ModerationAdminNavKey
-  legacy?: boolean
+  canonicalSections?: Partial<Record<ModerationAdminSectionKey, boolean>>
 }): string {
   const active = opts.active || 'moderation'
-  const bodyHtml = `${renderModerationAdminSubnav({ active, legacy: !!opts.legacy })}${opts.bodyHtml}`
+  const bodyHtml = `${renderModerationAdminSubnav({ active, canonicalSections: opts.canonicalSections })}${opts.bodyHtml}`
   return renderAdminPage({ title: opts.title, bodyHtml, active: 'moderation' })
 }
 
@@ -1135,9 +1174,9 @@ function renderCategoryForm(opts: { error?: string | null; csrfToken?: string | 
   const description = opts.description ? String(opts.description) : '';
 
   let body = `<h1>New Category</h1>`;
-  body += '<div class="toolbar"><div><a href="/admin/categories">\u2190 Back to categories</a></div></div>';
+  body += `<div class="toolbar"><div><a href="${escapeHtml(MODERATION_CATEGORY_ADMIN_PATHS.list)}">\u2190 Back to categories</a></div></div>`;
   if (error) body += `<div class="error">${escapeHtml(error)}</div>`;
-  body += `<form method="post" action="/admin/categories">`;
+  body += `<form method="post" action="${escapeHtml(MODERATION_CATEGORY_ADMIN_PATHS.list)}">`;
   if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`;
   body += `<label>Name
     <input type="text" name="name" value="${escapeHtml(name)}" />
@@ -1154,7 +1193,7 @@ function renderCategoryForm(opts: { error?: string | null; csrfToken?: string | 
     title: 'New Category',
     bodyHtml: body,
     active: 'moderation_categories',
-    legacy: true,
+    canonicalSections: { categories: true, cultures: true },
   });
 }
 
@@ -1182,7 +1221,7 @@ function renderCategoryDetailPage(opts: {
   const descriptionValue = category.description ? String(category.description) : '';
 
   let body = `<h1>Category: ${escapeHtml(nameValue || '(unnamed)')}</h1>`;
-  body += '<div class="toolbar"><div><a href="/admin/categories">\u2190 Back to categories</a></div></div>';
+  body += `<div class="toolbar"><div><a href="${escapeHtml(MODERATION_CATEGORY_ADMIN_PATHS.list)}">\u2190 Back to categories</a></div></div>`;
   if (notice) body += `<div class="success">${escapeHtml(notice)}</div>`;
   if (error) body += `<div class="error">${escapeHtml(error)}</div>`;
 
@@ -1191,7 +1230,7 @@ function renderCategoryDetailPage(opts: {
   body += `<div class="field-hint">Cultures using this category: <strong>${escapeHtml(String(cultureCount))}</strong> &nbsp;•&nbsp; Rules in this category: <strong>${escapeHtml(String(ruleCount))}</strong></div>`;
   body += `</div>`;
 
-  body += `<form method="post" action="/admin/categories/${escapeHtml(id)}">`;
+  body += `<form method="post" action="${escapeHtml(getModerationAdminSectionPath('categories', encodeURIComponent(id)))}">`;
   if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`;
 
   body += `<label>Name
@@ -1211,7 +1250,7 @@ function renderCategoryDetailPage(opts: {
   if (cultureCount > 0 || ruleCount > 0) {
     body += `<div class="field-hint">To delete this category, remove it from all cultures and rules first.</div>`;
   } else {
-    body += `<form method="post" action="/admin/categories/${escapeHtml(id)}/delete" style="margin-top: 10px" onsubmit="return confirm('Delete category \\'${escapeHtml(nameValue || 'this category')}\\'? This cannot be undone.');">`;
+    body += `<form method="post" action="${escapeHtml(getModerationAdminSectionPath('categories', `${encodeURIComponent(id)}/delete`))}" style="margin-top: 10px" onsubmit="return confirm('Delete category \\'${escapeHtml(nameValue || 'this category')}\\'? This cannot be undone.');">`;
     if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`;
     body += `<button type="submit" class="danger">Delete category</button>`;
     body += `</form>`;
@@ -1225,7 +1264,7 @@ function renderCategoryDetailPage(opts: {
   } else {
     body += `<ul style="margin: 0; padding-left: 18px">`;
     for (const c of linkedCultures) {
-      body += `<li><a href="/admin/cultures/${encodeURIComponent(String(c.id))}">${escapeHtml(String(c.name || `Culture #${c.id}`))}</a></li>`;
+      body += `<li><a href="${escapeHtml(getModerationAdminSectionPath('cultures', encodeURIComponent(String(c.id))))}">${escapeHtml(String(c.name || `Culture #${c.id}`))}</a></li>`;
     }
     body += `</ul>`;
   }
@@ -1248,7 +1287,7 @@ function renderCategoryDetailPage(opts: {
     title: 'Category',
     bodyHtml: body,
     active: 'moderation_categories',
-    legacy: true,
+    canonicalSections: { categories: true, cultures: true },
   });
 }
 
@@ -1284,7 +1323,7 @@ async function loadCategoryUsageLinks(
   };
 }
 
-pagesRouter.get('/admin/categories', async (req: any, res: any) => {
+async function handleModerationCategoriesList(req: any, res: any) {
   try {
     const notice = req.query && (req.query as any).notice != null ? String((req.query as any).notice) : '';
     const error = req.query && (req.query as any).error != null ? String((req.query as any).error) : '';
@@ -1325,7 +1364,7 @@ pagesRouter.get('/admin/categories', async (req: any, res: any) => {
     </style>`;
     body += `<div class="categories-nebula"><div class="categories-nebula-bg"></div><div class="categories-nebula-content">`;
     body += '<h1>Categories</h1>';
-    body += '<div class="toolbar"><div><span class="pill">Categories</span></div><div><a href="/admin/categories/new" class="card-btn">New category</a></div></div>';
+    body += `<div class="toolbar"><div><span class="pill">Categories</span></div><div><a href="${escapeHtml(MODERATION_CATEGORY_ADMIN_PATHS.new)}" class="card-btn">New category</a></div></div>`;
     if (notice) body += `<div class="success">${escapeHtml(notice)}</div>`;
     if (error) body += `<div class="error">${escapeHtml(error)}</div>`;
 
@@ -1338,7 +1377,7 @@ pagesRouter.get('/admin/categories', async (req: any, res: any) => {
         const updated = row.updated_at ? escapeHtml(String(row.updated_at)) : '';
         const cultures = row.culture_count != null ? escapeHtml(String(row.culture_count)) : '0';
         const rules = row.rule_count != null ? escapeHtml(String(row.rule_count)) : '0';
-        const href = `/admin/categories/${encodeURIComponent(String(id))}`;
+        const href = getModerationAdminSectionPath('categories', encodeURIComponent(String(id)));
         body += `<div class="section" style="margin-top:12px">`;
         body += `<a href="${href}" class="category-title">${name}</a>`;
         body += `<div style="display:grid; gap:7px; margin-top:10px">`;
@@ -1356,7 +1395,7 @@ pagesRouter.get('/admin/categories', async (req: any, res: any) => {
       title: 'Categories',
       bodyHtml: body,
       active: 'moderation_categories',
-      legacy: true,
+      canonicalSections: { categories: true, cultures: true },
     });
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.send(doc);
@@ -1364,17 +1403,27 @@ pagesRouter.get('/admin/categories', async (req: any, res: any) => {
     logError(req.log || pagesLogger, err, 'admin categories list failed', { path: req.path })
     res.status(500).send('Failed to load categories');
   }
-});
+}
 
-pagesRouter.get('/admin/categories/new', async (req: any, res: any) => {
+pagesRouter.get(MODERATION_CATEGORY_ADMIN_PATHS.list, handleModerationCategoriesList);
+pagesRouter.get(LEGACY_CATEGORY_ADMIN_PATHS.list, (req: any, res: any) =>
+  redirectToAdminPath(req, res, MODERATION_CATEGORY_ADMIN_PATHS.list)
+);
+
+async function handleModerationCategoriesNew(req: any, res: any) {
   const cookies = parseCookies(req.headers.cookie);
   const csrfToken = cookies['csrf'] || '';
   const doc = renderCategoryForm({ csrfToken });
   res.set('Content-Type', 'text/html; charset=utf-8');
   res.send(doc);
-});
+}
 
-pagesRouter.post('/admin/categories', async (req: any, res: any) => {
+pagesRouter.get(MODERATION_CATEGORY_ADMIN_PATHS.new, handleModerationCategoriesNew);
+pagesRouter.get(LEGACY_CATEGORY_ADMIN_PATHS.new, (req: any, res: any) =>
+  redirectToAdminPath(req, res, MODERATION_CATEGORY_ADMIN_PATHS.new)
+);
+
+async function handleModerationCategoriesCreate(req: any, res: any) {
   try {
     const body = (req.body || {}) as any;
     const rawName = body.name != null ? String(body.name) : '';
@@ -1412,14 +1461,19 @@ pagesRouter.post('/admin/categories', async (req: any, res: any) => {
       throw err;
     }
 
-    res.redirect(`/admin/categories?notice=${encodeURIComponent('Category created.')}`);
+    res.redirect(`${MODERATION_CATEGORY_ADMIN_PATHS.list}?notice=${encodeURIComponent('Category created.')}`);
   } catch (err) {
     logError(req.log || pagesLogger, err, 'admin create category failed', { path: req.path })
     res.status(500).send('Failed to create category');
   }
-});
+}
 
-pagesRouter.get('/admin/categories/:id', async (req: any, res: any) => {
+pagesRouter.post(
+  [MODERATION_CATEGORY_ADMIN_PATHS.list, LEGACY_CATEGORY_ADMIN_PATHS.list],
+  handleModerationCategoriesCreate
+);
+
+async function handleModerationCategoryDetail(req: any, res: any) {
   try {
     const id = Number(req.params.id);
     if (!Number.isFinite(id) || id <= 0) return res.status(404).send('Category not found');
@@ -1455,9 +1509,18 @@ pagesRouter.get('/admin/categories/:id', async (req: any, res: any) => {
     logError(req.log || pagesLogger, err, 'admin category detail failed', { path: req.path })
     res.status(500).send('Failed to load category');
   }
-});
+}
 
-pagesRouter.post('/admin/categories/:id', async (req: any, res: any) => {
+pagesRouter.get(MODERATION_CATEGORY_ADMIN_PATHS.detail, handleModerationCategoryDetail);
+pagesRouter.get(LEGACY_CATEGORY_ADMIN_PATHS.detail, (req: any, res: any) =>
+  redirectToAdminPath(
+    req,
+    res,
+    getModerationAdminSectionPath('categories', encodeURIComponent(String(req.params.id || '')))
+  )
+);
+
+async function handleModerationCategoryUpdate(req: any, res: any) {
   try {
     const id = Number(req.params.id);
     if (!Number.isFinite(id) || id <= 0) return res.status(404).send('Category not found');
@@ -1532,14 +1595,19 @@ pagesRouter.post('/admin/categories/:id', async (req: any, res: any) => {
       throw err;
     }
 
-    res.redirect(`/admin/categories/${encodeURIComponent(String(id))}?notice=${encodeURIComponent('Saved.')}`);
+    res.redirect(`${getModerationAdminSectionPath('categories', encodeURIComponent(String(id)))}?notice=${encodeURIComponent('Saved.')}`);
   } catch (err) {
     logError(req.log || pagesLogger, err, 'admin update category failed', { path: req.path })
     res.status(500).send('Failed to save category');
   }
-});
+}
 
-pagesRouter.post('/admin/categories/:id/delete', async (req: any, res: any) => {
+pagesRouter.post(
+  [MODERATION_CATEGORY_ADMIN_PATHS.detail, LEGACY_CATEGORY_ADMIN_PATHS.detail],
+  handleModerationCategoryUpdate
+);
+
+async function handleModerationCategoryDelete(req: any, res: any) {
   try {
     const id = Number(req.params.id);
     if (!Number.isFinite(id) || id <= 0) return res.status(404).send('Category not found');
@@ -1556,7 +1624,7 @@ pagesRouter.post('/admin/categories/:id/delete', async (req: any, res: any) => {
 
     if (cultureCount > 0 || ruleCount > 0) {
       const msg = 'Category is used by cultures and/or rules.';
-      return res.redirect(`/admin/categories/${encodeURIComponent(String(id))}?error=${encodeURIComponent(msg)}`);
+      return res.redirect(`${getModerationAdminSectionPath('categories', encodeURIComponent(String(id)))}?error=${encodeURIComponent(msg)}`);
     }
 
     try {
@@ -1566,15 +1634,20 @@ pagesRouter.post('/admin/categories/:id/delete', async (req: any, res: any) => {
       const safe = msg.includes('a foreign key constraint fails')
         ? 'Category is used by cultures and/or rules.'
         : 'Failed to delete category.';
-      return res.redirect(`/admin/categories/${encodeURIComponent(String(id))}?error=${encodeURIComponent(safe)}`);
+      return res.redirect(`${getModerationAdminSectionPath('categories', encodeURIComponent(String(id)))}?error=${encodeURIComponent(safe)}`);
     }
 
-    res.redirect(`/admin/categories?notice=${encodeURIComponent('Category deleted.')}`);
+    res.redirect(`${MODERATION_CATEGORY_ADMIN_PATHS.list}?notice=${encodeURIComponent('Category deleted.')}`);
   } catch (err) {
     logError(req.log || pagesLogger, err, 'admin delete category failed', { path: req.path })
     res.status(500).send('Failed to delete category');
   }
-});
+}
+
+pagesRouter.post(
+  [MODERATION_CATEGORY_ADMIN_PATHS.delete, LEGACY_CATEGORY_ADMIN_PATHS.delete],
+  handleModerationCategoryDelete
+);
 
 // -------- Admin: Cultures (server-rendered, minimal JS) --------
 
@@ -1584,9 +1657,9 @@ function renderCultureForm(opts: { error?: string | null; csrfToken?: string | n
   const name = opts.name ? String(opts.name) : '';
 
   let body = `<h1>New Culture</h1>`;
-  body += '<div class="toolbar"><div><a href="/admin/cultures">\u2190 Back to cultures</a></div></div>';
+  body += `<div class="toolbar"><div><a href="${escapeHtml(MODERATION_CULTURE_ADMIN_PATHS.list)}">\u2190 Back to cultures</a></div></div>`;
   if (error) body += `<div class="error">${escapeHtml(error)}</div>`;
-  body += `<form method="post" action="/admin/cultures">`;
+  body += `<form method="post" action="${escapeHtml(MODERATION_CULTURE_ADMIN_PATHS.list)}">`;
   if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`;
   body += `<label>Name
     <input type="text" name="name" value="${escapeHtml(name)}" />
@@ -1601,11 +1674,11 @@ function renderCultureForm(opts: { error?: string | null; csrfToken?: string | n
     title: 'New Culture',
     bodyHtml: body,
     active: 'moderation_cultures',
-    legacy: true,
+    canonicalSections: { categories: true, cultures: true },
   });
 }
 
-pagesRouter.get('/admin/cultures', async (req: any, res: any) => {
+async function handleModerationCulturesList(req: any, res: any) {
   try {
     const notice = req.query && (req.query as any).notice != null ? String((req.query as any).notice) : '';
     const error = req.query && (req.query as any).error != null ? String((req.query as any).error) : '';
@@ -1621,7 +1694,7 @@ pagesRouter.get('/admin/cultures', async (req: any, res: any) => {
     const items = rows as any[];
 
     let body = '<h1>Cultures</h1>';
-    body += '<div class="toolbar"><div><span class="pill">Cultures</span></div><div><a href="/admin/cultures/new">New culture</a></div></div>';
+    body += `<div class="toolbar"><div><span class="pill">Cultures</span></div><div><a href="${escapeHtml(MODERATION_CULTURE_ADMIN_PATHS.new)}">New culture</a></div></div>`;
     if (notice) body += `<div class="success">${escapeHtml(notice)}</div>`;
     if (error) body += `<div class="error">${escapeHtml(error)}</div>`;
 
@@ -1634,7 +1707,7 @@ pagesRouter.get('/admin/cultures', async (req: any, res: any) => {
         const name = escapeHtml(String(row.name || ''));
         const updated = row.updated_at ? escapeHtml(String(row.updated_at)) : '';
         const categoryCount = row.category_count != null ? escapeHtml(String(row.category_count)) : '0';
-        const href = `/admin/cultures/${encodeURIComponent(String(id))}`;
+        const href = getModerationAdminSectionPath('cultures', encodeURIComponent(String(id)));
         body += `<tr><td><a href="${href}">${name}</a></td><td>${categoryCount}</td><td>${updated}</td></tr>`;
       }
       body += '</tbody></table>';
@@ -1645,7 +1718,7 @@ pagesRouter.get('/admin/cultures', async (req: any, res: any) => {
       title: 'Cultures',
       bodyHtml: body,
       active: 'moderation_cultures',
-      legacy: true,
+      canonicalSections: { categories: true, cultures: true },
     });
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.send(doc);
@@ -1653,17 +1726,27 @@ pagesRouter.get('/admin/cultures', async (req: any, res: any) => {
     logError(req.log || pagesLogger, err, 'admin cultures list failed', { path: req.path })
     res.status(500).send('Failed to load cultures');
   }
-});
+}
 
-pagesRouter.get('/admin/cultures/new', async (req: any, res: any) => {
+pagesRouter.get(MODERATION_CULTURE_ADMIN_PATHS.list, handleModerationCulturesList);
+pagesRouter.get(LEGACY_CULTURE_ADMIN_PATHS.list, (req: any, res: any) =>
+  redirectToAdminPath(req, res, MODERATION_CULTURE_ADMIN_PATHS.list)
+);
+
+async function handleModerationCulturesNew(req: any, res: any) {
   const cookies = parseCookies(req.headers.cookie);
   const csrfToken = cookies['csrf'] || '';
   const doc = renderCultureForm({ csrfToken });
   res.set('Content-Type', 'text/html; charset=utf-8');
   res.send(doc);
-});
+}
 
-pagesRouter.post('/admin/cultures', async (req: any, res: any) => {
+pagesRouter.get(MODERATION_CULTURE_ADMIN_PATHS.new, handleModerationCulturesNew);
+pagesRouter.get(LEGACY_CULTURE_ADMIN_PATHS.new, (req: any, res: any) =>
+  redirectToAdminPath(req, res, MODERATION_CULTURE_ADMIN_PATHS.new)
+);
+
+async function handleModerationCulturesCreate(req: any, res: any) {
   try {
     const body = (req.body || {}) as any;
     const rawName = body.name != null ? String(body.name) : '';
@@ -1699,12 +1782,17 @@ pagesRouter.post('/admin/cultures', async (req: any, res: any) => {
       throw err;
     }
 
-    res.redirect(`/admin/cultures?notice=${encodeURIComponent('Culture created.')}`);
+    res.redirect(`${MODERATION_CULTURE_ADMIN_PATHS.list}?notice=${encodeURIComponent('Culture created.')}`);
   } catch (err) {
     logError(req.log || pagesLogger, err, 'admin create culture failed', { path: req.path })
     res.status(500).send('Failed to create culture');
   }
-});
+}
+
+pagesRouter.post(
+  [MODERATION_CULTURE_ADMIN_PATHS.list, LEGACY_CULTURE_ADMIN_PATHS.list],
+  handleModerationCulturesCreate
+);
 
 async function listRuleCategoriesForCultures(): Promise<Array<{ id: number; name: string; description: string }>> {
   try {
@@ -2091,7 +2179,7 @@ function renderCultureDetailPage(opts: {
   }
 
   let body = `<h1>Culture: ${escapeHtml(nameValue || '(unnamed)')}</h1>`;
-  body += '<div class="toolbar"><div><a href="/admin/cultures">\u2190 Back to cultures</a></div></div>';
+  body += `<div class="toolbar"><div><a href="${escapeHtml(MODERATION_CULTURE_ADMIN_PATHS.list)}">\u2190 Back to cultures</a></div></div>`;
   if (notice) body += `<div class="success">${escapeHtml(notice)}</div>`;
   if (error) body += `<div class="error">${escapeHtml(error)}</div>`;
   if (definitionSource === 'default_missing') {
@@ -2103,7 +2191,7 @@ function renderCultureDetailPage(opts: {
     body += `<div class="field-hint" style="color:#fda4af">Definition issues: ${escapeHtml(definitionValidationErrors.map((e) => `${e.path || '(root)'}: ${e.message}`).join(' • '))}</div>`;
   }
 
-  body += `<form method="post" action="/admin/cultures/${escapeHtml(id)}" id="culture-edit-form">`;
+  body += `<form method="post" action="${escapeHtml(getModerationAdminSectionPath('cultures', encodeURIComponent(id)))}" id="culture-edit-form">`;
   if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`;
 
   body += `<div class="section" style="margin-top: 14px">`;
@@ -2323,7 +2411,7 @@ function renderCultureDetailPage(opts: {
       const checked = assigned.has(cid) ? ' checked' : '';
       body += `<label style="display:flex; gap:10px; align-items:flex-start; margin-top: 8px">`;
       body += `<input type="checkbox" name="categoryIds" value="${escapeHtml(String(cid))}"${checked} style="margin-top: 3px" />`;
-      body += `<div><div><a href="/admin/categories/${encodeURIComponent(String(cid))}">${escapeHtml(c.name)}</a></div>`;
+      body += `<div><div><a href="${escapeHtml(getModerationAdminSectionPath('categories', encodeURIComponent(String(cid))))}">${escapeHtml(c.name)}</a></div>`;
       if (c.description) {
         body += `<div class="field-hint">${escapeHtml(c.description)}</div>`;
       }
@@ -2337,7 +2425,7 @@ function renderCultureDetailPage(opts: {
   body += `<div class="actions">`;
   body += `<button type="submit">Save</button>`;
   body += `</form>`;
-  body += `<form method="post" action="/admin/cultures/${escapeHtml(id)}/delete" style="display:inline-block; margin:0" onsubmit="return confirm('Delete culture \\'${escapeHtml(nameValue || 'this culture')}\\'? This cannot be undone.');">`;
+  body += `<form method="post" action="${escapeHtml(getModerationAdminSectionPath('cultures', `${encodeURIComponent(id)}/delete`))}" style="display:inline-block; margin:0" onsubmit="return confirm('Delete culture \\'${escapeHtml(nameValue || 'this culture')}\\'? This cannot be undone.');">`;
   if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`;
   body += `<button type="submit" class="danger"${assignedCount > 0 ? ' disabled title="Remove category associations before deleting this culture."' : ''}>Delete</button>`;
   body += `</form>`;
@@ -2356,11 +2444,11 @@ function renderCultureDetailPage(opts: {
     title: 'Culture',
     bodyHtml: body,
     active: 'moderation_cultures',
-    legacy: true,
+    canonicalSections: { categories: true, cultures: true },
   });
 }
 
-pagesRouter.get('/admin/cultures/:id', async (req: any, res: any) => {
+async function handleModerationCultureDetail(req: any, res: any) {
   try {
     const id = Number(req.params.id);
     if (!Number.isFinite(id) || id <= 0) return res.status(404).send('Culture not found');
@@ -2405,9 +2493,18 @@ pagesRouter.get('/admin/cultures/:id', async (req: any, res: any) => {
     logError(req.log || pagesLogger, err, 'admin culture detail failed', { path: req.path })
     res.status(500).send('Failed to load culture');
   }
-});
+}
 
-pagesRouter.post('/admin/cultures/:id', async (req: any, res: any) => {
+pagesRouter.get(MODERATION_CULTURE_ADMIN_PATHS.detail, handleModerationCultureDetail);
+pagesRouter.get(LEGACY_CULTURE_ADMIN_PATHS.detail, (req: any, res: any) =>
+  redirectToAdminPath(
+    req,
+    res,
+    getModerationAdminSectionPath('cultures', encodeURIComponent(String(req.params.id || '')))
+  )
+);
+
+async function handleModerationCultureUpdate(req: any, res: any) {
   let conn: any = null;
   try {
     const id = Number(req.params.id);
@@ -2639,7 +2736,9 @@ pagesRouter.post('/admin/cultures/:id', async (req: any, res: any) => {
     }
 
     await conn.commit();
-    res.redirect(`/admin/cultures/${encodeURIComponent(String(id))}?notice=${encodeURIComponent('Saved.')}`);
+    res.redirect(
+      `${getModerationAdminSectionPath('cultures', encodeURIComponent(String(id)))}?notice=${encodeURIComponent('Saved.')}`
+    );
   } catch (err) {
     try { if (conn) await conn.rollback(); } catch {}
     logError(req.log || pagesLogger, err, 'admin update culture failed', { path: req.path })
@@ -2647,9 +2746,14 @@ pagesRouter.post('/admin/cultures/:id', async (req: any, res: any) => {
   } finally {
     try { if (conn) conn.release(); } catch {}
   }
-});
+}
 
-pagesRouter.post('/admin/cultures/:id/delete', async (req: any, res: any) => {
+pagesRouter.post(
+  [MODERATION_CULTURE_ADMIN_PATHS.detail, LEGACY_CULTURE_ADMIN_PATHS.detail],
+  handleModerationCultureUpdate
+);
+
+async function handleModerationCultureDelete(req: any, res: any) {
   let conn: any = null;
   try {
     const id = Number(req.params.id);
@@ -2674,13 +2778,15 @@ pagesRouter.post('/admin/cultures/:id/delete', async (req: any, res: any) => {
     if (Number.isFinite(cnt) && cnt > 0) {
       await conn.rollback();
       const msg = 'Cannot delete: this culture is still associated with one or more categories.';
-      return res.redirect(`/admin/cultures/${encodeURIComponent(String(id))}?error=${encodeURIComponent(msg)}`);
+      return res.redirect(
+        `${getModerationAdminSectionPath('cultures', encodeURIComponent(String(id)))}?error=${encodeURIComponent(msg)}`
+      );
     }
 
     await conn.query(`DELETE FROM cultures WHERE id = ?`, [id]);
     await conn.commit();
 
-    res.redirect(`/admin/cultures?notice=${encodeURIComponent('Culture deleted.')}`);
+    res.redirect(`${MODERATION_CULTURE_ADMIN_PATHS.list}?notice=${encodeURIComponent('Culture deleted.')}`);
   } catch (err) {
     try { if (conn) await conn.rollback(); } catch {}
     logError(req.log || pagesLogger, err, 'admin delete culture failed', { path: req.path })
@@ -2688,7 +2794,12 @@ pagesRouter.post('/admin/cultures/:id/delete', async (req: any, res: any) => {
   } finally {
     try { if (conn) conn.release(); } catch {}
   }
-});
+}
+
+pagesRouter.post(
+  [MODERATION_CULTURE_ADMIN_PATHS.delete, LEGACY_CULTURE_ADMIN_PATHS.delete],
+  handleModerationCultureDelete
+);
 
 // -------- Admin: Rules (server-rendered, minimal JS) --------
 
@@ -2896,7 +3007,7 @@ function renderRuleDraftEditPage(opts: {
     title: 'Edit Rule Draft',
     bodyHtml: body,
     active: 'moderation_rules',
-    legacy: true,
+    canonicalSections: { categories: true, cultures: true },
   });
 }
 
@@ -3015,7 +3126,7 @@ function renderRuleListPage(
     title: 'Rules',
     bodyHtml: body,
     active: 'moderation_rules',
-    legacy: true,
+    canonicalSections: { categories: true, cultures: true },
   });
 }
 
@@ -3170,7 +3281,7 @@ function renderRuleForm(opts: {
     title,
     bodyHtml: body,
     active: 'moderation_rules',
-    legacy: true,
+    canonicalSections: { categories: true, cultures: true },
   });
 }
 
@@ -3736,7 +3847,7 @@ pagesRouter.get('/admin/rules/:id', async (req: any, res: any) => {
       title: 'Rule detail',
       bodyHtml: body,
       active: 'moderation_rules',
-      legacy: true,
+      canonicalSections: { categories: true, cultures: true },
     });
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.send(doc);
@@ -4557,12 +4668,12 @@ pagesRouter.get('/admin/moderation', async (_req: any, res: any) => {
     },
     {
       title: 'Categories',
-      href: getModerationAdminSectionPath('categories', '', { legacy: true }),
+      href: MODERATION_CATEGORY_ADMIN_PATHS.list,
       desc: 'Create and maintain moderation categories with safe-delete constraints.',
     },
     {
       title: 'Cultures',
-      href: getModerationAdminSectionPath('cultures', '', { legacy: true }),
+      href: MODERATION_CULTURE_ADMIN_PATHS.list,
       desc: 'Manage moderation culture profiles and assign category coverage.',
     },
   ]
@@ -4588,7 +4699,7 @@ pagesRouter.get('/admin/moderation', async (_req: any, res: any) => {
     title: 'Moderation',
     bodyHtml: body,
     active: 'moderation',
-    legacy: true,
+    canonicalSections: { categories: true, cultures: true },
   })
   res.set('Content-Type', 'text/html; charset=utf-8')
   res.send(doc)
@@ -5017,7 +5128,7 @@ pagesRouter.get('/admin/reports', requireGlobalModerationPage, async (req: any, 
         const spaceCultures = spaceCulturesBySpaceId.get(Number(row.space_id || 0)) || []
         const spaceCultureHtml = spaceCultures.length
           ? spaceCultures
-              .map((c) => `<a href="/admin/cultures/${encodeURIComponent(String(c.id))}">${escapeHtml(c.name)}</a>`)
+              .map((c) => `<a href="${getModerationAdminSectionPath('cultures', encodeURIComponent(String(c.id)))}">${escapeHtml(c.name)}</a>`)
               .join(' • ')
           : 'None'
         const reporterText = `${String(row.reporter_display_name || row.reporter_email || '-')}${row.reporter_user_id ? ` (#${row.reporter_user_id})` : ''}`
