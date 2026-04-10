@@ -27,7 +27,7 @@ export function createDefaultCultureDefinitionV1(
       confrontation: 'medium',
       person_directed_profanity: 'medium',
     },
-    ai_hint: 'mixed_environment',
+    ai_hint: 'open_expression_environment',
     internal_notes: '',
   }
 }

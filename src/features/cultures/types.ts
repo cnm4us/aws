@@ -39,10 +39,11 @@ export const CULTURE_TOLERANCE_LEVELS = ['very_low', 'low', 'medium', 'high'] as
 export const CULTURE_AI_HINTS = [
   'low_conflict_environment',
   'supportive_environment',
-  'adversarial_environment',
   'debate_environment',
-  'professional_environment',
-  'mixed_environment',
+  'expert_environment',
+  'news_environment',
+  'satire_environment',
+  'open_expression_environment',
 ] as const
 
 export type CultureInteractionStyle = (typeof CULTURE_INTERACTION_STYLES)[number]

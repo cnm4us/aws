@@ -23,6 +23,15 @@ function normalizeInteractionStyle(value: unknown): string | undefined {
   return next
 }
 
+function normalizeAiHint(value: unknown): string | undefined {
+  const next = normalizeOptionalString(value)
+  if (!next) return undefined
+  if (next === 'adversarial_environment') return 'debate_environment'
+  if (next === 'professional_environment') return 'expert_environment'
+  if (next === 'mixed_environment') return 'open_expression_environment'
+  return next
+}
+
 function normalizeRequiredString(value: unknown): string | undefined {
   const next = normalizeOptionalString(value)
   return next && next.length ? next : undefined
@@ -133,7 +142,7 @@ export function normalizeCultureDefinitionInput(
   const disruption = normalizeUniqueStringArray(source.disruption_signals)
   if (disruption) normalized.disruption_signals = disruption
 
-  const aiHint = normalizeOptionalString(source.ai_hint)
+  const aiHint = normalizeAiHint(source.ai_hint)
   if (aiHint) normalized.ai_hint = aiHint
   else if (typeof source.ai_hint === 'string') delete normalized.ai_hint
 
