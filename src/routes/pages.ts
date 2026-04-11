@@ -3606,6 +3606,11 @@ function renderRuleListPage(
   const selectedCategoryId = String(opts.selectedCategoryId || '');
   const sort = String(opts.sort || '');
   const dir: 'asc' | 'desc' = opts.dir === 'desc' ? 'desc' : 'asc';
+  const exportQs = new URLSearchParams()
+  if (selectedCategoryId) exportQs.set('categoryId', selectedCategoryId)
+  if (sort) exportQs.set('sort', sort)
+  if (dir) exportQs.set('dir', dir)
+  exportQs.set('format', 'json')
 
   const headerLink = (label: string, key: string) => {
     const isActive = sort === key;
@@ -3644,7 +3649,7 @@ function renderRuleListPage(
   </style>`;
   body += `<div class="rules-nebula"><div class="rules-nebula-bg"></div><div class="rules-nebula-content">`;
   body += '<h1>Rules</h1>';
-  body += `<div class="toolbar"><div><span class="pill">Rules</span></div><div><a href="${escapeHtml(MODERATION_RULE_ADMIN_PATHS.new)}" class="card-btn card-btn-open">New rule</a></div></div>`;
+  body += `<div class="toolbar"><div><span class="pill">Rules</span></div><div style="display:flex; gap:8px; flex-wrap:wrap"><a href="${escapeHtml(`${MODERATION_RULE_ADMIN_PATHS.list}?${exportQs.toString()}`)}" class="card-btn card-btn-edit">Export JSON</a><a href="${escapeHtml(MODERATION_RULE_ADMIN_PATHS.new)}" class="card-btn card-btn-open">New rule</a></div></div>`;
   body += `<div class="toolbar" style="margin-top: 10px"><div><label style="display:flex; gap:10px; align-items:center; margin:0"><span style="opacity:0.85">Category</span><select name="categoryId" onchange="(function(sel){const qs=new URLSearchParams(window.location.search); if(sel.value){qs.set('categoryId', sel.value)} else {qs.delete('categoryId')} window.location.search=qs.toString()})(this)"><option value=""${selectedCategoryId === '' ? ' selected' : ''}>All</option>${categories
     .map((c) => {
       const id = String(c.id);
@@ -3876,6 +3881,200 @@ function renderRuleForm(opts: {
   });
 }
 
+async function buildModerationRulesExportPayload(input: {
+  categoryId?: number | null
+  sort: string
+  dir: 'asc' | 'desc'
+}) {
+  const db = getPool()
+  const sortExprByKey: Record<string, string> = {
+    slug: 'r.slug',
+    category: "COALESCE(c.name, '')",
+    title: 'r.title',
+    visibility: 'r.visibility',
+    version: 'rv.version',
+    draft: 'draft_pending',
+    updated: 'r.updated_at',
+  }
+  const sort = input.sort || 'slug'
+  const dir: 'asc' | 'desc' = input.dir === 'desc' ? 'desc' : 'asc'
+  const sortExpr = sortExprByKey[sort] || sortExprByKey.slug
+  const where: string[] = []
+  const params: any[] = []
+  if (input.categoryId != null && Number.isFinite(input.categoryId) && input.categoryId > 0) {
+    where.push('r.category_id = ?')
+    params.push(input.categoryId)
+  }
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
+  const orderSql =
+    sort === 'draft'
+      ? `ORDER BY ${sortExpr} ${dir}, d.updated_at ${dir}, r.slug ASC`
+      : `ORDER BY ${sortExpr} ${dir}, r.slug ASC`
+
+  const [rows] = await db.query(
+    `SELECT r.id, r.slug, r.title, r.category_id, r.visibility, r.updated_at,
+            rv.id AS current_version_id,
+            rv.version AS current_version,
+            rv.created_at AS current_published_at,
+            rv.change_summary AS current_change_summary,
+            rv.issue_id AS current_issue_id,
+            rv.issue_class AS current_issue_class,
+            rv.ai_spec_json AS current_ai_spec_json,
+            rv.markdown AS current_markdown,
+            rv.html AS current_html,
+            rv.short_description AS current_short_description,
+            rv.allowed_examples_markdown AS current_allowed_examples_markdown,
+            rv.allowed_examples_html AS current_allowed_examples_html,
+            rv.disallowed_examples_markdown AS current_disallowed_examples_markdown,
+            rv.disallowed_examples_html AS current_disallowed_examples_html,
+            rv.guidance_moderators_markdown AS current_guidance_moderators_markdown,
+            rv.guidance_moderators_html AS current_guidance_moderators_html,
+            rv.guidance_agents_markdown AS current_guidance_agents_markdown,
+            rv.guidance_agents_html AS current_guidance_agents_html,
+            c.name AS category_name,
+            d.updated_at AS draft_updated_at,
+            d.issue_id AS draft_issue_id,
+            d.issue_class AS draft_issue_class,
+            d.ai_spec_json AS draft_ai_spec_json,
+            d.markdown AS draft_markdown,
+            d.html AS draft_html,
+            d.short_description AS draft_short_description,
+            d.allowed_examples_markdown AS draft_allowed_examples_markdown,
+            d.allowed_examples_html AS draft_allowed_examples_html,
+            d.disallowed_examples_markdown AS draft_disallowed_examples_markdown,
+            d.disallowed_examples_html AS draft_disallowed_examples_html,
+            d.guidance_moderators_markdown AS draft_guidance_moderators_markdown,
+            d.guidance_moderators_html AS draft_guidance_moderators_html,
+            d.guidance_agents_markdown AS draft_guidance_agents_markdown,
+            d.guidance_agents_html AS draft_guidance_agents_html,
+            CASE
+              WHEN d.updated_at IS NOT NULL AND (rv.created_at IS NULL OR d.updated_at > rv.created_at) THEN 1
+              ELSE 0
+            END AS draft_pending
+       FROM rules r
+       LEFT JOIN rule_versions rv ON rv.id = r.current_version_id
+       LEFT JOIN rule_categories c ON c.id = r.category_id
+       LEFT JOIN rule_drafts d ON d.rule_id = r.id
+       ${whereSql}
+       ${orderSql}`,
+    params
+  )
+
+  const rules = rows as any[]
+  const ruleIds = rules
+    .map((row) => Number(row.id))
+    .filter((id) => Number.isFinite(id) && id > 0)
+  const linkedSignalIdsByRuleId = new Map<number, string[]>()
+  if (ruleIds.length) {
+    const placeholders = ruleIds.map(() => '?').join(',')
+    const [signalRows] = await db.query(
+      `SELECT rule_id, signal_id
+         FROM rule_signals
+        WHERE rule_id IN (${placeholders})
+        ORDER BY rule_id ASC, signal_id ASC`,
+      ruleIds
+    )
+    for (const row of signalRows as any[]) {
+      const ruleId = Number(row.rule_id || 0)
+      if (!Number.isFinite(ruleId) || ruleId <= 0) continue
+      const signalId = String(row.signal_id || '').trim()
+      if (!signalId) continue
+      const existing = linkedSignalIdsByRuleId.get(ruleId) || []
+      existing.push(signalId)
+      linkedSignalIdsByRuleId.set(ruleId, existing)
+    }
+  }
+
+  return {
+    exported_at: new Date().toISOString(),
+    filters: {
+      category_id: input.categoryId ?? null,
+      sort,
+      dir,
+    },
+    rules: rules.map((row) => {
+      const id = Number(row.id)
+      const currentPublishedAt = row.current_published_at == null ? null : String(row.current_published_at)
+      const draftUpdatedAt = row.draft_updated_at == null ? null : String(row.draft_updated_at)
+      return {
+        id,
+        slug: String(row.slug || ''),
+        title: String(row.title || ''),
+        visibility: String(row.visibility || ''),
+        updated_at: row.updated_at == null ? null : String(row.updated_at),
+        category: row.category_id == null
+          ? null
+          : {
+              id: Number(row.category_id),
+              name: row.category_name == null ? null : String(row.category_name),
+            },
+        linked_signal_ids: linkedSignalIdsByRuleId.get(id) || [],
+        current_version: row.current_version_id == null
+          ? null
+          : {
+              id: Number(row.current_version_id),
+              version: row.current_version == null ? null : Number(row.current_version),
+              created_at: currentPublishedAt,
+              change_summary: row.current_change_summary == null ? null : String(row.current_change_summary),
+              issue_id: row.current_issue_id == null ? null : String(row.current_issue_id),
+              issue_class: row.current_issue_class == null ? null : String(row.current_issue_class),
+              ai_spec_json: parseRuleAiSpecCell(row.current_ai_spec_json),
+              markdown: row.current_markdown == null ? null : String(row.current_markdown),
+              html: row.current_html == null ? null : String(row.current_html),
+              short_description:
+                row.current_short_description == null ? null : String(row.current_short_description),
+              allowed_examples_markdown:
+                row.current_allowed_examples_markdown == null ? null : String(row.current_allowed_examples_markdown),
+              allowed_examples_html:
+                row.current_allowed_examples_html == null ? null : String(row.current_allowed_examples_html),
+              disallowed_examples_markdown:
+                row.current_disallowed_examples_markdown == null ? null : String(row.current_disallowed_examples_markdown),
+              disallowed_examples_html:
+                row.current_disallowed_examples_html == null ? null : String(row.current_disallowed_examples_html),
+              guidance_moderators_markdown:
+                row.current_guidance_moderators_markdown == null ? null : String(row.current_guidance_moderators_markdown),
+              guidance_moderators_html:
+                row.current_guidance_moderators_html == null ? null : String(row.current_guidance_moderators_html),
+              guidance_agents_markdown:
+                row.current_guidance_agents_markdown == null ? null : String(row.current_guidance_agents_markdown),
+              guidance_agents_html:
+                row.current_guidance_agents_html == null ? null : String(row.current_guidance_agents_html),
+            },
+        draft: draftUpdatedAt == null
+          ? null
+          : {
+              updated_at: draftUpdatedAt,
+              pending:
+                Number(row.draft_pending || 0) === 1,
+              issue_id: row.draft_issue_id == null ? null : String(row.draft_issue_id),
+              issue_class: row.draft_issue_class == null ? null : String(row.draft_issue_class),
+              ai_spec_json: parseRuleAiSpecCell(row.draft_ai_spec_json),
+              markdown: row.draft_markdown == null ? null : String(row.draft_markdown),
+              html: row.draft_html == null ? null : String(row.draft_html),
+              short_description:
+                row.draft_short_description == null ? null : String(row.draft_short_description),
+              allowed_examples_markdown:
+                row.draft_allowed_examples_markdown == null ? null : String(row.draft_allowed_examples_markdown),
+              allowed_examples_html:
+                row.draft_allowed_examples_html == null ? null : String(row.draft_allowed_examples_html),
+              disallowed_examples_markdown:
+                row.draft_disallowed_examples_markdown == null ? null : String(row.draft_disallowed_examples_markdown),
+              disallowed_examples_html:
+                row.draft_disallowed_examples_html == null ? null : String(row.draft_disallowed_examples_html),
+              guidance_moderators_markdown:
+                row.draft_guidance_moderators_markdown == null ? null : String(row.draft_guidance_moderators_markdown),
+              guidance_moderators_html:
+                row.draft_guidance_moderators_html == null ? null : String(row.draft_guidance_moderators_html),
+              guidance_agents_markdown:
+                row.draft_guidance_agents_markdown == null ? null : String(row.draft_guidance_agents_markdown),
+              guidance_agents_html:
+                row.draft_guidance_agents_html == null ? null : String(row.draft_guidance_agents_html),
+            },
+      }
+    }),
+  }
+}
+
 async function handleModerationRulesList(req: any, res: any) {
   try {
     const db = getPool();
@@ -3886,6 +4085,7 @@ async function handleModerationRulesList(req: any, res: any) {
     const rawSort = req.query && (req.query as any).sort != null ? String((req.query as any).sort) : '';
     const rawDir = req.query && (req.query as any).dir != null ? String((req.query as any).dir) : '';
     const dir: 'asc' | 'desc' = rawDir.toLowerCase() === 'desc' ? 'desc' : 'asc';
+    const format = String((req.query as any)?.format || '').trim().toLowerCase()
 
     const sortKey = rawSort || 'slug';
     const sortExprByKey: Record<string, string> = {
@@ -3905,6 +4105,20 @@ async function handleModerationRulesList(req: any, res: any) {
       where.push('r.category_id = ?');
       params.push(Number(selectedCategoryId));
     }
+
+    if (format === 'json') {
+      const payload = await buildModerationRulesExportPayload({
+        categoryId: selectedCategoryId ? Number(selectedCategoryId) : null,
+        sort: sortKey,
+        dir,
+      })
+      const filename = `moderation-rules-export-${new Date().toISOString().slice(0, 10)}.json`
+      jsonNoStore(res)
+      res.setHeader('Content-Type', 'application/json; charset=utf-8')
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
+      return res.send(JSON.stringify(payload, null, 2))
+    }
+
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
 
     const orderSql =
@@ -5808,9 +6022,15 @@ function renderModerationSignalListPage(opts: {
   const notice = String(opts.notice || '')
   const error = String(opts.error || '')
   const csrfToken = String(opts.csrfToken || '')
+  const exportQs = new URLSearchParams()
+  if (query) exportQs.set('q', query)
+  if (statusFilter && statusFilter !== 'all') exportQs.set('status', statusFilter)
+  if (polarityFilter && polarityFilter !== 'all') exportQs.set('polarity', polarityFilter)
+  if (familyFilter && familyFilter !== 'all') exportQs.set('family', familyFilter)
+  exportQs.set('format', 'json')
 
   let body = '<h1>Moderation Signals</h1>'
-  body += `<div class="toolbar"><div><span class="pill">Global Registry</span></div><div style="display:flex; gap:8px; flex-wrap:wrap"><form method="post" action="${escapeHtml(MODERATION_SIGNAL_ADMIN_PATHS.list)}" style="margin:0"><input type="hidden" name="action" value="seed_baseline" />${csrfToken ? `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />` : ''}<button type="submit">Seed Baseline Signals</button></form><a href="${escapeHtml(MODERATION_SIGNAL_ADMIN_PATHS.new)}" class="btn">New signal</a></div></div>`
+  body += `<div class="toolbar"><div><span class="pill">Global Registry</span></div><div style="display:flex; gap:8px; flex-wrap:wrap"><form method="post" action="${escapeHtml(MODERATION_SIGNAL_ADMIN_PATHS.list)}" style="margin:0"><input type="hidden" name="action" value="seed_baseline" />${csrfToken ? `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />` : ''}<button type="submit">Seed Baseline Signals</button></form><a href="${escapeHtml(`${MODERATION_SIGNAL_ADMIN_PATHS.list}?${exportQs.toString()}`)}" class="btn">Export JSON</a><a href="${escapeHtml(MODERATION_SIGNAL_ADMIN_PATHS.new)}" class="btn">New signal</a></div></div>`
   if (notice) body += `<div class="success">${escapeHtml(notice)}</div>`
   if (error) body += `<div class="error">${escapeHtml(error)}</div>`
 
@@ -6093,6 +6313,61 @@ function renderModerationSignalDetailPage(opts: {
   })
 }
 
+async function buildModerationSignalsExportPayload(input: {
+  query: string
+  statusFilter: string
+  polarityFilter: string
+  familyFilter: string
+}) {
+  const [counts, signals] = await Promise.all([
+    moderationSignals.getSignalRegistryOverview().then((result) => result.counts),
+    moderationSignals.listSignalsForAdmin({
+      status: input.statusFilter as any,
+      polarity: input.polarityFilter as any,
+      signalFamily: input.familyFilter as any,
+      search: input.query,
+      limit: 1000,
+    }),
+  ])
+
+  const usageDetails = await Promise.all(
+    signals.map(async (signal) => ({
+      signal_id: signal.signal_id,
+      usage: await moderationSignals.getSignalAdminDetail(signal.signal_id).then((result) => result.usage),
+    }))
+  )
+  const usageBySignalId = new Map(usageDetails.map((item) => [item.signal_id, item.usage]))
+
+  return {
+    exported_at: new Date().toISOString(),
+    filters: {
+      query: input.query || '',
+      status: input.statusFilter,
+      polarity: input.polarityFilter,
+      signal_family: input.familyFilter,
+    },
+    counts,
+    signals: signals.map((signal) => ({
+      signal_id: signal.signal_id,
+      label: signal.label,
+      short_description: signal.short_description,
+      long_description: signal.long_description,
+      polarity: signal.polarity,
+      signal_family: signal.signal_family,
+      status: signal.status,
+      metadata_json: signal.metadata_json,
+      created_at: signal.created_at ?? null,
+      updated_at: signal.updated_at ?? null,
+      usage_counts: signal.usage_counts,
+      usage_detail: usageBySignalId.get(signal.signal_id) || {
+        rules: [],
+        culture_positive: [],
+        culture_disruption: [],
+      },
+    })),
+  }
+}
+
 async function handleModerationSignalsList(req: any, res: any) {
   try {
     const query = String((req.query as any)?.q || '').trim()
@@ -6112,10 +6387,25 @@ async function handleModerationSignalsList(req: any, res: any) {
       (moderationSignals.MODERATION_SIGNAL_FAMILIES as readonly string[]).includes(familyFilterRaw)
         ? familyFilterRaw
         : 'all'
+    const format = String((req.query as any)?.format || '').trim().toLowerCase()
     const notice = String((req.query as any)?.notice || '')
     const error = String((req.query as any)?.error || '')
     const cookies = parseCookies(req.headers.cookie)
     const csrfToken = cookies['csrf'] || ''
+
+    if (format === 'json') {
+      const payload = await buildModerationSignalsExportPayload({
+        query,
+        statusFilter,
+        polarityFilter,
+        familyFilter,
+      })
+      const filename = `moderation-signals-export-${new Date().toISOString().slice(0, 10)}.json`
+      jsonNoStore(res)
+      res.setHeader('Content-Type', 'application/json; charset=utf-8')
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
+      return res.send(JSON.stringify(payload, null, 2))
+    }
 
     const [counts, signals] = await Promise.all([
       moderationSignals.getSignalRegistryOverview().then((result) => result.counts),
