@@ -3313,6 +3313,9 @@ export async function ensureSchema(db: DB) {
       id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
       rule_id BIGINT UNSIGNED NOT NULL,
       version INT UNSIGNED NOT NULL,
+      issue_id VARCHAR(128) NULL,
+      issue_class ENUM('global_safety','cultural','unknown') NOT NULL DEFAULT 'unknown',
+      ai_spec_json JSON NULL,
       markdown MEDIUMTEXT NOT NULL,
       html MEDIUMTEXT NOT NULL,
       short_description TEXT NULL,
@@ -3385,6 +3388,9 @@ export async function ensureSchema(db: DB) {
   // Ensure rule category column exists (idempotent best-effort)
   await db.query(`ALTER TABLE rules ADD COLUMN IF NOT EXISTS category_id BIGINT UNSIGNED NULL`);
   // Ensure rule version moderation fields exist (idempotent)
+  await db.query(`ALTER TABLE rule_versions ADD COLUMN IF NOT EXISTS issue_id VARCHAR(128) NULL`);
+  await db.query(`ALTER TABLE rule_versions ADD COLUMN IF NOT EXISTS issue_class ENUM('global_safety','cultural','unknown') NOT NULL DEFAULT 'unknown'`);
+  await db.query(`ALTER TABLE rule_versions ADD COLUMN IF NOT EXISTS ai_spec_json JSON NULL`);
   await db.query(`ALTER TABLE rule_versions ADD COLUMN IF NOT EXISTS short_description TEXT NULL`);
   await db.query(`ALTER TABLE rule_versions ADD COLUMN IF NOT EXISTS allowed_examples_markdown MEDIUMTEXT NULL`);
   await db.query(`ALTER TABLE rule_versions ADD COLUMN IF NOT EXISTS allowed_examples_html MEDIUMTEXT NULL`);
@@ -3401,6 +3407,9 @@ export async function ensureSchema(db: DB) {
   await db.query(`
     CREATE TABLE IF NOT EXISTS rule_drafts (
       rule_id BIGINT UNSIGNED NOT NULL PRIMARY KEY,
+      issue_id VARCHAR(128) NULL,
+      issue_class ENUM('global_safety','cultural','unknown') NOT NULL DEFAULT 'unknown',
+      ai_spec_json JSON NULL,
       markdown MEDIUMTEXT NOT NULL,
       html MEDIUMTEXT NOT NULL,
       short_description TEXT NULL,
@@ -3419,6 +3428,9 @@ export async function ensureSchema(db: DB) {
       updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `);
+  await db.query(`ALTER TABLE rule_drafts ADD COLUMN IF NOT EXISTS issue_id VARCHAR(128) NULL`);
+  await db.query(`ALTER TABLE rule_drafts ADD COLUMN IF NOT EXISTS issue_class ENUM('global_safety','cultural','unknown') NOT NULL DEFAULT 'unknown'`);
+  await db.query(`ALTER TABLE rule_drafts ADD COLUMN IF NOT EXISTS ai_spec_json JSON NULL`);
   await db.query(`ALTER TABLE rule_drafts ADD COLUMN IF NOT EXISTS short_description TEXT NULL`);
   await db.query(`ALTER TABLE rule_drafts ADD COLUMN IF NOT EXISTS allowed_examples_markdown MEDIUMTEXT NULL`);
   await db.query(`ALTER TABLE rule_drafts ADD COLUMN IF NOT EXISTS allowed_examples_html MEDIUMTEXT NULL`);
@@ -3456,6 +3468,24 @@ export async function ensureSchema(db: DB) {
         SET guidance_moderators_html = guidance_html
       WHERE guidance_moderators_html IS NULL
         AND guidance_html IS NOT NULL`
+  );
+
+  // Best-effort backfill: initialize persisted rule-contract IDs from the rule slug when missing.
+  await db.query(
+    `UPDATE rule_versions rv
+        JOIN rules r ON r.id = rv.rule_id
+        SET rv.issue_id = REPLACE(REPLACE(LOWER(r.slug), '-', '_'), '/', '_')
+      WHERE (rv.issue_id IS NULL OR TRIM(rv.issue_id) = '')
+        AND r.slug IS NOT NULL
+        AND TRIM(r.slug) <> ''`
+  );
+  await db.query(
+    `UPDATE rule_drafts rd
+        JOIN rules r ON r.id = rd.rule_id
+        SET rd.issue_id = REPLACE(REPLACE(LOWER(r.slug), '-', '_'), '/', '_')
+      WHERE (rd.issue_id IS NULL OR TRIM(rd.issue_id) = '')
+        AND r.slug IS NOT NULL
+        AND TRIM(r.slug) <> ''`
   );
 
   // Best-effort foreign key from rules to categories

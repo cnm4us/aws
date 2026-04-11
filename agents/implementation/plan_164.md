@@ -40,8 +40,8 @@ Status: Active
 ## Phase Status
 - A: Complete
 - B: Complete
-- C: In Progress
-- D: Pending
+- C: Complete
+- D: In Progress
 - E: Pending
 - F: Pending
 
@@ -140,6 +140,7 @@ Status: Active
 - 2026-04-10 — Phase A completed: added the moderation signals persistence layer (`moderation_signals`, `rule_signals`, `culture_positive_signals`, `culture_disruption_signals`), a new moderation-signals feature module with seed/backfill helpers, and the moderation admin route/nav foundation plus placeholder `/admin/moderation/signals` page.
 - 2026-04-10 — Phase B in progress: replaced the placeholder signal page with a real searchable registry list, baseline seeding action, create flow, detail/edit page, status workflow controls, and linked usage sections for rules and cultures.
 - 2026-04-10 — Phase C in progress: culture signal membership now backfills into relational tables, culture load/save projects positive/disruption signals from relational storage, schema/types accept canonical registry IDs, and the culture editor now renders registry-backed signal selections with registry-backed validation.
+- 2026-04-10 — Phase D in progress: added persisted rule contract fields (`issue_id`, `issue_class`, `ai_spec_json`) on drafts and versions, registry-backed signal selection plus AI-spec JSON editing in the rule create/edit/new-version flows, canonical signal normalization with deterministic alias backfill for legacy identifiers, rule detail visibility for the current moderation contract, and published-version synchronization into `rule_signals`.
 
 ## Validation
 - Environment:
@@ -148,6 +149,8 @@ Status: Active
   - `npm run build`
   - `npm run build` (after Phase B UI implementation)
   - `npm run build` (after Phase C culture relationalization work)
+  - `npm run build` (after Phase D rule contract and signal-linkage implementation)
+  - `node <<'EOF' ... ensureSchema(db) ... EOF`
 - Evidence files:
   - `agents/features/feature_17_moderation_signals_rules.md`
   - `src/features/moderation-signals/types.ts`
@@ -156,9 +159,8 @@ Status: Active
   - `src/routes/pages.ts`
   - `src/db.ts`
 - Known gaps:
-  - Exact saved rule contract field shape for canonical signal IDs still needs to be applied in the rule editor and migration path during Phase D.
-  - Existing rule signal content may include freeform strings that do not map cleanly to one canonical signal ID; Phase D needs an explicit review path for ambiguous cases.
-  - Phase C still needs manual verification of `/admin/moderation/cultures/:id` save/reload behavior, advanced JSON projection, and registry-backed signal selection before it can be marked complete.
+  - Phase D still needs manual verification of `/admin/moderation/rules`, `/admin/moderation/rules/:id/edit`, `/admin/moderation/rules/new`, and `/admin/moderation/rules/:id/versions/new` to confirm signal selection, AI-spec JSON validation, publish synchronization, and detail-page contract visibility.
+  - Existing rule signal content may still surface ambiguous legacy tokens that do not map cleanly to one canonical signal ID; the current implementation raises explicit validation errors for those cases, but the actual cleanup paths still need manual operator exercise.
 
 ## Open Risks / Deferred
 - Risk:
@@ -174,6 +176,6 @@ Status: Active
 
 ## Resume Here
 - Next action:
-  - Manually verify the Phase C culture editor behavior and, if it holds up, mark Phase C complete before moving into rule signal linkage in Phase D.
+  - Manually verify the Phase D rule create/edit/publish/new-version flows, including canonical signal selection and AI-spec normalization behavior, before marking Phase D complete.
 - Blocking question (if any):
   - none

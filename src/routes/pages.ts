@@ -1852,34 +1852,55 @@ type CultureSignalOption = {
   disruption_role: boolean
 }
 
+function getModerationSignalRoleFlags(source: {
+  metadata_json?: unknown
+} | null | undefined): { positive_role: boolean; disruption_role: boolean } {
+  const metadata = source?.metadata_json && typeof source.metadata_json === 'object'
+    ? (source.metadata_json as Record<string, unknown>)
+    : {}
+  const cultureRoles = Array.isArray(metadata.culture_roles)
+    ? metadata.culture_roles.map((value) => String(value || '').trim().toLowerCase())
+    : []
+  const seedSources = Array.isArray(metadata.seed_sources)
+    ? metadata.seed_sources.map((value) => String(value || '').trim().toLowerCase())
+    : []
+  const backfilledFrom = String(metadata.backfilled_from || '').trim().toLowerCase()
+  return {
+    positive_role:
+      cultureRoles.includes('positive') ||
+      seedSources.includes('culture_positive') ||
+      backfilledFrom.includes('positive'),
+    disruption_role:
+      cultureRoles.includes('disruption') ||
+      seedSources.includes('culture_disruption') ||
+      backfilledFrom.includes('disruption'),
+  }
+}
+
+function splitModerationSignalsByRole<T extends {
+  positive_role: boolean
+  disruption_role: boolean
+}>(signals: T[]) {
+  const positive: T[] = []
+  const disruption: T[] = []
+  const mixedOrUnclassified: T[] = []
+  for (const signal of signals) {
+    if (signal.positive_role && !signal.disruption_role) positive.push(signal)
+    else if (signal.disruption_role && !signal.positive_role) disruption.push(signal)
+    else mixedOrUnclassified.push(signal)
+  }
+  return { positive, disruption, mixedOrUnclassified }
+}
+
 async function listCultureSignalOptions(): Promise<CultureSignalOption[]> {
   try {
     const signals = await moderationSignals.listSignalsForAdmin({ status: 'all', limit: 500 })
-    const hasRole = (signal: any, role: 'positive' | 'disruption') => {
-      const metadata = signal?.metadata_json && typeof signal.metadata_json === 'object'
-        ? (signal.metadata_json as Record<string, unknown>)
-        : {}
-      const cultureRoles = Array.isArray(metadata.culture_roles)
-        ? metadata.culture_roles.map((value) => String(value || '').trim().toLowerCase())
-        : []
-      if (cultureRoles.includes(role)) return true
-      const seedSources = Array.isArray(metadata.seed_sources)
-        ? metadata.seed_sources.map((value) => String(value || '').trim().toLowerCase())
-        : []
-      if (role === 'positive' && seedSources.includes('culture_positive')) return true
-      if (role === 'disruption' && seedSources.includes('culture_disruption')) return true
-      const backfilledFrom = String(metadata.backfilled_from || '').trim().toLowerCase()
-      if (role === 'positive' && backfilledFrom.includes('positive')) return true
-      if (role === 'disruption' && backfilledFrom.includes('disruption')) return true
-      return false
-    }
     return signals.map((signal) => ({
       signal_id: signal.signal_id,
       label: signal.label,
       status: signal.status,
       description: signal.short_description || signal.long_description || '',
-      positive_role: hasRole(signal, 'positive'),
-      disruption_role: hasRole(signal, 'disruption'),
+      ...getModerationSignalRoleFlags(signal),
     }))
   } catch {
     return []
@@ -2975,6 +2996,343 @@ async function listRuleCategories(): Promise<Array<{ id: number; name: string }>
   }
 }
 
+const MODERATION_RULE_ISSUE_CLASSES = ['global_safety', 'cultural', 'unknown'] as const
+const MODERATION_RULE_ISSUE_ID_RE = /^[A-Za-z0-9:_-]{1,128}$/
+
+type RuleSignalOption = {
+  signal_id: string
+  label: string
+  status: string
+  description: string
+  positive_role: boolean
+  disruption_role: boolean
+}
+
+type RuleContractFormState = {
+  issue_id: string
+  issue_class: string
+  ai_spec_text: string
+  selected_signal_ids: string[]
+}
+
+const RULE_SIGNAL_ALIAS_MAP: Record<string, string> = {
+  address: 'direct_identifiers',
+  home_address: 'direct_identifiers',
+  phone_number: 'direct_identifiers',
+  personal_phone: 'direct_identifiers',
+  precise_work_location: 'direct_identifiers',
+  real_name_plus_location: 'indirect_identifiers',
+  work_schedule: 'indirect_identifiers',
+  identity_breadcrumbs: 'indirect_identifiers',
+  assertive_claim_syntax: 'assertive_language',
+}
+
+function uniqueTrimmedStrings(values: Iterable<unknown>): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const value of values) {
+    const next = String(value || '').trim()
+    if (!next || seen.has(next)) continue
+    seen.add(next)
+    out.push(next)
+  }
+  return out
+}
+
+function inferRuleIssueIdFromSlug(slug: unknown): string {
+  const normalized = String(slug || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9/_-]+/g, '')
+    .replace(/[-/]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+  return normalized.slice(0, 128)
+}
+
+function normalizeRuleIssueClassInput(value: unknown): string {
+  const normalized = String(value || '').trim().toLowerCase()
+  if ((MODERATION_RULE_ISSUE_CLASSES as readonly string[]).includes(normalized)) return normalized
+  return 'unknown'
+}
+
+function parseRuleAiSpecCell(value: unknown): Record<string, unknown> {
+  if (value == null) return {}
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed) return {}
+    try {
+      const parsed = JSON.parse(trimmed)
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : {}
+    } catch {
+      return {}
+    }
+  }
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {}
+}
+
+function extractSignalIdsFromRuleAiSpec(aiSpec: Record<string, unknown>): string[] {
+  const out: unknown[] = []
+  if (Array.isArray(aiSpec.signal_ids)) {
+    for (const value of aiSpec.signal_ids) out.push(value)
+  }
+  const grouped = aiSpec.signals
+  if (grouped && typeof grouped === 'object' && !Array.isArray(grouped)) {
+    for (const value of Object.values(grouped as Record<string, unknown>)) {
+      if (!Array.isArray(value)) continue
+      for (const item of value) out.push(item)
+    }
+  }
+  return uniqueTrimmedStrings(out)
+}
+
+function canonicalizeRuleSignalReference(
+  rawValue: unknown,
+  knownSignalIds: Set<string>
+): string | null {
+  const trimmed = String(rawValue || '').trim()
+  if (!trimmed) return null
+  if (knownSignalIds.has(trimmed)) return trimmed
+  const normalized = trimmed
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+  if (!normalized) return null
+  if (knownSignalIds.has(normalized)) return normalized
+  const aliased = RULE_SIGNAL_ALIAS_MAP[normalized]
+  if (aliased && knownSignalIds.has(aliased)) return aliased
+  return null
+}
+
+function normalizeRuleAiSpecSignalReferences(
+  aiSpec: Record<string, unknown>,
+  knownSignalIds: Set<string>
+): {
+  aiSpec: Record<string, unknown>
+  signalIds: string[]
+  unmapped: string[]
+} {
+  const out: Record<string, unknown> = { ...aiSpec }
+  const signalIds: string[] = []
+  const unmapped: string[] = []
+
+  const pushCanonical = (rawValue: unknown) => {
+    const trimmed = String(rawValue || '').trim()
+    if (!trimmed) return
+    const canonical = canonicalizeRuleSignalReference(trimmed, knownSignalIds)
+    if (!canonical) {
+      if (!unmapped.includes(trimmed)) unmapped.push(trimmed)
+      return
+    }
+    if (!signalIds.includes(canonical)) signalIds.push(canonical)
+  }
+
+  if (Array.isArray(aiSpec.signal_ids)) {
+    for (const value of aiSpec.signal_ids) pushCanonical(value)
+  }
+
+  const grouped = aiSpec.signals
+  if (grouped && typeof grouped === 'object' && !Array.isArray(grouped)) {
+    const nextSignals: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(grouped as Record<string, unknown>)) {
+      if (!Array.isArray(value)) {
+        nextSignals[key] = value
+        continue
+      }
+      const nextValues: string[] = []
+      for (const item of value) {
+        const trimmed = String(item || '').trim()
+        if (!trimmed) continue
+        const canonical = canonicalizeRuleSignalReference(trimmed, knownSignalIds)
+        if (!canonical) {
+          if (!unmapped.includes(trimmed)) unmapped.push(trimmed)
+          continue
+        }
+        if (!nextValues.includes(canonical)) nextValues.push(canonical)
+        if (!signalIds.includes(canonical)) signalIds.push(canonical)
+      }
+      nextSignals[key] = nextValues
+    }
+    out.signals = nextSignals
+  }
+
+  return {
+    aiSpec: out,
+    signalIds,
+    unmapped,
+  }
+}
+
+function parseRuleAiSpecInput(
+  raw: unknown,
+  knownSignalIds: Set<string>
+): {
+  value: Record<string, unknown>
+  signalIds: string[]
+  error: string | null
+  text: string
+} {
+  const text = String(raw == null ? '' : raw).trim()
+  if (!text) {
+    return {
+      value: {},
+      signalIds: [],
+      error: null,
+      text: '{}',
+    }
+  }
+  try {
+    const parsed = JSON.parse(text)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return {
+        value: {},
+        signalIds: [],
+        error: 'AI Spec JSON must be an object.',
+        text,
+      }
+    }
+    const normalized = normalizeRuleAiSpecSignalReferences(parsed as Record<string, unknown>, knownSignalIds)
+    if (normalized.unmapped.length) {
+      return {
+        value: normalized.aiSpec,
+        signalIds: normalized.signalIds,
+        error: `AI Spec signals include values that do not map to registry IDs: ${normalized.unmapped.join(', ')}.`,
+        text,
+      }
+    }
+    return {
+      value: normalized.aiSpec,
+      signalIds: normalized.signalIds,
+      error: null,
+      text: JSON.stringify(normalized.aiSpec, null, 2),
+    }
+  } catch (err: any) {
+    return {
+      value: {},
+      signalIds: [],
+      error: `AI Spec JSON parse error: ${String(err?.message || err)}`,
+      text,
+    }
+  }
+}
+
+async function listRuleSignalOptions(): Promise<RuleSignalOption[]> {
+  try {
+    const signals = await moderationSignals.listSignalsForAdmin({ status: 'all', limit: 500 })
+    return signals.map((signal) => ({
+      signal_id: signal.signal_id,
+      label: signal.label,
+      status: signal.status,
+      description: signal.short_description || signal.long_description || '',
+      ...getModerationSignalRoleFlags(signal),
+    }))
+  } catch {
+    return []
+  }
+}
+
+function buildRuleContractFormState(source?: any): RuleContractFormState {
+  const aiSpecText =
+    source?.ai_spec_text != null
+      ? String(source.ai_spec_text)
+      : JSON.stringify(parseRuleAiSpecCell(source?.ai_spec_json), null, 2)
+  const signalIds = uniqueTrimmedStrings([
+    ...(Array.isArray(source?.selected_signal_ids) ? source.selected_signal_ids : []),
+    ...(Array.isArray(source?.signal_ids) ? source.signal_ids : []),
+    ...(Array.isArray(source?.rule_signal_ids) ? source.rule_signal_ids : []),
+    ...extractSignalIdsFromRuleAiSpec(parseRuleAiSpecCell(source?.ai_spec_json)),
+  ])
+  return {
+    issue_id: String(source?.issue_id || '').trim() || inferRuleIssueIdFromSlug(source?.slug),
+    issue_class: normalizeRuleIssueClassInput(source?.issue_class || 'unknown'),
+    ai_spec_text: aiSpecText,
+    selected_signal_ids: signalIds,
+  }
+}
+
+function parseRuleContractInput(
+  body: any,
+  signalOptions: RuleSignalOption[],
+  slugFallback: unknown
+): {
+  state: RuleContractFormState
+  value: {
+    issueId: string
+    issueClass: string
+    aiSpecJson: Record<string, unknown>
+    signalIds: string[]
+  } | null
+  error: string | null
+} {
+  const knownSignalIds = new Set(signalOptions.map((signal) => signal.signal_id))
+  const selectedSignalIds = uniqueTrimmedStrings(toStringArrayInput(body?.signal_ids))
+  const missingSelected = selectedSignalIds.filter((signalId) => !knownSignalIds.has(signalId))
+  const aiSpecParsed = parseRuleAiSpecInput(body?.aiSpecJson, knownSignalIds)
+  const state = buildRuleContractFormState({
+    slug: slugFallback,
+    issue_id: body?.issue_id,
+    issue_class: body?.issue_class,
+    ai_spec_text: aiSpecParsed.text,
+    selected_signal_ids: uniqueTrimmedStrings([...selectedSignalIds, ...aiSpecParsed.signalIds]),
+  })
+
+  const issueId = String(body?.issue_id || '').trim() || inferRuleIssueIdFromSlug(slugFallback)
+  if (!issueId) {
+    return {
+      state,
+      value: null,
+      error: 'Issue ID is required.',
+    }
+  }
+  if (!MODERATION_RULE_ISSUE_ID_RE.test(issueId)) {
+    return {
+      state,
+      value: null,
+      error: 'Issue ID must use 1-128 characters from a-z, A-Z, 0-9, colon, underscore, or hyphen.',
+    }
+  }
+  if (missingSelected.length) {
+    return {
+      state,
+      value: null,
+      error: `Unknown selected signals: ${missingSelected.join(', ')}.`,
+    }
+  }
+  if (aiSpecParsed.error) {
+    return {
+      state,
+      value: null,
+      error: aiSpecParsed.error,
+    }
+  }
+
+  const signalIds = uniqueTrimmedStrings([...selectedSignalIds, ...aiSpecParsed.signalIds])
+  const aiSpecJson: Record<string, unknown> = {
+    ...aiSpecParsed.value,
+    signal_ids: signalIds,
+  }
+
+  return {
+    state: {
+      ...state,
+      issue_id: issueId,
+      issue_class: normalizeRuleIssueClassInput(body?.issue_class),
+      ai_spec_text: JSON.stringify(aiSpecJson, null, 2),
+      selected_signal_ids: signalIds,
+    },
+    value: {
+      issueId,
+      issueClass: normalizeRuleIssueClassInput(body?.issue_class),
+      aiSpecJson,
+      signalIds,
+    },
+    error: null,
+  }
+}
+
 async function getOrCreateRuleDraft(ruleId: number): Promise<any | null> {
   const db = getPool();
   const [draftRows] = await db.query(`SELECT * FROM rule_drafts WHERE rule_id = ? LIMIT 1`, [ruleId]);
@@ -2982,7 +3340,8 @@ async function getOrCreateRuleDraft(ruleId: number): Promise<any | null> {
   if (existing) return existing;
 
   const [baseRows] = await db.query(
-    `SELECT r.id AS rule_id, rv.markdown, rv.html,
+    `SELECT r.id AS rule_id, r.slug, rv.markdown, rv.html,
+            rv.issue_id, rv.issue_class, rv.ai_spec_json,
             rv.short_description,
             rv.allowed_examples_markdown, rv.allowed_examples_html,
             rv.disallowed_examples_markdown, rv.disallowed_examples_html,
@@ -3013,7 +3372,7 @@ async function getOrCreateRuleDraft(ruleId: number): Promise<any | null> {
 
   await db.query(
     `INSERT IGNORE INTO rule_drafts (
-       rule_id, markdown, html,
+       rule_id, issue_id, issue_class, ai_spec_json, markdown, html,
        short_description,
        allowed_examples_markdown, allowed_examples_html,
        disallowed_examples_markdown, disallowed_examples_html,
@@ -3022,9 +3381,12 @@ async function getOrCreateRuleDraft(ruleId: number): Promise<any | null> {
        guidance_agents_markdown, guidance_agents_html,
        updated_by
      )
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
     [
       ruleId,
+      String(base.issue_id || '').trim() || inferRuleIssueIdFromSlug(base.slug),
+      normalizeRuleIssueClassInput(base.issue_class || 'unknown'),
+      JSON.stringify(parseRuleAiSpecCell(base.ai_spec_json)),
       String(base.markdown || ''),
       String(base.html || ''),
       base.short_description != null ? String(base.short_description) : null,
@@ -3045,16 +3407,84 @@ async function getOrCreateRuleDraft(ruleId: number): Promise<any | null> {
   return (createdRows as any[])[0] ?? null;
 }
 
+function renderRuleContractFields(opts: {
+  state: RuleContractFormState
+  signalOptions: RuleSignalOption[]
+}) {
+  const state = opts.state
+  const signalOptions = Array.isArray(opts.signalOptions) ? opts.signalOptions : []
+  const selected = new Set(state.selected_signal_ids.map((value) => String(value)))
+  const groupedSignals = splitModerationSignalsByRole(signalOptions)
+  const renderSignalGroup = (title: string, signals: RuleSignalOption[], emptyText: string) => {
+    let html = `<div class="section" style="margin-top: 10px">`
+    html += `<div class="section-title">${escapeHtml(title)}</div>`
+    if (!signals.length) {
+      html += `<div class="field-hint">${escapeHtml(emptyText)}</div>`
+    } else {
+      for (const signal of signals) {
+        const value = signal.signal_id
+        const checked = selected.has(value) ? ' checked' : ''
+        html += `<label style="display:flex; gap:10px; align-items:flex-start; margin-top: 6px">`
+        html += `<input type="checkbox" name="signal_ids" value="${escapeHtml(value)}"${checked} style="margin-top: 3px" />`
+        html += `<div><div>${escapeHtml(signal.label)}</div><div class="field-hint"><code>${escapeHtml(value)}</code>${signal.description ? ` • ${escapeHtml(signal.description)}` : ''}${signal.status ? ` • ${escapeHtml(formatModerationSignalStatus(signal.status))}` : ''}</div></div></label>`
+      }
+    }
+    html += `</div>`
+    return html
+  }
+  let body = ''
+  body += `<div class="section" style="margin-top: 14px">`
+  body += `<div class="section-title">Moderation Contract</div>`
+  body += `<label>Issue ID
+    <input type="text" name="issue_id" value="${escapeHtml(state.issue_id)}" />
+    <div class="field-hint">Canonical moderation issue identifier. Defaults to a slug-derived value for older rules that did not store this contract yet.</div>
+  </label>`
+  body += `<label>Issue Class
+    <select name="issue_class">`
+  for (const value of MODERATION_RULE_ISSUE_CLASSES) {
+    const selectedAttr = state.issue_class === value ? ' selected' : ''
+    body += `<option value="${escapeHtml(value)}"${selectedAttr}>${escapeHtml(value)}</option>`
+  }
+  body += `</select>
+    <div class="field-hint">Use <code>global_safety</code> for platform-wide severe harm categories, <code>cultural</code> for culture-dependent rule judgments, and <code>unknown</code> only as a temporary migration state.</div>
+  </label>`
+  body += `<div class="field-hint" style="margin-top: 10px">These are the canonical registry signals attached to this rule. On save or publish, the stored AI spec is normalized to keep <code>signal_ids</code> and the published <code>rule_signals</code> relationship in sync.</div>`
+  body += `<input type="hidden" name="signal_ids" value="" />`
+  if (!signalOptions.length) {
+    body += `<div class="section" style="margin-top: 10px"><div class="field-hint">No registry signals are available yet. Seed or create signals under <code>/admin/moderation/signals</code> before linking rule contracts.</div></div>`
+  } else {
+    body += renderSignalGroup('Linked Positive Signals', groupedSignals.positive, 'No positive-role signals are available.')
+    body += renderSignalGroup('Linked Disruptive Signals', groupedSignals.disruption, 'No disruptive-role signals are available.')
+    if (groupedSignals.mixedOrUnclassified.length) {
+      body += renderSignalGroup(
+        'Linked Mixed / Unclassified Signals',
+        groupedSignals.mixedOrUnclassified,
+        'No mixed or unclassified signals are available.'
+      )
+    }
+  }
+  body += `<label>AI Spec JSON
+    <textarea name="aiSpecJson" style="min-height: 220px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace">${escapeHtml(state.ai_spec_text)}</textarea>
+    <div class="field-hint">Structured moderation contract for Stage 1 measurement. Any signal references inside <code>ai_spec.signals</code> must use canonical registry IDs; legacy aliases like <code>home_address</code> are normalized only when the mapping is deterministic.</div>
+  </label>`
+  body += `</div>`
+  return body
+}
+
 function renderRuleDraftEditPage(opts: {
   rule: any;
   draft: any;
   categories: Array<{ id: number; name: string }>;
+  signalOptions: RuleSignalOption[];
   csrfToken?: string | null;
   notice?: string | null;
+  error?: string | null;
 }): string {
   const { rule, draft, categories } = opts;
+  const signalOptions = Array.isArray(opts.signalOptions) ? opts.signalOptions : [];
   const csrfToken = opts.csrfToken ? String(opts.csrfToken) : '';
   const notice = opts.notice ? String(opts.notice) : '';
+  const error = opts.error ? String(opts.error) : '';
 
   const titleValue = rule.title ? String(rule.title) : '';
   const categoryIdValue = rule.category_id != null ? String(rule.category_id) : '';
@@ -3085,12 +3515,16 @@ function renderRuleDraftEditPage(opts: {
   const disallowedId = `rule_draft_disallowed_${String(rule.id)}`;
   const guidanceModeratorsId = `rule_draft_guidance_moderators_${String(rule.id)}`;
   const guidanceAgentsId = `rule_draft_guidance_agents_${String(rule.id)}`;
+  const contractState = buildRuleContractFormState({ ...rule, ...draft });
 
   const ruleId = encodeURIComponent(String(rule.id))
   let body = `<h1>Edit Draft: ${escapeHtml(String(rule.slug || rule.title || 'Rule'))}</h1>`;
   body += `<div class="toolbar"><div><a href="${escapeHtml(MODERATION_RULE_ADMIN_PATHS.list)}">\u2190 Back to rules</a></div></div>`;
   if (notice) {
     body += `<div class="success">${escapeHtml(notice)}</div>`;
+  }
+  if (error) {
+    body += `<div class="error">${escapeHtml(error)}</div>`;
   }
 
   body += `<form method="post" action="${escapeHtml(getModerationAdminSectionPath('rules', `${ruleId}/edit`))}">`;
@@ -3116,6 +3550,11 @@ function renderRuleDraftEditPage(opts: {
   body += `<label>Short Description
     <textarea name="shortDescription" style="min-height: 90px">${escapeHtml(shortDescriptionValue)}</textarea>
   </label>`;
+
+  body += renderRuleContractFields({
+    state: contractState,
+    signalOptions,
+  });
 
   body += `<label for="${escapeHtml(mdId)}">Long Description</label>`;
   body += `<textarea id="${escapeHtml(mdId)}" name="markdown" data-md-wysiwyg="1" data-md-initial-html="${escapeHtml(htmlValue)}">${escapeHtml(markdownValue)}</textarea>`;
@@ -3170,7 +3609,7 @@ function renderRuleDraftEditPage(opts: {
     title: 'Edit Rule Draft',
     bodyHtml: body,
     active: 'moderation_rules',
-    canonicalSections: { rules: true, categories: true, cultures: true },
+    canonicalSections: { rules: true, categories: true, cultures: true, signals: true },
   });
 }
 
@@ -3296,6 +3735,7 @@ function renderRuleListPage(
 function renderRuleForm(opts: {
   rule?: any;
   categories?: Array<{ id: number; name: string }>;
+  signalOptions?: RuleSignalOption[];
   error?: string | null;
   success?: string | null;
   csrfToken?: string | null;
@@ -3303,6 +3743,7 @@ function renderRuleForm(opts: {
 }): string {
   const rule = opts.rule ?? {};
   const categories = Array.isArray(opts.categories) ? opts.categories : [];
+  const signalOptions = Array.isArray(opts.signalOptions) ? opts.signalOptions : [];
   const error = opts.error;
   const success = opts.success;
   const csrfToken = opts.csrfToken ? String(opts.csrfToken) : '';
@@ -3337,6 +3778,7 @@ function renderRuleForm(opts: {
     ? String(rule.guidance_agents_html)
     : '';
   const changeSummaryValue = rule.change_summary ? String(rule.change_summary) : '';
+  const contractState = buildRuleContractFormState(rule);
   const baseAction = isEdit
     ? getModerationAdminSectionPath('rules', encodeURIComponent(String(rule.id)))
     : MODERATION_RULE_ADMIN_PATHS.list;
@@ -3393,6 +3835,10 @@ function renderRuleForm(opts: {
   body += `<label>Short Description
     <textarea name="shortDescription" style="min-height: 90px">${escapeHtml(shortDescriptionValue)}</textarea>
   </label>`;
+  body += renderRuleContractFields({
+    state: contractState,
+    signalOptions,
+  });
   const mdId = `rule_markdown_${isNewVersion ? 'v' : 'r'}_${rule.id ? String(rule.id) : 'new'}`;
   const allowedId = `rule_allowed_${isNewVersion ? 'v' : 'r'}_${rule.id ? String(rule.id) : 'new'}`;
   const disallowedId = `rule_disallowed_${isNewVersion ? 'v' : 'r'}_${rule.id ? String(rule.id) : 'new'}`;
@@ -3448,7 +3894,7 @@ function renderRuleForm(opts: {
     title,
     bodyHtml: body,
     active: 'moderation_rules',
-    canonicalSections: { rules: true, categories: true, cultures: true },
+    canonicalSections: { rules: true, categories: true, cultures: true, signals: true },
   });
 }
 
@@ -3540,12 +3986,16 @@ async function handleModerationRuleEditForm(req: any, res: any) {
 
     const draft = await getOrCreateRuleDraft(id);
     if (!draft) return res.status(404).send('Rule not found');
+    draft.rule_signal_ids = await moderationSignals.listRuleSignalIds(id)
 
-    const categories = await listRuleCategories();
+    const [categories, signalOptions] = await Promise.all([
+      listRuleCategories(),
+      listRuleSignalOptions(),
+    ]);
     const cookies = parseCookies(req.headers.cookie);
     const csrfToken = cookies['csrf'] || '';
     const notice = req.query && (req.query as any).notice ? String((req.query as any).notice) : '';
-    const doc = renderRuleDraftEditPage({ rule, draft, categories, csrfToken, notice });
+    const doc = renderRuleDraftEditPage({ rule, draft, categories, signalOptions, csrfToken, notice });
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.send(doc);
   } catch (err) {
@@ -3615,12 +4065,49 @@ async function handleModerationRuleEdit(req: any, res: any) {
     }
 
     const title = rawTitle.trim() || String(rule.title || '');
+    const [categories, signalOptions] = await Promise.all([
+      listRuleCategories(),
+      listRuleSignalOptions(),
+    ]);
+    const contractInput = parseRuleContractInput(body, signalOptions, rule.slug)
+    if (!contractInput.value) {
+      await conn.rollback();
+      const cookies = parseCookies(req.headers.cookie);
+      const csrfToken = cookies['csrf'] || '';
+      const doc = renderRuleDraftEditPage({
+        rule: {
+          ...rule,
+          title,
+          category_id: categoryId,
+        },
+        draft: {
+          ...body,
+          markdown,
+          short_description: shortDescription,
+          allowed_examples_markdown: allowedExamplesMarkdown,
+          disallowed_examples_markdown: disallowedExamplesMarkdown,
+          guidance_moderators_markdown: guidanceModeratorsMarkdown,
+          guidance_agents_markdown: guidanceAgentsMarkdown,
+          issue_id: contractInput.state.issue_id,
+          issue_class: contractInput.state.issue_class,
+          ai_spec_text: contractInput.state.ai_spec_text,
+          selected_signal_ids: contractInput.state.selected_signal_ids,
+        },
+        categories,
+        signalOptions,
+        csrfToken,
+        error: contractInput.error,
+      });
+      res.set('Content-Type', 'text/html; charset=utf-8');
+      return res.status(400).send(doc);
+    }
 
     // Ensure draft exists inside the transaction.
     const [draftRows] = await conn.query(`SELECT rule_id FROM rule_drafts WHERE rule_id = ? LIMIT 1`, [id]);
     if (!(draftRows as any[])?.length) {
       const [baseRows] = await conn.query(
         `SELECT markdown, html,
+                issue_id, issue_class, ai_spec_json,
                 short_description,
                 allowed_examples_markdown, allowed_examples_html,
                 disallowed_examples_markdown, disallowed_examples_html,
@@ -3652,7 +4139,7 @@ async function handleModerationRuleEdit(req: any, res: any) {
 
       await conn.query(
         `INSERT INTO rule_drafts (
-           rule_id, markdown, html,
+           rule_id, issue_id, issue_class, ai_spec_json, markdown, html,
            short_description,
            allowed_examples_markdown, allowed_examples_html,
            disallowed_examples_markdown, disallowed_examples_html,
@@ -3661,9 +4148,12 @@ async function handleModerationRuleEdit(req: any, res: any) {
            guidance_agents_markdown, guidance_agents_html,
            updated_by
          )
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           id,
+          String(base.issue_id || '').trim() || inferRuleIssueIdFromSlug(rule.slug),
+          normalizeRuleIssueClassInput(base.issue_class || 'unknown'),
+          JSON.stringify(parseRuleAiSpecCell(base.ai_spec_json)),
           String(base.markdown || ''),
           String(base.html || ''),
           base.short_description != null ? String(base.short_description) : null,
@@ -3701,7 +4191,8 @@ async function handleModerationRuleEdit(req: any, res: any) {
 
     await conn.query(
       `UPDATE rule_drafts
-          SET markdown = ?, html = ?,
+          SET issue_id = ?, issue_class = ?, ai_spec_json = ?,
+              markdown = ?, html = ?,
               short_description = ?,
               allowed_examples_markdown = ?, allowed_examples_html = ?,
               disallowed_examples_markdown = ?, disallowed_examples_html = ?,
@@ -3711,6 +4202,9 @@ async function handleModerationRuleEdit(req: any, res: any) {
               updated_by = ?, updated_at = CURRENT_TIMESTAMP
         WHERE rule_id = ?`,
       [
+        contractInput.value.issueId,
+        contractInput.value.issueClass,
+        JSON.stringify(contractInput.value.aiSpecJson),
         markdown,
         html,
         shortDescription || null,
@@ -3742,7 +4236,7 @@ async function handleModerationRuleEdit(req: any, res: any) {
 
       const insertRes = await conn.query(
         `INSERT INTO rule_versions (
-           rule_id, version,
+           rule_id, version, issue_id, issue_class, ai_spec_json,
            markdown, html,
            short_description,
            allowed_examples_markdown, allowed_examples_html,
@@ -3753,10 +4247,13 @@ async function handleModerationRuleEdit(req: any, res: any) {
            change_summary,
            created_by
          )
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           id,
           nextVersion,
+          contractInput.value.issueId,
+          contractInput.value.issueClass,
+          JSON.stringify(contractInput.value.aiSpecJson),
           markdown,
           html,
           shortDescription || null,
@@ -3786,6 +4283,7 @@ async function handleModerationRuleEdit(req: any, res: any) {
           WHERE id = ?`,
         [newVersionId, userId, id]
       );
+      await moderationSignals.replaceRuleSignals(id, contractInput.value.signalIds, conn as any)
 
       await conn.commit();
       return res.redirect(
@@ -3837,6 +4335,7 @@ async function handleModerationRuleDelete(req: any, res: any) {
       [id]
     );
 
+    await conn.query(`DELETE FROM rule_signals WHERE rule_id = ?`, [id]);
     await conn.query(`DELETE FROM rule_drafts WHERE rule_id = ?`, [id]);
     await conn.query(`DELETE FROM rule_versions WHERE rule_id = ?`, [id]);
     await conn.query(`DELETE FROM rules WHERE id = ?`, [id]);
@@ -3858,10 +4357,13 @@ pagesRouter.post(
 );
 
 async function handleModerationRulesNew(req: any, res: any) {
-  const categories = await listRuleCategories();
+  const [categories, signalOptions] = await Promise.all([
+    listRuleCategories(),
+    listRuleSignalOptions(),
+  ]);
   const cookies = parseCookies(req.headers.cookie);
   const csrfToken = cookies['csrf'] || '';
-  const doc = renderRuleForm({ rule: {}, categories, error: null, success: null, csrfToken });
+  const doc = renderRuleForm({ rule: {}, categories, signalOptions, error: null, success: null, csrfToken });
   res.set('Content-Type', 'text/html; charset=utf-8');
   res.send(doc);
 }
@@ -3885,13 +4387,27 @@ async function handleModerationRulesCreate(req: any, res: any) {
     const guidanceModeratorsMarkdown = body.guidanceModerators ? String(body.guidanceModerators) : '';
     const guidanceAgentsMarkdown = body.guidanceAgents ? String(body.guidanceAgents) : '';
     const rawCategoryId = body.categoryId != null ? String(body.categoryId) : '';
+    const [categories, signalOptions] = await Promise.all([
+      listRuleCategories(),
+      listRuleSignalOptions(),
+    ]);
 
     const slug = normalizePageSlug(rawSlug);
     if (!slug) {
-      const categories = await listRuleCategories();
       const cookies = parseCookies(req.headers.cookie);
       const csrfToken = cookies['csrf'] || '';
-      const doc = renderRuleForm({ rule: body, categories, error: 'Slug is required and must use only a–z, 0–9, \'-\' and \'/\' (max 4 segments).', success: null, csrfToken });
+      const doc = renderRuleForm({
+        rule: {
+          ...body,
+          ai_spec_text: String(body.aiSpecJson || ''),
+          selected_signal_ids: toStringArrayInput(body.signal_ids),
+        },
+        categories,
+        signalOptions,
+        error: 'Slug is required and must use only a–z, 0–9, \'-\' and \'/\' (max 4 segments).',
+        success: null,
+        csrfToken,
+      });
       res.set('Content-Type', 'text/html; charset=utf-8');
       return res.status(400).send(doc);
     }
@@ -3921,6 +4437,29 @@ async function handleModerationRulesCreate(req: any, res: any) {
       }
     }
 
+    const contractInput = parseRuleContractInput(body, signalOptions, slug)
+    if (!contractInput.value) {
+      const cookies = parseCookies(req.headers.cookie);
+      const csrfToken = cookies['csrf'] || '';
+      const doc = renderRuleForm({
+        rule: {
+          ...body,
+          slug,
+          issue_id: contractInput.state.issue_id,
+          issue_class: contractInput.state.issue_class,
+          ai_spec_text: contractInput.state.ai_spec_text,
+          selected_signal_ids: contractInput.state.selected_signal_ids,
+        },
+        categories,
+        signalOptions,
+        error: contractInput.error,
+        success: null,
+        csrfToken,
+      });
+      res.set('Content-Type', 'text/html; charset=utf-8');
+      return res.status(400).send(doc);
+    }
+
     let ruleId: number;
     let versionId: number;
     try {
@@ -3932,7 +4471,7 @@ async function handleModerationRulesCreate(req: any, res: any) {
       ruleId = Number((insRule as any).insertId);
       const [insVersion] = await db.query(
         `INSERT INTO rule_versions (
-           rule_id, version, markdown, html,
+           rule_id, version, issue_id, issue_class, ai_spec_json, markdown, html,
            short_description,
            allowed_examples_markdown, allowed_examples_html,
            disallowed_examples_markdown, disallowed_examples_html,
@@ -3942,7 +4481,7 @@ async function handleModerationRulesCreate(req: any, res: any) {
            change_summary, created_by
          )
          VALUES (
-           ?, 1, ?, ?,
+           ?, 1, ?, ?, ?, ?, ?,
            ?,
            ?, ?,
            ?, ?,
@@ -3953,6 +4492,9 @@ async function handleModerationRulesCreate(req: any, res: any) {
          )`,
         [
           ruleId,
+          contractInput.value.issueId,
+          contractInput.value.issueClass,
+          JSON.stringify(contractInput.value.aiSpecJson),
           rawMarkdown,
           html,
           shortDescription || null,
@@ -3975,13 +4517,27 @@ async function handleModerationRulesCreate(req: any, res: any) {
         `UPDATE rules SET current_version_id = ? WHERE id = ?`,
         [versionId, ruleId]
       );
+      await moderationSignals.replaceRuleSignals(ruleId, contractInput.value.signalIds)
     } catch (err: any) {
       const msg = String(err?.message || err);
       if (msg.includes('ER_DUP_ENTRY') || msg.includes('uniq_rules_slug')) {
-        const categories = await listRuleCategories();
         const cookies = parseCookies(req.headers.cookie);
         const csrfToken = cookies['csrf'] || '';
-        const doc = renderRuleForm({ rule: body, categories, error: 'Slug already exists. Please choose a different slug.', success: null, csrfToken });
+        const doc = renderRuleForm({
+          rule: {
+            ...body,
+            slug,
+            issue_id: contractInput.state.issue_id,
+            issue_class: contractInput.state.issue_class,
+            ai_spec_text: contractInput.state.ai_spec_text,
+            selected_signal_ids: contractInput.state.selected_signal_ids,
+          },
+          categories,
+          signalOptions,
+          error: 'Slug already exists. Please choose a different slug.',
+          success: null,
+          csrfToken,
+        });
         res.set('Content-Type', 'text/html; charset=utf-8');
         return res.status(400).send(doc);
       }
@@ -4015,7 +4571,7 @@ async function handleModerationRuleDetail(req: any, res: any) {
     const rule = (ruleRows as any[])[0];
     if (!rule) return res.status(404).send('Rule not found');
     const [versionRows] = await db.query(
-      `SELECT id, version, created_at, created_by, change_summary
+      `SELECT id, version, created_at, created_by, change_summary, issue_id, issue_class, ai_spec_json
          FROM rule_versions
         WHERE rule_id = ?
         ORDER BY version DESC`,
@@ -4027,6 +4583,32 @@ async function handleModerationRuleDetail(req: any, res: any) {
     const currentVersionRow = versions.find((v) => v && v.id === rule.current_version_id);
     const currentPublishedAt = currentVersionRow && currentVersionRow.created_at ? String(currentVersionRow.created_at) : '';
     const hasUnpublishedDraft = !!draftUpdatedAt && (currentPublishedAt ? draftUpdatedAt > currentPublishedAt : true);
+    const currentAiSpec = parseRuleAiSpecCell(currentVersionRow?.ai_spec_json)
+    const [linkedSignals, ruleSignalOptions] = await Promise.all([
+      moderationSignals.listRuleSignalIds(rule.id),
+      listRuleSignalOptions(),
+    ])
+    const signalOptionById = new Map(ruleSignalOptions.map((signal) => [signal.signal_id, signal]))
+    const linkedSignalOptions = linkedSignals.map((signalId) => {
+      const existing = signalOptionById.get(signalId)
+      return existing || {
+        signal_id: signalId,
+        label: signalId,
+        status: 'active',
+        description: '',
+        positive_role: false,
+        disruption_role: false,
+      }
+    })
+    const groupedLinkedSignals = splitModerationSignalsByRole(linkedSignalOptions)
+    const renderLinkedSignalSummary = (title: string, signals: RuleSignalOption[], emptyText: string) => {
+      let html = `<div style="margin-top:8px"><strong>${escapeHtml(title)}:</strong> `
+      html += signals.length
+        ? signals.map((signal) => `<code>${escapeHtml(signal.signal_id)}</code>`).join(' ')
+        : `<span class="field-hint">${escapeHtml(emptyText)}</span>`
+      html += `</div>`
+      return html
+    }
 
     const ruleId = encodeURIComponent(String(rule.id));
     let body = `<h1>Rule: ${escapeHtml(rule.slug || rule.title || '')}</h1>`;
@@ -4035,6 +4617,21 @@ async function handleModerationRuleDetail(req: any, res: any) {
     if (draftUpdatedAt) {
       body += `<p><strong>Draft last saved:</strong> ${escapeHtml(draftUpdatedAt)} ${hasUnpublishedDraft ? '<span class="pill">Draft pending</span>' : ''}</p>`;
     }
+    body += `<div class="section">`
+    body += `<div class="section-title">Moderation Contract</div>`
+    body += `<div><strong>Current Issue ID:</strong> ${escapeHtml(String(currentVersionRow?.issue_id || inferRuleIssueIdFromSlug(rule.slug) || '-'))}</div>`
+    body += `<div><strong>Current Issue Class:</strong> ${escapeHtml(normalizeRuleIssueClassInput(currentVersionRow?.issue_class || 'unknown'))}</div>`
+    body += renderLinkedSignalSummary('Linked Positive Signals', groupedLinkedSignals.positive, 'No linked positive signals.')
+    body += renderLinkedSignalSummary('Linked Disruptive Signals', groupedLinkedSignals.disruption, 'No linked disruptive signals.')
+    if (groupedLinkedSignals.mixedOrUnclassified.length) {
+      body += renderLinkedSignalSummary(
+        'Linked Mixed / Unclassified Signals',
+        groupedLinkedSignals.mixedOrUnclassified,
+        'No linked mixed or unclassified signals.'
+      )
+    }
+    body += `<details style="margin-top:10px"><summary>AI Spec JSON</summary><pre style="white-space:pre-wrap">${escapeHtml(JSON.stringify(currentAiSpec, null, 2))}</pre></details>`
+    body += `</div>`
     if (!versions.length) {
       body += '<p>No versions exist yet.</p>';
     } else {
@@ -4053,7 +4650,7 @@ async function handleModerationRuleDetail(req: any, res: any) {
       title: 'Rule detail',
       bodyHtml: body,
       active: 'moderation_rules',
-      canonicalSections: { rules: true, categories: true, cultures: true },
+      canonicalSections: { rules: true, categories: true, cultures: true, signals: true },
     });
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.send(doc);
@@ -4091,7 +4688,7 @@ async function handleModerationRuleVersionNewForm(req: any, res: any) {
     let draft: any = { id: rule.id, slug: rule.slug, title: rule.title, category_name: rule.category_name };
     if (rule.current_version_id) {
       const [verRows] = await db.query(
-        `SELECT markdown, html, change_summary, short_description,
+        `SELECT markdown, html, change_summary, issue_id, issue_class, ai_spec_json, short_description,
                 allowed_examples_markdown, allowed_examples_html,
                 disallowed_examples_markdown, disallowed_examples_html,
                 guidance_markdown, guidance_html,
@@ -4116,6 +4713,9 @@ async function handleModerationRuleVersionNewForm(req: any, res: any) {
           markdown: v.markdown,
           html: v.html,
           change_summary: '',
+          issue_id: v.issue_id,
+          issue_class: v.issue_class,
+          ai_spec_json: v.ai_spec_json,
           short_description: v.short_description,
           allowed_examples_markdown: v.allowed_examples_markdown,
           allowed_examples_html: v.allowed_examples_html,
@@ -4128,9 +4728,11 @@ async function handleModerationRuleVersionNewForm(req: any, res: any) {
         };
       }
     }
+    draft.rule_signal_ids = await moderationSignals.listRuleSignalIds(rule.id)
+    const signalOptions = await listRuleSignalOptions()
     const cookies = parseCookies(req.headers.cookie);
     const csrfToken = cookies['csrf'] || '';
-    const doc = renderRuleForm({ rule: draft, error: null, success: null, csrfToken, isNewVersion: true });
+    const doc = renderRuleForm({ rule: draft, signalOptions, error: null, success: null, csrfToken, isNewVersion: true });
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.send(doc);
   } catch (err) {
@@ -4171,6 +4773,36 @@ async function handleModerationRuleVersionCreate(req: any, res: any) {
     );
     const rule = (ruleRows as any[])[0];
     if (!rule) return res.status(404).send('Rule not found');
+    const signalOptions = await listRuleSignalOptions()
+    const contractInput = parseRuleContractInput(body, signalOptions, rule.slug)
+    if (!contractInput.value) {
+      const cookies = parseCookies(req.headers.cookie)
+      const csrfToken = cookies['csrf'] || ''
+      const doc = renderRuleForm({
+        rule: {
+          id: rule.id,
+          slug: rule.slug,
+          title: rule.title,
+          markdown: rawMarkdown,
+          short_description: shortDescription,
+          allowed_examples_markdown: allowedExamplesMarkdown,
+          disallowed_examples_markdown: disallowedExamplesMarkdown,
+          guidance_moderators_markdown: guidanceModeratorsMarkdown,
+          guidance_agents_markdown: guidanceAgentsMarkdown,
+          issue_id: contractInput.state.issue_id,
+          issue_class: contractInput.state.issue_class,
+          ai_spec_text: contractInput.state.ai_spec_text,
+          selected_signal_ids: contractInput.state.selected_signal_ids,
+        },
+        signalOptions,
+        error: contractInput.error,
+        success: null,
+        csrfToken,
+        isNewVersion: true,
+      })
+      res.set('Content-Type', 'text/html; charset=utf-8')
+      return res.status(400).send(doc)
+    }
 
     const [maxRows] = await db.query(
       `SELECT MAX(version) AS max_version FROM rule_versions WHERE rule_id = ?`,
@@ -4192,7 +4824,7 @@ async function handleModerationRuleVersionCreate(req: any, res: any) {
 
     const [insVersion] = await db.query(
       `INSERT INTO rule_versions (
-         rule_id, version, markdown, html,
+         rule_id, version, issue_id, issue_class, ai_spec_json, markdown, html,
          short_description,
          allowed_examples_markdown, allowed_examples_html,
          disallowed_examples_markdown, disallowed_examples_html,
@@ -4202,7 +4834,7 @@ async function handleModerationRuleVersionCreate(req: any, res: any) {
          change_summary, created_by
        )
        VALUES (
-         ?, ?, ?, ?,
+         ?, ?, ?, ?, ?, ?, ?,
          ?,
          ?, ?,
          ?, ?,
@@ -4214,6 +4846,9 @@ async function handleModerationRuleVersionCreate(req: any, res: any) {
       [
         rule.id,
         nextVersion,
+        contractInput.value.issueId,
+        contractInput.value.issueClass,
+        JSON.stringify(contractInput.value.aiSpecJson),
         rawMarkdown,
         html,
         shortDescription || null,
@@ -4236,6 +4871,7 @@ async function handleModerationRuleVersionCreate(req: any, res: any) {
       `UPDATE rules SET current_version_id = ?, updated_by = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
       [versionId, userId, rule.id]
     );
+    await moderationSignals.replaceRuleSignals(rule.id, contractInput.value.signalIds)
 
     res.redirect(getModerationAdminSectionPath('rules', encodeURIComponent(String(rule.id))));
   } catch (err) {
@@ -5096,27 +5732,56 @@ function renderModerationSignalListPage(opts: {
   body += '</div>'
   body += '</form>'
 
-  body += '<div class="section">'
-  body += '<div class="section-title">Signals</div>'
   if (!opts.signals.length) {
-    body += '<div class="field-hint">No signals matched the current filter. Use Seed Baseline Signals to load the current shared vocabulary, or create a new signal manually.</div>'
+    body += '<div class="section"><div class="field-hint">No signals matched the current filter. Use Seed Baseline Signals to load the current shared vocabulary, or create a new signal manually.</div></div>'
   } else {
-    body += '<table><thead><tr><th>Signal</th><th>Status</th><th>Description</th><th>Rules</th><th>Positive Cultures</th><th>Disruption Cultures</th><th>Future Mapping</th></tr></thead><tbody>'
-    for (const signal of opts.signals) {
-      const detailHref = getModerationAdminSectionPath('signals', encodeURIComponent(signal.signal_id))
-      body += '<tr>'
-      body += `<td><div style="display:grid;gap:4px"><a href="${escapeHtml(detailHref)}"><strong>${escapeHtml(signal.label)}</strong></a><code>${escapeHtml(signal.signal_id)}</code></div></td>`
-      body += `<td>${escapeHtml(formatModerationSignalStatus(signal.status))}</td>`
-      body += `<td>${escapeHtml(signal.short_description || signal.long_description || '-')}</td>`
-      body += `<td>${escapeHtml(String(signal.usage_counts.rules))}</td>`
-      body += `<td>${escapeHtml(String(signal.usage_counts.culture_positive))}</td>`
-      body += `<td>${escapeHtml(String(signal.usage_counts.culture_disruption))}</td>`
-      body += `<td>${escapeHtml(String(signal.usage_counts.future_mappings))}</td>`
-      body += '</tr>'
+    const groupedSignals = splitModerationSignalsByRole(
+      opts.signals.map((signal) => ({
+        ...signal,
+        ...getModerationSignalRoleFlags(signal),
+      }))
+    )
+    const renderSignalTable = (
+      title: string,
+      signals: Array<Awaited<ReturnType<typeof moderationSignals.listSignalsForAdmin>>[number] & {
+        positive_role: boolean
+        disruption_role: boolean
+      }>,
+      emptyText: string
+    ) => {
+      let html = `<div class="section" style="margin-top: 12px">`
+      html += `<div class="section-title">${escapeHtml(title)}</div>`
+      if (!signals.length) {
+        html += `<div class="field-hint">${escapeHtml(emptyText)}</div>`
+      } else {
+        html += '<table><thead><tr><th>Signal</th><th>Status</th><th>Description</th><th>Rules</th><th>Positive Cultures</th><th>Disruption Cultures</th><th>Future Mapping</th></tr></thead><tbody>'
+        for (const signal of signals) {
+          const detailHref = getModerationAdminSectionPath('signals', encodeURIComponent(signal.signal_id))
+          html += '<tr>'
+          html += `<td><div style="display:grid;gap:4px"><a href="${escapeHtml(detailHref)}"><strong>${escapeHtml(signal.label)}</strong></a><code>${escapeHtml(signal.signal_id)}</code></div></td>`
+          html += `<td>${escapeHtml(formatModerationSignalStatus(signal.status))}</td>`
+          html += `<td>${escapeHtml(signal.short_description || signal.long_description || '-')}</td>`
+          html += `<td>${escapeHtml(String(signal.usage_counts.rules))}</td>`
+          html += `<td>${escapeHtml(String(signal.usage_counts.culture_positive))}</td>`
+          html += `<td>${escapeHtml(String(signal.usage_counts.culture_disruption))}</td>`
+          html += `<td>${escapeHtml(String(signal.usage_counts.future_mappings))}</td>`
+          html += '</tr>'
+        }
+        html += '</tbody></table>'
+      }
+      html += '</div>'
+      return html
     }
-    body += '</tbody></table>'
+    body += renderSignalTable('Positive Signals', groupedSignals.positive, 'No positive-role signals matched the current filter.')
+    body += renderSignalTable('Disruptive Signals', groupedSignals.disruption, 'No disruptive-role signals matched the current filter.')
+    if (groupedSignals.mixedOrUnclassified.length) {
+      body += renderSignalTable(
+        'Mixed / Unclassified Signals',
+        groupedSignals.mixedOrUnclassified,
+        'No mixed or unclassified signals matched the current filter.'
+      )
+    }
   }
-  body += '</div>'
 
   return renderModerationAdminPage({
     title: 'Moderation Signals',
