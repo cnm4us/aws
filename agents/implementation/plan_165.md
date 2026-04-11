@@ -63,7 +63,7 @@ Status: Active
 ## Phase Status
 - A: Complete
 - B: Complete
-- C: Pending
+- C: Complete
 - D: Pending
 - E: Pending
 
@@ -143,6 +143,7 @@ Status: Active
 - 2026-04-11 — Plan drafted to evolve moderation signals from metadata-inferred positive/disruptive grouping to first-class required `polarity` + `signal_family` classification, while preserving the current top-level admin grouping and existing rule/culture references.
 - 2026-04-11 — Phase A completed: added first-class `polarity` and `signal_family` persistence fields on `moderation_signals`, introduced controlled vocabulary and classification helpers in the moderation-signals feature module, and updated repo/service normalization so current reads/writes expose a consistent classification model without requiring the Phase C admin form changes yet.
 - 2026-04-11 — Phase B completed: added explicit moderation-signal classification backfill and verification commands, persisted classification onto all existing registry rows, and confirmed the current catalog has zero missing or unresolved `polarity` / `signal_family` assignments. The current registry did not surface any deferred singularization alias IDs in live storage during verification.
+- 2026-04-11 — Phase C started: updated the moderation signals admin list/detail/new/edit flows to expose first-class `polarity` and `signal_family`, added polarity/family list filtering with family-by-polarity constraint behavior in the UI, and switched the signals admin list grouping to stored polarity rather than metadata inference. Manual verification of `/admin/moderation/signals` create/edit/filter behavior passed, so Phase C is complete and the next checkpoint is Phase D rule/culture compatibility cleanup.
 
 ## Validation
 - Environment:
@@ -152,12 +153,14 @@ Status: Active
   - `node <<'EOF' ... ensureSchema(db) ... EOF`
   - `npm run moderation:signals:classification:backfill`
   - `npm run moderation:signals:classification:verify`
+  - `npm run build`
 - Evidence files:
   - `agents/features/feature_18_signals_evolution.md`
   - `src/features/moderation-signals/types.ts`
   - `src/features/moderation-signals/classification.ts`
   - `src/features/moderation-signals/repo.ts`
   - `src/features/moderation-signals/service.ts`
+  - `src/routes/pages.ts`
   - `scripts/backfill-moderation-signal-classification.ts`
   - `scripts/verify-moderation-signal-classification.ts`
   - `src/db.ts`
@@ -178,6 +181,6 @@ Status: Active
 
 ## Resume Here
 - Next action:
-  - Begin Phase C by surfacing `signal_family` in the moderation signals admin UI, adding family filtering, and making polarity/family first-class required form fields.
+  - Begin Phase D by switching rule and culture signal grouping to rely on persisted polarity everywhere, then remove no-longer-needed metadata-role fallback behavior where safe.
 - Blocking question (if any):
   - none

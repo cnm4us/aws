@@ -146,6 +146,8 @@ function normalizeSignalFamily(
 
 export async function listSignals(params?: {
   status?: ModerationSignalStatus | 'all'
+  polarity?: ModerationSignalPolarity | 'all'
+  signalFamily?: ModerationSignalFamily | 'all'
   search?: string
   limit?: number
   db?: DbLike
@@ -157,6 +159,16 @@ export async function listSignals(params?: {
   if (status && status !== 'all') {
     where.push('ms.status = ?')
     args.push(status)
+  }
+  const polarity = String(params?.polarity || 'all').trim().toLowerCase()
+  if (polarity && polarity !== 'all') {
+    where.push('ms.polarity = ?')
+    args.push(polarity)
+  }
+  const signalFamily = String(params?.signalFamily || 'all').trim().toLowerCase()
+  if (signalFamily && signalFamily !== 'all') {
+    where.push('ms.signal_family = ?')
+    args.push(signalFamily)
   }
   const search = String(params?.search || '').trim()
   if (search) {

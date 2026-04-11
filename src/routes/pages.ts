@@ -1848,13 +1848,23 @@ type CultureSignalOption = {
   label: string
   status: string
   description: string
+  polarity: string
+  signal_family: string
   positive_role: boolean
   disruption_role: boolean
 }
 
 function getModerationSignalRoleFlags(source: {
+  polarity?: unknown
   metadata_json?: unknown
 } | null | undefined): { positive_role: boolean; disruption_role: boolean } {
+  const storedPolarity = String(source?.polarity || '').trim().toLowerCase()
+  if (storedPolarity === 'positive') {
+    return { positive_role: true, disruption_role: false }
+  }
+  if (storedPolarity === 'disruptive') {
+    return { positive_role: false, disruption_role: true }
+  }
   const metadata = source?.metadata_json && typeof source.metadata_json === 'object'
     ? (source.metadata_json as Record<string, unknown>)
     : {}
@@ -1892,6 +1902,21 @@ function splitModerationSignalsByRole<T extends {
   return { positive, disruption, mixedOrUnclassified }
 }
 
+function splitModerationSignalsByPolarity<T extends {
+  polarity?: unknown
+}>(signals: T[]) {
+  const positive: T[] = []
+  const disruption: T[] = []
+  const mixedOrUnclassified: T[] = []
+  for (const signal of signals) {
+    const polarity = String(signal.polarity || '').trim().toLowerCase()
+    if (polarity === 'positive') positive.push(signal)
+    else if (polarity === 'disruptive') disruption.push(signal)
+    else mixedOrUnclassified.push(signal)
+  }
+  return { positive, disruption, mixedOrUnclassified }
+}
+
 async function listCultureSignalOptions(): Promise<CultureSignalOption[]> {
   try {
     const signals = await moderationSignals.listSignalsForAdmin({ status: 'all', limit: 500 })
@@ -1900,6 +1925,8 @@ async function listCultureSignalOptions(): Promise<CultureSignalOption[]> {
       label: signal.label,
       status: signal.status,
       description: signal.short_description || signal.long_description || '',
+      polarity: signal.polarity,
+      signal_family: signal.signal_family,
       ...getModerationSignalRoleFlags(signal),
     }))
   } catch {
@@ -2298,6 +2325,8 @@ function renderCultureDetailPage(opts: {
         label: signalId,
         status: 'active',
         description: 'Currently selected but not yet role-tagged in registry metadata.',
+        polarity: role === 'positive' ? 'positive' : 'disruptive',
+        signal_family: role === 'positive' ? 'tone_positive' : 'discourse_quality',
         positive_role: role === 'positive',
         disruption_role: role === 'disruption',
       })
@@ -3004,6 +3033,8 @@ type RuleSignalOption = {
   label: string
   status: string
   description: string
+  polarity: string
+  signal_family: string
   positive_role: boolean
   disruption_role: boolean
 }
@@ -3227,6 +3258,8 @@ async function listRuleSignalOptions(): Promise<RuleSignalOption[]> {
       label: signal.label,
       status: signal.status,
       description: signal.short_description || signal.long_description || '',
+      polarity: signal.polarity,
+      signal_family: signal.signal_family,
       ...getModerationSignalRoleFlags(signal),
     }))
   } catch {
@@ -4596,6 +4629,8 @@ async function handleModerationRuleDetail(req: any, res: any) {
         label: signalId,
         status: 'active',
         description: '',
+        polarity: '',
+        signal_family: '',
         positive_role: false,
         disruption_role: false,
       }
@@ -5613,6 +5648,29 @@ function normalizeModerationSignalStatusInput(value: unknown): string {
   return 'draft'
 }
 
+function normalizeModerationSignalPolarityInput(value: unknown): string {
+  const normalized = String(value || '').trim().toLowerCase()
+  if ((moderationSignals.MODERATION_SIGNAL_POLARITIES as readonly string[]).includes(normalized)) {
+    return normalized
+  }
+  return 'positive'
+}
+
+function normalizeModerationSignalFamilyInput(polarity: unknown, value: unknown): string {
+  const normalizedPolarity = normalizeModerationSignalPolarityInput(polarity)
+  const normalizedValue = String(value || '').trim().toLowerCase()
+  if (
+    moderationSignals
+      .getAllowedSignalFamiliesForPolarity(normalizedPolarity as any)
+      .includes(normalizedValue as any)
+  ) {
+    return normalizedValue
+  }
+  return String(
+    moderationSignals.getAllowedSignalFamiliesForPolarity(normalizedPolarity as any)[0] || ''
+  )
+}
+
 function formatModerationSignalStatus(status: string): string {
   return String(status || '')
     .split(/[_-]+/)
@@ -5621,7 +5679,24 @@ function formatModerationSignalStatus(status: string): string {
     .join(' ')
 }
 
+function formatModerationSignalPolarity(polarity: string): string {
+  return String(polarity || '')
+    .split(/[_-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
+
+function formatModerationSignalFamily(family: string): string {
+  return String(family || '')
+    .split(/[_-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
+
 function buildModerationSignalFormState(source?: any) {
+  const polarity = normalizeModerationSignalPolarityInput(source?.polarity || 'positive')
   return {
     signal_id: String(source?.signal_id || '').trim(),
     label: String(source?.label || '').trim(),
@@ -5629,6 +5704,8 @@ function buildModerationSignalFormState(source?: any) {
       source?.short_description == null ? '' : String(source.short_description),
     long_description:
       source?.long_description == null ? '' : String(source.long_description),
+    polarity,
+    signal_family: normalizeModerationSignalFamilyInput(polarity, source?.signal_family),
     status: normalizeModerationSignalStatusInput(source?.status || 'draft'),
     metadata_text:
       source?.metadata_text != null
@@ -5639,13 +5716,55 @@ function buildModerationSignalFormState(source?: any) {
   }
 }
 
+function parseModerationSignalClassificationInput(source: any): {
+  polarity: string | null
+  signalFamily: string | null
+  error: string | null
+} {
+  const rawPolarity = String(source?.polarity || '').trim().toLowerCase()
+  if (!(moderationSignals.MODERATION_SIGNAL_POLARITIES as readonly string[]).includes(rawPolarity)) {
+    return {
+      polarity: null,
+      signalFamily: null,
+      error: 'Polarity is required.',
+    }
+  }
+  const rawSignalFamily = String(source?.signal_family || '').trim().toLowerCase()
+  if (!rawSignalFamily) {
+    return {
+      polarity: rawPolarity,
+      signalFamily: null,
+      error: 'Signal family is required.',
+    }
+  }
+  if (
+    !moderationSignals
+      .getAllowedSignalFamiliesForPolarity(rawPolarity as any)
+      .includes(rawSignalFamily as any)
+  ) {
+    return {
+      polarity: rawPolarity,
+      signalFamily: null,
+      error: 'Signal family must match the selected polarity.',
+    }
+  }
+  return {
+    polarity: rawPolarity,
+    signalFamily: rawSignalFamily,
+    error: null,
+  }
+}
+
 function renderModerationSignalFormFields(opts: {
   state: ReturnType<typeof buildModerationSignalFormState>
   mode: 'new' | 'detail'
+  formIdPrefix: string
   metadataError?: string | null
 }) {
   const state = opts.state
   const readOnlyId = opts.mode === 'detail'
+  const polarityId = `${opts.formIdPrefix}-polarity`
+  const familyId = `${opts.formIdPrefix}-signal-family`
   let body = ''
   body += `<label>Signal ID
     <input type="text" name="signal_id" value="${escapeHtml(state.signal_id)}"${readOnlyId ? ' readonly' : ''} />
@@ -5663,6 +5782,28 @@ function renderModerationSignalFormFields(opts: {
     <textarea name="long_description" style="min-height:160px">${escapeHtml(state.long_description)}</textarea>
     <div class="field-hint">Longer usage guidance, nuance, and interpretation notes for operators.</div>
   </label>`
+  body += `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px">`
+  body += `<label>Polarity
+    <select id="${escapeHtml(polarityId)}" name="polarity" data-signal-polarity-select>`
+  for (const value of moderationSignals.MODERATION_SIGNAL_POLARITIES) {
+    const selected = state.polarity === value ? ' selected' : ''
+    body += `<option value="${escapeHtml(value)}"${selected}>${escapeHtml(formatModerationSignalPolarity(value))}</option>`
+  }
+  body += `</select>
+    <div class="field-hint">Top-level operator grouping. Use positive for constructive signals and disruptive for harmful or failing signals.</div>
+  </label>`
+  body += `<label>Signal Family
+    <select id="${escapeHtml(familyId)}" name="signal_family" data-signal-family-select>`
+  for (const polarity of moderationSignals.MODERATION_SIGNAL_POLARITIES) {
+    for (const family of moderationSignals.getAllowedSignalFamiliesForPolarity(polarity as any)) {
+      const selected = state.signal_family === family ? ' selected' : ''
+      body += `<option value="${escapeHtml(family)}" data-polarity="${escapeHtml(polarity)}"${selected}>${escapeHtml(formatModerationSignalFamily(family))}</option>`
+    }
+  }
+  body += `</select>
+    <div class="field-hint">Normalized internal classification. Available families are constrained by the selected polarity.</div>
+  </label>`
+  body += `</div>`
   body += `<label>Status
     <select name="status">`
   for (const value of moderationSignals.MODERATION_SIGNAL_STATUSES) {
@@ -5679,6 +5820,30 @@ function renderModerationSignalFormFields(opts: {
   if (opts.metadataError) {
     body += `<div class="error">${escapeHtml(String(opts.metadataError))}</div>`
   }
+  body += `<script>
+    (() => {
+      const polaritySelect = document.getElementById(${JSON.stringify(polarityId)});
+      const familySelect = document.getElementById(${JSON.stringify(familyId)});
+      if (!polaritySelect || !familySelect) return;
+      const syncFamilies = () => {
+        const polarity = String(polaritySelect.value || '').trim().toLowerCase();
+        const options = Array.from(familySelect.options || []);
+        let firstVisible = '';
+        let hasSelectedVisible = false;
+        for (const option of options) {
+          const optionPolarity = String(option.getAttribute('data-polarity') || '').trim().toLowerCase();
+          const visible = !polarity || optionPolarity === polarity;
+          option.hidden = !visible;
+          option.disabled = !visible;
+          if (visible && !firstVisible) firstVisible = option.value;
+          if (visible && option.value === familySelect.value) hasSelectedVisible = true;
+        }
+        if (!hasSelectedVisible && firstVisible) familySelect.value = firstVisible;
+      };
+      polaritySelect.addEventListener('change', syncFamilies);
+      syncFamilies();
+    })();
+  </script>`
   return body
 }
 
@@ -5687,12 +5852,16 @@ function renderModerationSignalListPage(opts: {
   signals: Awaited<ReturnType<typeof moderationSignals.listSignalsForAdmin>>
   query: string
   statusFilter: string
+  polarityFilter: string
+  familyFilter: string
   notice?: string
   error?: string
   csrfToken?: string
 }) {
   const query = String(opts.query || '')
   const statusFilter = String(opts.statusFilter || 'all')
+  const polarityFilter = String(opts.polarityFilter || 'all')
+  const familyFilter = String(opts.familyFilter || 'all')
   const notice = String(opts.notice || '')
   const error = String(opts.error || '')
   const csrfToken = String(opts.csrfToken || '')
@@ -5717,7 +5886,7 @@ function renderModerationSignalListPage(opts: {
 
   body += `<form method="get" action="${escapeHtml(MODERATION_SIGNAL_ADMIN_PATHS.list)}" class="section">`
   body += '<div class="section-title">Search & Filter</div>'
-  body += '<div style="display:grid;grid-template-columns:2fr 1fr auto;gap:12px;align-items:end">'
+  body += '<div style="display:grid;grid-template-columns:minmax(240px,2fr) repeat(3,minmax(180px,1fr)) auto;gap:12px;align-items:end">'
   body += `<label style="margin:0">Search
     <input type="text" name="q" value="${escapeHtml(query)}" placeholder="signal ID, label, or description" />
   </label>`
@@ -5728,25 +5897,62 @@ function renderModerationSignalListPage(opts: {
     body += `<option value="${escapeHtml(value)}"${selected}>${escapeHtml(formatModerationSignalStatus(value))}</option>`
   }
   body += '</select></label>'
+  body += '<label style="margin:0">Polarity<select name="polarity" id="signal-list-polarity">'
+  body += `<option value="all"${polarityFilter === 'all' ? ' selected' : ''}>All polarities</option>`
+  for (const value of moderationSignals.MODERATION_SIGNAL_POLARITIES) {
+    const selected = polarityFilter === value ? ' selected' : ''
+    body += `<option value="${escapeHtml(value)}"${selected}>${escapeHtml(formatModerationSignalPolarity(value))}</option>`
+  }
+  body += '</select></label>'
+  body += '<label style="margin:0">Signal Family<select name="family" id="signal-list-family">'
+  body += `<option value="all"${familyFilter === 'all' ? ' selected' : ''}>All families</option>`
+  for (const polarity of moderationSignals.MODERATION_SIGNAL_POLARITIES) {
+    for (const family of moderationSignals.getAllowedSignalFamiliesForPolarity(polarity as any)) {
+      const selected = familyFilter === family ? ' selected' : ''
+      body += `<option value="${escapeHtml(family)}" data-polarity="${escapeHtml(polarity)}"${selected}>${escapeHtml(formatModerationSignalFamily(family))}</option>`
+    }
+  }
+  body += '</select></label>'
   body += '<div class="actions" style="margin:0"><button type="submit">Apply</button></div>'
   body += '</div>'
+  body += `<script>
+    (() => {
+      const polaritySelect = document.getElementById('signal-list-polarity');
+      const familySelect = document.getElementById('signal-list-family');
+      if (!polaritySelect || !familySelect) return;
+      const syncFamilies = () => {
+        const polarity = String(polaritySelect.value || '').trim().toLowerCase();
+        const options = Array.from(familySelect.options || []);
+        let firstVisible = 'all';
+        let hasSelectedVisible = familySelect.value === 'all';
+        for (const option of options) {
+          if (option.value === 'all') {
+            option.hidden = false;
+            option.disabled = false;
+            continue;
+          }
+          const optionPolarity = String(option.getAttribute('data-polarity') || '').trim().toLowerCase();
+          const visible = !polarity || polarity === 'all' || optionPolarity === polarity;
+          option.hidden = !visible;
+          option.disabled = !visible;
+          if (visible && firstVisible === 'all') firstVisible = option.value;
+          if (visible && option.value === familySelect.value) hasSelectedVisible = true;
+        }
+        if (!hasSelectedVisible) familySelect.value = 'all';
+      };
+      polaritySelect.addEventListener('change', syncFamilies);
+      syncFamilies();
+    })();
+  </script>`
   body += '</form>'
 
   if (!opts.signals.length) {
     body += '<div class="section"><div class="field-hint">No signals matched the current filter. Use Seed Baseline Signals to load the current shared vocabulary, or create a new signal manually.</div></div>'
   } else {
-    const groupedSignals = splitModerationSignalsByRole(
-      opts.signals.map((signal) => ({
-        ...signal,
-        ...getModerationSignalRoleFlags(signal),
-      }))
-    )
+    const groupedSignals = splitModerationSignalsByPolarity(opts.signals)
     const renderSignalTable = (
       title: string,
-      signals: Array<Awaited<ReturnType<typeof moderationSignals.listSignalsForAdmin>>[number] & {
-        positive_role: boolean
-        disruption_role: boolean
-      }>,
+      signals: Awaited<ReturnType<typeof moderationSignals.listSignalsForAdmin>>,
       emptyText: string
     ) => {
       let html = `<div class="section" style="margin-top: 12px">`
@@ -5754,11 +5960,12 @@ function renderModerationSignalListPage(opts: {
       if (!signals.length) {
         html += `<div class="field-hint">${escapeHtml(emptyText)}</div>`
       } else {
-        html += '<table><thead><tr><th>Signal</th><th>Status</th><th>Description</th><th>Rules</th><th>Positive Cultures</th><th>Disruption Cultures</th><th>Future Mapping</th></tr></thead><tbody>'
+        html += '<table><thead><tr><th>Signal</th><th>Classification</th><th>Status</th><th>Description</th><th>Rules</th><th>Positive Cultures</th><th>Disruption Cultures</th><th>Future Mapping</th></tr></thead><tbody>'
         for (const signal of signals) {
           const detailHref = getModerationAdminSectionPath('signals', encodeURIComponent(signal.signal_id))
           html += '<tr>'
           html += `<td><div style="display:grid;gap:4px"><a href="${escapeHtml(detailHref)}"><strong>${escapeHtml(signal.label)}</strong></a><code>${escapeHtml(signal.signal_id)}</code></div></td>`
+          html += `<td><div style="display:grid;gap:4px"><span class="pill">${escapeHtml(formatModerationSignalPolarity(signal.polarity))}</span><span class="pill">${escapeHtml(formatModerationSignalFamily(signal.signal_family))}</span></div></td>`
           html += `<td>${escapeHtml(formatModerationSignalStatus(signal.status))}</td>`
           html += `<td>${escapeHtml(signal.short_description || signal.long_description || '-')}</td>`
           html += `<td>${escapeHtml(String(signal.usage_counts.rules))}</td>`
@@ -5809,7 +6016,12 @@ function renderModerationSignalNewPage(opts: {
   body += `<form method="post" action="${escapeHtml(MODERATION_SIGNAL_ADMIN_PATHS.new)}">`
   if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
   body += '<div class="section"><div class="section-title">Signal</div>'
-  body += renderModerationSignalFormFields({ state, mode: 'new', metadataError: opts.metadataError })
+  body += renderModerationSignalFormFields({
+    state,
+    mode: 'new',
+    formIdPrefix: 'new-moderation-signal',
+    metadataError: opts.metadataError,
+  })
   body += '</div>'
   body += '<div class="actions"><button type="submit">Create signal</button></div>'
   body += '</form>'
@@ -5845,6 +6057,8 @@ function renderModerationSignalDetailPage(opts: {
   body += '<div class="section">'
   body += '<div class="section-title">Usage Summary</div>'
   body += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">'
+  body += `<span class="pill">${escapeHtml(formatModerationSignalPolarity(String(signal?.polarity || state.polarity || '')))}</span>`
+  body += `<span class="pill">${escapeHtml(formatModerationSignalFamily(String(signal?.signal_family || state.signal_family || '')))}</span>`
   body += `<span class="pill">Rules ${escapeHtml(String(signal?.usage_counts.rules || 0))}</span>`
   body += `<span class="pill">Positive cultures ${escapeHtml(String(signal?.usage_counts.culture_positive || 0))}</span>`
   body += `<span class="pill">Disruption cultures ${escapeHtml(String(signal?.usage_counts.culture_disruption || 0))}</span>`
@@ -5857,7 +6071,12 @@ function renderModerationSignalDetailPage(opts: {
   body += `<form method="post" action="${escapeHtml(getModerationAdminSectionPath('signals', encodeURIComponent(signalId)))}">`
   if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
   body += '<div class="section"><div class="section-title">Edit Signal</div>'
-  body += renderModerationSignalFormFields({ state, mode: 'detail', metadataError: opts.metadataError })
+  body += renderModerationSignalFormFields({
+    state,
+    mode: 'detail',
+    formIdPrefix: 'edit-moderation-signal',
+    metadataError: opts.metadataError,
+  })
   body += '</div>'
   body += '<div class="actions">'
   body += '<button type="submit" name="action" value="save">Save</button>'
@@ -5939,6 +6158,17 @@ async function handleModerationSignalsList(req: any, res: any) {
       statusFilterRaw === 'all' || (moderationSignals.MODERATION_SIGNAL_STATUSES as readonly string[]).includes(statusFilterRaw)
         ? statusFilterRaw
         : 'all'
+    const polarityFilterRaw = String((req.query as any)?.polarity || 'all').trim().toLowerCase()
+    const polarityFilter =
+      polarityFilterRaw === 'all' || (moderationSignals.MODERATION_SIGNAL_POLARITIES as readonly string[]).includes(polarityFilterRaw)
+        ? polarityFilterRaw
+        : 'all'
+    const familyFilterRaw = String((req.query as any)?.family || 'all').trim().toLowerCase()
+    const familyFilter =
+      familyFilterRaw === 'all' ||
+      (moderationSignals.MODERATION_SIGNAL_FAMILIES as readonly string[]).includes(familyFilterRaw)
+        ? familyFilterRaw
+        : 'all'
     const notice = String((req.query as any)?.notice || '')
     const error = String((req.query as any)?.error || '')
     const cookies = parseCookies(req.headers.cookie)
@@ -5948,6 +6178,8 @@ async function handleModerationSignalsList(req: any, res: any) {
       moderationSignals.getSignalRegistryOverview().then((result) => result.counts),
       moderationSignals.listSignalsForAdmin({
         status: statusFilter as any,
+        polarity: polarityFilter as any,
+        signalFamily: familyFilter as any,
         search: query,
         limit: 250,
       }),
@@ -5957,6 +6189,8 @@ async function handleModerationSignalsList(req: any, res: any) {
       signals,
       query,
       statusFilter,
+      polarityFilter,
+      familyFilter,
       notice,
       error,
       csrfToken,
@@ -6013,12 +6247,22 @@ pagesRouter.post(MODERATION_SIGNAL_ADMIN_PATHS.new, async (req: any, res: any) =
       metadata_text: (req.body as any)?.metadata_json,
     })
     const metadata = parseModerationSignalMetadataInput((req.body as any)?.metadata_json)
+    const classification = parseModerationSignalClassificationInput(req.body)
     if (metadata.error) {
       const doc = renderModerationSignalNewPage({
         csrfToken,
         state,
         error: 'Metadata JSON is invalid.',
         metadataError: metadata.error,
+      })
+      res.set('Content-Type', 'text/html; charset=utf-8')
+      return res.status(400).send(doc)
+    }
+    if (classification.error) {
+      const doc = renderModerationSignalNewPage({
+        csrfToken,
+        state,
+        error: classification.error,
       })
       res.set('Content-Type', 'text/html; charset=utf-8')
       return res.status(400).send(doc)
@@ -6056,6 +6300,8 @@ pagesRouter.post(MODERATION_SIGNAL_ADMIN_PATHS.new, async (req: any, res: any) =
       label: state.label,
       short_description: state.short_description || null,
       long_description: state.long_description || null,
+      polarity: classification.polarity as any,
+      signal_family: classification.signalFamily as any,
       status: state.status as any,
       metadata_json: metadata.value,
     })
@@ -6121,6 +6367,7 @@ async function handleModerationSignalUpdate(req: any, res: any) {
       metadata_text: (req.body as any)?.metadata_json,
     })
     const metadata = parseModerationSignalMetadataInput((req.body as any)?.metadata_json)
+    const classification = parseModerationSignalClassificationInput(req.body)
     if (metadata.error) {
       const doc = renderModerationSignalDetailPage({
         signal: existing.signal,
@@ -6129,6 +6376,17 @@ async function handleModerationSignalUpdate(req: any, res: any) {
         state,
         error: 'Metadata JSON is invalid.',
         metadataError: metadata.error,
+      })
+      res.set('Content-Type', 'text/html; charset=utf-8')
+      return res.status(400).send(doc)
+    }
+    if (classification.error) {
+      const doc = renderModerationSignalDetailPage({
+        signal: existing.signal,
+        usage: existing.usage,
+        csrfToken,
+        state,
+        error: classification.error,
       })
       res.set('Content-Type', 'text/html; charset=utf-8')
       return res.status(400).send(doc)
@@ -6156,6 +6414,8 @@ async function handleModerationSignalUpdate(req: any, res: any) {
       label: state.label,
       short_description: state.short_description || null,
       long_description: state.long_description || null,
+      polarity: classification.polarity as any,
+      signal_family: classification.signalFamily as any,
       status: nextStatus as any,
       metadata_json: metadata.value,
     })
