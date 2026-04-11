@@ -7,11 +7,59 @@ export const MODERATION_SIGNAL_STATUSES = [
 
 export type ModerationSignalStatus = (typeof MODERATION_SIGNAL_STATUSES)[number]
 
+export const MODERATION_SIGNAL_POLARITIES = [
+  'positive',
+  'disruptive',
+] as const
+
+export type ModerationSignalPolarity = (typeof MODERATION_SIGNAL_POLARITIES)[number]
+
+export const MODERATION_SIGNAL_POSITIVE_FAMILIES = [
+  'clarity',
+  'engagement',
+  'reasoning',
+  'tone_positive',
+] as const
+
+export const MODERATION_SIGNAL_DISRUPTIVE_FAMILIES = [
+  'discourse_tone',
+  'discourse_quality',
+  'targeting',
+  'aggression',
+  'safety_harm',
+  'privacy_identity',
+  'sexual_exploitation',
+  'credibility',
+] as const
+
+export const MODERATION_SIGNAL_FAMILIES = [
+  ...MODERATION_SIGNAL_POSITIVE_FAMILIES,
+  ...MODERATION_SIGNAL_DISRUPTIVE_FAMILIES,
+] as const
+
+export type ModerationSignalFamily = (typeof MODERATION_SIGNAL_FAMILIES)[number]
+
+const MODERATION_SIGNAL_FAMILIES_BY_POLARITY: Record<
+  ModerationSignalPolarity,
+  readonly ModerationSignalFamily[]
+> = {
+  positive: MODERATION_SIGNAL_POSITIVE_FAMILIES,
+  disruptive: MODERATION_SIGNAL_DISRUPTIVE_FAMILIES,
+}
+
+export function getAllowedSignalFamiliesForPolarity(
+  polarity: ModerationSignalPolarity
+): readonly ModerationSignalFamily[] {
+  return MODERATION_SIGNAL_FAMILIES_BY_POLARITY[polarity]
+}
+
 export type ModerationSignalRecord = {
   signal_id: string
   label: string
   short_description: string | null
   long_description: string | null
+  polarity: ModerationSignalPolarity
+  signal_family: ModerationSignalFamily
   status: ModerationSignalStatus
   metadata_json: Record<string, unknown> | null
   created_at?: string
@@ -54,6 +102,8 @@ export type ModerationSignalUpsertInput = {
   label: string
   short_description?: string | null
   long_description?: string | null
+  polarity?: ModerationSignalPolarity | null
+  signal_family?: ModerationSignalFamily | null
   status?: ModerationSignalStatus
   metadata_json?: Record<string, unknown> | null
 }

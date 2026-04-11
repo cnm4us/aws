@@ -61,8 +61,8 @@ Status: Active
     - `credibility`
 
 ## Phase Status
-- A: Pending
-- B: Pending
+- A: Complete
+- B: In Progress
 - C: Pending
 - D: Pending
 - E: Pending
@@ -141,12 +141,14 @@ Status: Active
 
 ## Change Log
 - 2026-04-11 — Plan drafted to evolve moderation signals from metadata-inferred positive/disruptive grouping to first-class required `polarity` + `signal_family` classification, while preserving the current top-level admin grouping and existing rule/culture references.
+- 2026-04-11 — Phase A completed: added first-class `polarity` and `signal_family` persistence fields on `moderation_signals`, introduced controlled vocabulary and classification helpers in the moderation-signals feature module, and updated repo/service normalization so current reads/writes expose a consistent classification model without requiring the Phase C admin form changes yet.
 
 ## Validation
 - Environment:
   - development
 - Commands run:
-  - none yet
+  - `npm run build`
+  - `node <<'EOF' ... ensureSchema(db) ... EOF`
 - Evidence files:
   - `agents/features/feature_18_signals_evolution.md`
   - `src/features/moderation-signals/types.ts`
@@ -155,7 +157,7 @@ Status: Active
   - `src/routes/pages.ts`
   - `src/db.ts`
 - Known gaps:
-  - Existing plan 164 still carries a pending manual verification note for rule Phase D flows, but the follow-on classification work in this plan assumes the current committed registry/rule/culture linkage baseline as the new starting point.
+  - Existing `moderation_signals` rows may still have null DB columns for `polarity` and `signal_family` until the explicit Phase B backfill runs; current reads normalize them through code-level classification inference so the app remains coherent in the meantime.
   - A few signals currently behave more like neutral measurement vocabulary than clearly positive/disruptive behavior signals; this plan uses the approved temporary assignments and leaves deeper catalog curation for later.
 
 ## Open Risks / Deferred
@@ -172,6 +174,6 @@ Status: Active
 
 ## Resume Here
 - Next action:
-  - Begin Phase A by adding required `polarity` and `signal_family` fields plus controlled-vocabulary validation in the moderation-signals storage and service layers.
+  - Begin Phase B by backfilling existing signal rows with persisted `polarity` and `signal_family` assignments, then verify that no signal remains unclassified in storage.
 - Blocking question (if any):
   - none

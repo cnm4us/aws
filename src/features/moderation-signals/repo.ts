@@ -1,5 +1,8 @@
 import { getPool } from '../../db'
+import { deriveSignalClassification } from './classification'
 import type {
+  ModerationSignalFamily,
+  ModerationSignalPolarity,
   ModerationSignalCultureUsage,
   ModerationSignalRecord,
   ModerationSignalRuleUsage,
@@ -9,7 +12,11 @@ import type {
   ModerationSignalUsageCounts,
   ModerationSignalWithUsage,
 } from './types'
-import { MODERATION_SIGNAL_STATUSES } from './types'
+import {
+  getAllowedSignalFamiliesForPolarity,
+  MODERATION_SIGNAL_POLARITIES,
+  MODERATION_SIGNAL_STATUSES,
+} from './types'
 
 type DbLike = { query: (sql: string, params?: any[]) => Promise<any> }
 
@@ -56,13 +63,23 @@ function normalizeSignalIds(values: Iterable<string>): string[] {
 }
 
 function toSignalRecord(row: any): ModerationSignalRecord {
+  const metadataJson = parseJsonCell(row.metadata_json)
+  const classification = deriveSignalClassification({
+    signalId: String(row.signal_id || ''),
+    metadataJson,
+    polarity: row.polarity == null ? null : String(row.polarity),
+    signalFamily: row.signal_family == null ? null : String(row.signal_family),
+  })
+  if (!classification) throw new Error(`missing_signal_classification:${String(row.signal_id || '')}`)
   return {
     signal_id: String(row.signal_id || ''),
     label: String(row.label || ''),
     short_description: row.short_description == null ? null : String(row.short_description),
     long_description: row.long_description == null ? null : String(row.long_description),
+    polarity: classification.polarity,
+    signal_family: classification.signal_family,
     status: String(row.status || 'draft') as ModerationSignalStatus,
-    metadata_json: parseJsonCell(row.metadata_json),
+    metadata_json: metadataJson,
     created_at: row.created_at == null ? undefined : String(row.created_at),
     updated_at: row.updated_at == null ? undefined : String(row.updated_at),
   }
@@ -96,6 +113,25 @@ function normalizeSignalStatus(value: string): ModerationSignalStatus {
   throw new Error('invalid_signal_status')
 }
 
+function normalizeSignalPolarity(value: string): ModerationSignalPolarity {
+  const normalized = String(value || '').trim().toLowerCase()
+  if ((MODERATION_SIGNAL_POLARITIES as readonly string[]).includes(normalized)) {
+    return normalized as ModerationSignalPolarity
+  }
+  throw new Error('invalid_signal_polarity')
+}
+
+function normalizeSignalFamily(
+  polarity: ModerationSignalPolarity,
+  value: string
+): ModerationSignalFamily {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (getAllowedSignalFamiliesForPolarity(polarity).includes(normalized as ModerationSignalFamily)) {
+    return normalized as ModerationSignalFamily
+  }
+  throw new Error('invalid_signal_family')
+}
+
 export async function listSignals(params?: {
   status?: ModerationSignalStatus | 'all'
   search?: string
@@ -124,6 +160,8 @@ export async function listSignals(params?: {
         ms.label,
         ms.short_description,
         ms.long_description,
+        ms.polarity,
+        ms.signal_family,
         ms.status,
         ms.metadata_json,
         ms.created_at,
@@ -173,6 +211,8 @@ export async function getSignalById(
         ms.label,
         ms.short_description,
         ms.long_description,
+        ms.polarity,
+        ms.signal_family,
         ms.status,
         ms.metadata_json,
         ms.created_at,
@@ -220,15 +260,27 @@ export async function upsertSignal(
     input.long_description == null ? null : String(input.long_description).trim() || null
   const status = normalizeSignalStatus(String(input.status || 'draft') || 'draft')
   const metadataJson = input.metadata_json == null ? null : input.metadata_json
+  const existing = await getSignalById(signalId, q)
+  const classification = deriveSignalClassification({
+    signalId,
+    metadataJson,
+    polarity: input.polarity ?? existing?.polarity ?? null,
+    signalFamily: input.signal_family ?? existing?.signal_family ?? null,
+  })
+  if (!classification) throw new Error('missing_signal_classification')
+  const polarity = normalizeSignalPolarity(classification.polarity)
+  const signalFamily = normalizeSignalFamily(polarity, classification.signal_family)
   await q.query(
     `
       INSERT INTO moderation_signals
-        (signal_id, label, short_description, long_description, status, metadata_json)
-      VALUES (?, ?, ?, ?, ?, ?)
+        (signal_id, label, short_description, long_description, polarity, signal_family, status, metadata_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       ON DUPLICATE KEY UPDATE
         label = VALUES(label),
         short_description = VALUES(short_description),
         long_description = VALUES(long_description),
+        polarity = VALUES(polarity),
+        signal_family = VALUES(signal_family),
         status = VALUES(status),
         metadata_json = VALUES(metadata_json)
     `,
@@ -237,6 +289,8 @@ export async function upsertSignal(
       label,
       shortDescription,
       longDescription,
+      polarity,
+      signalFamily,
       status,
       metadataJson == null ? null : JSON.stringify(metadataJson),
     ]

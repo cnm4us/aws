@@ -2,6 +2,7 @@ import {
   CULTURE_DISRUPTION_SIGNALS,
   CULTURE_POSITIVE_SIGNALS,
 } from '../cultures/types'
+import { getKnownSignalClassification } from './classification'
 import * as repo from './repo'
 import type {
   ModerationSignalSeed,
@@ -86,6 +87,12 @@ export function listBaselineSignalSeeds(): ModerationSignalSeed[] {
       label: seed.label || existing?.label || titleizeSignalId(signalId),
       short_description: seed.short_description ?? existing?.short_description ?? null,
       long_description: seed.long_description ?? existing?.long_description ?? null,
+      polarity: seed.polarity ?? existing?.polarity ?? getKnownSignalClassification(signalId)?.polarity ?? null,
+      signal_family:
+        seed.signal_family ??
+        existing?.signal_family ??
+        getKnownSignalClassification(signalId)?.signal_family ??
+        null,
       status: seed.status || existing?.status || 'active',
       metadata_json: {
         seed_sources: Array.from(nextSources),
@@ -97,6 +104,8 @@ export function listBaselineSignalSeeds(): ModerationSignalSeed[] {
     append({
       signal_id: signalId,
       label: titleizeSignalId(signalId),
+      polarity: getKnownSignalClassification(signalId)?.polarity ?? 'positive',
+      signal_family: getKnownSignalClassification(signalId)?.signal_family ?? 'tone_positive',
       short_description: null,
       long_description: null,
       status: 'active',
@@ -107,6 +116,8 @@ export function listBaselineSignalSeeds(): ModerationSignalSeed[] {
     append({
       signal_id: signalId,
       label: titleizeSignalId(signalId),
+      polarity: getKnownSignalClassification(signalId)?.polarity ?? 'disruptive',
+      signal_family: getKnownSignalClassification(signalId)?.signal_family ?? 'discourse_quality',
       short_description: null,
       long_description: null,
       status: 'active',
@@ -182,6 +193,12 @@ export async function ensureSignalsExist(
         .filter(Boolean)
         .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
         .join(' '),
+      polarity:
+        getKnownSignalClassification(candidate)?.polarity ||
+        (source.toLowerCase().includes('positive') ? 'positive' : 'disruptive'),
+      signal_family:
+        getKnownSignalClassification(candidate)?.signal_family ||
+        (source.toLowerCase().includes('positive') ? 'tone_positive' : 'discourse_quality'),
       status: 'draft',
       metadata_json: { backfilled_from: source },
     })

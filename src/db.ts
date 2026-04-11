@@ -3513,10 +3513,26 @@ export async function ensureSchema(db: DB) {
       label VARCHAR(255) NOT NULL,
       short_description VARCHAR(500) NULL,
       long_description TEXT NULL,
+      polarity ENUM('positive','disruptive') NULL,
+      signal_family ENUM(
+        'clarity',
+        'engagement',
+        'reasoning',
+        'tone_positive',
+        'discourse_tone',
+        'discourse_quality',
+        'targeting',
+        'aggression',
+        'safety_harm',
+        'privacy_identity',
+        'sexual_exploitation',
+        'credibility'
+      ) NULL,
       status ENUM('draft','active','inactive','archived') NOT NULL DEFAULT 'draft',
       metadata_json JSON NULL,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      KEY idx_moderation_signals_polarity_family (polarity, signal_family, status, label, signal_id),
       KEY idx_moderation_signals_status_label (status, label, signal_id),
       KEY idx_moderation_signals_updated (updated_at, signal_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -3525,10 +3541,13 @@ export async function ensureSchema(db: DB) {
   await db.query(`ALTER TABLE moderation_signals ADD COLUMN IF NOT EXISTS label VARCHAR(255) NOT NULL`)
   await db.query(`ALTER TABLE moderation_signals ADD COLUMN IF NOT EXISTS short_description VARCHAR(500) NULL`)
   await db.query(`ALTER TABLE moderation_signals ADD COLUMN IF NOT EXISTS long_description TEXT NULL`)
+  await db.query(`ALTER TABLE moderation_signals ADD COLUMN IF NOT EXISTS polarity ENUM('positive','disruptive') NULL`)
+  await db.query(`ALTER TABLE moderation_signals ADD COLUMN IF NOT EXISTS signal_family ENUM('clarity','engagement','reasoning','tone_positive','discourse_tone','discourse_quality','targeting','aggression','safety_harm','privacy_identity','sexual_exploitation','credibility') NULL`)
   await db.query(`ALTER TABLE moderation_signals ADD COLUMN IF NOT EXISTS status ENUM('draft','active','inactive','archived') NOT NULL DEFAULT 'draft'`)
   await db.query(`ALTER TABLE moderation_signals ADD COLUMN IF NOT EXISTS metadata_json JSON NULL`)
   await db.query(`ALTER TABLE moderation_signals ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP`)
   await db.query(`ALTER TABLE moderation_signals ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`)
+  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_moderation_signals_polarity_family ON moderation_signals (polarity, signal_family, status, label, signal_id)`); } catch {}
   try { await db.query(`CREATE INDEX IF NOT EXISTS idx_moderation_signals_status_label ON moderation_signals (status, label, signal_id)`); } catch {}
   try { await db.query(`CREATE INDEX IF NOT EXISTS idx_moderation_signals_updated ON moderation_signals (updated_at, signal_id)`); } catch {}
 
