@@ -258,6 +258,64 @@ This is only a directional suggestion, not a mandated schema.
 
 UI / UX Expectations
 
+## Current Classification Model
+
+The signals registry now uses a two-layer classification model:
+
+- `polarity`
+  - simple operator-facing grouping
+  - allowed values: `positive`, `disruptive`
+- `signal_family`
+  - normalized internal classification for organization, filtering, and future mapping work
+  - constrained by polarity
+
+Current controlled vocabulary:
+
+- Positive families
+  - `clarity`
+  - `engagement`
+  - `reasoning`
+  - `tone_positive`
+- Disruptive families
+  - `discourse_tone`
+  - `discourse_quality`
+  - `targeting`
+  - `aggression`
+  - `safety_harm`
+  - `privacy_identity`
+  - `sexual_exploitation`
+  - `credibility`
+
+This means:
+
+- signals remain globally reusable
+- cultures still curate `positive_signals` and `disruption_signals`
+- rules still link to the same global signals
+- admin browsing stays simple at the top level
+- future signal-to-dimension work can build on the stronger normalized classification
+
+## Temporary Measurement-Oriented Assignments
+
+The current registry also contains several moderation-v2 measurement-oriented signals that are temporarily classified so the system can stay structurally consistent while the catalog is curated:
+
+- `qualified_language` -> `positive / clarity`
+- `assertive_language` -> `disruptive / credibility`
+- `direct_identifiers` -> `disruptive / privacy_identity`
+- `indirect_identifiers` -> `disruptive / privacy_identity`
+- `factual_assertion` -> `positive / reasoning`
+
+These assignments are intentionally provisional. They preserve structure now without implying that the catalog curation is finished.
+
+## Deferred ID Cleanup
+
+Signal-ID singularization is still deferred unless the rename is proven safe across:
+
+- rule contracts
+- culture signal relationships
+- moderation-v2 references
+
+Known alias/normalization follow-up remains a separate cleanup step rather than part of the live classification rollout.
+
 For /admin/moderation/signals, please consider:
 - a list view
 - detail/edit form

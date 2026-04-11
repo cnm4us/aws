@@ -32,6 +32,7 @@ Admin + CMS surfaces (server-rendered)
 - Admin moderation rules: /admin/moderation/rules
 - Admin moderation categories: /admin/moderation/categories
 - Admin moderation cultures: /admin/moderation/cultures
+- Admin moderation signals: /admin/moderation/signals
 - Admin pages editor: /admin/pages
 - Admin groups/channels: /admin/groups and /admin/channels (create/edit includes Culture assignment + review settings)
 - Public pages: / and /pages/:slug (path-like slugs, max 4 segments)
@@ -69,7 +70,21 @@ One-off admin scripts
 - `npm run admin:backfill-rule-drafts` — ensure `rule_drafts` exists for each rule (optional; drafts are lazily created on first edit).
 - `npm run admin:own-uploads -- --email=user@example.com` — promote user to admin and claim unowned uploads.
 - `npm run admin:backfill-spaces-ulid` — backfill `spaces.ulid` for older rows.
+- `npm run moderation:signals:classification:backfill` — persist `polarity` and `signal_family` onto existing moderation signal rows.
+- `npm run moderation:signals:classification:verify` — verify there are no moderation signals missing persisted classification.
 - `ts-node scripts/backfill-upload-thumbs.ts --limit 25 --cursor 0` — enqueue ffmpeg thumbnail jobs for existing video uploads.
+
+Moderation signals classification
+- Moderation signals now use two classification fields:
+  - `polarity` — operator-facing top-level grouping (`positive` or `disruptive`)
+  - `signal_family` — normalized internal classification used for filtering and future mapping work
+- A small set of current measurement-oriented signals uses temporary family assignments until the catalog is curated further:
+  - `qualified_language` -> `positive / clarity`
+  - `assertive_language` -> `disruptive / credibility`
+  - `direct_identifiers` -> `disruptive / privacy_identity`
+  - `indirect_identifiers` -> `disruptive / privacy_identity`
+  - `factual_assertion` -> `positive / reasoning`
+- Signal-ID singularization remains deferred unless a rename can be proven safe for existing rule, culture, and moderation-v2 references.
 
 Notes
 - Profiles live under jobs/profiles with a $extends mixin system; see docs/Jobs.md

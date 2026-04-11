@@ -65,7 +65,7 @@ Status: Active
 - B: Complete
 - C: Complete
 - D: Complete
-- E: Pending
+- E: Complete
 
 ## Phase A — Signal Classification Schema Foundation
 - Goal:
@@ -145,6 +145,7 @@ Status: Active
 - 2026-04-11 — Phase B completed: added explicit moderation-signal classification backfill and verification commands, persisted classification onto all existing registry rows, and confirmed the current catalog has zero missing or unresolved `polarity` / `signal_family` assignments. The current registry did not surface any deferred singularization alias IDs in live storage during verification.
 - 2026-04-11 — Phase C started: updated the moderation signals admin list/detail/new/edit flows to expose first-class `polarity` and `signal_family`, added polarity/family list filtering with family-by-polarity constraint behavior in the UI, and switched the signals admin list grouping to stored polarity rather than metadata inference. Manual verification of `/admin/moderation/signals` create/edit/filter behavior passed, so Phase C is complete and the next checkpoint is Phase D rule/culture compatibility cleanup.
 - 2026-04-11 — Phase D completed: switched culture and rule signal grouping to use persisted `polarity` directly, removed the route-layer metadata-role fallback helpers, and kept only narrow stale-reference placeholders for linked signals that no longer resolve in the registry. Manual verification of culture and rule signal grouping passed, so the next checkpoint is Phase E docs and smoke coverage.
+- 2026-04-11 — Phase E completed: updated operator-facing docs for the moderation signals classification model, documented the temporary measurement-oriented assignments and deferred ID singularization cleanup, and added a focused moderation signal classification smoke runbook. `npm run check:agents:docs` still fails only because of pre-existing invalid `Status` headers in older unrelated plans (`plan_138`, `140`, `141`, `142`, `148`-`159`).
 
 ## Validation
 - Environment:
@@ -156,7 +157,10 @@ Status: Active
   - `npm run moderation:signals:classification:verify`
   - `npm run build`
   - `npm run build`
+  - `npm run check:agents:docs`
 - Evidence files:
+  - `README.md`
+  - `agents/features/feature_17_moderation_signals_rules.md`
   - `agents/features/feature_18_signals_evolution.md`
   - `src/features/moderation-signals/types.ts`
   - `src/features/moderation-signals/classification.ts`
@@ -165,9 +169,12 @@ Status: Active
   - `src/routes/pages.ts`
   - `scripts/backfill-moderation-signal-classification.ts`
   - `scripts/verify-moderation-signal-classification.ts`
+  - `tests/suites/api-curl/moderation-signal-classification-smoke.md`
+  - `tests/suites/api-curl/README.md`
   - `src/db.ts`
 - Known gaps:
   - A few signals currently behave more like neutral measurement vocabulary than clearly positive/disruptive behavior signals; this plan uses the approved temporary assignments and leaves deeper catalog curation for later.
+  - `npm run check:agents:docs` still fails because of pre-existing invalid or missing `Status` headers in older unrelated plan files (`plan_138`, `140`, `141`, `142`, `148`-`159`).
 
 ## Open Risks / Deferred
 - Risk:
@@ -183,6 +190,6 @@ Status: Active
 
 ## Resume Here
 - Next action:
-  - Begin Phase E by updating feature/ops docs for `polarity` vs `signal_family`, documenting the temporary measurement-signal assignments, and adding a focused signal-classification smoke/checklist.
+  - Plan 165 is complete. Use this file as the continuity anchor only until the next moderation-signals follow-up plan is created.
 - Blocking question (if any):
   - none
