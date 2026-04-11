@@ -63,6 +63,8 @@
     "journeys:smoke:reentry": "bash scripts/smoke-journey-reentry.sh",
     "cultures:smoke:v1": "ts-node scripts/culture-definition-v1-smoke.ts",
     "cultures:smoke:v1:db": "ts-node scripts/culture-definition-v1-db-smoke.ts",
+    "moderation:signals:classification:backfill": "ts-node scripts/backfill-moderation-signal-classification.ts",
+    "moderation:signals:classification:verify": "ts-node scripts/verify-moderation-signal-classification.ts",
     "moderation:v2:contracts:smoke": "ts-node scripts/moderation-v2-contract-smoke.ts",
     "moderation:v2:policy-profiles:seed": "ts-node scripts/seed-moderation-policy-profiles.ts",
     "moderation:v2:evaluation:debug": "ts-node scripts/moderation-v2-evaluation-debug.ts",

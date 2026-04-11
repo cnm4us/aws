@@ -2,9 +2,15 @@ import {
   CULTURE_DISRUPTION_SIGNALS,
   CULTURE_POSITIVE_SIGNALS,
 } from '../cultures/types'
-import { getKnownSignalClassification } from './classification'
+import {
+  deriveSignalClassification,
+  getKnownSignalClassification,
+  listDeferredSignalIdAliases,
+} from './classification'
 import * as repo from './repo'
 import type {
+  ModerationSignalClassificationBackfillResult,
+  ModerationSignalClassificationCoverage,
   ModerationSignalSeed,
   ModerationSignalUpsertInput,
   ModerationSignalWithUsage,
@@ -171,6 +177,75 @@ export async function getSignalAdminDetail(signalId: string) {
 
 export async function saveSignal(input: ModerationSignalUpsertInput) {
   return repo.upsertSignal(input)
+}
+
+export async function verifySignalClassificationCoverage(): Promise<ModerationSignalClassificationCoverage> {
+  const rows = await repo.listSignalClassificationSnapshots()
+  const resolvedRows = rows.filter((row) =>
+    Boolean(
+      deriveSignalClassification({
+        signalId: row.signal_id,
+        metadataJson: row.metadata_json,
+        polarity: row.polarity,
+        signalFamily: row.signal_family,
+      })
+    )
+  )
+  const unresolved = rows
+    .filter((row) => !resolvedRows.includes(row))
+    .map((row) => ({
+      signal_id: row.signal_id,
+      label: row.label,
+      reason: 'missing_classification' as const,
+    }))
+
+  const missingPolarity = rows.filter((row) => !String(row.polarity || '').trim()).length
+  const missingSignalFamily = rows.filter((row) => !String(row.signal_family || '').trim()).length
+  const missingAny = rows.filter(
+    (row) =>
+      !String(row.polarity || '').trim() || !String(row.signal_family || '').trim()
+  ).length
+
+  return {
+    total: rows.length,
+    classified: resolvedRows.length,
+    missing_polarity: missingPolarity,
+    missing_signal_family: missingSignalFamily,
+    missing_any: missingAny,
+    unresolved,
+  }
+}
+
+export async function backfillSignalClassificationCoverage(): Promise<ModerationSignalClassificationBackfillResult> {
+  const rows = await repo.listSignalClassificationSnapshots()
+  let updated = 0
+  let unchanged = 0
+
+  for (const row of rows) {
+    const classification = deriveSignalClassification({
+      signalId: row.signal_id,
+      metadataJson: row.metadata_json,
+      polarity: row.polarity,
+      signalFamily: row.signal_family,
+    })
+    if (!classification) continue
+    if (row.polarity === classification.polarity && row.signal_family === classification.signal_family) {
+      unchanged += 1
+      continue
+    }
+    await repo.updateSignalClassification(row.signal_id, classification.polarity, classification.signal_family)
+    updated += 1
+  }
+
+  const coverage = await verifySignalClassificationCoverage()
+
+  return {
+    total: rows.length,
+    updated,
+    unchanged,
+    coverage,
+    deferred_signal_id_aliases: listDeferredSignalIdAliases(rows.map((row) => row.signal_id)),
+  }
 }
 
 export async function ensureSignalsExist(

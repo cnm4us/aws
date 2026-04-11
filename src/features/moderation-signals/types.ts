@@ -112,3 +112,34 @@ export type ModerationSignalSeed = Required<Pick<
   ModerationSignalUpsertInput,
   'signal_id' | 'label' | 'status'
 >> & Omit<ModerationSignalUpsertInput, 'signal_id' | 'label' | 'status'>
+
+export type ModerationSignalClassificationSnapshot = {
+  signal_id: string
+  label: string
+  polarity: string | null
+  signal_family: string | null
+  metadata_json: Record<string, unknown> | null
+}
+
+export type ModerationSignalClassificationGap = {
+  signal_id: string
+  label: string
+  reason: 'missing_classification'
+}
+
+export type ModerationSignalClassificationCoverage = {
+  total: number
+  classified: number
+  missing_polarity: number
+  missing_signal_family: number
+  missing_any: number
+  unresolved: ModerationSignalClassificationGap[]
+}
+
+export type ModerationSignalClassificationBackfillResult = {
+  total: number
+  updated: number
+  unchanged: number
+  coverage: ModerationSignalClassificationCoverage
+  deferred_signal_id_aliases: string[]
+}

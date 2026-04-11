@@ -1,6 +1,7 @@
 import { getPool } from '../../db'
 import { deriveSignalClassification } from './classification'
 import type {
+  ModerationSignalClassificationSnapshot,
   ModerationSignalFamily,
   ModerationSignalPolarity,
   ModerationSignalCultureUsage,
@@ -60,6 +61,17 @@ function normalizeSignalIds(values: Iterable<string>): string[] {
     if (normalized) seen.add(normalized)
   }
   return Array.from(seen)
+}
+
+function toSignalClassificationSnapshot(row: any): ModerationSignalClassificationSnapshot {
+  return {
+    signal_id: String(row.signal_id || ''),
+    label: String(row.label || ''),
+    polarity: row.polarity == null ? null : String(row.polarity || '').trim().toLowerCase() || null,
+    signal_family:
+      row.signal_family == null ? null : String(row.signal_family || '').trim().toLowerCase() || null,
+    metadata_json: parseJsonCell(row.metadata_json),
+  }
 }
 
 function toSignalRecord(row: any): ModerationSignalRecord {
@@ -245,6 +257,20 @@ export async function getSignalById(
   return row ? toSignalWithUsage(row) : null
 }
 
+export async function listSignalClassificationSnapshots(
+  db?: DbLike
+): Promise<ModerationSignalClassificationSnapshot[]> {
+  const q = dbOrPool(db)
+  const [rows] = await q.query(
+    `
+      SELECT signal_id, label, polarity, signal_family, metadata_json
+      FROM moderation_signals
+      ORDER BY signal_id ASC
+    `
+  )
+  return (rows as any[]).map(toSignalClassificationSnapshot)
+}
+
 export async function upsertSignal(
   input: ModerationSignalUpsertInput,
   db?: DbLike
@@ -298,6 +324,27 @@ export async function upsertSignal(
   const row = await getSignalById(signalId, q)
   if (!row) throw new Error('failed_to_upsert_signal')
   return row
+}
+
+export async function updateSignalClassification(
+  signalId: string,
+  polarity: ModerationSignalPolarity,
+  signalFamily: ModerationSignalFamily,
+  db?: DbLike
+): Promise<void> {
+  const q = dbOrPool(db)
+  const normalizedSignalId = normalizeSignalId(signalId)
+  if (!normalizedSignalId) throw new Error('invalid_signal_id')
+  const normalizedPolarity = normalizeSignalPolarity(polarity)
+  const normalizedSignalFamily = normalizeSignalFamily(normalizedPolarity, signalFamily)
+  await q.query(
+    `
+      UPDATE moderation_signals
+         SET polarity = ?, signal_family = ?
+       WHERE signal_id = ?
+    `,
+    [normalizedPolarity, normalizedSignalFamily, normalizedSignalId]
+  )
 }
 
 async function replaceSignalLinks(

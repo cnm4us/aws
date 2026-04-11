@@ -62,7 +62,7 @@ Status: Active
 
 ## Phase Status
 - A: Complete
-- B: In Progress
+- B: Complete
 - C: Pending
 - D: Pending
 - E: Pending
@@ -142,6 +142,7 @@ Status: Active
 ## Change Log
 - 2026-04-11 — Plan drafted to evolve moderation signals from metadata-inferred positive/disruptive grouping to first-class required `polarity` + `signal_family` classification, while preserving the current top-level admin grouping and existing rule/culture references.
 - 2026-04-11 — Phase A completed: added first-class `polarity` and `signal_family` persistence fields on `moderation_signals`, introduced controlled vocabulary and classification helpers in the moderation-signals feature module, and updated repo/service normalization so current reads/writes expose a consistent classification model without requiring the Phase C admin form changes yet.
+- 2026-04-11 — Phase B completed: added explicit moderation-signal classification backfill and verification commands, persisted classification onto all existing registry rows, and confirmed the current catalog has zero missing or unresolved `polarity` / `signal_family` assignments. The current registry did not surface any deferred singularization alias IDs in live storage during verification.
 
 ## Validation
 - Environment:
@@ -149,15 +150,18 @@ Status: Active
 - Commands run:
   - `npm run build`
   - `node <<'EOF' ... ensureSchema(db) ... EOF`
+  - `npm run moderation:signals:classification:backfill`
+  - `npm run moderation:signals:classification:verify`
 - Evidence files:
   - `agents/features/feature_18_signals_evolution.md`
   - `src/features/moderation-signals/types.ts`
+  - `src/features/moderation-signals/classification.ts`
   - `src/features/moderation-signals/repo.ts`
   - `src/features/moderation-signals/service.ts`
-  - `src/routes/pages.ts`
+  - `scripts/backfill-moderation-signal-classification.ts`
+  - `scripts/verify-moderation-signal-classification.ts`
   - `src/db.ts`
 - Known gaps:
-  - Existing `moderation_signals` rows may still have null DB columns for `polarity` and `signal_family` until the explicit Phase B backfill runs; current reads normalize them through code-level classification inference so the app remains coherent in the meantime.
   - A few signals currently behave more like neutral measurement vocabulary than clearly positive/disruptive behavior signals; this plan uses the approved temporary assignments and leaves deeper catalog curation for later.
 
 ## Open Risks / Deferred
@@ -174,6 +178,6 @@ Status: Active
 
 ## Resume Here
 - Next action:
-  - Begin Phase B by backfilling existing signal rows with persisted `polarity` and `signal_family` assignments, then verify that no signal remains unclassified in storage.
+  - Begin Phase C by surfacing `signal_family` in the moderation signals admin UI, adding family filtering, and making polarity/family first-class required form fields.
 - Blocking question (if any):
   - none

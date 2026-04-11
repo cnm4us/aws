@@ -9,6 +9,13 @@ export type ModerationSignalClassification = {
   signal_family: ModerationSignalFamily
 }
 
+export const DEFERRED_SIGNAL_ID_ALIAS_CANDIDATES = [
+  'aggressive_command',
+  'curious_question',
+  'encouraging_response',
+  'helpful_suggestion',
+] as const
+
 const KNOWN_SIGNAL_CLASSIFICATIONS: Record<string, ModerationSignalClassification> = {
   clear_explanation: { polarity: 'positive', signal_family: 'clarity' },
   clear_fact_opinion_separation: { polarity: 'positive', signal_family: 'clarity' },
@@ -120,4 +127,14 @@ export function deriveSignalClassification(input: {
     getKnownSignalClassification(input.signalId) ||
     inferSignalClassificationFromMetadata(input.metadataJson || null)
   )
+}
+
+export function listDeferredSignalIdAliases(signalIds: Iterable<string>): string[] {
+  const seen = new Set<string>()
+  const candidates = new Set<string>(DEFERRED_SIGNAL_ID_ALIAS_CANDIDATES)
+  for (const rawSignalId of signalIds) {
+    const signalId = String(rawSignalId || '').trim().toLowerCase()
+    if (signalId && candidates.has(signalId)) seen.add(signalId)
+  }
+  return Array.from(seen).sort((a, b) => a.localeCompare(b))
 }
