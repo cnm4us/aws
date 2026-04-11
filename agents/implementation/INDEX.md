@@ -36,10 +36,11 @@ This file is a lightweight index for ongoing implementation work.
 - `agents/implementation/plan_162.md` — Moderation v2 two-stage pipeline rollout and hardening
 - `agents/implementation/plan_163.md` — Moderation admin IA consolidation (`/admin/moderation/*` route and nav migration)
 - `agents/implementation/plan_164.md` — Global moderation signals registry and rule/culture signal linkage
+- `agents/implementation/plan_165.md` — Moderation signal classification evolution (`polarity` + `signal_family`)
 
 ## Active / Next
-- Active now: `agents/implementation/plan_164.md`
-- Feature contract: `agents/features/feature_17_moderation_signals_rules.md`
+- Active now: `agents/implementation/plan_165.md`
+- Feature contract: `agents/features/feature_18_signals_evolution.md`
 - Check latest `plan_NN.md` with `Status: Active`.
 - Continue from that plan's `Resume Here` section.
 - If no plan is `Active`, create a new `plan_NN.md` from `PLAN_TEMPLATE.md`.
