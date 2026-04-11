@@ -1850,56 +1850,6 @@ type CultureSignalOption = {
   description: string
   polarity: string
   signal_family: string
-  positive_role: boolean
-  disruption_role: boolean
-}
-
-function getModerationSignalRoleFlags(source: {
-  polarity?: unknown
-  metadata_json?: unknown
-} | null | undefined): { positive_role: boolean; disruption_role: boolean } {
-  const storedPolarity = String(source?.polarity || '').trim().toLowerCase()
-  if (storedPolarity === 'positive') {
-    return { positive_role: true, disruption_role: false }
-  }
-  if (storedPolarity === 'disruptive') {
-    return { positive_role: false, disruption_role: true }
-  }
-  const metadata = source?.metadata_json && typeof source.metadata_json === 'object'
-    ? (source.metadata_json as Record<string, unknown>)
-    : {}
-  const cultureRoles = Array.isArray(metadata.culture_roles)
-    ? metadata.culture_roles.map((value) => String(value || '').trim().toLowerCase())
-    : []
-  const seedSources = Array.isArray(metadata.seed_sources)
-    ? metadata.seed_sources.map((value) => String(value || '').trim().toLowerCase())
-    : []
-  const backfilledFrom = String(metadata.backfilled_from || '').trim().toLowerCase()
-  return {
-    positive_role:
-      cultureRoles.includes('positive') ||
-      seedSources.includes('culture_positive') ||
-      backfilledFrom.includes('positive'),
-    disruption_role:
-      cultureRoles.includes('disruption') ||
-      seedSources.includes('culture_disruption') ||
-      backfilledFrom.includes('disruption'),
-  }
-}
-
-function splitModerationSignalsByRole<T extends {
-  positive_role: boolean
-  disruption_role: boolean
-}>(signals: T[]) {
-  const positive: T[] = []
-  const disruption: T[] = []
-  const mixedOrUnclassified: T[] = []
-  for (const signal of signals) {
-    if (signal.positive_role && !signal.disruption_role) positive.push(signal)
-    else if (signal.disruption_role && !signal.positive_role) disruption.push(signal)
-    else mixedOrUnclassified.push(signal)
-  }
-  return { positive, disruption, mixedOrUnclassified }
 }
 
 function splitModerationSignalsByPolarity<T extends {
@@ -1927,7 +1877,6 @@ async function listCultureSignalOptions(): Promise<CultureSignalOption[]> {
       description: signal.short_description || signal.long_description || '',
       polarity: signal.polarity,
       signal_family: signal.signal_family,
-      ...getModerationSignalRoleFlags(signal),
     }))
   } catch {
     return []
@@ -2313,7 +2262,8 @@ function renderCultureDetailPage(opts: {
   const positiveSignalsSet = new Set<string>((definition.positive_signals || []).map((v) => String(v)))
   const disruptionSet = new Set<string>((definition.disruption_signals || []).map((v) => String(v)))
   const buildRoleOptions = (role: 'positive' | 'disruption', selected: Set<string>) => {
-    const seeded = signalOptions.filter((option) => role === 'positive' ? option.positive_role : option.disruption_role)
+    const rolePolarity = role === 'positive' ? 'positive' : 'disruptive'
+    const seeded = signalOptions.filter((option) => option.polarity === rolePolarity)
     const byId = new Map(signalOptions.map((option) => [option.signal_id, option]))
     const out = [...seeded]
     const seen = new Set(out.map((option) => option.signal_id))
@@ -2324,11 +2274,9 @@ function renderCultureDetailPage(opts: {
         signal_id: signalId,
         label: signalId,
         status: 'active',
-        description: 'Currently selected but not yet role-tagged in registry metadata.',
-        polarity: role === 'positive' ? 'positive' : 'disruptive',
-        signal_family: role === 'positive' ? 'tone_positive' : 'discourse_quality',
-        positive_role: role === 'positive',
-        disruption_role: role === 'disruption',
+        description: 'Currently selected but missing from the resolved signal registry.',
+        polarity: rolePolarity,
+        signal_family: rolePolarity === 'positive' ? 'tone_positive' : 'discourse_quality',
       })
       seen.add(signalId)
     }
@@ -3035,8 +2983,6 @@ type RuleSignalOption = {
   description: string
   polarity: string
   signal_family: string
-  positive_role: boolean
-  disruption_role: boolean
 }
 
 type RuleContractFormState = {
@@ -3260,7 +3206,6 @@ async function listRuleSignalOptions(): Promise<RuleSignalOption[]> {
       description: signal.short_description || signal.long_description || '',
       polarity: signal.polarity,
       signal_family: signal.signal_family,
-      ...getModerationSignalRoleFlags(signal),
     }))
   } catch {
     return []
@@ -3447,7 +3392,7 @@ function renderRuleContractFields(opts: {
   const state = opts.state
   const signalOptions = Array.isArray(opts.signalOptions) ? opts.signalOptions : []
   const selected = new Set(state.selected_signal_ids.map((value) => String(value)))
-  const groupedSignals = splitModerationSignalsByRole(signalOptions)
+  const groupedSignals = splitModerationSignalsByPolarity(signalOptions)
   const renderSignalGroup = (title: string, signals: RuleSignalOption[], emptyText: string) => {
     let html = `<div class="section" style="margin-top: 10px">`
     html += `<div class="section-title">${escapeHtml(title)}</div>`
@@ -4631,11 +4576,9 @@ async function handleModerationRuleDetail(req: any, res: any) {
         description: '',
         polarity: '',
         signal_family: '',
-        positive_role: false,
-        disruption_role: false,
       }
     })
-    const groupedLinkedSignals = splitModerationSignalsByRole(linkedSignalOptions)
+    const groupedLinkedSignals = splitModerationSignalsByPolarity(linkedSignalOptions)
     const renderLinkedSignalSummary = (title: string, signals: RuleSignalOption[], emptyText: string) => {
       let html = `<div style="margin-top:8px"><strong>${escapeHtml(title)}:</strong> `
       html += signals.length

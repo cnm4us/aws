@@ -64,7 +64,7 @@ Status: Active
 - A: Complete
 - B: Complete
 - C: Complete
-- D: Pending
+- D: Complete
 - E: Pending
 
 ## Phase A — Signal Classification Schema Foundation
@@ -144,6 +144,7 @@ Status: Active
 - 2026-04-11 — Phase A completed: added first-class `polarity` and `signal_family` persistence fields on `moderation_signals`, introduced controlled vocabulary and classification helpers in the moderation-signals feature module, and updated repo/service normalization so current reads/writes expose a consistent classification model without requiring the Phase C admin form changes yet.
 - 2026-04-11 — Phase B completed: added explicit moderation-signal classification backfill and verification commands, persisted classification onto all existing registry rows, and confirmed the current catalog has zero missing or unresolved `polarity` / `signal_family` assignments. The current registry did not surface any deferred singularization alias IDs in live storage during verification.
 - 2026-04-11 — Phase C started: updated the moderation signals admin list/detail/new/edit flows to expose first-class `polarity` and `signal_family`, added polarity/family list filtering with family-by-polarity constraint behavior in the UI, and switched the signals admin list grouping to stored polarity rather than metadata inference. Manual verification of `/admin/moderation/signals` create/edit/filter behavior passed, so Phase C is complete and the next checkpoint is Phase D rule/culture compatibility cleanup.
+- 2026-04-11 — Phase D completed: switched culture and rule signal grouping to use persisted `polarity` directly, removed the route-layer metadata-role fallback helpers, and kept only narrow stale-reference placeholders for linked signals that no longer resolve in the registry. Manual verification of culture and rule signal grouping passed, so the next checkpoint is Phase E docs and smoke coverage.
 
 ## Validation
 - Environment:
@@ -153,6 +154,7 @@ Status: Active
   - `node <<'EOF' ... ensureSchema(db) ... EOF`
   - `npm run moderation:signals:classification:backfill`
   - `npm run moderation:signals:classification:verify`
+  - `npm run build`
   - `npm run build`
 - Evidence files:
   - `agents/features/feature_18_signals_evolution.md`
@@ -181,6 +183,6 @@ Status: Active
 
 ## Resume Here
 - Next action:
-  - Begin Phase D by switching rule and culture signal grouping to rely on persisted polarity everywhere, then remove no-longer-needed metadata-role fallback behavior where safe.
+  - Begin Phase E by updating feature/ops docs for `polarity` vs `signal_family`, documenting the temporary measurement-signal assignments, and adding a focused signal-classification smoke/checklist.
 - Blocking question (if any):
   - none
