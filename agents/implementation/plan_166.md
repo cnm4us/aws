@@ -47,6 +47,7 @@ Status: Active
 - Rule admin should organize canonical rules by linked `user_facing_groups` instead of categories.
 - A canonical rule may belong to multiple user-facing groups.
 - Rules with no linked user-facing groups should surface explicitly as `Ungrouped` until fixed.
+- `Show All` in the reporting UI should expand inline to reveal all active user-facing groups.
 
 ## Working Assumptions
 - The migration should rename the current `user_facing_rules` storage/model to `user_facing_groups` rather than keeping the old internal names indefinitely.
@@ -54,7 +55,7 @@ Status: Active
 - Category retirement should still be staged for safety, but the target architecture is full removal of category ownership from rules and active reporting/configuration flows, not indefinite compatibility storage.
 
 ## Open Questions
-- Should `show all` expose every active user group immediately in one expanded list, or open a second “all groups” browser state that still starts collapsed by group?
+- none
 
 ## Phase Status
 - A: Pending
@@ -160,6 +161,7 @@ Status: Active
 - 2026-04-12 — Locked product decisions: “user group” is the promoted name for the existing user-facing-rule layer, report UI starts with expandable user groups, `show all` exposes every active user group, and canonical rules should fully lose category ownership during this migration.
 - 2026-04-12 — Clarified data model: `user_facing_rules` should become `user_facing_groups`, cultures link directly to specific user-facing-group rows, and the old `group_key` / `group_label` fields should be removed rather than preserved.
 - 2026-04-12 — Locked rule-admin organization: canonical rules should be organized by linked user-facing groups rather than categories, with an explicit `Ungrouped` bucket for rules that have not been linked yet.
+- 2026-04-12 — Locked reporting interaction: `Show All` should expand inline and reveal all active user-facing groups rather than switching to a separate browsing state.
 
 ## Validation
 - Environment:
@@ -180,7 +182,7 @@ Status: Active
   - `src/features/reports/repo.ts`
   - `src/routes/pages.ts`
 - Known gaps:
-  - This plan still leaves open whether `show all` should expand every active user group inline or switch the report UI into a second all-groups browsing state.
+  - none beyond normal implementation detail.
 
 ## Open Risks / Deferred
 - Risk:
@@ -194,6 +196,6 @@ Status: Active
 
 ## Resume Here
 - Next action:
-  - Resolve the exact `show all` interaction shape, then start Phase A route/nav migration and the `user_facing_rules` -> `user_facing_groups` rename with the locked user-group/reporting decisions already captured here.
+  - Start Phase A route/nav migration and the `user_facing_rules` -> `user_facing_groups` rename with the locked user-group/reporting decisions captured here.
 - Blocking question (if any):
-  - Should `show all` expand every active user group inline, or switch to a second all-groups browsing state?
+  - none
