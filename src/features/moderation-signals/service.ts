@@ -1,3 +1,4 @@
+import { getPool } from '../../db'
 import {
   CULTURE_DISRUPTION_SIGNALS,
   CULTURE_POSITIVE_SIGNALS,
@@ -15,6 +16,97 @@ import type {
   ModerationSignalUpsertInput,
   ModerationSignalWithUsage,
 } from './types'
+
+function parseJsonObjectCell(value: unknown): Record<string, unknown> | null {
+  if (value == null) return null
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed) return null
+    try {
+      const parsed = JSON.parse(trimmed)
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : null
+    } catch {
+      return null
+    }
+  }
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null
+}
+
+function replaceSignalIdInStringArray(values: unknown, fromSignalId: string, toSignalId: string): {
+  next: string[]
+  changed: boolean
+} {
+  if (!Array.isArray(values)) return { next: [], changed: false }
+  const next: string[] = []
+  let changed = false
+  for (const value of values) {
+    const candidate = String(value || '').trim()
+    if (!candidate) continue
+    const rewritten = candidate === fromSignalId ? toSignalId : candidate
+    if (rewritten !== candidate) changed = true
+    if (!next.includes(rewritten)) next.push(rewritten)
+  }
+  if (next.length !== values.length) changed = true
+  return { next, changed }
+}
+
+function rewriteRuleAiSpecSignalId(
+  value: unknown,
+  fromSignalId: string,
+  toSignalId: string
+): { next: Record<string, unknown> | null; changed: boolean } {
+  const aiSpec = parseJsonObjectCell(value)
+  if (!aiSpec) return { next: aiSpec, changed: false }
+  let changed = false
+  const next: Record<string, unknown> = { ...aiSpec }
+
+  if (Array.isArray(aiSpec.signal_ids)) {
+    const rewritten = replaceSignalIdInStringArray(aiSpec.signal_ids, fromSignalId, toSignalId)
+    next.signal_ids = rewritten.next
+    changed = changed || rewritten.changed
+  }
+
+  if (aiSpec.signals && typeof aiSpec.signals === 'object' && !Array.isArray(aiSpec.signals)) {
+    const nextSignals: Record<string, unknown> = { ...(aiSpec.signals as Record<string, unknown>) }
+    for (const [key, entry] of Object.entries(aiSpec.signals as Record<string, unknown>)) {
+      if (!Array.isArray(entry)) continue
+      const rewritten = replaceSignalIdInStringArray(entry, fromSignalId, toSignalId)
+      nextSignals[key] = rewritten.next
+      changed = changed || rewritten.changed
+    }
+    next.signals = nextSignals
+  }
+
+  return { next, changed }
+}
+
+function rewriteCultureDefinitionSignalId(
+  value: unknown,
+  fromSignalId: string,
+  toSignalId: string
+): { next: Record<string, unknown> | null; changed: boolean } {
+  const definition = parseJsonObjectCell(value)
+  if (!definition) return { next: definition, changed: false }
+  let changed = false
+  const next: Record<string, unknown> = { ...definition }
+
+  if (Array.isArray(definition.positive_signals)) {
+    const rewritten = replaceSignalIdInStringArray(definition.positive_signals, fromSignalId, toSignalId)
+    next.positive_signals = rewritten.next
+    changed = changed || rewritten.changed
+  }
+  if (Array.isArray(definition.disruption_signals)) {
+    const rewritten = replaceSignalIdInStringArray(definition.disruption_signals, fromSignalId, toSignalId)
+    next.disruption_signals = rewritten.next
+    changed = changed || rewritten.changed
+  }
+
+  return { next, changed }
+}
 
 function titleizeSignalId(signalId: string): string {
   return String(signalId || '')
@@ -177,6 +269,119 @@ export async function getSignalAdminDetail(signalId: string) {
 
 export async function saveSignal(input: ModerationSignalUpsertInput) {
   return repo.upsertSignal(input)
+}
+
+export async function saveSignalWithPossibleRename(input: {
+  existingSignalId: string
+  next: ModerationSignalUpsertInput
+}): Promise<{ signal: ModerationSignalWithUsage; renamed: boolean; previousSignalId: string }> {
+  const db = getPool() as any
+  const conn = await db.getConnection()
+  try {
+    await conn.beginTransaction()
+    const existing = await repo.getSignalById(input.existingSignalId, conn)
+    if (!existing) {
+      const err = new Error('signal_not_found') as Error & { code?: string }
+      err.code = 'signal_not_found'
+      throw err
+    }
+
+    const targetSignalId = repo.normalizeSignalIdInput(String(input.next.signal_id || ''))
+    if (!targetSignalId) throw new Error('invalid_signal_id')
+    const renamed = targetSignalId !== existing.signal_id
+
+    if (renamed) {
+      const collision = await repo.getSignalById(targetSignalId, conn)
+      if (collision && collision.signal_id !== existing.signal_id) {
+        const err = new Error('duplicate_signal_id') as Error & { code?: string }
+        err.code = 'duplicate_signal_id'
+        throw err
+      }
+    }
+
+    await repo.upsertSignal(
+      {
+        ...input.next,
+        signal_id: targetSignalId,
+      },
+      conn
+    )
+
+    if (renamed) {
+      await conn.query(`UPDATE rule_signals SET signal_id = ? WHERE signal_id = ?`, [
+        targetSignalId,
+        existing.signal_id,
+      ])
+      await conn.query(`UPDATE culture_positive_signals SET signal_id = ? WHERE signal_id = ?`, [
+        targetSignalId,
+        existing.signal_id,
+      ])
+      await conn.query(`UPDATE culture_disruption_signals SET signal_id = ? WHERE signal_id = ?`, [
+        targetSignalId,
+        existing.signal_id,
+      ])
+
+      const [versionRows] = await conn.query(
+        `SELECT id, ai_spec_json FROM rule_versions WHERE ai_spec_json IS NOT NULL`
+      )
+      for (const row of versionRows as any[]) {
+        const rewritten = rewriteRuleAiSpecSignalId(row.ai_spec_json, existing.signal_id, targetSignalId)
+        if (!rewritten.changed || !rewritten.next) continue
+        await conn.query(`UPDATE rule_versions SET ai_spec_json = ? WHERE id = ?`, [
+          JSON.stringify(rewritten.next),
+          Number(row.id),
+        ])
+      }
+
+      const [draftRows] = await conn.query(
+        `SELECT rule_id, ai_spec_json FROM rule_drafts WHERE ai_spec_json IS NOT NULL`
+      )
+      for (const row of draftRows as any[]) {
+        const rewritten = rewriteRuleAiSpecSignalId(row.ai_spec_json, existing.signal_id, targetSignalId)
+        if (!rewritten.changed || !rewritten.next) continue
+        await conn.query(`UPDATE rule_drafts SET ai_spec_json = ? WHERE rule_id = ?`, [
+          JSON.stringify(rewritten.next),
+          Number(row.rule_id),
+        ])
+      }
+
+      const [cultureRows] = await conn.query(
+        `SELECT id, definition_json FROM cultures WHERE definition_json IS NOT NULL`
+      )
+      for (const row of cultureRows as any[]) {
+        const rewritten = rewriteCultureDefinitionSignalId(
+          row.definition_json,
+          existing.signal_id,
+          targetSignalId
+        )
+        if (!rewritten.changed || !rewritten.next) continue
+        await conn.query(`UPDATE cultures SET definition_json = ? WHERE id = ?`, [
+          JSON.stringify(rewritten.next),
+          Number(row.id),
+        ])
+      }
+
+      await conn.query(`DELETE FROM moderation_signals WHERE signal_id = ?`, [existing.signal_id])
+    }
+
+    const signal = await repo.getSignalById(targetSignalId, conn)
+    if (!signal) throw new Error('failed_to_save_signal')
+    await conn.commit()
+    return {
+      signal,
+      renamed,
+      previousSignalId: existing.signal_id,
+    }
+  } catch (err) {
+    try {
+      await conn.rollback()
+    } catch {}
+    throw err
+  } finally {
+    try {
+      conn.release()
+    } catch {}
+  }
 }
 
 export async function verifySignalClassificationCoverage(): Promise<ModerationSignalClassificationCoverage> {

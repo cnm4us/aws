@@ -5919,13 +5919,12 @@ function renderModerationSignalFormFields(opts: {
   metadataError?: string | null
 }) {
   const state = opts.state
-  const readOnlyId = opts.mode === 'detail'
   const polarityId = `${opts.formIdPrefix}-polarity`
   const familyId = `${opts.formIdPrefix}-signal-family`
   let body = ''
   body += `<label>Signal ID
-    <input type="text" name="signal_id" value="${escapeHtml(state.signal_id)}"${readOnlyId ? ' readonly' : ''} />
-    <div class="field-hint">${readOnlyId ? 'Stable canonical identifier. Changing the ID is intentionally blocked once created.' : 'Lowercase signal ID using letters, numbers, and underscores.'}</div>
+    <input type="text" name="signal_id" value="${escapeHtml(state.signal_id)}" />
+    <div class="field-hint">${opts.mode === 'detail' ? 'Lowercase signal ID using letters, numbers, and underscores. Renaming cascades to linked rules, cultures, and stored moderation contracts.' : 'Lowercase signal ID using letters, numbers, and underscores.'}</div>
   </label>`
   body += `<label>Label
     <input type="text" name="label" value="${escapeHtml(state.label)}" />
@@ -6299,9 +6298,9 @@ function renderModerationSignalDetailPage(opts: {
   body += '<div class="section">'
   body += '<div class="section-title">Danger Zone</div>'
   if ((signal?.usage_counts.total || 0) > 0) {
-    body += '<div class="field-hint">Hard delete is blocked because this signal is currently referenced. Use inactive or archived status instead.</div>'
+    body += '<div class="field-hint">Hard delete is blocked because this signal is currently referenced. Signal ID rename is allowed and will rewrite linked rules, cultures, and stored moderation contracts.</div>'
   } else {
-    body += '<div class="field-hint">Hard delete is intentionally deferred in v1. Use archived status instead of removing the record.</div>'
+    body += '<div class="field-hint">Hard delete is intentionally deferred in v1. Use archived status instead of removing the record. Signal ID rename is allowed from the edit form above.</div>'
   }
   body += '</div>'
 
@@ -6596,7 +6595,6 @@ async function handleModerationSignalUpdate(req: any, res: any) {
     const state = buildModerationSignalFormState({
       ...existing.signal,
       ...req.body,
-      signal_id: existing.signal.signal_id,
       metadata_text: (req.body as any)?.metadata_json,
     })
     const metadata = parseModerationSignalMetadataInput((req.body as any)?.metadata_json)
@@ -6642,23 +6640,30 @@ async function handleModerationSignalUpdate(req: any, res: any) {
     else if (action === 'archive') nextStatus = 'archived'
     else if (action === 'mark_draft') nextStatus = 'draft'
 
-    await moderationSignals.saveSignal({
-      signal_id: existing.signal.signal_id,
-      label: state.label,
-      short_description: state.short_description || null,
-      long_description: state.long_description || null,
-      polarity: classification.polarity as any,
-      signal_family: classification.signalFamily as any,
-      status: nextStatus as any,
-      metadata_json: metadata.value,
+    const saved = await moderationSignals.saveSignalWithPossibleRename({
+      existingSignalId: existing.signal.signal_id,
+      next: {
+        signal_id: state.signal_id,
+        label: state.label,
+        short_description: state.short_description || null,
+        long_description: state.long_description || null,
+        polarity: classification.polarity as any,
+        signal_family: classification.signalFamily as any,
+        status: nextStatus as any,
+        metadata_json: metadata.value,
+      },
     })
 
-    const notice =
+    const noticeBase =
       action === 'save'
         ? 'Signal saved.'
         : `Signal status updated to ${formatModerationSignalStatus(nextStatus)}.`
+    const notice = saved.renamed
+      ? `${noticeBase} Renamed signal ID from ${saved.previousSignalId} to ${saved.signal.signal_id}.`
+      : noticeBase
+
     return res.redirect(
-      `${getModerationAdminSectionPath('signals', encodeURIComponent(existing.signal.signal_id))}?notice=${encodeURIComponent(notice)}`
+      `${getModerationAdminSectionPath('signals', encodeURIComponent(saved.signal.signal_id))}?notice=${encodeURIComponent(notice)}`
     )
   } catch (err: any) {
     logError(req.log || pagesLogger, err, 'admin moderation signal update failed', { path: req.path })
@@ -6678,7 +6683,10 @@ async function handleModerationSignalUpdate(req: any, res: any) {
       usage: existing.usage,
       csrfToken,
       state,
-      error: String(err?.message || 'Failed to save signal.'),
+      error:
+        String(err?.code || '') === 'duplicate_signal_id'
+          ? 'A signal with that ID already exists.'
+          : String(err?.message || 'Failed to save signal.'),
     })
     res.set('Content-Type', 'text/html; charset=utf-8')
     return res.status(500).send(doc)

@@ -54,6 +54,10 @@ function normalizeSignalId(value: string): string {
     .replace(/^_+|_+$/g, '')
 }
 
+export function normalizeSignalIdInput(value: string): string {
+  return normalizeSignalId(value)
+}
+
 function normalizeSignalIds(values: Iterable<string>): string[] {
   const seen = new Set<string>()
   for (const value of values) {
