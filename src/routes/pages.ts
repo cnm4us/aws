@@ -3015,6 +3015,15 @@ type RuleSignalOption = {
   signal_family: string
 }
 
+type RuleAdminUserGroupLink = {
+  id: number
+  label: string
+  short_description: string | null
+  group_order: number
+  display_order: number
+  is_active: boolean
+}
+
 type RuleContractFormState = {
   issue_id: string
   issue_class: string
@@ -3032,6 +3041,69 @@ const RULE_SIGNAL_ALIAS_MAP: Record<string, string> = {
   work_schedule: 'indirect_identifiers',
   identity_breadcrumbs: 'indirect_identifiers',
   assertive_claim_syntax: 'assertive_language',
+}
+
+async function listLinkedUserGroupsByRuleIds(
+  ruleIds: number[],
+  db?: any
+): Promise<Map<number, RuleAdminUserGroupLink[]>> {
+  const ids = Array.from(new Set(ruleIds.filter((id) => Number.isFinite(id) && id > 0)))
+  const out = new Map<number, RuleAdminUserGroupLink[]>()
+  if (!ids.length) return out
+
+  const q = db || getPool()
+  const placeholders = ids.map(() => '?').join(',')
+  const [rows] = await q.query(
+    `SELECT
+        m.rule_id,
+        ufr.id,
+        ufr.label,
+        ufr.short_description,
+        ufr.group_order,
+        ufr.display_order,
+        ufr.is_active
+       FROM user_facing_rule_rule_map m
+       JOIN user_facing_rules ufr
+         ON ufr.id = m.user_facing_rule_id
+      WHERE m.rule_id IN (${placeholders})
+      ORDER BY m.rule_id ASC, ufr.group_order ASC, ufr.display_order ASC, ufr.label ASC, ufr.id ASC`,
+    ids
+  )
+
+  for (const row of rows as any[]) {
+    const ruleId = Number(row.rule_id || 0)
+    const groupId = Number(row.id || 0)
+    if (!Number.isFinite(ruleId) || ruleId <= 0 || !Number.isFinite(groupId) || groupId <= 0) continue
+    const existing = out.get(ruleId) || []
+    existing.push({
+      id: groupId,
+      label: String(row.label || ''),
+      short_description: row.short_description == null ? null : String(row.short_description),
+      group_order: Number(row.group_order || 0),
+      display_order: Number(row.display_order || 0),
+      is_active: Number(row.is_active || 0) === 1,
+    })
+    out.set(ruleId, existing)
+  }
+
+  return out
+}
+
+function renderRuleLinkedUserGroupsSummary(
+  groups: RuleAdminUserGroupLink[],
+  opts: { emptyText?: string; linkToAdmin?: boolean } = {}
+): string {
+  if (!groups.length) {
+    return `<span class="field-hint">${escapeHtml(opts.emptyText || 'Ungrouped')}</span>`
+  }
+  return groups
+    .map((group) => {
+      const label = escapeHtml(group.label || `User Group #${group.id}`)
+      if (!opts.linkToAdmin) return `<span class="pill">${label}</span>`
+      const href = fillAdminPathParams(MODERATION_USER_GROUP_ADMIN_PATHS.detail, { id: group.id })
+      return `<a class="pill" href="${escapeHtml(href)}">${label}</a>`
+    })
+    .join(' ')
 }
 
 function uniqueTrimmedStrings(values: Iterable<unknown>): string[] {
@@ -3482,20 +3554,18 @@ function renderRuleContractFields(opts: {
 function renderRuleDraftEditPage(opts: {
   rule: any;
   draft: any;
-  categories: Array<{ id: number; name: string }>;
   signalOptions: RuleSignalOption[];
   csrfToken?: string | null;
   notice?: string | null;
   error?: string | null;
 }): string {
-  const { rule, draft, categories } = opts;
+  const { rule, draft } = opts;
   const signalOptions = Array.isArray(opts.signalOptions) ? opts.signalOptions : [];
   const csrfToken = opts.csrfToken ? String(opts.csrfToken) : '';
   const notice = opts.notice ? String(opts.notice) : '';
   const error = opts.error ? String(opts.error) : '';
 
   const titleValue = rule.title ? String(rule.title) : '';
-  const categoryIdValue = rule.category_id != null ? String(rule.category_id) : '';
 
   const shortDescriptionValue = draft.short_description ? String(draft.short_description) : '';
   const markdownValue = draft.markdown ? String(draft.markdown) : '';
@@ -3540,19 +3610,6 @@ function renderRuleDraftEditPage(opts: {
 
   body += `<label>Title
     <input type="text" name="title" value="${escapeHtml(titleValue)}" />
-  </label>`;
-
-  body += `<label>Category
-    <select name="categoryId">
-      <option value=""${categoryIdValue === '' ? ' selected' : ''}>—</option>
-      ${categories
-        .map((c) => {
-          const id = String(c.id);
-          const sel = id === categoryIdValue ? ' selected' : '';
-          return `<option value="${escapeHtml(id)}"${sel}>${escapeHtml(c.name)}</option>`;
-        })
-        .join('')}
-    </select>
   </label>`;
 
   body += `<label>Short Description
@@ -3625,19 +3682,16 @@ function renderRuleListPage(
   rules: any[],
   opts: {
     csrfToken?: string | null;
-    categories: Array<{ id: number; name: string }>;
-    selectedCategoryId: string;
+    linkedUserGroupsByRuleId: Map<number, RuleAdminUserGroupLink[]>;
     sort: string;
     dir: 'asc' | 'desc';
   }
 ): string {
   const csrf = opts.csrfToken ? String(opts.csrfToken) : '';
-  const categories = Array.isArray(opts.categories) ? opts.categories : [];
-  const selectedCategoryId = String(opts.selectedCategoryId || '');
+  const linkedUserGroupsByRuleId = opts.linkedUserGroupsByRuleId || new Map<number, RuleAdminUserGroupLink[]>();
   const sort = String(opts.sort || '');
   const dir: 'asc' | 'desc' = opts.dir === 'desc' ? 'desc' : 'asc';
   const exportQs = new URLSearchParams()
-  if (selectedCategoryId) exportQs.set('categoryId', selectedCategoryId)
   if (sort) exportQs.set('sort', sort)
   if (dir) exportQs.set('dir', dir)
   exportQs.set('format', 'json')
@@ -3646,12 +3700,50 @@ function renderRuleListPage(
     const isActive = sort === key;
     const nextDir: 'asc' | 'desc' = isActive && dir === 'asc' ? 'desc' : 'asc';
     const qs = new URLSearchParams();
-    if (selectedCategoryId) qs.set('categoryId', selectedCategoryId);
     qs.set('sort', key);
     qs.set('dir', nextDir);
     const arrow = isActive ? (dir === 'asc' ? ' ▲' : ' ▼') : '';
     return `<a href="${escapeHtml(`${MODERATION_RULE_ADMIN_PATHS.list}?${qs.toString()}`)}">${escapeHtml(label)}${arrow}</a>`;
   };
+
+  const groupedSections = new Map<string, { key: string; title: string; groups: RuleAdminUserGroupLink[]; rules: any[] }>()
+  for (const row of rules) {
+    const ruleId = Number(row.id || 0)
+    const groups = linkedUserGroupsByRuleId.get(ruleId) || []
+    if (!groups.length) {
+      const section = groupedSections.get('ungrouped') || {
+        key: 'ungrouped',
+        title: 'Ungrouped Rules',
+        groups: [],
+        rules: [],
+      }
+      section.rules.push(row)
+      groupedSections.set('ungrouped', section)
+      continue
+    }
+    for (const group of groups) {
+      const sectionKey = `group:${group.id}`
+      const section = groupedSections.get(sectionKey) || {
+        key: sectionKey,
+        title: group.label || `User Group #${group.id}`,
+        groups: [group],
+        rules: [],
+      }
+      section.rules.push(row)
+      groupedSections.set(sectionKey, section)
+    }
+  }
+
+  const sections = Array.from(groupedSections.values()).sort((a, b) => {
+    const aGroup = a.groups[0]
+    const bGroup = b.groups[0]
+    if (!aGroup && !bGroup) return 0
+    if (!aGroup) return 1
+    if (!bGroup) return -1
+    if (aGroup.group_order !== bGroup.group_order) return aGroup.group_order - bGroup.group_order
+    if (aGroup.display_order !== bGroup.display_order) return aGroup.display_order - bGroup.display_order
+    return String(a.title).localeCompare(String(b.title))
+  })
 
   let body = `<style>
   .rules-nebula{ min-height: 100vh; color:#fff; font-family:system-ui,sans-serif; position:relative; background:#050508; }
@@ -3680,17 +3772,10 @@ function renderRuleListPage(
   body += `<div class="rules-nebula"><div class="rules-nebula-bg"></div><div class="rules-nebula-content">`;
   body += '<h1>Rules</h1>';
   body += `<div class="toolbar"><div><span class="pill">Rules</span></div><div style="display:flex; gap:8px; flex-wrap:wrap"><a href="${escapeHtml(`${MODERATION_RULE_ADMIN_PATHS.list}?${exportQs.toString()}`)}" class="card-btn card-btn-edit">Export JSON</a><a href="${escapeHtml(MODERATION_RULE_ADMIN_PATHS.new)}" class="card-btn card-btn-open">New rule</a></div></div>`;
-  body += `<div class="toolbar" style="margin-top: 10px"><div><label style="display:flex; gap:10px; align-items:center; margin:0"><span style="opacity:0.85">Category</span><select name="categoryId" onchange="(function(sel){const qs=new URLSearchParams(window.location.search); if(sel.value){qs.set('categoryId', sel.value)} else {qs.delete('categoryId')} window.location.search=qs.toString()})(this)"><option value=""${selectedCategoryId === '' ? ' selected' : ''}>All</option>${categories
-    .map((c) => {
-      const id = String(c.id);
-      const sel = id === selectedCategoryId ? ' selected' : '';
-      return `<option value="${escapeHtml(id)}"${sel}>${escapeHtml(c.name)}</option>`;
-    })
-    .join('')}</select></label></div></div>`;
   body += `<div class="toolbar sort-links" style="margin-top: 8px; align-items:flex-start; flex-wrap:wrap">
     <div style="opacity:0.85; font-size: 0.92rem">Sort</div>
     <div style="display:flex; gap:12px; flex-wrap:wrap">
-      ${headerLink('Category', 'category')}
+      ${headerLink('Slug', 'slug')}
       ${headerLink('Title', 'title')}
       ${headerLink('Visibility', 'visibility')}
       ${headerLink('Current Version', 'version')}
@@ -3701,38 +3786,48 @@ function renderRuleListPage(
   if (!rules.length) {
     body += '<p>No rules have been created yet.</p>';
   } else {
-    for (const row of rules) {
-      const id = Number(row.id);
-      const titleRaw = String(row.title || '').trim();
-      const title = escapeHtml(titleRaw || '(untitled)');
-      const category = escapeHtml(String(row.category_name || ''));
-      const vis = escapeHtml(String(row.visibility || 'public'));
-      const ver = row.current_version ?? row.current_version_id ?? null;
-      const versionLabel = ver != null ? escapeHtml(String(ver)) : '';
-      const draftPending = row.draft_pending != null ? Number(row.draft_pending) === 1 : false;
-      const draftLabel = draftPending ? 'Draft pending' : 'No draft';
-      const updated = row.updated_at ? escapeHtml(String(row.updated_at)) : '';
-      const confirmName = escapeHtml(titleRaw || `Rule #${id}`);
-      body += `<div class="section" style="margin-top: 12px">`;
-      body += `<div style="display:flex; align-items:flex-start; justify-content:space-between; gap:10px">`;
-      body += `<a href="${escapeHtml(getModerationAdminSectionPath('rules', encodeURIComponent(String(id))))}" style="font-size: 1.15rem; font-weight: 700; line-height: 1.25; text-decoration: none">${title}</a>`;
-      body += `<a href="${escapeHtml(getModerationAdminSectionPath('rules', `${encodeURIComponent(String(id))}/edit`))}" class="card-btn card-btn-open" style="white-space:nowrap">Edit Draft</a>`;
-      body += `</div>`;
-      body += `<div style="display:grid; gap:7px; margin-top: 10px">`;
-      body += `<div><strong>Category:</strong> ${category || '-'}</div>`;
-      body += `<div><strong>Updated:</strong> ${updated || '-'}</div>`;
-      body += `<div><strong>Visibility:</strong> ${vis || '-'}</div>`;
-      body += `<div><strong>Current Version:</strong> ${versionLabel || '-'}</div>`;
-      body += `<div><strong>Draft:</strong> ${draftPending ? '<span class="pill">Draft pending</span>' : escapeHtml(draftLabel)}</div>`;
-      body += `</div>`;
-      body += `<div style="display:flex; justify-content:flex-end; margin-top: 12px">`;
-      body += `<form method="post" action="${escapeHtml(getModerationAdminSectionPath('rules', `${encodeURIComponent(String(id))}/delete`))}" style="margin:0; display:inline" onsubmit="return confirm('Delete rule \\'${confirmName}\\'? This cannot be undone.');">`;
-      if (csrf) {
-        body += `<input type="hidden" name="csrf" value="${escapeHtml(csrf)}" />`;
+    for (const section of sections) {
+      body += `<div class="section" style="margin-top: 12px">`
+      body += `<div class="section-title">${escapeHtml(section.title)}</div>`
+      if (section.groups[0]?.short_description) {
+        body += `<div class="field-hint" style="margin-bottom: 10px">${escapeHtml(String(section.groups[0].short_description || ''))}</div>`
       }
-      body += `<button type="submit" class="card-btn card-btn-delete">Delete</button>`;
-      body += `</form>`;
-      body += `</div>`;
+      for (const row of section.rules) {
+        const id = Number(row.id);
+        const titleRaw = String(row.title || '').trim();
+        const title = escapeHtml(titleRaw || '(untitled)');
+        const vis = escapeHtml(String(row.visibility || 'public'));
+        const ver = row.current_version ?? row.current_version_id ?? null;
+        const versionLabel = ver != null ? escapeHtml(String(ver)) : '';
+        const draftPending = row.draft_pending != null ? Number(row.draft_pending) === 1 : false;
+        const draftLabel = draftPending ? 'Draft pending' : 'No draft';
+        const updated = row.updated_at ? escapeHtml(String(row.updated_at)) : '';
+        const slug = escapeHtml(String(row.slug || ''));
+        const confirmName = escapeHtml(titleRaw || `Rule #${id}`);
+        const linkedGroups = linkedUserGroupsByRuleId.get(id) || []
+        body += `<div style="border-top:1px solid rgba(255,255,255,0.12); padding-top:12px; margin-top:12px">`;
+        body += `<div style="display:flex; align-items:flex-start; justify-content:space-between; gap:10px">`;
+        body += `<a href="${escapeHtml(getModerationAdminSectionPath('rules', encodeURIComponent(String(id))))}" style="font-size: 1.15rem; font-weight: 700; line-height: 1.25; text-decoration: none">${title}</a>`;
+        body += `<a href="${escapeHtml(getModerationAdminSectionPath('rules', `${encodeURIComponent(String(id))}/edit`))}" class="card-btn card-btn-open" style="white-space:nowrap">Edit Draft</a>`;
+        body += `</div>`;
+        body += `<div style="display:grid; gap:7px; margin-top: 10px">`;
+        body += `<div><strong>Slug:</strong> ${slug || '-'}</div>`;
+        body += `<div><strong>Linked User Groups:</strong> ${renderRuleLinkedUserGroupsSummary(linkedGroups, { emptyText: 'Ungrouped', linkToAdmin: true })}</div>`;
+        body += `<div><strong>Updated:</strong> ${updated || '-'}</div>`;
+        body += `<div><strong>Visibility:</strong> ${vis || '-'}</div>`;
+        body += `<div><strong>Current Version:</strong> ${versionLabel || '-'}</div>`;
+        body += `<div><strong>Draft:</strong> ${draftPending ? '<span class="pill">Draft pending</span>' : escapeHtml(draftLabel)}</div>`;
+        body += `</div>`;
+        body += `<div style="display:flex; justify-content:flex-end; margin-top: 12px">`;
+        body += `<form method="post" action="${escapeHtml(getModerationAdminSectionPath('rules', `${encodeURIComponent(String(id))}/delete`))}" style="margin:0; display:inline" onsubmit="return confirm('Delete rule \\'${confirmName}\\'? This cannot be undone.');">`;
+        if (csrf) {
+          body += `<input type="hidden" name="csrf" value="${escapeHtml(csrf)}" />`;
+        }
+        body += `<button type="submit" class="card-btn card-btn-delete">Delete</button>`;
+        body += `</form>`;
+        body += `</div>`;
+        body += `</div>`;
+      }
       body += `</div>`;
     }
   }
@@ -3747,7 +3842,6 @@ function renderRuleListPage(
 
 function renderRuleForm(opts: {
   rule?: any;
-  categories?: Array<{ id: number; name: string }>;
   signalOptions?: RuleSignalOption[];
   error?: string | null;
   success?: string | null;
@@ -3755,7 +3849,6 @@ function renderRuleForm(opts: {
   isNewVersion?: boolean;
 }): string {
   const rule = opts.rule ?? {};
-  const categories = Array.isArray(opts.categories) ? opts.categories : [];
   const signalOptions = Array.isArray(opts.signalOptions) ? opts.signalOptions : [];
   const error = opts.error;
   const success = opts.success;
@@ -3765,7 +3858,6 @@ function renderRuleForm(opts: {
   const title = isNewVersion ? 'New Rule Version' : (isEdit ? 'Edit Rule' : 'New Rule');
   const slugValue = rule.slug ? String(rule.slug) : '';
   const titleValue = rule.title ? String(rule.title) : '';
-  const categoryIdValue = rule.category_id != null ? String(rule.category_id) : (rule.categoryId != null ? String(rule.categoryId) : '');
   const visibilityValue = rule.visibility ? String(rule.visibility) : 'public';
   const markdownValue = rule.markdown ? String(rule.markdown) : '';
   const htmlValue = rule.html ? String(rule.html) : '';
@@ -3815,19 +3907,6 @@ function renderRuleForm(opts: {
       <input type="text" name="slug" value="${escapeHtml(slugValue)}" />
       <div class="field-hint">Lowercase; a–z, 0–9, '-' only; up to 4 segments separated by '/'. Used under <code>/rules/&lt;slug&gt;</code>.</div>
     </label>`;
-    body += `<label>Category
-      <select name="categoryId">
-        <option value=""${categoryIdValue === '' ? ' selected' : ''}>—</option>
-        ${categories
-          .map((c) => {
-            const id = String(c.id);
-            const sel = id === categoryIdValue ? ' selected' : '';
-            return `<option value="${escapeHtml(id)}"${sel}>${escapeHtml(c.name)}</option>`;
-          })
-          .join('')}
-      </select>
-      <div class="field-hint">Categories come from the <code>rule_categories</code> table.</div>
-    </label>`;
     body += `<label>Title
       <input type="text" name="title" value="${escapeHtml(titleValue)}" />
     </label>`;
@@ -3841,9 +3920,6 @@ function renderRuleForm(opts: {
     </label>`;
   } else {
     body += `<p><strong>Rule:</strong> ${escapeHtml(slugValue || titleValue || '(untitled)')}</p>`;
-    if (rule.category_name) {
-      body += `<p><strong>Category:</strong> ${escapeHtml(String(rule.category_name))}</p>`;
-    }
   }
   body += `<label>Short Description
     <textarea name="shortDescription" style="min-height: 90px">${escapeHtml(shortDescriptionValue)}</textarea>
@@ -3912,14 +3988,12 @@ function renderRuleForm(opts: {
 }
 
 async function buildModerationRulesExportPayload(input: {
-  categoryId?: number | null
   sort: string
   dir: 'asc' | 'desc'
 }) {
   const db = getPool()
   const sortExprByKey: Record<string, string> = {
     slug: 'r.slug',
-    category: "COALESCE(c.name, '')",
     title: 'r.title',
     visibility: 'r.visibility',
     version: 'rv.version',
@@ -3929,20 +4003,13 @@ async function buildModerationRulesExportPayload(input: {
   const sort = input.sort || 'slug'
   const dir: 'asc' | 'desc' = input.dir === 'desc' ? 'desc' : 'asc'
   const sortExpr = sortExprByKey[sort] || sortExprByKey.slug
-  const where: string[] = []
-  const params: any[] = []
-  if (input.categoryId != null && Number.isFinite(input.categoryId) && input.categoryId > 0) {
-    where.push('r.category_id = ?')
-    params.push(input.categoryId)
-  }
-  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
   const orderSql =
     sort === 'draft'
       ? `ORDER BY ${sortExpr} ${dir}, d.updated_at ${dir}, r.slug ASC`
       : `ORDER BY ${sortExpr} ${dir}, r.slug ASC`
 
   const [rows] = await db.query(
-    `SELECT r.id, r.slug, r.title, r.category_id, r.visibility, r.updated_at,
+    `SELECT r.id, r.slug, r.title, r.visibility, r.updated_at,
             rv.id AS current_version_id,
             rv.version AS current_version,
             rv.created_at AS current_published_at,
@@ -3961,7 +4028,6 @@ async function buildModerationRulesExportPayload(input: {
             rv.guidance_moderators_html AS current_guidance_moderators_html,
             rv.guidance_agents_markdown AS current_guidance_agents_markdown,
             rv.guidance_agents_html AS current_guidance_agents_html,
-            c.name AS category_name,
             d.updated_at AS draft_updated_at,
             d.issue_id AS draft_issue_id,
             d.issue_class AS draft_issue_class,
@@ -3983,11 +4049,9 @@ async function buildModerationRulesExportPayload(input: {
             END AS draft_pending
        FROM rules r
        LEFT JOIN rule_versions rv ON rv.id = r.current_version_id
-       LEFT JOIN rule_categories c ON c.id = r.category_id
        LEFT JOIN rule_drafts d ON d.rule_id = r.id
-       ${whereSql}
        ${orderSql}`,
-    params
+    []
   )
 
   const rules = rows as any[]
@@ -3995,6 +4059,7 @@ async function buildModerationRulesExportPayload(input: {
     .map((row) => Number(row.id))
     .filter((id) => Number.isFinite(id) && id > 0)
   const linkedSignalIdsByRuleId = new Map<number, string[]>()
+  const linkedUserGroupsByRuleId = await listLinkedUserGroupsByRuleIds(ruleIds, db)
   if (ruleIds.length) {
     const placeholders = ruleIds.map(() => '?').join(',')
     const [signalRows] = await db.query(
@@ -4018,7 +4083,6 @@ async function buildModerationRulesExportPayload(input: {
   return {
     exported_at: new Date().toISOString(),
     filters: {
-      category_id: input.categoryId ?? null,
       sort,
       dir,
     },
@@ -4032,12 +4096,14 @@ async function buildModerationRulesExportPayload(input: {
         title: String(row.title || ''),
         visibility: String(row.visibility || ''),
         updated_at: row.updated_at == null ? null : String(row.updated_at),
-        category: row.category_id == null
-          ? null
-          : {
-              id: Number(row.category_id),
-              name: row.category_name == null ? null : String(row.category_name),
-            },
+        linked_user_groups: (linkedUserGroupsByRuleId.get(id) || []).map((group) => ({
+          id: group.id,
+          label: group.label,
+          short_description: group.short_description,
+          is_active: group.is_active,
+          group_order: group.group_order,
+          display_order: group.display_order,
+        })),
         linked_signal_ids: linkedSignalIdsByRuleId.get(id) || [],
         current_version: row.current_version_id == null
           ? null
@@ -4108,10 +4174,6 @@ async function buildModerationRulesExportPayload(input: {
 async function handleModerationRulesList(req: any, res: any) {
   try {
     const db = getPool();
-    const categories = await listRuleCategories();
-    const rawCategoryId = req.query && (req.query as any).categoryId != null ? String((req.query as any).categoryId) : '';
-    const selectedCategoryId = rawCategoryId && /^\d+$/.test(rawCategoryId) ? rawCategoryId : '';
-
     const rawSort = req.query && (req.query as any).sort != null ? String((req.query as any).sort) : '';
     const rawDir = req.query && (req.query as any).dir != null ? String((req.query as any).dir) : '';
     const dir: 'asc' | 'desc' = rawDir.toLowerCase() === 'desc' ? 'desc' : 'asc';
@@ -4120,7 +4182,6 @@ async function handleModerationRulesList(req: any, res: any) {
     const sortKey = rawSort || 'slug';
     const sortExprByKey: Record<string, string> = {
       slug: 'r.slug',
-      category: "COALESCE(c.name, '')",
       title: 'r.title',
       visibility: 'r.visibility',
       version: 'rv.version',
@@ -4129,16 +4190,8 @@ async function handleModerationRulesList(req: any, res: any) {
     };
     const sortExpr = sortExprByKey[sortKey] || sortExprByKey.slug;
 
-    const where: string[] = [];
-    const params: any[] = [];
-    if (selectedCategoryId) {
-      where.push('r.category_id = ?');
-      params.push(Number(selectedCategoryId));
-    }
-
     if (format === 'json') {
       const payload = await buildModerationRulesExportPayload({
-        categoryId: selectedCategoryId ? Number(selectedCategoryId) : null,
         sort: sortKey,
         dir,
       })
@@ -4149,8 +4202,6 @@ async function handleModerationRulesList(req: any, res: any) {
       return res.send(JSON.stringify(payload, null, 2))
     }
 
-    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
-
     const orderSql =
       sortKey === 'draft'
         ? `ORDER BY ${sortExpr} ${dir}, d.updated_at ${dir}, r.slug ASC`
@@ -4159,7 +4210,6 @@ async function handleModerationRulesList(req: any, res: any) {
     const [rows] = await db.query(
       `SELECT r.id, r.slug, r.title, r.visibility, r.updated_at,
               rv.version AS current_version, rv.created_at AS current_published_at,
-              c.name AS category_name,
               d.updated_at AS draft_updated_at,
               CASE
                 WHEN d.updated_at IS NOT NULL AND (rv.created_at IS NULL OR d.updated_at > rv.created_at) THEN 1
@@ -4167,16 +4217,17 @@ async function handleModerationRulesList(req: any, res: any) {
               END AS draft_pending
          FROM rules r
          LEFT JOIN rule_versions rv ON rv.id = r.current_version_id
-         LEFT JOIN rule_categories c ON c.id = r.category_id
          LEFT JOIN rule_drafts d ON d.rule_id = r.id
-         ${whereSql}
-         ${orderSql}`,
-      params
+         ${orderSql}`
     );
     const rules = rows as any[];
+    const linkedUserGroupsByRuleId = await listLinkedUserGroupsByRuleIds(
+      rules.map((row) => Number(row.id || 0)),
+      db
+    )
     const cookies = parseCookies(req.headers.cookie);
     const csrfToken = cookies['csrf'] || '';
-    const doc = renderRuleListPage(rules, { csrfToken, categories, selectedCategoryId, sort: sortKey, dir });
+    const doc = renderRuleListPage(rules, { csrfToken, linkedUserGroupsByRuleId, sort: sortKey, dir });
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.send(doc);
   } catch (err) {
@@ -4196,9 +4247,8 @@ async function handleModerationRuleEditForm(req: any, res: any) {
     if (!Number.isFinite(id) || id <= 0) return res.status(404).send('Rule not found');
     const db = getPool();
     const [ruleRows] = await db.query(
-      `SELECT r.id, r.slug, r.title, r.category_id, r.visibility, r.current_version_id, c.name AS category_name
+      `SELECT r.id, r.slug, r.title, r.visibility, r.current_version_id
          FROM rules r
-         LEFT JOIN rule_categories c ON c.id = r.category_id
         WHERE r.id = ?
         LIMIT 1`,
       [id]
@@ -4210,14 +4260,11 @@ async function handleModerationRuleEditForm(req: any, res: any) {
     if (!draft) return res.status(404).send('Rule not found');
     draft.rule_signal_ids = await moderationSignals.listRuleSignalIds(id)
 
-    const [categories, signalOptions] = await Promise.all([
-      listRuleCategories(),
-      listRuleSignalOptions(),
-    ]);
+    const signalOptions = await listRuleSignalOptions();
     const cookies = parseCookies(req.headers.cookie);
     const csrfToken = cookies['csrf'] || '';
     const notice = req.query && (req.query as any).notice ? String((req.query as any).notice) : '';
-    const doc = renderRuleDraftEditPage({ rule, draft, categories, signalOptions, csrfToken, notice });
+    const doc = renderRuleDraftEditPage({ rule, draft, signalOptions, csrfToken, notice });
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.send(doc);
   } catch (err) {
@@ -4251,7 +4298,6 @@ async function handleModerationRuleEdit(req: any, res: any) {
 
     const body = (req.body || {}) as any;
     const rawTitle = String(body.title || '');
-    const rawCategoryId = body.categoryId != null ? String(body.categoryId) : '';
     const shortDescription = body.shortDescription ? String(body.shortDescription) : '';
 
     const markdown = String(body.markdown || '');
@@ -4268,7 +4314,7 @@ async function handleModerationRuleEdit(req: any, res: any) {
     await conn.beginTransaction();
 
     const [ruleRows] = await conn.query(
-      `SELECT id, slug, title, category_id, current_version_id
+      `SELECT id, slug, title, current_version_id
          FROM rules
         WHERE id = ?
         LIMIT 1`,
@@ -4280,17 +4326,8 @@ async function handleModerationRuleEdit(req: any, res: any) {
       return res.status(404).send('Rule not found');
     }
 
-    let categoryId: number | null = rawCategoryId && /^\d+$/.test(rawCategoryId) ? Number(rawCategoryId) : null;
-    if (categoryId != null) {
-      const [catRows] = await conn.query(`SELECT id FROM rule_categories WHERE id = ? LIMIT 1`, [categoryId]);
-      if (!(catRows as any[])?.length) categoryId = null;
-    }
-
     const title = rawTitle.trim() || String(rule.title || '');
-    const [categories, signalOptions] = await Promise.all([
-      listRuleCategories(),
-      listRuleSignalOptions(),
-    ]);
+    const signalOptions = await listRuleSignalOptions();
     const contractInput = parseRuleContractInput(body, signalOptions, rule.slug)
     if (!contractInput.value) {
       await conn.rollback();
@@ -4300,7 +4337,6 @@ async function handleModerationRuleEdit(req: any, res: any) {
         rule: {
           ...rule,
           title,
-          category_id: categoryId,
         },
         draft: {
           ...body,
@@ -4315,7 +4351,6 @@ async function handleModerationRuleEdit(req: any, res: any) {
           ai_spec_text: contractInput.state.ai_spec_text,
           selected_signal_ids: contractInput.state.selected_signal_ids,
         },
-        categories,
         signalOptions,
         csrfToken,
         error: contractInput.error,
@@ -4406,9 +4441,9 @@ async function handleModerationRuleEdit(req: any, res: any) {
 
     await conn.query(
       `UPDATE rules
-          SET title = ?, category_id = ?, updated_by = ?, updated_at = CURRENT_TIMESTAMP
+          SET title = ?, category_id = NULL, updated_by = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?`,
-      [title, categoryId, userId, id]
+      [title, userId, id]
     );
 
     await conn.query(
@@ -4579,13 +4614,10 @@ pagesRouter.post(
 );
 
 async function handleModerationRulesNew(req: any, res: any) {
-  const [categories, signalOptions] = await Promise.all([
-    listRuleCategories(),
-    listRuleSignalOptions(),
-  ]);
+  const signalOptions = await listRuleSignalOptions();
   const cookies = parseCookies(req.headers.cookie);
   const csrfToken = cookies['csrf'] || '';
-  const doc = renderRuleForm({ rule: {}, categories, signalOptions, error: null, success: null, csrfToken });
+  const doc = renderRuleForm({ rule: {}, signalOptions, error: null, success: null, csrfToken });
   res.set('Content-Type', 'text/html; charset=utf-8');
   res.send(doc);
 }
@@ -4608,11 +4640,7 @@ async function handleModerationRulesCreate(req: any, res: any) {
     const disallowedExamplesMarkdown = body.disallowedExamples ? String(body.disallowedExamples) : '';
     const guidanceModeratorsMarkdown = body.guidanceModerators ? String(body.guidanceModerators) : '';
     const guidanceAgentsMarkdown = body.guidanceAgents ? String(body.guidanceAgents) : '';
-    const rawCategoryId = body.categoryId != null ? String(body.categoryId) : '';
-    const [categories, signalOptions] = await Promise.all([
-      listRuleCategories(),
-      listRuleSignalOptions(),
-    ]);
+    const signalOptions = await listRuleSignalOptions();
 
     const slug = normalizePageSlug(rawSlug);
     if (!slug) {
@@ -4624,7 +4652,6 @@ async function handleModerationRulesCreate(req: any, res: any) {
           ai_spec_text: String(body.aiSpecJson || ''),
           selected_signal_ids: toStringArrayInput(body.signal_ids),
         },
-        categories,
         signalOptions,
         error: 'Slug is required and must use only a–z, 0–9, \'-\' and \'/\' (max 4 segments).',
         success: null,
@@ -4649,15 +4676,6 @@ async function handleModerationRulesCreate(req: any, res: any) {
     const legacyGuidanceHtml = guidanceModeratorsMarkdown ? guidanceModeratorsHtml : '';
     const db = getPool();
     const userId = req.user && req.user.id ? Number(req.user.id) : null;
-    let categoryId: number | null = rawCategoryId && /^\d+$/.test(rawCategoryId) ? Number(rawCategoryId) : null;
-    if (categoryId != null) {
-      try {
-        const [catRows] = await db.query(`SELECT id FROM rule_categories WHERE id = ? LIMIT 1`, [categoryId]);
-        if (!(catRows as any[])?.length) categoryId = null;
-      } catch {
-        categoryId = null;
-      }
-    }
 
     const contractInput = parseRuleContractInput(body, signalOptions, slug)
     if (!contractInput.value) {
@@ -4672,7 +4690,6 @@ async function handleModerationRulesCreate(req: any, res: any) {
           ai_spec_text: contractInput.state.ai_spec_text,
           selected_signal_ids: contractInput.state.selected_signal_ids,
         },
-        categories,
         signalOptions,
         error: contractInput.error,
         success: null,
@@ -4687,8 +4704,8 @@ async function handleModerationRulesCreate(req: any, res: any) {
     try {
       const [insRule] = await db.query(
         `INSERT INTO rules (slug, title, category_id, visibility, created_by, updated_by)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [slug, title, categoryId, visibility, userId, userId]
+         VALUES (?, ?, NULL, ?, ?, ?)`,
+        [slug, title, visibility, userId, userId]
       );
       ruleId = Number((insRule as any).insertId);
       const [insVersion] = await db.query(
@@ -4754,7 +4771,6 @@ async function handleModerationRulesCreate(req: any, res: any) {
             ai_spec_text: contractInput.state.ai_spec_text,
             selected_signal_ids: contractInput.state.selected_signal_ids,
           },
-          categories,
           signalOptions,
           error: 'Slug already exists. Please choose a different slug.',
           success: null,
@@ -4806,9 +4822,10 @@ async function handleModerationRuleDetail(req: any, res: any) {
     const currentPublishedAt = currentVersionRow && currentVersionRow.created_at ? String(currentVersionRow.created_at) : '';
     const hasUnpublishedDraft = !!draftUpdatedAt && (currentPublishedAt ? draftUpdatedAt > currentPublishedAt : true);
     const currentAiSpec = parseRuleAiSpecCell(currentVersionRow?.ai_spec_json)
-    const [linkedSignals, ruleSignalOptions] = await Promise.all([
+    const [linkedSignals, ruleSignalOptions, linkedUserGroupsByRuleId] = await Promise.all([
       moderationSignals.listRuleSignalIds(rule.id),
       listRuleSignalOptions(),
+      listLinkedUserGroupsByRuleIds([Number(rule.id)], db),
     ])
     const signalOptionById = new Map(ruleSignalOptions.map((signal) => [signal.signal_id, signal]))
     const linkedSignalOptions = linkedSignals.map((signalId) => {
@@ -4823,6 +4840,7 @@ async function handleModerationRuleDetail(req: any, res: any) {
       }
     })
     const groupedLinkedSignals = splitModerationSignalsByPolarity(linkedSignalOptions)
+    const linkedUserGroups = linkedUserGroupsByRuleId.get(Number(rule.id)) || []
     const renderLinkedSignalSummary = (title: string, signals: RuleSignalOption[], emptyText: string) => {
       let html = `<div style="margin-top:8px"><strong>${escapeHtml(title)}:</strong> `
       html += signals.length
@@ -4843,6 +4861,7 @@ async function handleModerationRuleDetail(req: any, res: any) {
     body += `<div class="section-title">Moderation Contract</div>`
     body += `<div><strong>Current Issue ID:</strong> ${escapeHtml(String(currentVersionRow?.issue_id || inferRuleIssueIdFromSlug(rule.slug) || '-'))}</div>`
     body += `<div><strong>Current Issue Class:</strong> ${escapeHtml(normalizeRuleIssueClassInput(currentVersionRow?.issue_class || 'unknown'))}</div>`
+    body += `<div style="margin-top:8px"><strong>Linked User Groups:</strong> ${renderRuleLinkedUserGroupsSummary(linkedUserGroups, { emptyText: 'Ungrouped', linkToAdmin: true })}</div>`
     body += renderLinkedSignalSummary('Linked Positive Signals', groupedLinkedSignals.positive, 'No linked positive signals.')
     body += renderLinkedSignalSummary('Linked Disruptive Signals', groupedLinkedSignals.disruption, 'No linked disruptive signals.')
     if (groupedLinkedSignals.mixedOrUnclassified.length) {
@@ -4897,9 +4916,8 @@ async function handleModerationRuleVersionNewForm(req: any, res: any) {
     if (!Number.isFinite(id) || id <= 0) return res.status(404).send('Rule not found');
     const db = getPool();
     const [ruleRows] = await db.query(
-      `SELECT r.id, r.slug, r.title, r.current_version_id, c.name AS category_name
+      `SELECT r.id, r.slug, r.title, r.current_version_id
          FROM rules r
-         LEFT JOIN rule_categories c ON c.id = r.category_id
         WHERE r.id = ?
         LIMIT 1`,
       [id]
@@ -4907,7 +4925,7 @@ async function handleModerationRuleVersionNewForm(req: any, res: any) {
     const rule = (ruleRows as any[])[0];
     if (!rule) return res.status(404).send('Rule not found');
 
-    let draft: any = { id: rule.id, slug: rule.slug, title: rule.title, category_name: rule.category_name };
+    let draft: any = { id: rule.id, slug: rule.slug, title: rule.title };
     if (rule.current_version_id) {
       const [verRows] = await db.query(
         `SELECT markdown, html, change_summary, issue_id, issue_class, ai_spec_json, short_description,
@@ -6286,7 +6304,7 @@ function renderModerationSignalDetailPage(opts: {
     body += '<ul>'
     for (const row of usage.rules) {
       const href = getModerationAdminSectionPath('rules', encodeURIComponent(String(row.id)))
-      body += `<li><a href="${escapeHtml(href)}">${escapeHtml(row.title || row.slug || `Rule #${row.id}`)}</a> <span class="field-hint">#${escapeHtml(String(row.id))}${row.category_name ? ` • ${escapeHtml(row.category_name)}` : ''}${row.current_version != null ? ` • v${escapeHtml(String(row.current_version))}` : ''}</span></li>`
+      body += `<li><a href="${escapeHtml(href)}">${escapeHtml(row.title || row.slug || `Rule #${row.id}`)}</a> <span class="field-hint">#${escapeHtml(String(row.id))}${row.current_version != null ? ` • v${escapeHtml(String(row.current_version))}` : ''}</span></li>`
     }
     body += '</ul>'
   }
@@ -10230,7 +10248,7 @@ function renderAdminUserFacingRuleForm(opts: {
   backHref: string
   values: any
   mappings?: any[]
-  ruleOptions?: Array<{ id: number; title: string; slug: string; categoryName: string | null; visibility: string }>
+  ruleOptions?: Array<{ id: number; title: string; slug: string; visibility: string }>
   error?: string | null
   notice?: string | null
 }): string {

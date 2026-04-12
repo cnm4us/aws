@@ -61,7 +61,7 @@ Status: Active
 - A: Complete
 - B: Complete
 - C: Complete
-- D: Pending
+- D: Complete
 - E: Pending
 - F: Pending
 
@@ -165,6 +165,7 @@ Status: Active
 - 2026-04-12 — Phase A completed: added canonical `/admin/moderation/user-groups*` route wiring, moved the current user-facing-rules admin pages under moderation-local navigation, converted legacy `/admin/user-facing-rules` GET pages to compatibility redirects, removed categories from the active moderation hub/subnav, and removed the standalone top-level admin nav entry for user-facing rules. Manual verification of `/admin`, `/admin/moderation`, `/admin/moderation/user-groups`, and the legacy redirect paths passed.
 - 2026-04-12 — Phase B completed: added `culture_user_facing_groups` persistence, lazy backfill from legacy culture/category reachability into initial user-group linkage, switched the culture list/detail/update flows to use initial user groups instead of categories, and updated culture delete behavior to clear compatibility joins before deleting. Manual verification of `/admin/moderation/cultures` and culture save/reload/backfill behavior passed.
 - 2026-04-12 — Phase C completed: replaced category-dependent reporting reachability with user-group-based initial and all-group queries, updated report submission/default resolution to use active user-group mappings rather than category membership, and rewrote the report modal to start with initial user groups and expand inline to all active user groups via `Show All`. Manual verification of the report modal behavior, inline expansion, rule detail drill-down, and submission flow passed.
+- 2026-04-12 — Phase D completed: removed category ownership from active rule create/edit flows, reorganized the moderation rules admin list/export/detail around linked user-facing groups plus an explicit `Ungrouped Rules` section, and removed category metadata from active signal/user-group rule references. Manual verification of the rules, signals, and user-groups admin surfaces passed.
 
 ## Validation
 - Environment:
@@ -180,6 +181,7 @@ Status: Active
   - `npm run build`
   - `npm run build` (after Phase B culture linkage changes)
   - `npm run build` (after Phase C reporting flow changes)
+  - `npm run build` (after Phase D rule admin category-retirement changes)
 - Evidence files:
   - `agents/features/feature_14_moderation_updates.md`
   - `src/features/user-facing-rules/service.ts`
@@ -202,6 +204,6 @@ Status: Active
 
 ## Resume Here
 - Next action:
-  - Start Phase D: remove active category dependence from remaining admin/reporting flows and migrate rule admin organization to linked user-facing groups plus an `Ungrouped` bucket.
+  - Start Phase E: align user-group admin terminology, export/diagnostic surfaces, and target-model cleanup around the renamed `user_facing_groups` concept.
 - Blocking question (if any):
   - none

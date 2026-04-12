@@ -473,13 +473,10 @@ export async function listSignalRuleUsage(
         r.id,
         r.slug,
         r.title,
-        rc.name AS category_name,
         rv.version AS current_version
       FROM rule_signals rs
       JOIN rules r
         ON r.id = rs.rule_id
- LEFT JOIN rule_categories rc
-        ON rc.id = r.category_id
  LEFT JOIN rule_versions rv
         ON rv.id = r.current_version_id
      WHERE rs.signal_id = ?
@@ -491,7 +488,6 @@ export async function listSignalRuleUsage(
     id: Number(row.id),
     slug: String(row.slug || ''),
     title: String(row.title || ''),
-    category_name: row.category_name == null ? null : String(row.category_name),
     current_version:
       row.current_version == null ? null : Math.max(0, Number(row.current_version || 0)) || null,
   }))

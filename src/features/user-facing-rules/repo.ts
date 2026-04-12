@@ -206,26 +206,21 @@ export async function removeMapping(mappingId: number): Promise<boolean> {
   return Number((result as any)?.affectedRows || 0) > 0
 }
 
-export async function listRuleOptions(): Promise<Array<{ id: number; title: string; slug: string; categoryName: string | null; visibility: string }>> {
+export async function listRuleOptions(): Promise<Array<{ id: number; title: string; slug: string; visibility: string }>> {
   const db = getPool()
   const [rows] = await db.query(
     `SELECT
         r.id,
         r.title,
         r.slug,
-        rc.name AS category_name,
         r.visibility
        FROM rules r
-  LEFT JOIN rule_categories rc
-         ON rc.id = r.category_id
       ORDER BY r.title ASC, r.id ASC`
   )
   return (rows as any[]).map((row) => ({
     id: Number(row.id),
     title: String(row.title || ''),
     slug: String(row.slug || ''),
-    categoryName: row.category_name == null ? null : String(row.category_name),
     visibility: String(row.visibility || ''),
   }))
 }
-

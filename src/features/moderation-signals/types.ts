@@ -82,7 +82,6 @@ export type ModerationSignalRuleUsage = {
   id: number
   slug: string
   title: string
-  category_name: string | null
   current_version: number | null
 }
 
