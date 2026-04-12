@@ -217,6 +217,118 @@ export async function listUserFacingReportingReasonsForSpace(
   return rows as any[]
 }
 
+export async function listInitialUserFacingGroupsForSpace(
+  spaceId: number,
+  viewerState: ReportingViewerState = 'authenticated',
+  db?: DbLike
+): Promise<
+  Array<{
+    user_facing_group_id: number
+    label: string
+    short_description: string | null
+    group_order: number
+    display_order: number
+    rule_id: number | null
+    rule_slug: string | null
+    rule_title: string | null
+    rule_short_description: string | null
+    priority: number | null
+    is_default: number | null
+  }>
+> {
+  const q = (db as any) || getPool()
+  const visibility = visibilityFilterSql(viewerState)
+  const [rows] = await q.query(
+    `SELECT DISTINCT
+            ufr.id AS user_facing_group_id,
+            ufr.label,
+            ufr.short_description,
+            ufr.group_order,
+            ufr.display_order,
+            r.id AS rule_id,
+            r.slug AS rule_slug,
+            r.title AS rule_title,
+            rv.short_description AS rule_short_description,
+            m.priority,
+            m.is_default
+       FROM user_facing_rules ufr
+       JOIN culture_user_facing_groups cufg
+         ON cufg.user_facing_group_id = ufr.id
+       JOIN space_cultures sc
+         ON sc.culture_id = cufg.culture_id
+        AND sc.space_id = ?
+  LEFT JOIN user_facing_rule_rule_map m
+         ON m.user_facing_rule_id = ufr.id
+  LEFT JOIN rules r
+         ON r.id = m.rule_id
+        AND r.visibility ${visibility.sql}
+  LEFT JOIN rule_versions rv
+         ON rv.id = r.current_version_id
+      WHERE ufr.is_active = 1
+      ORDER BY ufr.group_order ASC,
+               ufr.display_order ASC,
+               ufr.label ASC,
+               m.is_default DESC,
+               m.priority ASC,
+               r.id ASC`,
+    [spaceId, ...visibility.params]
+  )
+  return rows as any[]
+}
+
+export async function listAllActiveUserFacingGroups(
+  viewerState: ReportingViewerState = 'authenticated',
+  db?: DbLike
+): Promise<
+  Array<{
+    user_facing_group_id: number
+    label: string
+    short_description: string | null
+    group_order: number
+    display_order: number
+    rule_id: number | null
+    rule_slug: string | null
+    rule_title: string | null
+    rule_short_description: string | null
+    priority: number | null
+    is_default: number | null
+  }>
+> {
+  const q = (db as any) || getPool()
+  const visibility = visibilityFilterSql(viewerState)
+  const [rows] = await q.query(
+    `SELECT
+            ufr.id AS user_facing_group_id,
+            ufr.label,
+            ufr.short_description,
+            ufr.group_order,
+            ufr.display_order,
+            r.id AS rule_id,
+            r.slug AS rule_slug,
+            r.title AS rule_title,
+            rv.short_description AS rule_short_description,
+            m.priority,
+            m.is_default
+       FROM user_facing_rules ufr
+  LEFT JOIN user_facing_rule_rule_map m
+         ON m.user_facing_rule_id = ufr.id
+  LEFT JOIN rules r
+         ON r.id = m.rule_id
+        AND r.visibility ${visibility.sql}
+  LEFT JOIN rule_versions rv
+         ON rv.id = r.current_version_id
+      WHERE ufr.is_active = 1
+      ORDER BY ufr.group_order ASC,
+               ufr.display_order ASC,
+               ufr.label ASC,
+               m.is_default DESC,
+               m.priority ASC,
+               r.id ASC`,
+    [...visibility.params]
+  )
+  return rows as any[]
+}
+
 export async function getReportableRuleForSpace(
   spaceId: number,
   ruleId: number,
@@ -230,12 +342,15 @@ export async function getReportableRuleForSpace(
             r.id AS rule_id,
             r.current_version_id
        FROM rules r
-       JOIN space_cultures sc ON sc.space_id = ?
-      JOIN culture_categories cc ON cc.culture_id = sc.culture_id AND cc.category_id = r.category_id
+       JOIN user_facing_rule_rule_map m
+         ON m.rule_id = r.id
+       JOIN user_facing_rules ufr
+         ON ufr.id = m.user_facing_rule_id
       WHERE r.id = ?
+        AND ufr.is_active = 1
         AND r.visibility ${visibility.sql}
       LIMIT 1`,
-    [spaceId, ruleId, ...visibility.params]
+    [ruleId, ...visibility.params]
   )
   const row = (rows as any[])[0]
   if (!row) return null
@@ -261,11 +376,6 @@ export async function resolveDefaultMappedRuleForUserFacingReason(input: {
          ON m.user_facing_rule_id = ufr.id
        JOIN rules r
          ON r.id = m.rule_id
-       JOIN space_cultures sc
-         ON sc.space_id = ?
-       JOIN culture_categories cc
-         ON cc.culture_id = sc.culture_id
-        AND cc.category_id = r.category_id
       WHERE ufr.id = ?
         AND ufr.is_active = 1
         AND r.visibility ${visibility.sql}
@@ -273,7 +383,7 @@ export async function resolveDefaultMappedRuleForUserFacingReason(input: {
                m.priority ASC,
                r.id ASC
       LIMIT 1`,
-    [input.spaceId, input.userFacingRuleId, ...visibility.params]
+    [input.userFacingRuleId, ...visibility.params]
   )
   const row = (rows as any[])[0]
   if (!row) return null
@@ -324,11 +434,6 @@ export async function getVisibleUserFacingReasonForRule(input: {
          ON m.user_facing_rule_id = ufr.id
        JOIN rules r
          ON r.id = m.rule_id
-       JOIN space_cultures sc
-         ON sc.space_id = ?
-       JOIN culture_categories cc
-         ON cc.culture_id = sc.culture_id
-        AND cc.category_id = r.category_id
       WHERE ufr.is_active = 1
         AND r.id = ?
         AND r.visibility ${visibility.sql}
@@ -336,7 +441,7 @@ export async function getVisibleUserFacingReasonForRule(input: {
                ufr.display_order ASC,
                ufr.id ASC
       LIMIT 1`,
-    [input.spaceId, input.ruleId, ...visibility.params]
+    [input.ruleId, ...visibility.params]
   )
   const row = (rows as any[])[0]
   if (!row) return null

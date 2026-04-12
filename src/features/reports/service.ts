@@ -70,6 +70,102 @@ export async function getUserFacingReportingOptionsForPublication(publicationId:
 
   await spacesSvc.assertCanViewSpaceFeed(pub.space_id, userId)
 
+  const [existingReport, initialGroupRows, allGroupRows] = await Promise.all([
+    repo.getUserPublicationReport(publicationId, userId),
+    repo.listInitialUserFacingGroupsForSpace(pub.space_id, 'authenticated'),
+    repo.listAllActiveUserFacingGroups('authenticated'),
+  ])
+
+  const buildUserFacingGroups = (rows: any[]) => {
+    const groupsById = new Map<number, {
+      id: number
+      label: string
+      shortDescription: string | null
+      groupOrder: number
+      displayOrder: number
+      rules: Array<{ id: number; slug: string; title: string; shortDescription: string | null; priority: number; isDefault: boolean }>
+    }>()
+    for (const row of rows as any[]) {
+      const groupId = Number(row.user_facing_group_id)
+      if (!groupsById.has(groupId)) {
+        groupsById.set(groupId, {
+          id: groupId,
+          label: String(row.label || ''),
+          shortDescription: row.short_description != null ? String(row.short_description) : null,
+          groupOrder: Number(row.group_order || 0),
+          displayOrder: Number(row.display_order || 0),
+          rules: [],
+        })
+      }
+      if (row.rule_id != null && Number.isFinite(Number(row.rule_id)) && Number(row.rule_id) > 0) {
+        groupsById.get(groupId)!.rules.push({
+          id: Number(row.rule_id),
+          slug: String(row.rule_slug || ''),
+          title: String(row.rule_title || ''),
+          shortDescription: row.rule_short_description != null ? String(row.rule_short_description) : null,
+          priority: Number(row.priority || 100),
+          isDefault: Number(row.is_default || 0) === 1,
+        })
+      }
+    }
+    return Array.from(groupsById.values())
+      .sort((a, b) => (a.groupOrder - b.groupOrder) || (a.displayOrder - b.displayOrder) || a.label.localeCompare(b.label))
+      .map((group) => ({
+        id: group.id,
+        label: group.label,
+        shortDescription: group.shortDescription,
+        displayOrder: group.displayOrder,
+        rules: group.rules.sort((a, b) => {
+          if (a.isDefault !== b.isDefault) return a.isDefault ? -1 : 1
+          if ((a.priority || 100) !== (b.priority || 100)) return (a.priority || 100) - (b.priority || 100)
+          return a.title.localeCompare(b.title)
+        }),
+      }))
+  }
+
+  let initialGroups = buildUserFacingGroups(initialGroupRows as any[])
+  const allGroups = buildUserFacingGroups(allGroupRows as any[])
+  if (!initialGroups.length) {
+    initialGroups = allGroups
+  }
+
+  const initialIds = new Set<number>(initialGroups.map((group) => Number(group.id)))
+  const hiddenGroupsCount = allGroups.filter((group) => !initialIds.has(Number(group.id))).length
+
+  return {
+    spacePublicationId: publicationId,
+    spaceId: pub.space_id,
+    reportedByMe: Boolean(existingReport),
+    myReport: existingReport
+      ? {
+          ruleId: Number(existingReport.rule_id),
+          ruleSlug: existingReport.rule_slug,
+          ruleTitle: existingReport.rule_title,
+          userFacingRuleId: existingReport.user_facing_rule_id == null ? null : Number(existingReport.user_facing_rule_id),
+          userFacingRuleLabel: existingReport.user_facing_rule_label_at_submit,
+          userFacingGroupKey: existingReport.user_facing_group_key_at_submit,
+          userFacingGroupLabel: existingReport.user_facing_group_label_at_submit,
+          reportedStartSeconds:
+            existingReport.reported_start_seconds == null ? null : Number(existingReport.reported_start_seconds),
+          reportedEndSeconds:
+            existingReport.reported_end_seconds == null ? null : Number(existingReport.reported_end_seconds),
+          createdAt: existingReport.created_at,
+        }
+      : null,
+    groups: initialGroups,
+    initialGroups,
+    allGroups,
+    showAllAvailable: hiddenGroupsCount > 0,
+    hiddenGroupsCount,
+  }
+}
+
+export async function getUserFacingReportingOptionsForPublicationLegacyShape(publicationId: number, userId: number) {
+  const pub = await repo.getPublishedPublicationSummary(publicationId)
+  if (!pub) throw new DomainError('publication_not_found', 'publication_not_found', 404)
+
+  await spacesSvc.assertCanViewSpaceFeed(pub.space_id, userId)
+
   const [existingReport, reasonRows] = await Promise.all([
     repo.getUserPublicationReport(publicationId, userId),
     repo.listUserFacingReportingReasonsForSpace(pub.space_id, 'authenticated'),

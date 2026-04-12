@@ -26,20 +26,12 @@ type OptionsRule = {
   isDefault?: boolean
 }
 
-type OptionsReason = {
+type OptionsUserGroup = {
   id: number
   label: string
   shortDescription?: string | null
-  groupKey?: string | null
-  groupLabel?: string | null
   displayOrder?: number
   rules: OptionsRule[]
-}
-
-type OptionsGroup = {
-  key?: string | null
-  label?: string | null
-  reasons: OptionsReason[]
 }
 
 type OptionsResponse = {
@@ -58,7 +50,11 @@ type OptionsResponse = {
     reportedEndSeconds?: number | null
     createdAt: string
   } | null
-  groups: OptionsGroup[]
+  groups: OptionsUserGroup[]
+  initialGroups?: OptionsUserGroup[]
+  allGroups?: OptionsUserGroup[]
+  showAllAvailable?: boolean
+  hiddenGroupsCount?: number
 }
 
 type RuleDetailResponse = {
@@ -91,7 +87,8 @@ export default function ReportModal(props: {
   const [error, setError] = useState<string | null>(null)
   const [options, setOptions] = useState<OptionsResponse | null>(null)
 
-  const [expandedReasonId, setExpandedReasonId] = useState<number | null>(null)
+  const [expandedGroupId, setExpandedGroupId] = useState<number | null>(null)
+  const [showAllExpanded, setShowAllExpanded] = useState(false)
 
   const [detailSlug, setDetailSlug] = useState<string | null>(null)
   const [detailContext, setDetailContext] = useState<{ userFacingRuleId: number; ruleId: number } | null>(null)
@@ -129,6 +126,11 @@ export default function ReportModal(props: {
   }, [publicationId])
 
   useEffect(() => {
+    setExpandedGroupId(null)
+    setShowAllExpanded(false)
+  }, [publicationId, options?.spacePublicationId])
+
+  useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === 'Escape') onClose()
     }
@@ -161,15 +163,17 @@ export default function ReportModal(props: {
 
   const flatRules = useMemo(() => {
     const map = new Map<number, OptionsRule>()
-    for (const group of options?.groups || []) {
-      for (const reason of group.reasons || []) {
-        for (const r of reason.rules || []) {
-          map.set(Number(r.id), r)
-        }
+    for (const group of options?.allGroups || options?.groups || []) {
+      for (const r of group.rules || []) {
+        map.set(Number(r.id), r)
       }
     }
     return map
   }, [options])
+
+  const initialGroups = options?.initialGroups || options?.groups || []
+  const allGroups = options?.allGroups || options?.groups || []
+  const displayedGroups = showAllExpanded ? allGroups : initialGroups
 
   async function openDetail(slug: string, context: { userFacingRuleId: number; ruleId: number }) {
     setDetailSlug(slug)
@@ -232,7 +236,7 @@ export default function ReportModal(props: {
     options?.myReport?.ruleId != null && flatRules.has(Number(options.myReport.ruleId))
       ? flatRules.get(Number(options.myReport.ruleId))?.title || null
       : options?.myReport?.ruleTitle || null
-  const hasReasons = Array.isArray(options?.groups) && (options?.groups || []).some((g) => Array.isArray(g.reasons) && g.reasons.length > 0)
+  const hasVisibleGroups = Array.isArray(displayedGroups) && displayedGroups.length > 0
   const invalidTimeRange =
     reportedStartSeconds != null &&
     reportedEndSeconds != null &&
@@ -484,11 +488,11 @@ export default function ReportModal(props: {
                   </div>
                 ) : null}
               </div>
-              {expandedReasonId != null ? (
+              {expandedGroupId != null ? (
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
                   <button
                     type="button"
-                    onClick={() => setExpandedReasonId(null)}
+                    onClick={() => setExpandedGroupId(null)}
                     aria-label="Back"
                     title="Back"
                     style={{
@@ -504,7 +508,7 @@ export default function ReportModal(props: {
                   >
                     <ChevronIcon direction="left" />
                   </button>
-                  <div style={{ fontSize: 12, opacity: 0.8 }}>Reason details</div>
+                  <div style={{ fontSize: 12, opacity: 0.8 }}>User group details</div>
                 </div>
               ) : null}
               {reportedByMe ? (
@@ -513,18 +517,35 @@ export default function ReportModal(props: {
                 </div>
               ) : null}
 
-              {!hasReasons ? (
+              {!hasVisibleGroups ? (
                 <div style={{ padding: 10, opacity: 0.85 }}>
-                  No moderation rules available for this space.
+                  No user groups are available right now.
                 </div>
               ) : (
-                (options?.groups || []).map((group, gIdx) => {
-                  const reasons = group.reasons || []
-                  const expandedReasonInGroup = reasons.find((r) => expandedReasonId === Number(r.id))
-                  const groupExpanded = Boolean(expandedReasonInGroup)
-                  const firstReasonId = reasons.length ? Number(reasons[0].id) : null
+                <>
+                  {!showAllExpanded && (options?.showAllAvailable || false) ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowAllExpanded(true)}
+                      style={{
+                        ...secondaryButtonStyle,
+                        width: '100%',
+                        padding: '10px 12px',
+                        textAlign: 'center',
+                        cursor: 'pointer',
+                        fontSize: 14,
+                        fontWeight: 800,
+                      }}
+                    >
+                      Show All User Groups{typeof options?.hiddenGroupsCount === 'number' && options.hiddenGroupsCount > 0 ? ` (${options.hiddenGroupsCount} more)` : ''}
+                    </button>
+                  ) : null}
+                  {displayedGroups.map((group, gIdx) => {
+                  const groupExpanded = expandedGroupId === Number(group.id)
+                  const hasRules = Array.isArray(group.rules) && group.rules.length > 0
+                  const groupBusy = submitBusyKey === `group:${group.id}`
                   return (
-                    <div key={`${group.key || 'group'}-${gIdx}`} style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, overflow: 'hidden' }}>
+                    <div key={`${group.id}-${gIdx}`} style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, overflow: 'hidden' }}>
                       <div style={{ padding: '10px 12px', background: 'rgba(255,255,255,0.04)', fontWeight: 700, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span>{group.label || 'General'}</span>
                         <button
@@ -532,8 +553,8 @@ export default function ReportModal(props: {
                           aria-label={groupExpanded ? 'Hide details' : 'Drill down'}
                           title={groupExpanded ? 'Hide details' : 'Drill down'}
                           onClick={() => {
-                            if (firstReasonId == null) return
-                            setExpandedReasonId(groupExpanded ? null : firstReasonId)
+                            if (!hasRules) return
+                            setExpandedGroupId(groupExpanded ? null : Number(group.id))
                           }}
                           style={{
                             ...secondaryButtonStyle,
@@ -552,152 +573,150 @@ export default function ReportModal(props: {
                           </span>
                         </button>
                       </div>
-                      <div style={{ display: 'grid' }}>
-                        {(group.reasons || []).map((reason) => {
-                          const expanded = expandedReasonId === Number(reason.id)
-                          const reasonBusy = submitBusyKey === `reason:${reason.id}`
-                          return (
-                            <div key={reason.id} style={{ borderTop: '1px solid rgba(255,255,255,0.08)', padding: '10px 12px', display: 'grid', gap: 8 }}>
-                              <div style={{ position: 'relative', paddingBottom: 42, minHeight: 72 }}>
-                                <div style={{ fontWeight: 600, fontSize: 17, lineHeight: 1.25 }}>
-                                  {reason.label}
-                                </div>
-                                {reason.shortDescription ? (
-                                  <div style={{ fontSize: 'inherit', fontWeight: 400, opacity: 0.9, lineHeight: 1.35 }}>
-                                    {reason.shortDescription}
-                                    <span aria-hidden="true" style={{ display: 'inline-block', width: 94, height: 1 }} />
-                                  </div>
-                                ) : null}
-                                <button
-                                  type="button"
-                                  onClick={() => submitReport({ userFacingRuleId: Number(reason.id), busyKey: `reason:${reason.id}` })}
-                                  disabled={reportedByMe || !!submitBusyKey}
+                      <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', padding: '10px 12px', display: 'grid', gap: 8 }}>
+                        <div style={{ position: 'relative', paddingBottom: 42, minHeight: 72 }}>
+                          <div style={{ fontWeight: 600, fontSize: 17, lineHeight: 1.25 }}>
+                            {group.label}
+                          </div>
+                          {group.shortDescription ? (
+                            <div style={{ fontSize: 'inherit', fontWeight: 400, opacity: 0.9, lineHeight: 1.35 }}>
+                              {group.shortDescription}
+                              <span aria-hidden="true" style={{ display: 'inline-block', width: 94, height: 1 }} />
+                            </div>
+                          ) : null}
+                          <button
+                            type="button"
+                            onClick={() => submitReport({ userFacingRuleId: Number(group.id), busyKey: `group:${group.id}` })}
+                            disabled={reportedByMe || !!submitBusyKey || !hasRules}
+                            style={{
+                              position: 'absolute',
+                              right: 0,
+                              bottom: 0,
+                              ...(reportedByMe || !!submitBusyKey || !hasRules ? { background: '#333', border: '1px solid rgba(255,255,255,0.18)' } : primaryButtonStyle),
+                              color: '#fff',
+                              borderRadius: 10,
+                              padding: '6px 10px',
+                              fontSize: 14,
+                              fontWeight: 900,
+                              cursor: (reportedByMe || !!submitBusyKey || !hasRules) ? 'not-allowed' : 'pointer',
+                            }}
+                          >
+                            {groupBusy ? 'Submitting…' : 'Submit'}
+                          </button>
+                        </div>
+                        {!hasRules ? (
+                          <div style={{ fontSize: 13, opacity: 0.8 }}>
+                            No reportable canonical rules are currently linked to this user group.
+                          </div>
+                        ) : null}
+                        {groupExpanded ? (
+                          <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', marginTop: 4, paddingTop: 8, display: 'grid', gap: 8 }}>
+                            {(group.rules || []).map((r) => {
+                              const ruleBusy = submitBusyKey === `rule:${group.id}:${r.id}`
+                              return (
+                                <div
+                                  key={r.id}
                                   style={{
-                                    position: 'absolute',
-                                    right: 0,
-                                    bottom: 0,
-                                    ...(reportedByMe || !!submitBusyKey ? { background: '#333', border: '1px solid rgba(255,255,255,0.18)' } : primaryButtonStyle),
-                                    color: '#fff',
-                                    borderRadius: 10,
-                                    padding: '6px 10px',
-                                    fontSize: 14,
-                                    fontWeight: 900,
-                                    cursor: (reportedByMe || !!submitBusyKey) ? 'not-allowed' : 'pointer',
+                                    padding: '6px 0 6px 10px',
+                                    marginLeft: 6,
+                                    borderLeft: '3px solid rgba(255,255,255,0.9)',
                                   }}
                                 >
-                                  {reasonBusy ? 'Submitting…' : 'Submit'}
-                                </button>
-                              </div>
-                              {expanded ? (
-                                <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', marginTop: 4, paddingTop: 8, display: 'grid', gap: 8 }}>
-                                  {(reason.rules || []).map((r) => {
-                                    const ruleBusy = submitBusyKey === `rule:${reason.id}:${r.id}`
-                                    return (
-                                      <div
-                                        key={r.id}
+                                  <div style={{ position: 'relative', paddingBottom: 42, minHeight: 68 }}>
+                                    <button
+                                      type="button"
+                                      onClick={() => openDetail(r.slug, { userFacingRuleId: Number(group.id), ruleId: Number(r.id) })}
+                                      style={{
+                                        background: 'transparent',
+                                        border: 'none',
+                                        padding: 0,
+                                        margin: 0,
+                                        display: 'block',
+                                        width: '100%',
+                                        textAlign: 'left',
+                                        color: '#fff',
+                                        fontWeight: 600,
+                                        fontSize: 'inherit',
+                                        lineHeight: 1.25,
+                                        cursor: 'pointer',
+                                      }}
+                                    >
+                                      {r.title}
+                                    </button>
+                                    {r.shortDescription ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => openDetail(r.slug, { userFacingRuleId: Number(group.id), ruleId: Number(r.id) })}
                                         style={{
-                                          padding: '6px 0 6px 10px',
-                                          marginLeft: 6,
-                                          borderLeft: '3px solid rgba(255,255,255,0.9)',
+                                          background: 'transparent',
+                                          border: 'none',
+                                          padding: 0,
+                                          margin: 0,
+                                          display: 'block',
+                                          width: '100%',
+                                          textAlign: 'left',
+                                          color: '#fff',
+                                          fontSize: 13,
+                                          opacity: 0.82,
+                                          lineHeight: 1.3,
+                                          cursor: 'pointer',
                                         }}
                                       >
-                                        <div style={{ position: 'relative', paddingBottom: 42, minHeight: 68 }}>
-                                          <button
-                                            type="button"
-                                            onClick={() => openDetail(r.slug, { userFacingRuleId: Number(reason.id), ruleId: Number(r.id) })}
-                                            style={{
-                                              background: 'transparent',
-                                              border: 'none',
-                                              padding: 0,
-                                              margin: 0,
-                                              display: 'block',
-                                              width: '100%',
-                                              textAlign: 'left',
-                                              color: '#fff',
-                                              fontWeight: 600,
-                                              fontSize: 'inherit',
-                                              lineHeight: 1.25,
-                                              cursor: 'pointer',
-                                            }}
-                                          >
-                                            {r.title}
-                                          </button>
-                                          {r.shortDescription ? (
-                                            <button
-                                              type="button"
-                                              onClick={() => openDetail(r.slug, { userFacingRuleId: Number(reason.id), ruleId: Number(r.id) })}
-                                              style={{
-                                              background: 'transparent',
-                                              border: 'none',
-                                              padding: 0,
-                                              margin: 0,
-                                              display: 'block',
-                                              width: '100%',
-                                              textAlign: 'left',
-                                              color: '#fff',
-                                              fontSize: 13,
-                                              opacity: 0.82,
-                                              lineHeight: 1.3,
-                                              cursor: 'pointer',
-                                              }}
-                                            >
-                                              {r.shortDescription}
-                                              <span aria-hidden="true" style={{ display: 'inline-block', width: 94, height: 1 }} />
-                                            </button>
-                                          ) : null}
-                                          <button
-                                            type="button"
-                                            aria-label="More details"
-                                            title="More details"
-                                            onClick={() => openDetail(r.slug, { userFacingRuleId: Number(reason.id), ruleId: Number(r.id) })}
-                                            style={{
-                                              ...secondaryButtonStyle,
-                                              position: 'absolute',
-                                              left: 0,
-                                              bottom: 0,
-                                              width: 40,
-                                              height: 36,
-                                              display: 'inline-flex',
-                                              alignItems: 'center',
-                                              justifyContent: 'center',
-                                              padding: 0,
-                                              cursor: 'pointer',
-                                            }}
-                                          >
-                                            <ChevronIcon direction="right" />
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={() => submitReport({ userFacingRuleId: Number(reason.id), ruleId: Number(r.id), busyKey: `rule:${reason.id}:${r.id}` })}
-                                            disabled={reportedByMe || !!submitBusyKey}
-                                            style={{
-                                              position: 'absolute',
-                                              right: 0,
-                                              bottom: 0,
-                                              ...(reportedByMe || !!submitBusyKey ? { background: '#333', border: '1px solid rgba(255,255,255,0.18)' } : primaryButtonStyle),
-                                              color: '#fff',
-                                              borderRadius: 10,
-                                              padding: '6px 10px',
-                                              fontSize: 14,
-                                              fontWeight: 900,
-                                              cursor: (reportedByMe || !!submitBusyKey) ? 'not-allowed' : 'pointer',
-                                            }}
-                                          >
-                                            {ruleBusy ? 'Submitting…' : 'Submit'}
-                                          </button>
-                                        </div>
+                                        {r.shortDescription}
+                                        <span aria-hidden="true" style={{ display: 'inline-block', width: 94, height: 1 }} />
+                                      </button>
+                                    ) : null}
+                                    <button
+                                      type="button"
+                                      aria-label="More details"
+                                      title="More details"
+                                      onClick={() => openDetail(r.slug, { userFacingRuleId: Number(group.id), ruleId: Number(r.id) })}
+                                      style={{
+                                        ...secondaryButtonStyle,
+                                        position: 'absolute',
+                                        left: 0,
+                                        bottom: 0,
+                                        width: 40,
+                                        height: 36,
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        padding: 0,
+                                        cursor: 'pointer',
+                                      }}
+                                    >
+                                      <ChevronIcon direction="right" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => submitReport({ userFacingRuleId: Number(group.id), ruleId: Number(r.id), busyKey: `rule:${group.id}:${r.id}` })}
+                                      disabled={reportedByMe || !!submitBusyKey}
+                                      style={{
+                                        position: 'absolute',
+                                        right: 0,
+                                        bottom: 0,
+                                        ...(reportedByMe || !!submitBusyKey ? { background: '#333', border: '1px solid rgba(255,255,255,0.18)' } : primaryButtonStyle),
+                                        color: '#fff',
+                                        borderRadius: 10,
+                                        padding: '6px 10px',
+                                        fontSize: 14,
+                                        fontWeight: 900,
+                                        cursor: (reportedByMe || !!submitBusyKey) ? 'not-allowed' : 'pointer',
+                                      }}
+                                    >
+                                      {ruleBusy ? 'Submitting…' : 'Submit'}
+                                    </button>
                                   </div>
-                                    )
-                                  })}
                                 </div>
-                              ) : null}
-                            </div>
-                          )
-                        })}
+                              )
+                            })}
+                          </div>
+                        ) : null}
                       </div>
                     </div>
                   )
-                })
+                })}
+                </>
               )}
             </div>
           )}
