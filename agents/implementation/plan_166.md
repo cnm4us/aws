@@ -58,7 +58,7 @@ Status: Active
 - none
 
 ## Phase Status
-- A: Pending
+- A: Complete
 - B: Pending
 - C: Pending
 - D: Pending
@@ -162,6 +162,7 @@ Status: Active
 - 2026-04-12 — Clarified data model: `user_facing_rules` should become `user_facing_groups`, cultures link directly to specific user-facing-group rows, and the old `group_key` / `group_label` fields should be removed rather than preserved.
 - 2026-04-12 — Locked rule-admin organization: canonical rules should be organized by linked user-facing groups rather than categories, with an explicit `Ungrouped` bucket for rules that have not been linked yet.
 - 2026-04-12 — Locked reporting interaction: `Show All` should expand inline and reveal all active user-facing groups rather than switching to a separate browsing state.
+- 2026-04-12 — Phase A completed: added canonical `/admin/moderation/user-groups*` route wiring, moved the current user-facing-rules admin pages under moderation-local navigation, converted legacy `/admin/user-facing-rules` GET pages to compatibility redirects, removed categories from the active moderation hub/subnav, and removed the standalone top-level admin nav entry for user-facing rules. Manual verification of `/admin`, `/admin/moderation`, `/admin/moderation/user-groups`, and the legacy redirect paths passed.
 
 ## Validation
 - Environment:
@@ -174,6 +175,7 @@ Status: Active
   - `sed -n '1,260p' src/features/reports/service.ts`
   - `sed -n '120,380p' src/features/reports/repo.ts`
   - `sed -n '10280,10490p' src/routes/pages.ts`
+  - `npm run build`
 - Evidence files:
   - `agents/features/feature_14_moderation_updates.md`
   - `src/features/user-facing-rules/service.ts`
@@ -196,6 +198,6 @@ Status: Active
 
 ## Resume Here
 - Next action:
-  - Start Phase A route/nav migration and the `user_facing_rules` -> `user_facing_groups` rename with the locked user-group/reporting decisions captured here.
+  - Start Phase B: add culture-to-user-group linkage and replace category assignment in the culture editor with initial user-group assignment.
 - Blocking question (if any):
   - none

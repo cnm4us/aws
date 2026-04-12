@@ -799,6 +799,7 @@ type AdminNavKey =
   | 'moderation_rules'
   | 'moderation_categories'
   | 'moderation_cultures'
+  | 'moderation_user_groups'
   | 'pages'
 	| 'audio'
 	| 'video_library'
@@ -829,9 +830,10 @@ type ModerationAdminNavKey =
   | 'moderation_rules'
   | 'moderation_categories'
   | 'moderation_cultures'
+  | 'moderation_user_groups'
   | 'moderation_signals'
 
-type ModerationAdminSectionKey = 'rules' | 'categories' | 'cultures' | 'signals'
+type ModerationAdminSectionKey = 'rules' | 'categories' | 'cultures' | 'signals' | 'user_groups'
 
 function joinAdminPath(root: string, suffix = ''): string {
   const trimmedSuffix = String(suffix || '').trim()
@@ -848,12 +850,14 @@ const MODERATION_ADMIN_ROUTES = {
     categories: '/admin/moderation/categories',
     cultures: '/admin/moderation/cultures',
     signals: '/admin/moderation/signals',
+    user_groups: '/admin/moderation/user-groups',
   },
   legacy: {
     rules: '/admin/rules',
     categories: '/admin/categories',
     cultures: '/admin/cultures',
     signals: '/admin/moderation/signals',
+    user_groups: '/admin/user-facing-rules',
   },
 } as const
 
@@ -883,6 +887,24 @@ const MODERATION_SIGNAL_ADMIN_PATHS = {
   new: getModerationAdminSectionPath('signals', 'new'),
   detail: getModerationAdminSectionPath('signals', ':id'),
   edit: getModerationAdminSectionPath('signals', ':id/edit'),
+} as const
+
+const MODERATION_USER_GROUP_ADMIN_PATHS = {
+  list: getModerationAdminSectionPath('user_groups'),
+  new: getModerationAdminSectionPath('user_groups', 'new'),
+  detail: getModerationAdminSectionPath('user_groups', ':id'),
+  delete: getModerationAdminSectionPath('user_groups', ':id/delete'),
+  mappings: getModerationAdminSectionPath('user_groups', ':id/mappings'),
+  mappingDelete: getModerationAdminSectionPath('user_groups', ':id/mappings/:mappingId/delete'),
+} as const
+
+const LEGACY_USER_GROUP_ADMIN_PATHS = {
+  list: getModerationAdminSectionPath('user_groups', '', { legacy: true }),
+  new: getModerationAdminSectionPath('user_groups', 'new', { legacy: true }),
+  detail: getModerationAdminSectionPath('user_groups', ':id', { legacy: true }),
+  delete: getModerationAdminSectionPath('user_groups', ':id/delete', { legacy: true }),
+  mappings: getModerationAdminSectionPath('user_groups', ':id/mappings', { legacy: true }),
+  mappingDelete: getModerationAdminSectionPath('user_groups', ':id/mappings/:mappingId/delete', { legacy: true }),
 } as const
 
 const LEGACY_CULTURE_ADMIN_PATHS = {
@@ -936,6 +958,14 @@ function redirectToAdminPath(req: any, res: any, targetPath: string) {
   return res.redirect(`${targetPath}${buildPreservedQuerySuffix(req)}`)
 }
 
+function fillAdminPathParams(pathTemplate: string, params: Record<string, string | number>) {
+  let resolved = pathTemplate
+  for (const [key, value] of Object.entries(params)) {
+    resolved = resolved.replace(`:${key}`, encodeURIComponent(String(value)))
+  }
+  return resolved
+}
+
 function renderModerationAdminSubnav(opts: {
   active?: ModerationAdminNavKey
   canonicalSections?: Partial<Record<ModerationAdminSectionKey, boolean>>
@@ -949,14 +979,14 @@ function renderModerationAdminSubnav(opts: {
       href: getModerationAdminSectionPath('rules', '', { legacy: !canonicalSections.rules }),
     },
     {
-      key: 'moderation_categories',
-      label: 'Categories',
-      href: getModerationAdminSectionPath('categories', '', { legacy: !canonicalSections.categories }),
-    },
-    {
       key: 'moderation_cultures',
       label: 'Cultures',
       href: getModerationAdminSectionPath('cultures', '', { legacy: !canonicalSections.cultures }),
+    },
+    {
+      key: 'moderation_user_groups',
+      label: 'User Groups',
+      href: getModerationAdminSectionPath('user_groups', '', { legacy: !canonicalSections.user_groups }),
     },
     {
       key: 'moderation_signals',
@@ -992,7 +1022,6 @@ const ADMIN_NAV_ITEMS: Array<{ key: AdminNavKey; label: string; href: string }> 
   { key: 'messages', label: 'Messages', href: '/admin/messages' },
   { key: 'message_ctas', label: 'Message CTAs', href: '/admin/message-ctas' },
   { key: 'message_rulesets', label: 'Message Rulesets', href: '/admin/message-rulesets' },
-  { key: 'user_facing_rules', label: 'User-Facing Rules', href: '/admin/user-facing-rules' },
   { key: 'reports', label: 'Reports', href: '/admin/reports' },
   { key: 'message_journeys', label: 'Message Journeys', href: '/admin/message-journeys' },
   { key: 'journey_inspector', label: 'Journey Inspector', href: '/admin/journey-inspector' },
@@ -1225,7 +1254,7 @@ function renderCategoryForm(opts: { error?: string | null; csrfToken?: string | 
     title: 'New Category',
     bodyHtml: body,
     active: 'moderation_categories',
-    canonicalSections: { rules: true, categories: true, cultures: true },
+    canonicalSections: { rules: true, categories: true, cultures: true, user_groups: true },
   });
 }
 
@@ -1319,7 +1348,7 @@ function renderCategoryDetailPage(opts: {
     title: 'Category',
     bodyHtml: body,
     active: 'moderation_categories',
-    canonicalSections: { rules: true, categories: true, cultures: true },
+    canonicalSections: { rules: true, categories: true, cultures: true, user_groups: true },
   });
 }
 
@@ -1427,7 +1456,7 @@ async function handleModerationCategoriesList(req: any, res: any) {
       title: 'Categories',
       bodyHtml: body,
       active: 'moderation_categories',
-      canonicalSections: { rules: true, categories: true, cultures: true },
+      canonicalSections: { rules: true, categories: true, cultures: true, user_groups: true },
     });
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.send(doc);
@@ -1706,7 +1735,7 @@ function renderCultureForm(opts: { error?: string | null; csrfToken?: string | n
     title: 'New Culture',
     bodyHtml: body,
     active: 'moderation_cultures',
-    canonicalSections: { rules: true, categories: true, cultures: true },
+    canonicalSections: { rules: true, categories: true, cultures: true, user_groups: true },
   });
 }
 
@@ -1751,7 +1780,7 @@ async function handleModerationCulturesList(req: any, res: any) {
       title: 'Cultures',
       bodyHtml: body,
       active: 'moderation_cultures',
-      canonicalSections: { rules: true, categories: true, cultures: true },
+      canonicalSections: { rules: true, categories: true, cultures: true, user_groups: true },
     });
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.send(doc);
@@ -2566,7 +2595,7 @@ function renderCultureDetailPage(opts: {
     title: 'Culture',
     bodyHtml: body,
     active: 'moderation_cultures',
-    canonicalSections: { rules: true, categories: true, cultures: true },
+    canonicalSections: { rules: true, categories: true, cultures: true, user_groups: true },
   });
 }
 
@@ -3587,7 +3616,7 @@ function renderRuleDraftEditPage(opts: {
     title: 'Edit Rule Draft',
     bodyHtml: body,
     active: 'moderation_rules',
-    canonicalSections: { rules: true, categories: true, cultures: true, signals: true },
+    canonicalSections: { rules: true, categories: true, cultures: true, signals: true, user_groups: true },
   });
 }
 
@@ -3711,7 +3740,7 @@ function renderRuleListPage(
     title: 'Rules',
     bodyHtml: body,
     active: 'moderation_rules',
-    canonicalSections: { rules: true, categories: true, cultures: true },
+    canonicalSections: { rules: true, categories: true, cultures: true, user_groups: true },
   });
 }
 
@@ -3877,7 +3906,7 @@ function renderRuleForm(opts: {
     title,
     bodyHtml: body,
     active: 'moderation_rules',
-    canonicalSections: { rules: true, categories: true, cultures: true, signals: true },
+    canonicalSections: { rules: true, categories: true, cultures: true, signals: true, user_groups: true },
   });
 }
 
@@ -4842,7 +4871,7 @@ async function handleModerationRuleDetail(req: any, res: any) {
       title: 'Rule detail',
       bodyHtml: body,
       active: 'moderation_rules',
-      canonicalSections: { rules: true, categories: true, cultures: true, signals: true },
+      canonicalSections: { rules: true, categories: true, cultures: true, signals: true, user_groups: true },
     });
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.send(doc);
@@ -5675,7 +5704,7 @@ pagesRouter.get('/admin', async (_req: any, res: any) => {
     { title: 'Users', href: '/admin/users', desc: 'Manage user roles, suspensions, and space roles' },
     { title: 'Groups', href: '/admin/groups', desc: 'Manage group spaces (settings, cultures, review)' },
     { title: 'Channels', href: '/admin/channels', desc: 'Manage channel spaces (settings, cultures, review)' },
-    { title: 'Moderation', href: MODERATION_ADMIN_ROUTES.hub, desc: 'Rules, categories, cultures, and future moderation subsystem tools' },
+    { title: 'Moderation', href: MODERATION_ADMIN_ROUTES.hub, desc: 'Rules, cultures, user groups, signals, and the rest of the moderation subsystem' },
     { title: 'Pages', href: '/admin/pages', desc: 'Edit CMS pages (Markdown)' },
     { title: 'Audio', href: '/admin/audio', desc: 'System audio library (curated, selectable by users)' },
     { title: 'Video Library', href: '/admin/video-library', desc: 'System video library (source videos for clipping)' },
@@ -5685,7 +5714,6 @@ pagesRouter.get('/admin', async (_req: any, res: any) => {
     { title: 'Messages', href: '/admin/messages', desc: 'Manage in-feed message units, targeting, and lifecycle controls' },
     { title: 'Message CTAs', href: '/admin/message-ctas', desc: 'Reusable CTA definitions (intent + executor + config) for in-feed messages' },
     { title: 'Message Rulesets', href: '/admin/message-rulesets', desc: 'Reusable inclusion/exclusion eligibility rulesets for message targeting' },
-    { title: 'User-Facing Rules', href: '/admin/user-facing-rules', desc: 'Manage simplified reporting reasons and map them to canonical moderation rules' },
     { title: 'Reports', href: '/admin/reports', desc: 'Site-wide report inbox with status, assignment, and resolution workflow' },
     { title: 'Message Journeys', href: '/admin/message-journeys', desc: 'Ordered multi-step message journeys that sequence messages per user progression' },
     { title: 'Payment Providers', href: '/admin/payments/providers', desc: 'Configure PSP credentials and sandbox/live mode toggles' },
@@ -5724,14 +5752,14 @@ pagesRouter.get('/admin/moderation', async (_req: any, res: any) => {
       desc: 'Edit rules, drafts, published versions, and moderation guidance.',
     },
     {
-      title: 'Categories',
-      href: MODERATION_CATEGORY_ADMIN_PATHS.list,
-      desc: 'Create and maintain moderation categories with safe-delete constraints.',
-    },
-    {
       title: 'Cultures',
       href: MODERATION_CULTURE_ADMIN_PATHS.list,
-      desc: 'Manage moderation culture profiles and assign category coverage.',
+      desc: 'Manage moderation culture profiles and control which user groups appear first in reporting.',
+    },
+    {
+      title: 'User Groups',
+      href: MODERATION_USER_GROUP_ADMIN_PATHS.list,
+      desc: 'Manage the reporting-entry groups users see first and map them to canonical moderation rules.',
     },
     {
       title: 'Signals',
@@ -5743,7 +5771,7 @@ pagesRouter.get('/admin/moderation', async (_req: any, res: any) => {
   let body = '<h1>Moderation</h1>'
   body += '<div class="section">'
   body += '<div class="section-title">Overview</div>'
-  body += '<p>Moderation is now treated as a dedicated admin subsystem. Use the sections below to manage rules, categories, and moderation culture profiles. Additional moderation tools will land here as the system expands.</p>'
+  body += '<p>Moderation is a dedicated admin subsystem. Use the sections below to manage canonical rules, culture profiles, reporting-entry user groups, and moderation signals. Categories are being retired from the active moderation model.</p>'
   body += '</div>'
   body += '<div class="section">'
   body += '<div class="section-title">Sections</div>'
@@ -5761,7 +5789,7 @@ pagesRouter.get('/admin/moderation', async (_req: any, res: any) => {
     title: 'Moderation',
     bodyHtml: body,
     active: 'moderation',
-    canonicalSections: { rules: true, categories: true, cultures: true, signals: true },
+    canonicalSections: { rules: true, cultures: true, signals: true, user_groups: true },
   })
   res.set('Content-Type', 'text/html; charset=utf-8')
   res.send(doc)
@@ -6156,7 +6184,7 @@ function renderModerationSignalListPage(opts: {
     title: 'Moderation Signals',
     bodyHtml: body,
     active: 'moderation_signals',
-    canonicalSections: { rules: true, categories: true, cultures: true, signals: true },
+    canonicalSections: { rules: true, categories: true, cultures: true, signals: true, user_groups: true },
   })
 }
 
@@ -6191,7 +6219,7 @@ function renderModerationSignalNewPage(opts: {
     title: 'New Moderation Signal',
     bodyHtml: body,
     active: 'moderation_signals',
-    canonicalSections: { rules: true, categories: true, cultures: true, signals: true },
+    canonicalSections: { rules: true, categories: true, cultures: true, signals: true, user_groups: true },
   })
 }
 
@@ -6308,7 +6336,7 @@ function renderModerationSignalDetailPage(opts: {
     title: `Moderation Signal: ${signal?.label || signalId}`,
     bodyHtml: body,
     active: 'moderation_signals',
-    canonicalSections: { rules: true, categories: true, cultures: true, signals: true },
+    canonicalSections: { rules: true, categories: true, cultures: true, signals: true, user_groups: true },
   })
 }
 
@@ -10212,13 +10240,13 @@ function renderAdminUserFacingRuleForm(opts: {
   const selectedRuleIds = new Set<number>(mappings.map((m) => Number((m as any).ruleId || 0)).filter((n) => Number.isFinite(n) && n > 0))
 
   let body = `<h1>${escapeHtml(opts.title)}</h1>`
-  body += `<div class="toolbar"><div><a href="${escapeHtml(opts.backHref)}">← Back to user-facing rules</a></div><div></div></div>`
+  body += `<div class="toolbar"><div><a href="${escapeHtml(opts.backHref)}">← Back to user groups</a></div><div></div></div>`
   if (opts.error) body += `<div class="error">${escapeHtml(String(opts.error))}</div>`
   if (opts.notice) body += `<div class="notice">${escapeHtml(String(opts.notice))}</div>`
   body += `<form method="post" action="${escapeHtml(opts.action)}">`
   if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
 
-  body += `<div class="section"><div class="section-title">Rule</div>`
+  body += `<div class="section"><div class="section-title">User Group</div>`
   body += `<label>Label<input type="text" name="label" maxlength="255" value="${escapeHtml(String(values?.label || ''))}" required /></label>`
   body += `<label>Short Description (optional)<input type="text" name="shortDescription" maxlength="500" value="${escapeHtml(String(values?.shortDescription || values?.short_description || ''))}" /></label>`
   body += `<div style="display:grid; gap:10px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));">`
@@ -10247,14 +10275,14 @@ function renderAdminUserFacingRuleForm(opts: {
         const ruleLabel = ropt ? `${ropt.title} [#${ropt.id}]` : `#${rid}`
         body += `<tr><td>${escapeHtml(ruleLabel)}</td><td>${escapeHtml(String((mapping as any).priority ?? 100))}</td><td>${(mapping as any).isDefault ? 'Yes' : 'No'}</td><td>`
         body += `<div style="display:flex; gap:6px; flex-wrap:wrap">`
-        body += `<form method="post" action="/admin/user-facing-rules/${Number(values.id)}/mappings" style="margin:0; display:flex; gap:6px; align-items:center">`
+        body += `<form method="post" action="${escapeHtml(fillAdminPathParams(MODERATION_USER_GROUP_ADMIN_PATHS.mappings, { id: Number(values.id) }))}" style="margin:0; display:flex; gap:6px; align-items:center">`
         if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
         body += `<input type="hidden" name="mappingId" value="${mid}" />`
         body += `<input type="hidden" name="ruleId" value="${rid}" />`
         body += `<input type="number" name="priority" value="${escapeHtml(String((mapping as any).priority ?? 100))}" style="width:80px" />`
         body += `<label style="margin:0"><input type="checkbox" name="isDefault" value="1"${(mapping as any).isDefault ? ' checked' : ''} /> Default</label>`
         body += `<button class="btn" type="submit">Update</button></form>`
-        body += `<form method="post" action="/admin/user-facing-rules/${Number(values.id)}/mappings/${mid}/delete" style="margin:0" onsubmit="return confirm('Delete mapping?')">`
+        body += `<form method="post" action="${escapeHtml(fillAdminPathParams(MODERATION_USER_GROUP_ADMIN_PATHS.mappingDelete, { id: Number(values.id), mappingId: mid }))}" style="margin:0" onsubmit="return confirm('Delete mapping?')">`
         if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
         body += `<button class="btn btn-danger" type="submit">Delete</button></form>`
         body += `</div></td></tr>`
@@ -10262,7 +10290,7 @@ function renderAdminUserFacingRuleForm(opts: {
       body += `</tbody></table>`
     }
     body += `<hr style="border-color: rgba(255,255,255,0.15); margin: 14px 0" />`
-    body += `<form method="post" action="/admin/user-facing-rules/${Number(values.id)}/mappings">`
+    body += `<form method="post" action="${escapeHtml(fillAdminPathParams(MODERATION_USER_GROUP_ADMIN_PATHS.mappings, { id: Number(values.id) }))}">`
     if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
     body += `<div style="display:grid; gap:10px; grid-template-columns: minmax(260px,1fr) 120px 120px auto; align-items:end">`
     body += `<label>Rule<select name="ruleId" required><option value="">Select rule</option>`
@@ -10276,20 +10304,39 @@ function renderAdminUserFacingRuleForm(opts: {
     body += `<label><input type="checkbox" name="isDefault" value="1" /> Default</label>`
     body += `<button class="btn" type="submit">Add Mapping</button>`
     body += `</div>`
-    body += `<div class="field-hint">Only one default mapping is allowed per user-facing rule.</div>`
+    body += `<div class="field-hint">Only one default mapping is allowed per user group.</div>`
     body += `</form>`
     body += `</div>`
 
     body += `<div class="section"><div class="section-title">Danger Zone</div>`
-    body += `<form method="post" action="/admin/user-facing-rules/${Number(values.id)}/delete" onsubmit="return confirm('Delete this user-facing rule?')">`
+    body += `<form method="post" action="${escapeHtml(fillAdminPathParams(MODERATION_USER_GROUP_ADMIN_PATHS.delete, { id: Number(values.id) }))}" onsubmit="return confirm('Delete this user group?')">`
     if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
-    body += `<button class="btn btn-danger" type="submit">Delete Rule</button></form></div>`
+    body += `<button class="btn btn-danger" type="submit">Delete User Group</button></form></div>`
   }
 
-  return renderAdminPage({ title: opts.title, bodyHtml: body, active: 'user_facing_rules' })
+  return renderModerationAdminPage({
+    title: opts.title,
+    bodyHtml: body,
+    active: 'moderation_user_groups',
+    canonicalSections: { rules: true, cultures: true, signals: true, user_groups: true },
+  })
 }
 
-pagesRouter.get('/admin/user-facing-rules', async (req: any, res: any) => {
+pagesRouter.get(LEGACY_USER_GROUP_ADMIN_PATHS.list, async (req: any, res: any) => {
+  return redirectToAdminPath(req, res, MODERATION_USER_GROUP_ADMIN_PATHS.list)
+})
+
+pagesRouter.get(LEGACY_USER_GROUP_ADMIN_PATHS.new, async (req: any, res: any) => {
+  return redirectToAdminPath(req, res, MODERATION_USER_GROUP_ADMIN_PATHS.new)
+})
+
+pagesRouter.get(LEGACY_USER_GROUP_ADMIN_PATHS.detail, async (req: any, res: any) => {
+  const id = Number(req.params.id)
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).send('Bad user group id')
+  return redirectToAdminPath(req, res, fillAdminPathParams(MODERATION_USER_GROUP_ADMIN_PATHS.detail, { id }))
+})
+
+pagesRouter.get(MODERATION_USER_GROUP_ADMIN_PATHS.list, async (req: any, res: any) => {
   try {
     const includeInactive = String(req.query?.include_inactive || '0') === '1'
     const notice = req.query?.notice ? String(req.query.notice) : ''
@@ -10298,21 +10345,21 @@ pagesRouter.get('/admin/user-facing-rules', async (req: any, res: any) => {
       includeInactive,
       limit: 500,
     })
-    let body = '<h1>User-Facing Rules</h1>'
-    body += '<div class="toolbar"><div><span class="pill">Reporting Reasons</span></div><div><a href="/admin/user-facing-rules/new">New reason</a></div></div>'
+    let body = '<h1>User Groups</h1>'
+    body += `<div class="toolbar"><div><span class="pill">Reporting Entry</span></div><div><a href="${escapeHtml(MODERATION_USER_GROUP_ADMIN_PATHS.new)}">New user group</a></div></div>`
     if (notice) body += `<div class="notice">${escapeHtml(notice)}</div>`
     if (error) body += `<div class="error">${escapeHtml(error)}</div>`
-    body += `<form method="get" action="/admin/user-facing-rules" class="section" style="margin:12px 0">`
+    body += `<form method="get" action="${escapeHtml(MODERATION_USER_GROUP_ADMIN_PATHS.list)}" class="section" style="margin:12px 0">`
     body += `<label><input type="checkbox" name="include_inactive" value="1"${includeInactive ? ' checked' : ''} /> Include inactive</label> <button class="btn" type="submit">Apply</button>`
     body += `</form>`
     if (!items.length) {
-      body += '<p>No user-facing rules found.</p>'
+      body += '<p>No user groups found.</p>'
     } else {
-      body += '<table><thead><tr><th>ID</th><th>Label</th><th>Group</th><th>Order</th><th>Mappings</th><th>Default</th><th>Status</th><th>Updated</th></tr></thead><tbody>'
+      body += '<table><thead><tr><th>ID</th><th>Label</th><th>Legacy Grouping</th><th>Order</th><th>Mappings</th><th>Default</th><th>Status</th><th>Updated</th></tr></thead><tbody>'
       for (const item of items) {
         body += `<tr>
           <td>${item.id}</td>
-          <td><a href="/admin/user-facing-rules/${item.id}">${escapeHtml(item.label)}</a></td>
+          <td><a href="${escapeHtml(fillAdminPathParams(MODERATION_USER_GROUP_ADMIN_PATHS.detail, { id: item.id }))}">${escapeHtml(item.label)}</a></td>
           <td>${escapeHtml(item.groupLabel || item.groupKey || '-')}</td>
           <td>${item.groupOrder} / ${item.displayOrder}</td>
           <td>${item.mappingCount}</td>
@@ -10323,24 +10370,29 @@ pagesRouter.get('/admin/user-facing-rules', async (req: any, res: any) => {
       }
       body += '</tbody></table>'
     }
-    const doc = renderAdminPage({ title: 'User-Facing Rules', bodyHtml: body, active: 'user_facing_rules' })
+    const doc = renderModerationAdminPage({
+      title: 'User Groups',
+      bodyHtml: body,
+      active: 'moderation_user_groups',
+      canonicalSections: { rules: true, cultures: true, signals: true, user_groups: true },
+    })
     res.set('Content-Type', 'text/html; charset=utf-8')
     res.send(doc)
   } catch (err) {
     logError(req.log || pagesLogger, err, 'admin user-facing-rules list failed', { path: req.path })
-    res.status(500).send('Failed to load user-facing rules')
+    res.status(500).send('Failed to load user groups')
   }
 })
 
-pagesRouter.get('/admin/user-facing-rules/new', async (req: any, res: any) => {
+pagesRouter.get(MODERATION_USER_GROUP_ADMIN_PATHS.new, async (req: any, res: any) => {
   try {
     const cookies = parseCookies(req.headers.cookie)
     const csrfToken = cookies['csrf'] || ''
     const doc = renderAdminUserFacingRuleForm({
-      title: 'New User-Facing Rule',
-      action: '/admin/user-facing-rules',
+      title: 'New User Group',
+      action: MODERATION_USER_GROUP_ADMIN_PATHS.list,
       csrfToken,
-      backHref: '/admin/user-facing-rules',
+      backHref: MODERATION_USER_GROUP_ADMIN_PATHS.list,
       values: { label: '', shortDescription: '', groupKey: '', groupLabel: '', groupOrder: 0, displayOrder: 0, isActive: '1' },
       mappings: [],
       ruleOptions: await userFacingRulesSvc.listCanonicalRuleOptionsForAdmin(),
@@ -10349,43 +10401,43 @@ pagesRouter.get('/admin/user-facing-rules/new', async (req: any, res: any) => {
     res.send(doc)
   } catch (err) {
     logError(req.log || pagesLogger, err, 'admin user-facing-rules new page failed', { path: req.path })
-    res.status(500).send('Failed to load user-facing rule editor')
+    res.status(500).send('Failed to load user group editor')
   }
 })
 
-pagesRouter.post('/admin/user-facing-rules', async (req: any, res: any) => {
+pagesRouter.post([MODERATION_USER_GROUP_ADMIN_PATHS.list, LEGACY_USER_GROUP_ADMIN_PATHS.list], async (req: any, res: any) => {
   const payload = buildUserFacingRuleCreateOrUpdatePayload(req.body || {})
   const cookies = parseCookies(req.headers.cookie)
   const csrfToken = cookies['csrf'] || ''
   try {
     const created = await userFacingRulesSvc.createUserFacingRuleForAdmin(payload, Number(req.user?.id || 0))
-    return res.redirect(`/admin/user-facing-rules/${created.id}?notice=${encodeURIComponent('User-facing rule created.')}`)
+    return res.redirect(`${fillAdminPathParams(MODERATION_USER_GROUP_ADMIN_PATHS.detail, { id: created.id })}?notice=${encodeURIComponent('User group created.')}`)
   } catch (err: any) {
     const doc = renderAdminUserFacingRuleForm({
-      title: 'New User-Facing Rule',
-      action: '/admin/user-facing-rules',
+      title: 'New User Group',
+      action: MODERATION_USER_GROUP_ADMIN_PATHS.list,
       csrfToken,
-      backHref: '/admin/user-facing-rules',
+      backHref: MODERATION_USER_GROUP_ADMIN_PATHS.list,
       values: payload,
       ruleOptions: await userFacingRulesSvc.listCanonicalRuleOptionsForAdmin(),
-      error: String(err?.message || 'Failed to create user-facing rule'),
+      error: String(err?.message || 'Failed to create user group'),
     })
     return res.status(400).set('Content-Type', 'text/html; charset=utf-8').send(doc)
   }
 })
 
-pagesRouter.get('/admin/user-facing-rules/:id', async (req: any, res: any) => {
+pagesRouter.get(MODERATION_USER_GROUP_ADMIN_PATHS.detail, async (req: any, res: any) => {
   const id = Number(req.params.id)
-  if (!Number.isFinite(id) || id <= 0) return res.status(400).send('Bad rule id')
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).send('Bad user group id')
   try {
     const item = await userFacingRulesSvc.getUserFacingRuleForAdmin(id)
     const cookies = parseCookies(req.headers.cookie)
     const csrfToken = cookies['csrf'] || ''
     const doc = renderAdminUserFacingRuleForm({
-      title: `Edit User-Facing Rule #${id}`,
-      action: `/admin/user-facing-rules/${id}`,
+      title: `Edit User Group #${id}`,
+      action: fillAdminPathParams(MODERATION_USER_GROUP_ADMIN_PATHS.detail, { id }),
       csrfToken,
-      backHref: '/admin/user-facing-rules',
+      backHref: MODERATION_USER_GROUP_ADMIN_PATHS.list,
       values: item,
       mappings: item.mappings,
       ruleOptions: await userFacingRulesSvc.listCanonicalRuleOptionsForAdmin(),
@@ -10396,68 +10448,70 @@ pagesRouter.get('/admin/user-facing-rules/:id', async (req: any, res: any) => {
     res.send(doc)
   } catch (err) {
     logError(req.log || pagesLogger, err, 'admin user-facing-rules detail failed', { path: req.path, rule_id: id })
-    res.status(404).send('User-facing rule not found')
+    res.status(404).send('User group not found')
   }
 })
 
-pagesRouter.post('/admin/user-facing-rules/:id', async (req: any, res: any) => {
+pagesRouter.post([MODERATION_USER_GROUP_ADMIN_PATHS.detail, LEGACY_USER_GROUP_ADMIN_PATHS.detail], async (req: any, res: any) => {
   const id = Number(req.params.id)
-  if (!Number.isFinite(id) || id <= 0) return res.status(400).send('Bad rule id')
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).send('Bad user group id')
   const payload = buildUserFacingRuleCreateOrUpdatePayload(req.body || {})
   const cookies = parseCookies(req.headers.cookie)
   const csrfToken = cookies['csrf'] || ''
   try {
     await userFacingRulesSvc.updateUserFacingRuleForAdmin(id, payload, Number(req.user?.id || 0))
-    return res.redirect(`/admin/user-facing-rules/${id}?notice=${encodeURIComponent('Saved.')}`)
+    return res.redirect(`${fillAdminPathParams(MODERATION_USER_GROUP_ADMIN_PATHS.detail, { id })}?notice=${encodeURIComponent('Saved.')}`)
   } catch (err: any) {
     const existing = await userFacingRulesSvc.getUserFacingRuleForAdmin(id).catch(() => null)
     const doc = renderAdminUserFacingRuleForm({
-      title: `Edit User-Facing Rule #${id}`,
-      action: `/admin/user-facing-rules/${id}`,
+      title: `Edit User Group #${id}`,
+      action: fillAdminPathParams(MODERATION_USER_GROUP_ADMIN_PATHS.detail, { id }),
       csrfToken,
-      backHref: '/admin/user-facing-rules',
+      backHref: MODERATION_USER_GROUP_ADMIN_PATHS.list,
       values: { ...(existing || {}), ...payload, id },
       mappings: existing?.mappings || [],
       ruleOptions: await userFacingRulesSvc.listCanonicalRuleOptionsForAdmin(),
-      error: String(err?.message || 'Failed to save user-facing rule'),
+      error: String(err?.message || 'Failed to save user group'),
     })
     return res.status(400).set('Content-Type', 'text/html; charset=utf-8').send(doc)
   }
 })
 
-pagesRouter.post('/admin/user-facing-rules/:id/delete', async (req: any, res: any) => {
+pagesRouter.post([MODERATION_USER_GROUP_ADMIN_PATHS.delete, LEGACY_USER_GROUP_ADMIN_PATHS.delete], async (req: any, res: any) => {
   const id = Number(req.params.id)
-  if (!Number.isFinite(id) || id <= 0) return res.redirect('/admin/user-facing-rules?error=bad_id')
+  if (!Number.isFinite(id) || id <= 0) return res.redirect(`${MODERATION_USER_GROUP_ADMIN_PATHS.list}?error=bad_id`)
   try {
     await userFacingRulesSvc.deleteUserFacingRuleForAdmin(id, Number(req.user?.id || 0))
-    return res.redirect('/admin/user-facing-rules?notice=' + encodeURIComponent('Deleted.'))
+    return res.redirect(MODERATION_USER_GROUP_ADMIN_PATHS.list + '?notice=' + encodeURIComponent('Deleted.'))
   } catch (err: any) {
-    return res.redirect(`/admin/user-facing-rules/${id}?error=${encodeURIComponent(String(err?.message || 'Failed to delete user-facing rule'))}`)
+    return res.redirect(`${fillAdminPathParams(MODERATION_USER_GROUP_ADMIN_PATHS.detail, { id })}?error=${encodeURIComponent(String(err?.message || 'Failed to delete user group'))}`)
   }
 })
 
-pagesRouter.post('/admin/user-facing-rules/:id/mappings', async (req: any, res: any) => {
+pagesRouter.post([MODERATION_USER_GROUP_ADMIN_PATHS.mappings, LEGACY_USER_GROUP_ADMIN_PATHS.mappings], async (req: any, res: any) => {
   const id = Number(req.params.id)
-  if (!Number.isFinite(id) || id <= 0) return res.redirect('/admin/user-facing-rules?error=bad_id')
+  if (!Number.isFinite(id) || id <= 0) return res.redirect(`${MODERATION_USER_GROUP_ADMIN_PATHS.list}?error=bad_id`)
   const payload = buildUserFacingRuleMappingPayload(req.body || {})
   try {
     await userFacingRulesSvc.upsertMappingForAdmin(id, payload, Number(req.user?.id || 0))
-    return res.redirect(`/admin/user-facing-rules/${id}?notice=${encodeURIComponent('Mapping saved.')}`)
+    return res.redirect(`${fillAdminPathParams(MODERATION_USER_GROUP_ADMIN_PATHS.detail, { id })}?notice=${encodeURIComponent('Mapping saved.')}`)
   } catch (err: any) {
-    return res.redirect(`/admin/user-facing-rules/${id}?error=${encodeURIComponent(String(err?.message || 'Failed to save mapping'))}`)
+    return res.redirect(`${fillAdminPathParams(MODERATION_USER_GROUP_ADMIN_PATHS.detail, { id })}?error=${encodeURIComponent(String(err?.message || 'Failed to save mapping'))}`)
   }
 })
 
-pagesRouter.post('/admin/user-facing-rules/:id/mappings/:mappingId/delete', async (req: any, res: any) => {
+pagesRouter.post([MODERATION_USER_GROUP_ADMIN_PATHS.mappingDelete, LEGACY_USER_GROUP_ADMIN_PATHS.mappingDelete], async (req: any, res: any) => {
   const id = Number(req.params.id)
   const mappingId = Number(req.params.mappingId)
-  if (!Number.isFinite(id) || id <= 0) return res.redirect('/admin/user-facing-rules?error=bad_id')
-  if (!Number.isFinite(mappingId) || mappingId <= 0) return res.redirect(`/admin/user-facing-rules/${id}?error=bad_mapping_id`)
+  if (!Number.isFinite(id) || id <= 0) return res.redirect(`${MODERATION_USER_GROUP_ADMIN_PATHS.list}?error=bad_id`)
+  if (!Number.isFinite(mappingId) || mappingId <= 0) {
+    return res.redirect(`${fillAdminPathParams(MODERATION_USER_GROUP_ADMIN_PATHS.detail, { id })}?error=bad_mapping_id`)
+  }
   try {
     await userFacingRulesSvc.deleteMappingForAdmin(id, mappingId, Number(req.user?.id || 0))
-    return res.redirect(`/admin/user-facing-rules/${id}?notice=${encodeURIComponent('Mapping deleted.')}`)
+    return res.redirect(`${fillAdminPathParams(MODERATION_USER_GROUP_ADMIN_PATHS.detail, { id })}?notice=${encodeURIComponent('Mapping deleted.')}`)
   } catch (err: any) {
-    return res.redirect(`/admin/user-facing-rules/${id}?error=${encodeURIComponent(String(err?.message || 'Failed to delete mapping'))}`)
+    return res.redirect(`${fillAdminPathParams(MODERATION_USER_GROUP_ADMIN_PATHS.detail, { id })}?error=${encodeURIComponent(String(err?.message || 'Failed to delete mapping'))}`)
   }
 })
 
