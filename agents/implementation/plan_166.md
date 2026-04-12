@@ -59,7 +59,7 @@ Status: Active
 
 ## Phase Status
 - A: Complete
-- B: Pending
+- B: Complete
 - C: Pending
 - D: Pending
 - E: Pending
@@ -163,6 +163,7 @@ Status: Active
 - 2026-04-12 — Locked rule-admin organization: canonical rules should be organized by linked user-facing groups rather than categories, with an explicit `Ungrouped` bucket for rules that have not been linked yet.
 - 2026-04-12 — Locked reporting interaction: `Show All` should expand inline and reveal all active user-facing groups rather than switching to a separate browsing state.
 - 2026-04-12 — Phase A completed: added canonical `/admin/moderation/user-groups*` route wiring, moved the current user-facing-rules admin pages under moderation-local navigation, converted legacy `/admin/user-facing-rules` GET pages to compatibility redirects, removed categories from the active moderation hub/subnav, and removed the standalone top-level admin nav entry for user-facing rules. Manual verification of `/admin`, `/admin/moderation`, `/admin/moderation/user-groups`, and the legacy redirect paths passed.
+- 2026-04-12 — Phase B completed: added `culture_user_facing_groups` persistence, lazy backfill from legacy culture/category reachability into initial user-group linkage, switched the culture list/detail/update flows to use initial user groups instead of categories, and updated culture delete behavior to clear compatibility joins before deleting. Manual verification of `/admin/moderation/cultures` and culture save/reload/backfill behavior passed.
 
 ## Validation
 - Environment:
@@ -176,6 +177,7 @@ Status: Active
   - `sed -n '120,380p' src/features/reports/repo.ts`
   - `sed -n '10280,10490p' src/routes/pages.ts`
   - `npm run build`
+  - `npm run build` (after Phase B culture linkage changes)
 - Evidence files:
   - `agents/features/feature_14_moderation_updates.md`
   - `src/features/user-facing-rules/service.ts`
@@ -198,6 +200,6 @@ Status: Active
 
 ## Resume Here
 - Next action:
-  - Start Phase B: add culture-to-user-group linkage and replace category assignment in the culture editor with initial user-group assignment.
+  - Start Phase C: replace the report-entry visibility model so initial reporting options derive from culture-linked user groups and `Show All` expands every active user group.
 - Blocking question (if any):
   - none

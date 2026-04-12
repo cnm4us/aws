@@ -1746,10 +1746,11 @@ async function handleModerationCulturesList(req: any, res: any) {
 
     const db = getPool();
     await culturesRepo.backfillAllCultureSignalMemberships(db as any)
+    await culturesRepo.backfillAllCultureInitialUserGroupMemberships(db as any)
     const [rows] = await db.query(
-      `SELECT c.id, c.name, c.updated_at, COUNT(cc.category_id) AS category_count
+      `SELECT c.id, c.name, c.updated_at, COUNT(cufg.user_facing_group_id) AS user_group_count
          FROM cultures c
-         LEFT JOIN culture_categories cc ON cc.culture_id = c.id
+         LEFT JOIN culture_user_facing_groups cufg ON cufg.culture_id = c.id
         GROUP BY c.id
         ORDER BY c.name`
     );
@@ -1763,17 +1764,17 @@ async function handleModerationCulturesList(req: any, res: any) {
     if (!items.length) {
       body += '<p>No cultures have been created yet.</p>';
     } else {
-      body += '<table><thead><tr><th>Name</th><th>Categories</th><th>Updated</th></tr></thead><tbody>';
+      body += '<table><thead><tr><th>Name</th><th>Initial User Groups</th><th>Updated</th></tr></thead><tbody>';
       for (const row of items) {
         const id = Number(row.id);
         const name = escapeHtml(String(row.name || ''));
         const updated = row.updated_at ? escapeHtml(String(row.updated_at)) : '';
-        const categoryCount = row.category_count != null ? escapeHtml(String(row.category_count)) : '0';
+        const userGroupCount = row.user_group_count != null ? escapeHtml(String(row.user_group_count)) : '0';
         const href = getModerationAdminSectionPath('cultures', encodeURIComponent(String(id)));
-        body += `<tr><td><a href="${href}">${name}</a></td><td>${categoryCount}</td><td>${updated}</td></tr>`;
+        body += `<tr><td><a href="${href}">${name}</a></td><td>${userGroupCount}</td><td>${updated}</td></tr>`;
       }
       body += '</tbody></table>';
-      body += `<div class="field-hint" style="margin-top: 10px">Category assignment is configured in the culture detail page.</div>`;
+      body += `<div class="field-hint" style="margin-top: 10px">Initial reporting-entry user groups are configured in the culture detail page.</div>`;
     }
 
     const doc = renderModerationAdminPage({
@@ -1856,17 +1857,29 @@ pagesRouter.post(
   handleModerationCulturesCreate
 );
 
-async function listRuleCategoriesForCultures(): Promise<Array<{ id: number; name: string; description: string }>> {
+async function listUserFacingGroupsForCultures(): Promise<Array<{
+  id: number
+  label: string
+  shortDescription: string | null
+  isActive: boolean
+  groupOrder: number
+  displayOrder: number
+}>> {
   try {
-    const db = getPool();
-    const [rows] = await db.query(`SELECT id, name, description FROM rule_categories ORDER BY name`);
-    return (rows as any[])
-      .map((r) => ({
-        id: Number(r.id),
-        name: String(r.name || ''),
-        description: r.description != null ? String(r.description) : '',
+    const items = await userFacingRulesSvc.listUserFacingRulesForAdmin({
+      includeInactive: true,
+      limit: 500,
+    })
+    return items
+      .map((item) => ({
+        id: Number(item.id),
+        label: String(item.label || ''),
+        shortDescription: item.shortDescription != null ? String(item.shortDescription) : null,
+        isActive: !!item.isActive,
+        groupOrder: Number(item.groupOrder || 0),
+        displayOrder: Number(item.displayOrder || 0),
       }))
-      .filter((c) => Number.isFinite(c.id) && c.id > 0 && c.name);
+      .filter((item) => Number.isFinite(item.id) && item.id > 0 && item.label)
   } catch {
     return [];
   }
@@ -2258,17 +2271,24 @@ function renderCultureDetailPage(opts: {
   advancedJsonText?: string;
   advancedJsonError?: string | null;
   advancedOpen?: boolean;
-  categories: Array<{ id: number; name: string; description: string }>;
+  userGroups: Array<{
+    id: number
+    label: string
+    shortDescription: string | null
+    isActive: boolean
+    groupOrder: number
+    displayOrder: number
+  }>;
   signalOptions: CultureSignalOption[];
-  assignedCategoryIds: Set<number>;
+  assignedUserGroupIds: Set<number>;
   csrfToken?: string | null;
   notice?: string | null;
   error?: string | null;
 }): string {
   const culture = opts.culture ?? {};
-  const categories = Array.isArray(opts.categories) ? opts.categories : [];
+  const userGroups = Array.isArray(opts.userGroups) ? opts.userGroups : [];
   const signalOptions = Array.isArray(opts.signalOptions) ? opts.signalOptions : [];
-  const assigned = opts.assignedCategoryIds ?? new Set<number>();
+  const assigned = opts.assignedUserGroupIds ?? new Set<number>();
   const definition = opts.definition;
   const definitionSource = String(opts.definitionSource || 'stored');
   const definitionValidationErrors = Array.isArray(opts.definitionValidationErrors)
@@ -2550,21 +2570,23 @@ function renderCultureDetailPage(opts: {
   body += `</details>`;
 
   body += `<div class="section" style="margin-top: 14px">`;
-  body += `<div class="section-title">Categories</div>`;
-  body += `<div class="field-hint">Select which rule categories are included in this culture. Users will only see rules from these categories once cultures are attached to spaces.</div>`;
+  body += `<div class="section-title">Initial User Groups</div>`;
+  body += `<div class="field-hint">Select which reporting-entry user groups are shown first when a user taps the flag icon. Users can still expand Show All to reach every active user group.</div>`;
 
-  if (!categories.length) {
-    body += `<p>No categories exist yet.</p>`;
+  if (!userGroups.length) {
+    body += `<p>No user groups exist yet.</p>`;
   } else {
     body += `<div style="margin-top: 10px">`;
-    for (const c of categories) {
-      const cid = Number(c.id);
-      const checked = assigned.has(cid) ? ' checked' : '';
+    body += `<input type="hidden" name="initialUserGroupIds" value="" />`;
+    for (const group of userGroups) {
+      const groupId = Number(group.id);
+      const checked = assigned.has(groupId) ? ' checked' : '';
+      const statusNote = group.isActive ? '' : ' • inactive'
       body += `<label style="display:flex; gap:10px; align-items:flex-start; margin-top: 8px">`;
-      body += `<input type="checkbox" name="categoryIds" value="${escapeHtml(String(cid))}"${checked} style="margin-top: 3px" />`;
-      body += `<div><div><a href="${escapeHtml(getModerationAdminSectionPath('categories', encodeURIComponent(String(cid))))}">${escapeHtml(c.name)}</a></div>`;
-      if (c.description) {
-        body += `<div class="field-hint">${escapeHtml(c.description)}</div>`;
+      body += `<input type="checkbox" name="initialUserGroupIds" value="${escapeHtml(String(groupId))}"${checked} style="margin-top: 3px" />`;
+      body += `<div><div><a href="${escapeHtml(getModerationAdminSectionPath('user_groups', encodeURIComponent(String(groupId))))}">${escapeHtml(group.label)}</a></div>`;
+      if (group.shortDescription || statusNote) {
+        body += `<div class="field-hint">${escapeHtml(String(group.shortDescription || '').trim() || 'No short description.')}${escapeHtml(statusNote)}</div>`;
       }
       body += `</div></label>`;
     }
@@ -2578,14 +2600,14 @@ function renderCultureDetailPage(opts: {
   body += `</form>`;
   body += `<form method="post" action="${escapeHtml(getModerationAdminSectionPath('cultures', `${encodeURIComponent(id)}/delete`))}" style="display:inline-block; margin:0" onsubmit="return confirm('Delete culture \\'${escapeHtml(nameValue || 'this culture')}\\'? This cannot be undone.');">`;
   if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`;
-  body += `<button type="submit" class="danger"${assignedCount > 0 ? ' disabled title="Remove category associations before deleting this culture."' : ''}>Delete</button>`;
+  body += `<button type="submit" class="danger"${assignedCount > 0 ? ' disabled title="Remove initial user-group assignments before deleting this culture."' : ''}>Delete</button>`;
   body += `</form>`;
   body += `</div>`;
 
   body += `<div class="section" style="margin-top: 18px">`;
   body += `<div class="section-title">Danger Zone</div>`;
   if (assignedCount > 0) {
-    body += `<div class="field-hint">To delete this culture, remove all category associations first.</div>`;
+    body += `<div class="field-hint">To delete this culture, remove all initial user-group assignments first.</div>`;
   } else {
     body += `<div class="field-hint">Delete is available next to Save.</div>`;
   }
@@ -2611,10 +2633,11 @@ async function handleModerationCultureDetail(req: any, res: any) {
     const culture = await culturesRepo.getCultureWithDefinition(id, db as any);
     if (!culture) return res.status(404).send('Culture not found');
 
-    const categories = await listRuleCategoriesForCultures();
+    const userGroups = await listUserFacingGroupsForCultures();
     const signalOptions = await listCultureSignalOptions();
-    const [assignedRows] = await db.query(`SELECT category_id FROM culture_categories WHERE culture_id = ?`, [id]);
-    const assignedCategoryIds = new Set<number>((assignedRows as any[]).map((r) => Number(r.category_id)).filter((n) => Number.isFinite(n) && n > 0));
+    const assignedUserGroupIds = new Set<number>(
+      await culturesRepo.projectCultureInitialUserGroupIds(id, db as any)
+    );
 
     const cookies = parseCookies(req.headers.cookie);
     const csrfToken = cookies['csrf'] || '';
@@ -2633,9 +2656,9 @@ async function handleModerationCultureDetail(req: any, res: any) {
       definitionValidationErrors: culture.definition_validation_errors || [],
       definitionFieldErrors: {},
       advancedJsonCanEdit,
-      categories,
+      userGroups,
       signalOptions,
-      assignedCategoryIds,
+      assignedUserGroupIds,
       csrfToken,
       notice,
       error,
@@ -2667,18 +2690,18 @@ async function handleModerationCultureUpdate(req: any, res: any) {
     const rawName = body.name != null ? String(body.name) : '';
     const name = rawName.trim();
 
-    const rawCategoryIds = (body as any).categoryIds;
-    const submittedIds: number[] = Array.isArray(rawCategoryIds)
-      ? rawCategoryIds.map((v) => Number(v)).filter((n) => Number.isFinite(n) && n > 0)
-      : (rawCategoryIds != null && String(rawCategoryIds).trim() !== '')
-        ? [Number(rawCategoryIds)].filter((n) => Number.isFinite(n) && n > 0)
+    const rawInitialUserGroupIds = (body as any).initialUserGroupIds;
+    const submittedIds: number[] = Array.isArray(rawInitialUserGroupIds)
+      ? rawInitialUserGroupIds.map((v) => Number(v)).filter((n) => Number.isFinite(n) && n > 0)
+      : (rawInitialUserGroupIds != null && String(rawInitialUserGroupIds).trim() !== '')
+        ? [Number(rawInitialUserGroupIds)].filter((n) => Number.isFinite(n) && n > 0)
         : [];
 
     const db = getPool() as any;
     const current = await culturesRepo.getCultureWithDefinition(id, db);
     if (!current) return res.status(404).send('Culture not found');
 
-    const categories = await listRuleCategoriesForCultures();
+    const userGroups = await listUserFacingGroupsForCultures();
     const signalOptions = await listCultureSignalOptions();
     const cookies = parseCookies(req.headers.cookie);
     const csrfToken = cookies['csrf'] || '';
@@ -2719,9 +2742,9 @@ async function handleModerationCultureUpdate(req: any, res: any) {
             : stringifyCultureEditorJson(definition),
         advancedJsonError: opts.advancedJsonError || '',
         advancedOpen: !!opts.advancedOpen || !!opts.advancedJsonError || isAdvancedValidate || isAdvancedApply,
-        categories,
+        userGroups,
         signalOptions,
-        assignedCategoryIds: opts.assignedIds || new Set<number>(submittedIds),
+        assignedUserGroupIds: opts.assignedIds || new Set<number>(submittedIds),
         csrfToken,
         notice: opts.notice,
         error: opts.error,
@@ -2844,11 +2867,11 @@ async function handleModerationCultureUpdate(req: any, res: any) {
 
     let validIds: number[] = [];
     if (uniqueSubmittedIds.length) {
-      const [catRows] = await conn.query(
-        `SELECT id FROM rule_categories WHERE id IN (${uniqueSubmittedIds.map(() => '?').join(',')})`,
+      const [userGroupRows] = await conn.query(
+        `SELECT id FROM user_facing_rules WHERE id IN (${uniqueSubmittedIds.map(() => '?').join(',')})`,
         uniqueSubmittedIds
       );
-      validIds = (catRows as any[]).map((r) => Number(r.id)).filter((n) => Number.isFinite(n) && n > 0);
+      validIds = (userGroupRows as any[]).map((r) => Number(r.id)).filter((n) => Number.isFinite(n) && n > 0);
     }
 
     try {
@@ -2896,33 +2919,7 @@ async function handleModerationCultureUpdate(req: any, res: any) {
       throw err;
     }
 
-    const [existingRows] = await conn.query(`SELECT category_id FROM culture_categories WHERE culture_id = ? FOR UPDATE`, [id]);
-    const existingIds = new Set<number>((existingRows as any[]).map((r) => Number(r.category_id)).filter((n) => Number.isFinite(n) && n > 0));
-    const nextIds = new Set<number>(validIds);
-
-    const toAdd: number[] = [];
-    const toRemove: number[] = [];
-    for (const cid of nextIds) {
-      if (!existingIds.has(cid)) toAdd.push(cid);
-    }
-    for (const cid of existingIds) {
-      if (!nextIds.has(cid)) toRemove.push(cid);
-    }
-
-    if (toRemove.length) {
-      await conn.query(
-        `DELETE FROM culture_categories
-          WHERE culture_id = ?
-            AND category_id IN (${toRemove.map(() => '?').join(',')})`,
-        [id, ...toRemove]
-      );
-    }
-    if (toAdd.length) {
-      await conn.query(
-        `INSERT IGNORE INTO culture_categories (culture_id, category_id) VALUES ${toAdd.map(() => '(?, ?)').join(',')}`,
-        toAdd.flatMap((cid) => [id, cid])
-      );
-    }
+    await culturesRepo.replaceCultureInitialUserGroups(id, validIds, conn)
 
     await conn.commit();
     res.redirect(
@@ -2960,18 +2957,22 @@ async function handleModerationCultureDelete(req: any, res: any) {
     }
 
     const [assocRows] = await conn.query(
-      `SELECT COUNT(*) AS cnt FROM culture_categories WHERE culture_id = ? FOR UPDATE`,
+      `SELECT COUNT(*) AS cnt FROM culture_user_facing_groups WHERE culture_id = ? FOR UPDATE`,
       [id]
     );
     const cnt = Number((assocRows as any[])[0]?.cnt ?? 0);
     if (Number.isFinite(cnt) && cnt > 0) {
       await conn.rollback();
-      const msg = 'Cannot delete: this culture is still associated with one or more categories.';
+      const msg = 'Cannot delete: this culture is still associated with one or more initial user groups.';
       return res.redirect(
         `${getModerationAdminSectionPath('cultures', encodeURIComponent(String(id)))}?error=${encodeURIComponent(msg)}`
       );
     }
 
+    await conn.query(`DELETE FROM culture_user_facing_groups WHERE culture_id = ?`, [id]);
+    await conn.query(`DELETE FROM culture_categories WHERE culture_id = ?`, [id]);
+    await conn.query(`DELETE FROM culture_positive_signals WHERE culture_id = ?`, [id]);
+    await conn.query(`DELETE FROM culture_disruption_signals WHERE culture_id = ?`, [id]);
     await conn.query(`DELETE FROM cultures WHERE id = ?`, [id]);
     await conn.commit();
 

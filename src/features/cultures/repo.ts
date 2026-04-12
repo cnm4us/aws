@@ -42,6 +42,17 @@ function dbOrPool(db?: DbLike): DbLike {
   return (db as any) || getPool()
 }
 
+function normalizeUniquePositiveIntList(values: Array<number | string | null | undefined>): number[] {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value) && value > 0)
+        .map((value) => Math.round(value))
+    )
+  )
+}
+
 function parseJsonCell(value: unknown): unknown | null {
   if (value == null) return null
   if (typeof value === 'string') {
@@ -156,6 +167,99 @@ async function syncCultureDefinitionSignals(
     positive_signals: resolvedPositive as any,
     disruption_signals: resolvedDisruption as any,
   }
+}
+
+async function deriveCultureInitialUserGroupIdsFromLegacyCategories(
+  cultureId: number,
+  db?: DbLike
+): Promise<number[]> {
+  const q = dbOrPool(db)
+  const [rows] = await q.query(
+    `SELECT DISTINCT ufr.id
+       FROM culture_categories cc
+       JOIN rules r
+         ON r.category_id = cc.category_id
+       JOIN user_facing_rule_rule_map m
+         ON m.rule_id = r.id
+       JOIN user_facing_rules ufr
+         ON ufr.id = m.user_facing_rule_id
+      WHERE cc.culture_id = ?
+        AND ufr.is_active = 1
+      ORDER BY ufr.group_order ASC, ufr.display_order ASC, ufr.id ASC`,
+    [cultureId]
+  )
+  return normalizeUniquePositiveIntList((rows as any[]).map((row) => row.id))
+}
+
+export async function listCultureInitialUserGroupIds(
+  cultureId: number,
+  db?: DbLike
+): Promise<number[]> {
+  const q = dbOrPool(db)
+  const [rows] = await q.query(
+    `SELECT user_facing_group_id
+       FROM culture_user_facing_groups
+      WHERE culture_id = ?
+      ORDER BY user_facing_group_id ASC`,
+    [cultureId]
+  )
+  return normalizeUniquePositiveIntList((rows as any[]).map((row) => row.user_facing_group_id))
+}
+
+export async function projectCultureInitialUserGroupIds(
+  cultureId: number,
+  db?: DbLike
+): Promise<number[]> {
+  const q = dbOrPool(db)
+  let current = await listCultureInitialUserGroupIds(cultureId, q)
+  if (current.length) return current
+
+  const derived = await deriveCultureInitialUserGroupIdsFromLegacyCategories(cultureId, q)
+  if (!derived.length) return []
+
+  await q.query(
+    `INSERT IGNORE INTO culture_user_facing_groups (culture_id, user_facing_group_id)
+     VALUES ${derived.map(() => '(?, ?)').join(',')}`,
+    derived.flatMap((userFacingGroupId) => [cultureId, userFacingGroupId])
+  )
+
+  current = await listCultureInitialUserGroupIds(cultureId, q)
+  return current
+}
+
+export async function replaceCultureInitialUserGroups(
+  cultureId: number,
+  userFacingGroupIds: number[],
+  db?: DbLike
+): Promise<number[]> {
+  const q = dbOrPool(db)
+  const nextIds = normalizeUniquePositiveIntList(userFacingGroupIds)
+  await q.query(`DELETE FROM culture_user_facing_groups WHERE culture_id = ?`, [cultureId])
+  if (nextIds.length) {
+    await q.query(
+      `INSERT IGNORE INTO culture_user_facing_groups (culture_id, user_facing_group_id)
+       VALUES ${nextIds.map(() => '(?, ?)').join(',')}`,
+      nextIds.flatMap((userFacingGroupId) => [cultureId, userFacingGroupId])
+    )
+  }
+  return nextIds
+}
+
+export async function backfillAllCultureInitialUserGroupMemberships(db?: DbLike): Promise<number> {
+  const q = dbOrPool(db)
+  const [rows] = await q.query(
+    `SELECT id
+       FROM cultures
+      ORDER BY id ASC`
+  )
+  let count = 0
+  for (const row of rows as any[]) {
+    const cultureId = Number(row.id)
+    if (!Number.isFinite(cultureId) || cultureId <= 0) continue
+    await projectCultureInitialUserGroupIds(cultureId, q)
+    count += 1
+  }
+  return count
 }
 
 export async function backfillAllCultureSignalMemberships(db?: DbLike): Promise<number> {

@@ -4238,6 +4238,36 @@ export async function ensureSchema(db: DB) {
   try { await db.query(`CREATE INDEX IF NOT EXISTS idx_user_facing_rules_group ON user_facing_rules (group_key, group_order, display_order, id)`); } catch {}
 
   await db.query(`
+    CREATE TABLE IF NOT EXISTS culture_user_facing_groups (
+      culture_id BIGINT UNSIGNED NOT NULL,
+      user_facing_group_id BIGINT UNSIGNED NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (culture_id, user_facing_group_id),
+      KEY idx_culture_user_facing_groups_group (user_facing_group_id, culture_id),
+      KEY idx_culture_user_facing_groups_culture (culture_id, user_facing_group_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+  await db.query(`ALTER TABLE culture_user_facing_groups ADD COLUMN IF NOT EXISTS culture_id BIGINT UNSIGNED NOT NULL`)
+  await db.query(`ALTER TABLE culture_user_facing_groups ADD COLUMN IF NOT EXISTS user_facing_group_id BIGINT UNSIGNED NOT NULL`)
+  await db.query(`ALTER TABLE culture_user_facing_groups ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP`)
+  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_culture_user_facing_groups_group ON culture_user_facing_groups (user_facing_group_id, culture_id)`); } catch {}
+  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_culture_user_facing_groups_culture ON culture_user_facing_groups (culture_id, user_facing_group_id)`); } catch {}
+  try {
+    await db.query(`
+      ALTER TABLE culture_user_facing_groups
+      ADD CONSTRAINT fk_culture_user_facing_groups_culture
+      FOREIGN KEY (culture_id) REFERENCES cultures(id)
+    `);
+  } catch {}
+  try {
+    await db.query(`
+      ALTER TABLE culture_user_facing_groups
+      ADD CONSTRAINT fk_culture_user_facing_groups_group
+      FOREIGN KEY (user_facing_group_id) REFERENCES user_facing_rules(id)
+    `);
+  } catch {}
+
+  await db.query(`
     CREATE TABLE IF NOT EXISTS user_facing_rule_rule_map (
       id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
       user_facing_rule_id BIGINT UNSIGNED NOT NULL,
