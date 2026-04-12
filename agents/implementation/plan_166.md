@@ -62,7 +62,7 @@ Status: Active
 - B: Complete
 - C: Complete
 - D: Complete
-- E: Pending
+- E: Complete
 - F: Pending
 
 ## Phase A — Route and IA Foundation for User Groups
@@ -166,6 +166,7 @@ Status: Active
 - 2026-04-12 — Phase B completed: added `culture_user_facing_groups` persistence, lazy backfill from legacy culture/category reachability into initial user-group linkage, switched the culture list/detail/update flows to use initial user groups instead of categories, and updated culture delete behavior to clear compatibility joins before deleting. Manual verification of `/admin/moderation/cultures` and culture save/reload/backfill behavior passed.
 - 2026-04-12 — Phase C completed: replaced category-dependent reporting reachability with user-group-based initial and all-group queries, updated report submission/default resolution to use active user-group mappings rather than category membership, and rewrote the report modal to start with initial user groups and expand inline to all active user groups via `Show All`. Manual verification of the report modal behavior, inline expansion, rule detail drill-down, and submission flow passed.
 - 2026-04-12 — Phase D completed: removed category ownership from active rule create/edit flows, reorganized the moderation rules admin list/export/detail around linked user-facing groups plus an explicit `Ungrouped Rules` section, and removed category metadata from active signal/user-group rule references. Manual verification of the rules, signals, and user-groups admin surfaces passed.
+- 2026-04-12 — Phase E completed: removed `group_key` / `group_label` from the active user-group admin model and writes, added JSON export for `/admin/moderation/user-groups`, and simplified the list/detail forms so ordering and mappings are the remaining first-class controls. Manual verification of the user-groups admin surface and export output passed.
 
 ## Validation
 - Environment:
@@ -182,6 +183,7 @@ Status: Active
   - `npm run build` (after Phase B culture linkage changes)
   - `npm run build` (after Phase C reporting flow changes)
   - `npm run build` (after Phase D rule admin category-retirement changes)
+  - `npm run build` (after Phase E user-group model/admin cleanup)
 - Evidence files:
   - `agents/features/feature_14_moderation_updates.md`
   - `src/features/user-facing-rules/service.ts`
@@ -204,6 +206,6 @@ Status: Active
 
 ## Resume Here
 - Next action:
-  - Start Phase E: align user-group admin terminology, export/diagnostic surfaces, and target-model cleanup around the renamed `user_facing_groups` concept.
+  - Start Phase F: update docs, smoke coverage, and the explicit deferred-cleanup notes for remaining legacy category and `user_facing_rules*` storage.
 - Blocking question (if any):
   - none

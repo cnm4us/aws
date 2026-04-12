@@ -10224,8 +10224,6 @@ function buildUserFacingRuleCreateOrUpdatePayload(body: any): any {
   return {
     label: String(body?.label || '').trim(),
     shortDescription: String(body?.shortDescription ?? body?.short_description ?? '').trim() || null,
-    groupKey: String(body?.groupKey ?? body?.group_key ?? '').trim() || null,
-    groupLabel: String(body?.groupLabel ?? body?.group_label ?? '').trim() || null,
     groupOrder: String(body?.groupOrder ?? body?.group_order ?? '').trim(),
     displayOrder: String(body?.displayOrder ?? body?.display_order ?? '').trim(),
     isActive: String(body?.isActive ?? body?.is_active ?? '').trim(),
@@ -10269,8 +10267,6 @@ function renderAdminUserFacingRuleForm(opts: {
   body += `<label>Label<input type="text" name="label" maxlength="255" value="${escapeHtml(String(values?.label || ''))}" required /></label>`
   body += `<label>Short Description (optional)<input type="text" name="shortDescription" maxlength="500" value="${escapeHtml(String(values?.shortDescription || values?.short_description || ''))}" /></label>`
   body += `<div style="display:grid; gap:10px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));">`
-  body += `<label>Group Key<input type="text" name="groupKey" maxlength="64" value="${escapeHtml(String(values?.groupKey || values?.group_key || ''))}" /></label>`
-  body += `<label>Group Label<input type="text" name="groupLabel" maxlength="128" value="${escapeHtml(String(values?.groupLabel || values?.group_label || ''))}" /></label>`
   body += `<label>Group Order<input type="number" name="groupOrder" value="${escapeHtml(String(values?.groupOrder || values?.group_order || '0'))}" /></label>`
   body += `<label>Display Order<input type="number" name="displayOrder" value="${escapeHtml(String(values?.displayOrder || values?.display_order || '0'))}" /></label>`
   body += `</div>`
@@ -10358,14 +10354,67 @@ pagesRouter.get(LEGACY_USER_GROUP_ADMIN_PATHS.detail, async (req: any, res: any)
 pagesRouter.get(MODERATION_USER_GROUP_ADMIN_PATHS.list, async (req: any, res: any) => {
   try {
     const includeInactive = String(req.query?.include_inactive || '0') === '1'
+    const format = String(req.query?.format || '').trim().toLowerCase()
     const notice = req.query?.notice ? String(req.query.notice) : ''
     const error = req.query?.error ? String(req.query.error) : ''
     const items = await userFacingRulesSvc.listUserFacingRulesForAdmin({
       includeInactive,
       limit: 500,
     })
+    if (format === 'json') {
+      const ruleOptions = await userFacingRulesSvc.listCanonicalRuleOptionsForAdmin()
+      const ruleById = new Map(ruleOptions.map((rule) => [Number(rule.id), rule]))
+      const details = await Promise.all(
+        items.map(async (item) => {
+          const detail = await userFacingRulesSvc.getUserFacingRuleForAdmin(item.id)
+          return {
+            id: detail.id,
+            label: detail.label,
+            short_description: detail.shortDescription,
+            group_order: detail.groupOrder,
+            display_order: detail.displayOrder,
+            is_active: detail.isActive,
+            created_at: detail.createdAt,
+            updated_at: detail.updatedAt,
+            mappings: detail.mappings.map((mapping) => ({
+              id: mapping.id,
+              rule_id: mapping.ruleId,
+              priority: mapping.priority,
+              is_default: mapping.isDefault,
+              created_at: mapping.createdAt,
+              updated_at: mapping.updatedAt,
+              rule: (() => {
+                const rule = ruleById.get(mapping.ruleId)
+                if (!rule) return null
+                return {
+                  id: rule.id,
+                  slug: rule.slug,
+                  title: rule.title,
+                  visibility: rule.visibility,
+                }
+              })(),
+            })),
+          }
+        })
+      )
+      const payload = {
+        exported_at: new Date().toISOString(),
+        filters: {
+          include_inactive: includeInactive,
+        },
+        user_groups: details,
+      }
+      const filename = `moderation-user-groups-export-${new Date().toISOString().slice(0, 10)}.json`
+      jsonNoStore(res)
+      res.setHeader('Content-Type', 'application/json; charset=utf-8')
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
+      return res.send(JSON.stringify(payload, null, 2))
+    }
+    const exportQs = new URLSearchParams()
+    if (includeInactive) exportQs.set('include_inactive', '1')
+    exportQs.set('format', 'json')
     let body = '<h1>User Groups</h1>'
-    body += `<div class="toolbar"><div><span class="pill">Reporting Entry</span></div><div><a href="${escapeHtml(MODERATION_USER_GROUP_ADMIN_PATHS.new)}">New user group</a></div></div>`
+    body += `<div class="toolbar"><div><span class="pill">Reporting Entry</span></div><div style="display:flex; gap:8px; flex-wrap:wrap"><a href="${escapeHtml(`${MODERATION_USER_GROUP_ADMIN_PATHS.list}?${exportQs.toString()}`)}" class="btn">Export JSON</a><a href="${escapeHtml(MODERATION_USER_GROUP_ADMIN_PATHS.new)}">New user group</a></div></div>`
     if (notice) body += `<div class="notice">${escapeHtml(notice)}</div>`
     if (error) body += `<div class="error">${escapeHtml(error)}</div>`
     body += `<form method="get" action="${escapeHtml(MODERATION_USER_GROUP_ADMIN_PATHS.list)}" class="section" style="margin:12px 0">`
@@ -10374,12 +10423,11 @@ pagesRouter.get(MODERATION_USER_GROUP_ADMIN_PATHS.list, async (req: any, res: an
     if (!items.length) {
       body += '<p>No user groups found.</p>'
     } else {
-      body += '<table><thead><tr><th>ID</th><th>Label</th><th>Legacy Grouping</th><th>Order</th><th>Mappings</th><th>Default</th><th>Status</th><th>Updated</th></tr></thead><tbody>'
+      body += '<table><thead><tr><th>ID</th><th>Label</th><th>Order</th><th>Mappings</th><th>Default</th><th>Status</th><th>Updated</th></tr></thead><tbody>'
       for (const item of items) {
         body += `<tr>
           <td>${item.id}</td>
           <td><a href="${escapeHtml(fillAdminPathParams(MODERATION_USER_GROUP_ADMIN_PATHS.detail, { id: item.id }))}">${escapeHtml(item.label)}</a></td>
-          <td>${escapeHtml(item.groupLabel || item.groupKey || '-')}</td>
           <td>${item.groupOrder} / ${item.displayOrder}</td>
           <td>${item.mappingCount}</td>
           <td>${item.defaultMappingCount}</td>
@@ -10412,7 +10460,7 @@ pagesRouter.get(MODERATION_USER_GROUP_ADMIN_PATHS.new, async (req: any, res: any
       action: MODERATION_USER_GROUP_ADMIN_PATHS.list,
       csrfToken,
       backHref: MODERATION_USER_GROUP_ADMIN_PATHS.list,
-      values: { label: '', shortDescription: '', groupKey: '', groupLabel: '', groupOrder: 0, displayOrder: 0, isActive: '1' },
+      values: { label: '', shortDescription: '', groupOrder: 0, displayOrder: 0, isActive: '1' },
       mappings: [],
       ruleOptions: await userFacingRulesSvc.listCanonicalRuleOptionsForAdmin(),
     })

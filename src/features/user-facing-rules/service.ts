@@ -40,8 +40,6 @@ function toRuleDto(row: UserFacingRuleRow): UserFacingRuleDto {
     id: Number(row.id),
     label: String(row.label || ''),
     shortDescription: row.short_description == null ? null : String(row.short_description),
-    groupKey: row.group_key == null ? null : String(row.group_key),
-    groupLabel: row.group_label == null ? null : String(row.group_label),
     groupOrder: Number(row.group_order || 0),
     displayOrder: Number(row.display_order || 0),
     isActive: Number(row.is_active || 0) === 1,
@@ -103,8 +101,6 @@ export async function createUserFacingRuleForAdmin(input: any, actorUserId: numb
   const row = await repo.createRule({
     label: normalizeLabel(input?.label),
     shortDescription: normalizeOptionalString(input?.shortDescription ?? input?.short_description, 'short_description', 500),
-    groupKey: normalizeOptionalString(input?.groupKey ?? input?.group_key, 'group_key', 64),
-    groupLabel: normalizeOptionalString(input?.groupLabel ?? input?.group_label, 'group_label', 128),
     groupOrder: normalizeInt(input?.groupOrder ?? input?.group_order, 'group_order', 0),
     displayOrder: normalizeInt(input?.displayOrder ?? input?.display_order, 'display_order', 0),
     isActive: normalizeBool(input?.isActive ?? input?.is_active, true),
@@ -122,14 +118,6 @@ export async function updateUserFacingRuleForAdmin(id: number, patch: any, actor
     shortDescription:
       patch?.shortDescription !== undefined || patch?.short_description !== undefined
         ? normalizeOptionalString(patch?.shortDescription ?? patch?.short_description, 'short_description', 500)
-        : undefined,
-    groupKey:
-      patch?.groupKey !== undefined || patch?.group_key !== undefined
-        ? normalizeOptionalString(patch?.groupKey ?? patch?.group_key, 'group_key', 64)
-        : undefined,
-    groupLabel:
-      patch?.groupLabel !== undefined || patch?.group_label !== undefined
-        ? normalizeOptionalString(patch?.groupLabel ?? patch?.group_label, 'group_label', 128)
         : undefined,
     groupOrder:
       patch?.groupOrder !== undefined || patch?.group_order !== undefined

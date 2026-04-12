@@ -6,8 +6,6 @@ const SELECT_RULE_SQL = `
     id,
     label,
     short_description,
-    group_key,
-    group_label,
     group_order,
     display_order,
     is_active,
@@ -41,7 +39,7 @@ export async function listRules(params?: {
   const [rows] = await db.query(
     `${SELECT_RULE_SQL}
       WHERE ${where.join(' AND ')}
-      ORDER BY group_order ASC, group_label ASC, display_order ASC, label ASC
+      ORDER BY group_order ASC, display_order ASC, label ASC, id ASC
       LIMIT ?`,
     [...args, limit]
   )
@@ -57,8 +55,6 @@ export async function getRuleById(id: number): Promise<UserFacingRuleRow | null>
 export async function createRule(input: {
   label: string
   shortDescription: string | null
-  groupKey: string | null
-  groupLabel: string | null
   groupOrder: number
   displayOrder: number
   isActive: boolean
@@ -67,12 +63,10 @@ export async function createRule(input: {
   const [result] = await db.query(
     `INSERT INTO user_facing_rules
       (label, short_description, group_key, group_label, group_order, display_order, is_active)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, NULL, NULL, ?, ?, ?)`,
     [
       input.label,
       input.shortDescription,
-      input.groupKey,
-      input.groupLabel,
       input.groupOrder,
       input.displayOrder,
       input.isActive ? 1 : 0,
@@ -87,8 +81,6 @@ export async function createRule(input: {
 export async function updateRule(id: number, patch: {
   label?: string
   shortDescription?: string | null
-  groupKey?: string | null
-  groupLabel?: string | null
   groupOrder?: number
   displayOrder?: number
   isActive?: boolean
@@ -98,11 +90,11 @@ export async function updateRule(id: number, patch: {
   const args: any[] = []
   if (patch.label !== undefined) { sets.push('label = ?'); args.push(patch.label) }
   if (patch.shortDescription !== undefined) { sets.push('short_description = ?'); args.push(patch.shortDescription) }
-  if (patch.groupKey !== undefined) { sets.push('group_key = ?'); args.push(patch.groupKey) }
-  if (patch.groupLabel !== undefined) { sets.push('group_label = ?'); args.push(patch.groupLabel) }
   if (patch.groupOrder !== undefined) { sets.push('group_order = ?'); args.push(patch.groupOrder) }
   if (patch.displayOrder !== undefined) { sets.push('display_order = ?'); args.push(patch.displayOrder) }
   if (patch.isActive !== undefined) { sets.push('is_active = ?'); args.push(patch.isActive ? 1 : 0) }
+  sets.push('group_key = NULL')
+  sets.push('group_label = NULL')
   if (sets.length) await db.query(`UPDATE user_facing_rules SET ${sets.join(', ')} WHERE id = ?`, [...args, id])
   const row = await getRuleById(id)
   if (!row) throw new Error('user_facing_rule_not_found')

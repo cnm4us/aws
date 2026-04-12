@@ -2,8 +2,6 @@ export type UserFacingRuleRow = {
   id: number
   label: string
   short_description: string | null
-  group_key: string | null
-  group_label: string | null
   group_order: number
   display_order: number
   is_active: number
@@ -25,8 +23,6 @@ export type UserFacingRuleDto = {
   id: number
   label: string
   shortDescription: string | null
-  groupKey: string | null
-  groupLabel: string | null
   groupOrder: number
   displayOrder: number
   isActive: boolean
@@ -43,4 +39,3 @@ export type UserFacingRuleMappingDto = {
   createdAt: string
   updatedAt: string
 }
-
