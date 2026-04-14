@@ -393,6 +393,38 @@ export async function resolveDefaultMappedRuleForUserFacingReason(input: {
   }
 }
 
+export async function resolveMappedRuleForUserFacingReason(input: {
+  spaceId: number
+  userFacingRuleId: number
+  ruleId: number
+  viewerState?: ReportingViewerState
+  db?: DbLike
+}): Promise<{ rule_id: number; current_version_id: number | null } | null> {
+  const q = (input.db as any) || getPool()
+  const visibility = visibilityFilterSql(input.viewerState || 'authenticated')
+  const [rows] = await q.query(
+    `SELECT r.id AS rule_id,
+            r.current_version_id
+       FROM user_facing_rules ufr
+       JOIN user_facing_rule_rule_map m
+         ON m.user_facing_rule_id = ufr.id
+       JOIN rules r
+         ON r.id = m.rule_id
+      WHERE ufr.id = ?
+        AND r.id = ?
+        AND ufr.is_active = 1
+        AND r.visibility ${visibility.sql}
+      LIMIT 1`,
+    [input.userFacingRuleId, input.ruleId, ...visibility.params]
+  )
+  const row = (rows as any[])[0]
+  if (!row) return null
+  return {
+    rule_id: Number(row.rule_id),
+    current_version_id: row.current_version_id != null ? Number(row.current_version_id) : null,
+  }
+}
+
 export async function getUserFacingReasonSummary(
   userFacingRuleId: number,
   db?: DbLike

@@ -287,12 +287,12 @@ export async function submitPublicationReport(
     | null = null
 
   if (ruleId != null && userFacingRuleId != null) {
-    const reasonOptions = await repo.listUserFacingReportingReasonsForSpace(pub.space_id, 'authenticated')
-    const match = reasonOptions.find(
-      (row) => Number(row.user_facing_rule_id) === userFacingRuleId && Number(row.rule_id) === ruleId
-    )
-    if (!match) throw new DomainError('rule_not_allowed', 'rule_not_allowed', 400)
-    resolvedRule = await repo.getReportableRuleForSpace(pub.space_id, ruleId, 'authenticated')
+    resolvedRule = await repo.resolveMappedRuleForUserFacingReason({
+      spaceId: pub.space_id,
+      userFacingRuleId,
+      ruleId,
+      viewerState: 'authenticated',
+    })
     if (!resolvedRule) throw new DomainError('rule_not_allowed', 'rule_not_allowed', 400)
     resolvedUserFacingSummary = await repo.getUserFacingReasonSummary(userFacingRuleId)
   } else if (ruleId != null) {
