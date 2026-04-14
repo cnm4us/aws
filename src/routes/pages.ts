@@ -800,6 +800,7 @@ type AdminNavKey =
   | 'moderation_categories'
   | 'moderation_cultures'
   | 'moderation_user_groups'
+  | 'moderation_reports'
   | 'pages'
 	| 'audio'
 	| 'video_library'
@@ -831,9 +832,10 @@ type ModerationAdminNavKey =
   | 'moderation_categories'
   | 'moderation_cultures'
   | 'moderation_user_groups'
+  | 'moderation_reports'
   | 'moderation_signals'
 
-type ModerationAdminSectionKey = 'rules' | 'categories' | 'cultures' | 'signals' | 'user_groups'
+type ModerationAdminSectionKey = 'rules' | 'categories' | 'cultures' | 'signals' | 'user_groups' | 'reports'
 
 function joinAdminPath(root: string, suffix = ''): string {
   const trimmedSuffix = String(suffix || '').trim()
@@ -851,6 +853,7 @@ const MODERATION_ADMIN_ROUTES = {
     cultures: '/admin/moderation/cultures',
     signals: '/admin/moderation/signals',
     user_groups: '/admin/moderation/user-groups',
+    reports: '/admin/moderation/reports',
   },
   legacy: {
     rules: '/admin/rules',
@@ -858,6 +861,7 @@ const MODERATION_ADMIN_ROUTES = {
     cultures: '/admin/cultures',
     signals: '/admin/moderation/signals',
     user_groups: '/admin/user-facing-rules',
+    reports: '/admin/reports',
   },
 } as const
 
@@ -887,6 +891,16 @@ const MODERATION_SIGNAL_ADMIN_PATHS = {
   new: getModerationAdminSectionPath('signals', 'new'),
   detail: getModerationAdminSectionPath('signals', ':id'),
   edit: getModerationAdminSectionPath('signals', ':id/edit'),
+} as const
+
+const MODERATION_REPORT_ADMIN_PATHS = {
+  list: getModerationAdminSectionPath('reports'),
+  decision: getModerationAdminSectionPath('reports', ':id/decision'),
+} as const
+
+const LEGACY_REPORT_ADMIN_PATHS = {
+  list: getModerationAdminSectionPath('reports', '', { legacy: true }),
+  decision: getModerationAdminSectionPath('reports', ':id/decision', { legacy: true }),
 } as const
 
 const MODERATION_USER_GROUP_ADMIN_PATHS = {
@@ -989,6 +1003,11 @@ function renderModerationAdminSubnav(opts: {
       href: getModerationAdminSectionPath('user_groups', '', { legacy: !canonicalSections.user_groups }),
     },
     {
+      key: 'moderation_reports',
+      label: 'Reports',
+      href: getModerationAdminSectionPath('reports', '', { legacy: !canonicalSections.reports }),
+    },
+    {
       key: 'moderation_signals',
       label: 'Signals',
       href: getModerationAdminSectionPath('signals', '', { legacy: !canonicalSections.signals }),
@@ -1022,7 +1041,7 @@ const ADMIN_NAV_ITEMS: Array<{ key: AdminNavKey; label: string; href: string }> 
   { key: 'messages', label: 'Messages', href: '/admin/messages' },
   { key: 'message_ctas', label: 'Message CTAs', href: '/admin/message-ctas' },
   { key: 'message_rulesets', label: 'Message Rulesets', href: '/admin/message-rulesets' },
-  { key: 'reports', label: 'Reports', href: '/admin/reports' },
+  { key: 'reports', label: 'Reports', href: MODERATION_REPORT_ADMIN_PATHS.list },
   { key: 'message_journeys', label: 'Message Journeys', href: '/admin/message-journeys' },
   { key: 'journey_inspector', label: 'Journey Inspector', href: '/admin/journey-inspector' },
   { key: 'payment_providers', label: 'Payment Providers', href: '/admin/payments/providers' },
@@ -1093,7 +1112,8 @@ function renderModerationAdminPage(opts: {
   canonicalSections?: Partial<Record<ModerationAdminSectionKey, boolean>>
 }): string {
   const active = opts.active || 'moderation'
-  const bodyHtml = `${renderModerationAdminSubnav({ active, canonicalSections: opts.canonicalSections })}${opts.bodyHtml}`
+  const canonicalSections = { reports: true, ...(opts.canonicalSections || {}) }
+  const bodyHtml = `${renderModerationAdminSubnav({ active, canonicalSections })}${opts.bodyHtml}`
   return renderAdminPage({ title: opts.title, bodyHtml, active: 'moderation' })
 }
 
@@ -5733,7 +5753,7 @@ pagesRouter.get('/admin', async (_req: any, res: any) => {
     { title: 'Messages', href: '/admin/messages', desc: 'Manage in-feed message units, targeting, and lifecycle controls' },
     { title: 'Message CTAs', href: '/admin/message-ctas', desc: 'Reusable CTA definitions (intent + executor + config) for in-feed messages' },
     { title: 'Message Rulesets', href: '/admin/message-rulesets', desc: 'Reusable inclusion/exclusion eligibility rulesets for message targeting' },
-    { title: 'Reports', href: '/admin/reports', desc: 'Site-wide report inbox with status, assignment, and resolution workflow' },
+    { title: 'Reports', href: MODERATION_REPORT_ADMIN_PATHS.list, desc: 'Site-wide report inbox with status, assignment, and resolution workflow' },
     { title: 'Message Journeys', href: '/admin/message-journeys', desc: 'Ordered multi-step message journeys that sequence messages per user progression' },
     { title: 'Payment Providers', href: '/admin/payments/providers', desc: 'Configure PSP credentials and sandbox/live mode toggles' },
     { title: 'Payment Catalog', href: '/admin/payments/catalog', desc: 'Manage donation campaigns and subscription plans mapped to PSP products' },
@@ -5779,6 +5799,11 @@ pagesRouter.get('/admin/moderation', async (_req: any, res: any) => {
       title: 'User Groups',
       href: MODERATION_USER_GROUP_ADMIN_PATHS.list,
       desc: 'Manage the reporting-entry groups users see first and map them to canonical moderation rules.',
+    },
+    {
+      title: 'Reports',
+      href: MODERATION_REPORT_ADMIN_PATHS.list,
+      desc: 'Site-wide moderation inbox with status, assignment, inspection, and resolution workflow.',
     },
     {
       title: 'Signals',
@@ -6743,7 +6768,7 @@ async function handleModerationSignalUpdate(req: any, res: any) {
 pagesRouter.post(MODERATION_SIGNAL_ADMIN_PATHS.detail, handleModerationSignalUpdate)
 pagesRouter.post(MODERATION_SIGNAL_ADMIN_PATHS.edit, handleModerationSignalUpdate)
 
-pagesRouter.get('/admin/reports', requireGlobalModerationPage, async (req: any, res: any) => {
+pagesRouter.get(MODERATION_REPORT_ADMIN_PATHS.list, requireGlobalModerationPage, async (req: any, res: any) => {
   try {
     const userId = Number(req.user?.id)
     const userDisplayName =
@@ -6983,7 +7008,7 @@ pagesRouter.get('/admin/reports', requireGlobalModerationPage, async (req: any, 
     if (Number.isFinite(reporterUserId) && reporterUserId > 0 && !reporterById.has(reporterUserId)) {
       reporterById.set(reporterUserId, { id: reporterUserId, label: `User #${reporterUserId}` })
     }
-    const listHrefBase = `/admin/reports?status=${encodeURIComponent(status)}&space_type=${encodeURIComponent(spaceType)}&space_id=${encodeURIComponent(selectedSpaceId > 0 ? String(selectedSpaceId) : '')}&culture_id=${encodeURIComponent(selectedCultureId > 0 ? String(selectedCultureId) : '')}&category_id=${encodeURIComponent(selectedCategoryId > 0 ? String(selectedCategoryId) : '')}&rule_id=${encodeURIComponent(selectedRuleId > 0 ? String(selectedRuleId) : '')}&reporter_user_id=${encodeURIComponent(reporterUserId > 0 ? String(reporterUserId) : '')}&assigned_to_user_id=${encodeURIComponent(assignedToUserId > 0 ? String(assignedToUserId) : '')}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&limit=${encodeURIComponent(String(limit))}`
+    const listHrefBase = `${MODERATION_REPORT_ADMIN_PATHS.list}?status=${encodeURIComponent(status)}&space_type=${encodeURIComponent(spaceType)}&space_id=${encodeURIComponent(selectedSpaceId > 0 ? String(selectedSpaceId) : '')}&culture_id=${encodeURIComponent(selectedCultureId > 0 ? String(selectedCultureId) : '')}&category_id=${encodeURIComponent(selectedCategoryId > 0 ? String(selectedCategoryId) : '')}&rule_id=${encodeURIComponent(selectedRuleId > 0 ? String(selectedRuleId) : '')}&reporter_user_id=${encodeURIComponent(reporterUserId > 0 ? String(reporterUserId) : '')}&assigned_to_user_id=${encodeURIComponent(assignedToUserId > 0 ? String(assignedToUserId) : '')}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&limit=${encodeURIComponent(String(limit))}`
 
     const list = await reportsSvc.listReportsForAdmin(userId, {
       status: ['open', 'in_review', 'resolved', 'dismissed'].includes(status) ? (status as any) : null,
@@ -7083,7 +7108,7 @@ pagesRouter.get('/admin/reports', requireGlobalModerationPage, async (req: any, 
     body += `<div class="toolbar"><div><span class="pill">Inbox</span></div><div></div></div>`
     if (notice) body += `<div class="section" style="margin:10px 0; border-color:rgba(98,198,140,0.45)"><div class="field-hint">${escapeHtml(notice)}</div></div>`
     if (errorText) body += `<div class="section" style="margin:10px 0; border-color:rgba(220,92,92,0.5)"><div class="field-hint">${escapeHtml(errorText)}</div></div>`
-    body += `<form method="get" action="/admin/reports" class="section" style="margin:12px 0">`
+    body += `<form method="get" action="${escapeHtml(MODERATION_REPORT_ADMIN_PATHS.list)}" class="section" style="margin:12px 0">`
     body += `<div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap:10px; align-items:end">`
     body += `<label>Status<select name="status" onchange="this.form.submit()"><option value=""${!status ? ' selected' : ''}>All</option><option value="open"${status === 'open' ? ' selected' : ''}>Open</option><option value="in_review"${status === 'in_review' ? ' selected' : ''}>In Review</option><option value="resolved"${status === 'resolved' ? ' selected' : ''}>Resolved</option><option value="dismissed"${status === 'dismissed' ? ' selected' : ''}>Dismissed</option></select></label>`
     body += `<label>Space Type<select name="space_type" onchange="this.form.submit()"><option value=""${!spaceType ? ' selected' : ''}>All</option><option value="group"${spaceType === 'group' ? ' selected' : ''}>Groups</option><option value="channel"${spaceType === 'channel' ? ' selected' : ''}>Channels</option><option value="personal"${spaceType === 'personal' ? ' selected' : ''}>Personal</option></select></label>`
@@ -7144,7 +7169,7 @@ pagesRouter.get('/admin/reports', requireGlobalModerationPage, async (req: any, 
     body += `<label>From<input type="date" name="from" value="${escapeHtml(from)}" onchange="this.form.submit()" /></label>`
     body += `<label>To<input type="date" name="to" value="${escapeHtml(to)}" onchange="this.form.submit()" /></label>`
     body += `<label>Limit<input type="number" name="limit" min="1" max="200" value="${escapeHtml(String(limit))}" /></label>`
-    body += `<div style="display:flex; gap:8px"><button class="btn" type="submit">Filter</button><a class="btn" href="/admin/reports">Reset</a></div>`
+    body += `<div style="display:flex; gap:8px"><button class="btn" type="submit">Filter</button><a class="btn" href="${escapeHtml(MODERATION_REPORT_ADMIN_PATHS.list)}">Reset</a></div>`
     body += `</div></form>`
 
     body += `<div class="section"><div class="section-title">Report Rows</div>`
@@ -7287,7 +7312,7 @@ pagesRouter.get('/admin/reports', requireGlobalModerationPage, async (req: any, 
         for (const opt of ALL_RESOLUTION_CODES) {
           decisionOptions += `<option value="${escapeHtml(opt.code)}"${selectedDecisionCode === opt.code ? ' selected' : ''}>${escapeHtml(opt.label)}</option>`
         }
-        body += `<form method="post" action="/admin/reports/${Number(rpt.id)}/decision" class="section" style="margin-top:12px">`
+        body += `<form method="post" action="${escapeHtml(fillAdminPathParams(MODERATION_REPORT_ADMIN_PATHS.decision, { id: Number(rpt.id) }))}" class="section" style="margin-top:12px">`
         body += `<div class="section-title">Decision Workflow</div>`
         body += `<div class="field-hint" style="margin-bottom:8px">Report #${Number(rpt.id)}</div>`
         body += `<div class="field-hint" style="margin-bottom:8px">Preview: <a href="${previewModalHref}">Open</a></div>`
@@ -7417,25 +7442,42 @@ pagesRouter.get('/admin/reports', requireGlobalModerationPage, async (req: any, 
       body += `</div></div></div>`
     }
 
-    const doc = renderAdminPage({ title: 'Reports', bodyHtml: body, active: 'reports' })
+    const doc = renderModerationAdminPage({
+      title: 'Reports',
+      bodyHtml: body,
+      active: 'moderation_reports',
+      canonicalSections: { rules: true, cultures: true, user_groups: true, signals: true, reports: true },
+    })
     res.set('Content-Type', 'text/html; charset=utf-8')
     res.send(doc)
   } catch (err: any) {
     logError(req.log || pagesLogger, err, 'admin reports page failed', { path: req.path })
-    const doc = renderAdminPage({ title: 'Reports', bodyHtml: `<h1>Reports</h1><div class="section"><div class="field-hint">${escapeHtml(String(err?.message || 'Failed to load reports'))}</div></div>`, active: 'reports' })
+    const doc = renderModerationAdminPage({
+      title: 'Reports',
+      bodyHtml: `<h1>Reports</h1><div class="section"><div class="field-hint">${escapeHtml(String(err?.message || 'Failed to load reports'))}</div></div>`,
+      active: 'moderation_reports',
+      canonicalSections: { rules: true, cultures: true, user_groups: true, signals: true, reports: true },
+    })
     res.set('Content-Type', 'text/html; charset=utf-8')
     res.status(err?.status || 500).send(doc)
   }
 })
 
-pagesRouter.post('/admin/reports/:id/decision', requireGlobalModerationPage, async (req: any, res: any) => {
+pagesRouter.get(LEGACY_REPORT_ADMIN_PATHS.list, requireGlobalModerationPage, (req: any, res: any) =>
+  redirectToAdminPath(req, res, MODERATION_REPORT_ADMIN_PATHS.list)
+)
+
+pagesRouter.post([MODERATION_REPORT_ADMIN_PATHS.decision, LEGACY_REPORT_ADMIN_PATHS.decision], requireGlobalModerationPage, async (req: any, res: any) => {
   const reportId = Number(req.params.id)
-  if (!Number.isFinite(reportId) || reportId <= 0) return res.redirect('/admin/reports?error=bad_report_id')
+  if (!Number.isFinite(reportId) || reportId <= 0) return res.redirect(`${MODERATION_REPORT_ADMIN_PATHS.list}?error=bad_report_id`)
   try {
     const actorUserId = Number(req.user.id)
-    const fallbackReturnTo = `/admin/reports?report_id=${reportId}&view=inspect`
+    const fallbackReturnTo = `${MODERATION_REPORT_ADMIN_PATHS.list}?report_id=${reportId}&view=inspect`
     const rawReturnTo = String(req.body?.return_to || '').trim()
-    const returnTo = rawReturnTo.startsWith('/admin/reports') ? rawReturnTo : fallbackReturnTo
+    const returnTo =
+      rawReturnTo.startsWith(MODERATION_REPORT_ADMIN_PATHS.list) || rawReturnTo.startsWith(LEGACY_REPORT_ADMIN_PATHS.list)
+        ? rawReturnTo
+        : fallbackReturnTo
     const withMessage = (key: 'notice' | 'error', value: string) => {
       const sep = returnTo.includes('?') ? '&' : '?'
       return `${returnTo}${sep}${key}=${encodeURIComponent(value)}`
@@ -7528,9 +7570,12 @@ pagesRouter.post('/admin/reports/:id/decision', requireGlobalModerationPage, asy
 
     return res.redirect(withMessage('notice', 'Report updated.'))
   } catch (err: any) {
-    const fallbackReturnTo = `/admin/reports?report_id=${reportId}&view=inspect`
+    const fallbackReturnTo = `${MODERATION_REPORT_ADMIN_PATHS.list}?report_id=${reportId}&view=inspect`
     const rawReturnTo = String(req.body?.return_to || '').trim()
-    const returnTo = rawReturnTo.startsWith('/admin/reports') ? rawReturnTo : fallbackReturnTo
+    const returnTo =
+      rawReturnTo.startsWith(MODERATION_REPORT_ADMIN_PATHS.list) || rawReturnTo.startsWith(LEGACY_REPORT_ADMIN_PATHS.list)
+        ? rawReturnTo
+        : fallbackReturnTo
     const sep = returnTo.includes('?') ? '&' : '?'
     return res.redirect(`${returnTo}${sep}error=${encodeURIComponent(String(err?.message || 'Failed to update report'))}`)
   }
