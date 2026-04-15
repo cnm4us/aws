@@ -19,7 +19,7 @@ Last reviewed: 2026-03-19
 ## Quick Start
 1. Discussion-only request: load `agents/ROUTING.md`, then the minimum referenced docs; do not implement.
 2. Implementation request: continue active `agents/implementation/plan_NN.md` or create a new plan from `PLAN_TEMPLATE.md`.
-3. Debugging request: load `agents/tools/debugging.md`, `debug/README.md`, and `tests/README.md`.
+3. Debugging request: load `agents/tools/debugging.md`, `docs/codex/browser-debugging.md`, `debug/README.md`, and `tests/README.md`.
 4. Before commit: run `npm run check:agents:docs` and resolve broken references/status gaps.
 
 ## Document Map
@@ -43,6 +43,8 @@ Last reviewed: 2026-03-19
 - Developer README updates: `agents/readme_maintenance.md`
 - Debug tooling: `agents/tools/debugging.md`
   - Includes Jaeger query CLI: `npm run jaeger:query -- ...`
+- Browser debugging workflow: `docs/codex/browser-debugging.md`
+  - Chrome DevTools MCP is available on this host for EC2-local browser sessions
 
 ## Interaction Modes
 - `Discussion`: options, tradeoffs, no implementation.

@@ -9,6 +9,7 @@ Start Here
 - docs/Architecture.md — modules, flows, diagrams
 - docs/API.md — endpoints and examples
 - docs/s3_architecture.md — S3 prefix taxonomy + retention policy
+- docs/codex/browser-debugging.md — browser debugging workflow for Codex via Chrome DevTools MCP
 
 Build & Run (local development)
 - `npm run build` — compile the Node.js/TypeScript service.

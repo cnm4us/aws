@@ -15,6 +15,36 @@ These tools are intended to make reproducible debugging easier without relying o
 
 `debug/` is intentionally disposable. Frequent manual deletion of files in `debug/terminal/` and `debug/console/` is expected.
 
+## Browser Debugging via Chrome DevTools MCP
+
+This environment also has browser-driven debugging available through the Chrome DevTools MCP server.
+
+Use it for:
+
+- reproducing UI bugs
+- inspecting console errors
+- inspecting network requests and responses
+- inspecting cookies, local storage, and session storage
+- checking rendered DOM state after user actions
+
+Important:
+
+- the browser session runs on the EC2 host, not on the user's local Windows desktop
+- this is an EC2-local Chromium session controlled by Codex
+- it is separate from the user's personal browser session
+
+When a debugging request is browser-centric, load:
+
+- `docs/codex/browser-debugging.md`
+- `debug/README.md`
+- `tests/README.md`
+
+Local browser-debug test credentials currently live in:
+
+- `.codex-local/test-users.json`
+
+That file is intentionally untracked and for local/dev use only.
+
 ## Jaeger Query Tool
 
 ### Command
