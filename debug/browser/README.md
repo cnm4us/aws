@@ -28,6 +28,20 @@ Use:
 
 Use full-page screenshots only for relatively static pages where whole-document capture is actually needed.
 
+## Lighthouse Artifacts
+
+For ad hoc browser audits, store Lighthouse output under a focused subdirectory such as:
+
+- `debug/browser/lighthouse-home/`
+- `debug/browser/lighthouse-admin-reports/`
+
+Typical files:
+
+- `report.html`
+- `report.json`
+
+If the audit is evidence for a named validation run, move the durable artifacts into `tests/runs/.../artifacts/` instead.
+
 ## Use This Directory When
 
 Store files here when they are:

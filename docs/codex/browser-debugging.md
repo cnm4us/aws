@@ -253,6 +253,54 @@ For this repo specifically:
 
 If an overlay capture hangs or the element target is not usable, fall back to a viewport screenshot.
 
+## Lighthouse Workflow
+
+Use Lighthouse when the goal is page-quality inspection rather than application-state debugging.
+
+Good use cases:
+
+- accessibility review
+- SEO review on public pages
+- best-practices review on key entry pages
+- quick mobile page-quality checks after UI changes
+
+Preferred setup:
+
+- use the default mobile emulation profile unless the request says otherwise
+- prefer Lighthouse `snapshot` mode first
+- use a straightforward public page first when testing the workflow itself
+
+Suggested workflow:
+
+1. Open the target page in Chrome DevTools MCP.
+2. Set mobile emulation if the page should be judged as mobile-first.
+3. Run a Lighthouse snapshot audit.
+4. Review category scores.
+5. Extract the failed audits from the JSON report.
+6. Save the report artifacts to an appropriate location.
+
+Artifact location rules:
+
+- ad hoc inspection -> `debug/browser/lighthouse-<page-or-topic>/`
+- durable evidence tied to a named validation run -> `tests/runs/.../artifacts/`
+
+Expected output:
+
+- `report.html`
+- `report.json`
+
+Important limitation:
+
+- this MCP-integrated Lighthouse flow covers accessibility, SEO, and best-practices
+- it does not provide the standard Lighthouse performance score in this environment
+- for performance investigation, use DevTools tracing instead
+
+Example prompt:
+
+```text
+Use Chrome DevTools to run Lighthouse on the mobile home page and summarize the failed accessibility and SEO checks.
+```
+
 ## Limitations
 
 Remember the browser runs on EC2, not on your local Windows machine.
