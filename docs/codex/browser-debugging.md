@@ -203,6 +203,56 @@ Use Chrome DevTools to log in as the admin test user and inspect why the moderat
 Use Chrome DevTools to reproduce the report modal bug on publication 130 and inspect the failing network request.
 ```
 
+## Default Mobile Emulation
+
+This app should be treated as mobile-first during browser debugging unless the request explicitly says otherwise.
+
+Default emulation profile:
+
+- device profile: `iPhone 14 Pro Max`
+- viewport: `430x932`
+- device pixel ratio: `3`
+- mobile mode: `on`
+- touch emulation: `on`
+
+Use this as the default for:
+
+- mobile UI inspection
+- mobile screenshots
+- reproducing feed and moderation flows
+
+If a request needs a different device shape, say so explicitly in the prompt.
+
+## Screenshot Defaults
+
+Use screenshot modes based on the type of UI state being captured.
+
+Default rules:
+
+- page capture: viewport screenshot
+- menu, drawer, modal capture: element screenshot
+- full-page screenshot: only for static or documentation-style pages
+
+Recommended approach:
+
+1. For normal page state, capture the current viewport.
+2. For overlays such as menus, drawers, and modals, capture the overlay element directly when possible.
+3. Use full-page screenshots only when the page is relatively static and the goal is broad documentation rather than focused debugging.
+
+Why:
+
+- element screenshots are smaller
+- element screenshots avoid unnecessary background rendering
+- element screenshots are usually more reliable on dynamic feed pages
+- viewport screenshots remain the best default for whole-page mobile state
+
+For this repo specifically:
+
+- feed or admin page state -> viewport screenshot
+- hamburger menu, side drawer, or report modal -> element screenshot first
+
+If an overlay capture hangs or the element target is not usable, fall back to a viewport screenshot.
+
 ## Limitations
 
 Remember the browser runs on EC2, not on your local Windows machine.
@@ -225,4 +275,3 @@ Before asking Codex to debug in-browser, confirm:
 - a test account exists
 - the flow is described clearly
 - expected and actual behavior are stated
-
