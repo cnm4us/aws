@@ -38,9 +38,11 @@ This file is a lightweight index for ongoing implementation work.
 - `agents/implementation/plan_164.md` — Global moderation signals registry and rule/culture signal linkage
 - `agents/implementation/plan_165.md` — Moderation signal classification evolution (`polarity` + `signal_family`)
 - `agents/implementation/plan_166.md` — Retire moderation categories and move reporting entry to moderation user groups
+- `agents/implementation/plan_167.md` — Anonymous iOS video feed POC with Expo Go, vertical paging, and preloaded playback
 
 ## Active / Next
-- Active now: `agents/implementation/plan_166.md`
+- Active now: `agents/implementation/plan_167.md` (planning complete; implementation phases pending)
+- Other active work: `agents/implementation/plan_166.md` (moderation user groups)
 - Feature contract: `none`
 - Check latest `plan_NN.md` with `Status: Active`.
 - Continue from that plan's `Resume Here` section.
