@@ -313,7 +313,7 @@ The POC must leave these extension points intact:
 
 ## Change Log
 
-- 2026-10-17 — Detailed implementation plan created from the agreed anonymous iPhone POC scope. No application code changed; no implementation commit exists yet.
+- 2026-10-17 — `3d34f6f` — Added the detailed anonymous iPhone POC plan and implementation index entry. All implementation phases remain Pending; no application code changed.
 
 ## Validation
 
@@ -322,6 +322,7 @@ The POC must leave these extension points intact:
 - Commands run for this documentation change: `npm run check:agents:docs` before and after writing; `git diff --check`; focused verification of plan structure and links.
 - Documentation checker baseline: 16 existing status-header errors in older plans, including plans 138, 140, 141, 142, and 148 through 159. Those unrelated files are outside this change.
 - Outcomes: the checker returned the same 16 baseline errors after this change, with no new findings. Whitespace checks passed. Focused checks passed for all six Pending phases, required phase fields, balanced code fences, source references, and the implementation index entry.
+- Commit review: only this plan and the implementation index were included in `3d34f6f`. Root README changes are unnecessary because developer-facing application behavior and startup workflows have not changed.
 - Device playback, mobile builds/tests, and performance measurements belong to implementation phases and remain pending.
 
 ## Open Risks / Deferred
