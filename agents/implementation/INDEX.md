@@ -41,7 +41,7 @@ This file is a lightweight index for ongoing implementation work.
 - `agents/implementation/plan_167.md` — Anonymous iOS video feed POC with Expo Go, vertical paging, and preloaded playback
 
 ## Active / Next
-- Active now: `agents/implementation/plan_167.md` (planning complete; implementation phases pending)
+- Latest completed: `agents/implementation/plan_167.md` (A–F Complete — anonymous iPhone Expo Go POC)
 - Other active work: `agents/implementation/plan_166.md` (moderation user groups)
 - Feature contract: `none`
 - Check latest `plan_NN.md` with `Status: Active`.

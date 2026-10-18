@@ -17,6 +17,13 @@ Build & Run (local development)
 - `npm run space:web:build` — build the Space Console bundle under `public/space-app` (run this after space console UI changes).
 - `npm run serve` — start the development server (serves the API and SPA shell).
 
+iPhone POC (Expo Go)
+
+- The separate `mobile/` package provides an iPhone-tested Expo Go POC with anonymous public-feed videos, vertical paging, autoplay, cursor pagination, and next-video preloading. Settings saves the startup sound choice (default Unmuted); the mute pill's current choice survives Refresh.
+- Setup and device checks: [mobile/README.md](mobile/README.md).
+- Implementation and validation: [Plan 167](agents/implementation/plan_167.md).
+- Run `npm ci` in `mobile/`, configure `mobile/.env` from its example, then run `npm run start:tunnel` for a remote development host.
+
 Useful Pages
 - Uploader: / (upload.html)
 - Publisher: /publish.html
