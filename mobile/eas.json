@@ -1,0 +1,14 @@
+{
+  "cli": { "appVersionSource": "local" },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": { "EXPO_PUBLIC_API_BASE_URL": "https://aws.bawebtech.com" }
+    },
+    "simulator": {
+      "extends": "development",
+      "ios": { "simulator": true }
+    }
+  }
+}

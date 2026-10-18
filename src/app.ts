@@ -1,3 +1,6 @@
+import { createViewerRouter } from './routes/viewer';
+import { createNativeSessionRouter } from './routes/native-session';
+import { verifyCredentials } from './security/credentials';
 import express from 'express';
 import cors, { type CorsOptions } from 'cors';
 import path from 'path';
@@ -69,9 +72,21 @@ export function buildServer(): express.Application {
     },
     credentials: true,
   };
+  app.use((req,res,next)=>{
+    if(req.path.startsWith('/api/native/v1/') || req.path.startsWith('/api/viewer/v1/'))res.set('Cache-Control','no-store');
+    next();
+  });
   app.use(cors(corsOptions));
+  app.use('/api/native/v1/session',express.json({limit:'4kb'}));
   app.use(express.json({ limit: '2mb' }));
   app.use(express.urlencoded({ extended: true, limit: '2mb' }));
+  // Parser failures can contain the submitted credential body. Never log or reflect it.
+  app.use((error:any,req:express.Request,res:express.Response,next:express.NextFunction)=>{
+    if(req.path.startsWith('/api/native/v1/') || req.path.startsWith('/api/viewer/v1/')){
+      res.status(error?.status===413?413:400).json({error:error?.status===413?'request_too_large':'invalid_body'});return;
+    }
+    next(error);
+  });
   app.use(requestLogger);
   app.use(sessionParse);
   app.use(csrfProtect);
@@ -84,6 +99,8 @@ export function buildServer(): express.Application {
     res.json(getVersionInfo());
   });
 
+  app.use('/api/native/v1/session', createNativeSessionRouter());
+  app.use('/api/viewer/v1', createViewerRouter());
   app.use(signingRouter);
   app.use(uploadsRouter);
   app.use(profilesRouter);
@@ -465,17 +482,9 @@ export function buildServer(): express.Application {
       const e = String(email || '').trim().toLowerCase();
       const pw = String(password || '');
       if (!e || !pw) return res.status(400).json({ error: 'missing_fields' });
-      const db = getPool();
-      const [rows] = await db.query(`SELECT id, password_hash FROM users WHERE email = ? LIMIT 1`, [e]);
-      const row = (rows as any[])[0];
-      if (!row || !row.password_hash) return res.status(401).json({ error: 'invalid_credentials' });
-      const parts = String(row.password_hash).split('$');
-      if (parts.length < 4 || parts[0] !== 's2') return res.status(500).json({ error: 'bad_hash_format' });
-      const N = Number(parts[1]);
-      const salt = parts[2];
-      const hashHex = parts[3];
-      const calc = crypto.scryptSync(pw, salt, 64, { N }).toString('hex');
-      if (calc !== hashHex) return res.status(401).json({ error: 'invalid_credentials' });
+      const verified = await verifyCredentials(e, pw);
+      if (!verified) return res.status(401).json({ error: 'invalid_credentials' });
+      const row = { id: verified.id };
       const expiresMs = 30 * 24 * 60 * 60 * 1000;
       const expiresAt = new Date(Date.now() + expiresMs);
       const forwarded = req.headers['x-forwarded-for'];

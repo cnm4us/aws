@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Video Feed POC",
+    "name": "Video Viewer",
     "slug": "aws-video-feed-poc",
     "version": "0.1.0",
     "orientation": "portrait",
@@ -10,10 +10,21 @@
       "ios"
     ],
     "ios": {
-      "supportsTablet": false
+      "supportsTablet": false,
+      "bundleIdentifier": "com.bawebtech.videoviewer",
+      "config": {
+        "usesNonExemptEncryption": false
+      }
     },
     "plugins": [
-      "expo-video"
-    ]
+      "expo-video",
+      "expo-secure-store"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "05dcc3ca-6946-490f-af82-9b3acfe3212c"
+      }
+    },
+    "owner": "mbcollins2"
   }
 }

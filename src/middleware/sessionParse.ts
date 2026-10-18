@@ -6,6 +6,7 @@ import { getLogger } from '../lib/logger';
 declare global {
   namespace Express {
     interface Request {
+      sessionParseFailed?: boolean;
       user?: {
         id: number;
         email: string;
@@ -41,6 +42,7 @@ export async function sessionParse(req: Request, _res: Response, next: NextFunct
          FROM sessions s
          JOIN users u ON u.id = s.user_id
         WHERE s.token = ?
+          AND u.deleted_at IS NULL
           AND s.revoked_at IS NULL
           AND s.expires_at > NOW()
         LIMIT 1`,
@@ -68,6 +70,7 @@ export async function sessionParse(req: Request, _res: Response, next: NextFunct
     };
     return next();
   } catch (err) {
+    req.sessionParseFailed = true;
     sessionLogger.warn({ err, path: req.path }, 'session_parse_skipped')
     return next();
   }

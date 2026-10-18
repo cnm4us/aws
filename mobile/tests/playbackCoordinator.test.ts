@@ -5,6 +5,7 @@ import type { FeedVideoItem } from '../src/feed/types';
 import { PagingController, settledIndex } from '../src/playback/paging';
 import { PlaybackDiagnostics } from '../src/diagnostics/playbackDiagnostics';
 import { PlaybackPreferences } from '../src/preferences/playbackPreferences';
+import { PlayerBudget } from '../src/playback/playerBudget';
 
 function item(publicationId: number): FeedVideoItem {
   return { publicationId, playbackUrl: `https://example.com/${publicationId}.m3u8`,
@@ -22,7 +23,7 @@ class FakePlayer implements PlayerPort {
   seeks = 0;
   loads = 0;
   currentStatus: PlaybackStatus = 'loading';
-  listeners = new Set<(status: PlaybackStatus) => void>();
+  listeners = new Set<(status: PlaybackStatus, error?: unknown) => void>();
   lateListeners: ((status: PlaybackStatus) => void)[] = [];
   playingListeners = new Set<(playing: boolean) => void>();
   progressListeners = new Set<(seconds: number) => void>();
@@ -43,7 +44,7 @@ class FakePlayer implements PlayerPort {
   isPlaying = () => this.playing;
   release() { assert.equal(this.released, false); this.released = true; this.releases += 1; }
   status = () => this.currentStatus;
-  subscribe = (listener: (status: PlaybackStatus) => void) => {
+  subscribe = (listener: (status: PlaybackStatus, error?: unknown) => void) => {
     this.listeners.add(listener);
     this.lateListeners.push(listener);
     return () => { this.listeners.delete(listener); };
@@ -70,6 +71,22 @@ function setup() {
   coordinator.setAppActive(true);
   return { coordinator, players };
 }
+
+test('screen blur or validation suppression releases neighbors and preserves manual pause on return',()=>{
+  const players:FakePlayer[]=[];const c=new PlaybackCoordinator(()=>{const p=new FakePlayer();players.push(p);return p;});
+  c.setAppActive(true);c.selectAt([item(1),item(2),item(3)],1);players[0].ready();
+  for(const p of [...players].slice(1))p.ready();
+  assert.equal(c.getSnapshot().livePlayers,3);c.togglePause();c.setScreenEligible(false);
+  assert.equal(c.getSnapshot().livePlayers,1);assert.equal(players.every(p=>!p.playing),true);
+  c.setAppActive(false);c.setAppActive(true);assert.equal(players.every(p=>!p.playing),true);
+  c.setScreenEligible(true);assert.equal(c.getSnapshot().userPaused,true);assert.equal(players.filter(p=>p.playing).length,0);
+  c.togglePause();assert.equal(players.filter(p=>p.playing).length,1);c.dispose();
+});
+
+test('a source that becomes ready behind another screen cannot start until focus and authorization return',()=>{
+  const {coordinator:c,players}=setup();c.setScreenEligible(false);c.select(item(1));players[0].ready();assert.equal(players[0].playing,false);
+  c.setAppActive(false);c.setScreenEligible(true);assert.equal(players[0].playing,false);c.setAppActive(true);assert.equal(players[0].playing,true);c.dispose();
+});
 
 test('only the selected video plays and stale load/status/frame callbacks cannot revive an old item', async () => {
   const { coordinator, players } = setup();
@@ -438,6 +455,55 @@ test('retry replaces a failed prepared source while staying under the cap', asyn
   assert.equal(replacement.playing, true);
 });
 
+test('native and source-load failures retain OS codes without retaining source URLs', async () => {
+  const { coordinator, players, diagnostics } = poolSetup();
+  coordinator.selectAt([item(1), item(2)], 0);
+  players[0].ready();
+  players[1].rejectLoad(new Error('Error Domain=NSURLErrorDomain Code=-1009 https://media.test/?Signature=secret'));
+  players[0].listeners.forEach(listener => listener('error', { message: 'AVFoundationErrorDomain error -11800 https://media.test/?Signature=secret' }));
+  await new Promise(resolve => setImmediate(resolve));
+  const issues = diagnostics.shareReport().issues;
+  assert.equal(issues.find(issue => issue.failureKind === 'source_load')?.nativeErrorCode, -1009);
+  assert.equal(issues.find(issue => issue.failureKind === 'native_error')?.nativeErrorCode, -11800);
+  assert.equal(JSON.stringify(issues).includes('Signature'), false);
+  assert.equal(JSON.stringify(issues).includes('media.test'), false);
+  coordinator.dispose();
+});
+
+test('progress before a first-frame event remains observable without claiming presentation', () => {
+  const { coordinator, players, diagnostics } = poolSetup();
+  coordinator.select(item(1));
+  players[0].ready();
+  players[0].progressListeners.forEach(listener => listener(0.25));
+  const transition = diagnostics.shareReport().recentTransitions[0];
+  assert.notEqual(transition.progressMs, null);
+  assert.equal(transition.firstFrameMs, null);
+  assert.equal(coordinator.getSnapshot().hasFrame, false);
+  coordinator.setScrolling(true);
+  const progress = diagnostics.report().events.filter(event => event.type === 'progress').length;
+  players[0].progressListeners.forEach(listener => listener(0.5));
+  assert.equal(diagnostics.report().events.filter(event => event.type === 'progress').length, progress);
+  coordinator.dispose();
+});
+
+test('allocation failures distinguish an exhausted shared budget from native creation failure', () => {
+  for (const allocationFailure of ['budget_exhausted', 'native_creation'] as const) {
+    const diagnostics = new PlaybackDiagnostics();
+    const budget = new PlayerBudget(0);
+    const coordinator = new PlaybackCoordinator<FakePlayer>(() => {
+      if (allocationFailure === 'budget_exhausted') budget.acquire(() => new FakePlayer(), player => player.release());
+      throw new Error('Native creation failed https://media.test/?Signature=secret');
+    }, diagnostics.session());
+    coordinator.select(item(1));
+    const issue = diagnostics.shareReport().issues.find(issue => issue.failureKind === 'player_allocation');
+    assert.equal(issue?.allocationFailure, allocationFailure);
+    assert.equal(issue?.activation, coordinator.getSnapshot().activation);
+    assert.equal(coordinator.getSnapshot().failed, true);
+    assert.equal(JSON.stringify(diagnostics.shareReport()).includes('secret'), false);
+    coordinator.dispose();
+  }
+});
+
 test('unexpected native playback by a neighbor is stopped and recorded', () => {
   const { coordinator, players, diagnostics } = poolSetup();
   coordinator.selectAt([item(1), item(2)], 0); players[0].ready();
@@ -468,4 +534,97 @@ test('a delayed playing event after an already-paused neighbor is not counted as
   players[1].playingListeners.forEach(listener => listener(true));
   assert.equal(players[1].playing, false);
   assert.equal(diagnostics.report().resources.unexpectedPlayback, 0);
+});
+
+test('queued gestures and retry from an unmounted account feed cannot revive its players', () => {
+  const budget = new PlayerBudget(3);
+  const diagnostics = new PlaybackDiagnostics();
+  const players: FakePlayer[] = [];
+  const create = () => {
+    const lease = budget.acquire(() => new FakePlayer(), player => FakePlayer.prototype.release.call(player));
+    lease.value.release = lease.release;
+    players.push(lease.value);
+    return lease.value;
+  };
+  const old = new PlaybackCoordinator(create, diagnostics.session(), false);
+  old.setAppActive(true);
+  old.selectAt([item(1), item(2), item(3)], 0);
+  players[0].ready();
+  const oldActivation = old.getSnapshot().activation;
+  old.dispose();
+  // Native scroll callbacks can already be queued when React removes a feed.
+  old.selectAt([item(1), item(2), item(3)], 1);
+  old.retry();
+  old.setScreenEligible(true);
+  old.setAppActive(true);
+  old.setScrolling(false);
+  old.togglePause();
+  old.setMuted(false);
+  old.firstFrame(oldActivation);
+  old.fail(oldActivation);
+  assert.equal(budget.count, 0, 'the removed account must remain fully released');
+  assert.equal(old.getSnapshot().player, null);
+  assert.equal(old.getSnapshot().publicationId, null);
+
+  const next = new PlaybackCoordinator(create, diagnostics.session(), false);
+  next.setAppActive(true);
+  next.selectAt([item(1), item(2), item(3)], 1);
+  next.getSnapshot().player!.ready();
+  assert.equal(next.getSnapshot().failed, false);
+  assert.equal(budget.count, 3);
+  assert.equal(diagnostics.report().issues.length, 0);
+  old.dispose(); // Repeated old cleanup cannot affect the new account.
+  next.dispose();
+  assert.equal(budget.count, 0);
+});
+
+test('synchronous native load failure becomes retryable instead of escaping the Retry handler', () => {
+  const players: FakePlayer[] = [];
+  const diagnostics = new PlaybackDiagnostics();
+  const coordinator = new PlaybackCoordinator(() => {
+    const player = new FakePlayer();
+    if (players.length < 2) player.load = () => { throw new Error('NSURLErrorDomain error -1009'); };
+    players.push(player);
+    return player;
+  }, diagnostics.session());
+  coordinator.setAppActive(true);
+  assert.doesNotThrow(() => coordinator.select(item(1)));
+  assert.equal(coordinator.getSnapshot().failed, true);
+  assert.doesNotThrow(coordinator.retry);
+  assert.equal(coordinator.getSnapshot().failed, true);
+  assert.doesNotThrow(coordinator.retry);
+  players[2].ready();
+  assert.equal(coordinator.getSnapshot().failed, false);
+  assert.equal(players[2].playing, true);
+  assert.equal(diagnostics.report().summary.errors, 2);
+  assert.ok(diagnostics.report().issues.some(issue => issue.nativeErrorCode === -1009));
+  coordinator.dispose();
+  assert.ok(players.every(player => player.released));
+});
+
+test('partially subscribed native player setup rolls back its listeners and shared budget', () => {
+  const budget = new PlayerBudget(3);
+  const players: FakePlayer[] = [];
+  const diagnostics = new PlaybackDiagnostics();
+  const coordinator = new PlaybackCoordinator(() => {
+    const lease = budget.acquire(() => new FakePlayer(), player => FakePlayer.prototype.release.call(player));
+    lease.value.release = lease.release;
+    if (!players.length) lease.value.subscribePlaying = () => { throw new Error('Native subscription failed'); };
+    players.push(lease.value);
+    return lease.value;
+  }, diagnostics.session());
+  coordinator.setAppActive(true);
+  assert.doesNotThrow(() => coordinator.select(item(1)));
+  assert.equal(coordinator.getSnapshot().failed, true);
+  assert.equal(budget.count, 0);
+  assert.equal(players[0].listeners.size, 0);
+  assert.equal(players[0].released, true);
+  assert.doesNotThrow(coordinator.retry);
+  players[1].ready();
+  assert.equal(coordinator.getSnapshot().failed, false);
+  assert.equal(players[1].playing, true);
+  const resources = diagnostics.report().resources;
+  assert.equal(resources.allocations - resources.releases, budget.count);
+  coordinator.dispose();
+  assert.equal(budget.count, 0);
 });

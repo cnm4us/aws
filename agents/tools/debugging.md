@@ -525,3 +525,15 @@ Example:
 - feed sequencing bugs
 - index / re-anchor bugs
 - future HLS or editor workflows with structured event streams
+
+## Expo development-client reload on the remote host
+
+A stopped Metro/tunnel can appear as an iPhone Reload failure. Check `curl --max-time 15 -fsS http://localhost:8081/status` and the current tunnel's `/status`; expected text is `packager-status:running`. Check `df -h / /dev/shm` if the server disappears or reports ENOSPC. Do not treat a full host disk as proof of an app/phone defect.
+
+From `mobile/`, the verified low-disk restart command is:
+
+```bash
+npm_config_cache=/dev/shm/plan168-npm-cache TMPDIR=/dev/shm NODE_COMPILE_CACHE=/dev/shm/plan168-node-compile-cache npm run start:dev-client
+```
+
+Confirm the new server's printed tunnel address (it may change), native manifest and bundle HTTP 200, and `/_expo/link?choice=expo-dev-client&platform=ios` redirect. Open that HTTPS link in iPhone Safari if automatic server discovery fails. No EAS rebuild is needed to restart Metro. Current Plan 168 endpoint/session and recovery evidence are in the implementation plan. Keep caches/exports in tmpfs on this constrained host; tmpfs cache contents are regenerable and ephemeral. Preserve source, installed dependencies and user data.

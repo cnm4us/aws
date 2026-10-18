@@ -6,6 +6,7 @@ export type SpaceRow = {
   id: number;
   type: SpaceType;
   owner_user_id: number | null;
+  ulid?: string | null;
   name?: string;
   slug?: string;
   settings?: any;
@@ -39,7 +40,7 @@ function ensureDb(db?: DB): DB {
 export async function loadSpace(spaceId: number, db?: DB): Promise<SpaceRow | null> {
   const conn = ensureDb(db);
   const [rows] = await conn.query(
-    `SELECT id, type, owner_user_id, name, slug, settings FROM spaces WHERE id = ? LIMIT 1`,
+    `SELECT id, ulid, type, owner_user_id, name, slug, settings FROM spaces WHERE id = ? LIMIT 1`,
     [spaceId]
   );
   const row = (rows as any[])[0];
@@ -48,6 +49,7 @@ export async function loadSpace(spaceId: number, db?: DB): Promise<SpaceRow | nu
     id: Number(row.id),
     type: String(row.type) as SpaceType,
     owner_user_id: row.owner_user_id != null ? Number(row.owner_user_id) : null,
+    ulid: row.ulid || null,
     name: row.name,
     slug: row.slug,
     settings: row.settings,

@@ -86,7 +86,12 @@
     "payments:paypal:cleanup-subscriptions": "ts-node scripts/payments-paypal-cleanup-subscriptions.ts",
     "payments:reset:test": "bash scripts/payments-reset-test.sh",
     "message-ctas:migrate-executors": "ts-node scripts/message-cta-migrate-executors.ts",
-    "paypal:sandbox": "ts-node scripts/paypal-repl.ts"
+    "paypal:sandbox": "ts-node scripts/paypal-repl.ts",
+    "test:viewer": "node -r ts-node/register --test tests/backend/native*.test.ts",
+    "viewer:fixtures": "ts-node scripts/native-viewer-fixtures.ts",
+    "viewer:check:sessions": "ts-node scripts/check-native-sessions.ts",
+    "viewer:check": "ts-node scripts/check-native-viewer.ts",
+    "viewer:check:web": "ts-node scripts/check-native-viewer-web.ts"
   },
   "dependencies": {
     "@aws-sdk/client-mediaconvert": "^3.645.0",

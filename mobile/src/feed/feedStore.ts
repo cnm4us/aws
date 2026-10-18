@@ -1,4 +1,5 @@
 import type { FeedPage, FeedVideoItem } from './types';
+import { ApiError } from '../api/client';
 
 export type FeedSnapshot = {
   sessionId: number;
@@ -9,6 +10,7 @@ export type FeedSnapshot = {
   moreError: string | null;
   nextCursor: string | null;
   autoPaused: boolean;
+  errorStatus: number | null;
 };
 
 export type PageLoader = (cursor: string | null, signal: AbortSignal) => Promise<FeedPage>;
@@ -16,14 +18,14 @@ export type PageLoader = (cursor: string | null, signal: AbortSignal) => Promise
 export class FeedStore {
   private state: FeedSnapshot = {
     sessionId: 0, items: [], initialLoading: true, loadingMore: false,
-    initialError: null, moreError: null, nextCursor: null, autoPaused: false,
+    initialError: null, moreError: null, nextCursor: null, autoPaused: false, errorStatus:null,
   };
   private listeners = new Set<() => void>();
   private request: { controller: AbortController; promise?: Promise<void> } | null = null;
   private visitedCursors = new Set<string>();
   private emptyAdvances = 0;
 
-  constructor(private readonly loadPage: PageLoader) {}
+  constructor(private readonly loadPage: PageLoader, private readonly onFailure: (error:unknown)=>void = ()=>{}) {}
 
   getSnapshot = () => this.state;
   subscribe = (listener: () => void) => {
@@ -40,6 +42,12 @@ export class FeedStore {
     this.request?.controller.abort();
     this.request = null;
   };
+  denyAccess = (error:ApiError) => {
+    this.cancel();
+    this.publish({items:[],nextCursor:null,initialLoading:false,loadingMore:false,initialError:error.message,
+      moreError:null,errorStatus:error.status??403,autoPaused:true});
+    this.onFailure(error);
+  };
 
   refresh = () => {
     this.cancel();
@@ -47,7 +55,7 @@ export class FeedStore {
     this.emptyAdvances = 0;
     this.publish({
       sessionId: this.state.sessionId + 1, items: [], initialLoading: true,
-      loadingMore: false, initialError: null, moreError: null, nextCursor: null, autoPaused: false,
+      loadingMore: false, initialError: null, moreError: null, nextCursor: null, autoPaused: false, errorStatus:null,
     });
     return this.fetchPage(null, true);
   };
@@ -94,9 +102,14 @@ export class FeedStore {
         if (this.request !== request || request.controller.signal.aborted) return;
         this.request = null;
         const message = error instanceof Error ? error.message : 'The feed could not be loaded. Try again.';
+        if(error instanceof ApiError && [401,403,404].includes(error.status??0)) {
+          this.publish({items:[],nextCursor:null,initialLoading:false,loadingMore:false,initialError:message,moreError:null,errorStatus:error.status!,autoPaused:true});
+          this.onFailure(error);return;
+        }
         this.publish(initial
           ? { initialLoading: false, initialError: message }
           : { loadingMore: false, moreError: message, autoPaused: true });
+        this.onFailure(error);
       }
     })();
     return request.promise;

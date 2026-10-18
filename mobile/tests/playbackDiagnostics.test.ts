@@ -84,6 +84,7 @@ test('ownership issue details survive progress history rollover and appear in co
 test('compact sharing stays small while disclosing omitted rows and bounded issue history', () => {
   const diagnostics = new PlaybackDiagnostics(() => 123456789.123456);
   const record = diagnostics.session();
+  record({ type: 'context', feedContext: 'space:123456789', authGeneration: 12345 });
   for (let activation = 0; activation < 250; activation++) {
     record({ type: 'selection', publicationId: activation, activation, prepared: true, bufferedSeconds: 6 });
     record({ type: 'first_frame', activation });
@@ -104,4 +105,22 @@ test('compact sharing stays small while disclosing omitted rows and bounded issu
   assert.ok(JSON.stringify(report).length < 10000, 'avoid the observed clipping threshold');
   report.issues[0].publicationId = -1;
   assert.notEqual(diagnostics.shareReport().issues[0].publicationId, -1);
+});
+
+test('compact failures and transitions keep feed context after progress rolls context events out', () => {
+  const diagnostics = new PlaybackDiagnostics();
+  const channel = diagnostics.session();
+  channel({ type: 'context', feedContext: 'space:4', authGeneration: 2 });
+  channel({ type: 'selection', activation: 1, publicationId: 9 });
+  channel({ type: 'release', livePlayers: 0 });
+  const global = diagnostics.session();
+  global({ type: 'context', feedContext: 'global', authGeneration: 2 });
+  global({ type: 'selection', activation: 1, publicationId: 9 });
+  for (let i = 0; i < 1100; i++) global({ type: 'progress', currentTime: i / 4 });
+  global({ type: 'error', activation: 1, publicationId: 9, failureKind: 'native_error', nativeErrorDomain: 'NSURLErrorDomain', nativeErrorCode: -1009 });
+  const report = diagnostics.shareReport();
+  assert.equal(report.issues[0].feedContext, 'global');
+  assert.equal(report.issues[0].authGeneration, 2);
+  assert.equal(report.issues[0].nativeErrorCode, -1009);
+  assert.deepEqual(report.recentTransitions.map(row => row.feedContext), ['space:4', 'global']);
 });

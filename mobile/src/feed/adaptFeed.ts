@@ -1,5 +1,6 @@
 import { ApiError } from '../api/client';
 import type { FeedPage, FeedVideoItem } from './types';
+import type { FeedContext } from './context';
 
 function record(value: unknown): Record<string, unknown> | null {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -66,4 +67,23 @@ export function adaptFeedPage(value: unknown): FeedPage {
     });
   }
   return { items, nextCursor: page.nextCursor || null };
+}
+
+export function adaptViewerFeedPage(value: unknown, expected: FeedContext): FeedPage {
+  const page=record(value),context=record(page?.context),space=record(context?.space);
+  if (!page || !Array.isArray(page.items) || !(page.nextCursor===null || typeof page.nextCursor==='string') ||
+    context?.kind!==expected.kind || (expected.kind==='space' && space?.id!==expected.spaceId)) {
+    throw new ApiError('The server returned an unexpected feed. Please try again.');
+  }
+  const items: FeedVideoItem[]=[];const seen=new Set<number>();
+  for(const value of page.items) {
+    const row=record(value),publicationId=id(row?.publicationId);if(!row || !publicationId || seen.has(publicationId))continue;
+    if(expected.kind==='space' && row.spaceId!==expected.spaceId)throw new ApiError('The feed context changed. Please try again.');
+    seen.add(publicationId);const creator=record(row.creator);
+    items.push({publicationId,uploadId:id(row.uploadId),spaceId:id(row.spaceId),productionUlid:text(row.productionUlid,26),
+      playbackUrl:httpsUrl(row.playbackUrl),posterUrl:httpsUrl(row.posterUrl),
+      creator:{id:id(creator?.id),displayName:text(creator?.displayName,120)??'Creator',avatarUrl:httpsUrl(creator?.avatarUrl)},
+      description:text(row.description,2000),width:positiveNumber(row.width),height:positiveNumber(row.height),durationSeconds:positiveNumber(row.durationSeconds)});
+  }
+  return {items,nextCursor:page.nextCursor || null};
 }

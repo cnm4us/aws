@@ -1,3 +1,7 @@
+import { isMember, loadSpace } from '../../services/spaceMembership'
+import { hasActiveSubscription } from '../spaces/repo'
+import { can } from '../../security/permissions'
+import { PERM } from '../../security/perm'
 import { getPool } from '../../db'
 
 export async function listGlobalFeedRows(opts: { cursorPublishedAt?: string | null; cursorId?: number | null; limit: number; userId?: number | null }) {
@@ -8,6 +12,7 @@ export async function listGlobalFeedRows(opts: { cursorPublishedAt?: string | nu
   params.push(userId, userId, userId)
   const where: string[] = [
     'sp.visible_in_global = 1',
+    "sp.visibility <> 'members'",
     "sp.status = 'published'",
     'sp.published_at IS NOT NULL',
     "u.status = 'completed'",
@@ -105,6 +110,7 @@ export async function getGlobalFeedPinnedRowByProductionUlid(
   const params: any[] = [userId, userId, userId, String(opts.productionUlid)]
   const where: string[] = [
     'sp.visible_in_global = 1',
+    "sp.visibility <> 'members'",
     "sp.status = 'published'",
     'sp.published_at IS NOT NULL',
     "u.status = 'completed'",
@@ -199,6 +205,8 @@ export async function getSpaceFeedPinnedRowByProductionUlid(
   const params: any[] = [userId, userId, userId, spaceId, String(opts.productionUlid)]
   const where: string[] = [
     'sp.space_id = ?',
+    'sp.visible_in_space = 1',
+    await membersVisibilityClause(spaceId, userId),
     "sp.status = 'published'",
     'sp.published_at IS NOT NULL',
     "u.status = 'completed'",
@@ -293,6 +301,8 @@ export async function listSpaceFeedRows(
   const params: any[] = [userId, userId, userId, spaceId]
   const where: string[] = [
     'sp.space_id = ?',
+    'sp.visible_in_space = 1',
+    await membersVisibilityClause(spaceId, userId),
     "sp.status = 'published'",
     'sp.published_at IS NOT NULL',
     "u.status = 'completed'",
@@ -380,4 +390,14 @@ export async function listSpaceFeedRows(
   params.push(opts.limit)
   const [rows] = await db.query(sql, params)
   return rows as any[]
+}
+
+async function membersVisibilityClause(spaceId: number, userId: number | null) {
+  let allowed = false;
+  if (userId) {
+    const space = await loadSpace(spaceId);
+    allowed = space?.owner_user_id === userId || await isMember(getPool(), spaceId, userId)
+      || await hasActiveSubscription(spaceId, userId) || await can(userId, PERM.VIDEO_DELETE_ANY);
+  }
+  return allowed ? '1=1' : "sp.visibility <> 'members'";
 }

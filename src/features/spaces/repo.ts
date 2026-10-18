@@ -28,7 +28,7 @@ export async function personalSpaceByOwner(userId: number, conn?: DB): Promise<a
 export async function listGroupMemberships(userId: number, conn?: DB): Promise<any[]> {
   const [rows] = await db(conn).query(
     `SELECT s.id, s.ulid, s.name, s.slug, s.type,
-            MAX(CASE WHEN r.name = 'group_admin' THEN 1 ELSE 0 END) AS is_admin
+            MAX(CASE WHEN r.name IN ('group_admin','space_admin') THEN 1 ELSE 0 END) AS is_admin
        FROM user_space_roles usr
        JOIN spaces s ON s.id = usr.space_id
        JOIN roles r ON r.id = usr.role_id
@@ -43,7 +43,7 @@ export async function listGroupMemberships(userId: number, conn?: DB): Promise<a
 export async function listChannelMemberships(userId: number, conn?: DB): Promise<any[]> {
   const [rows] = await db(conn).query(
     `SELECT s.id, s.ulid, s.name, s.slug, s.type,
-            MAX(CASE WHEN r.name = 'channel_admin' THEN 1 ELSE 0 END) AS is_admin
+            MAX(CASE WHEN r.name IN ('channel_admin','space_admin') THEN 1 ELSE 0 END) AS is_admin
        FROM user_space_roles usr
        JOIN spaces s ON s.id = usr.space_id
        JOIN roles r ON r.id = usr.role_id
@@ -60,7 +60,7 @@ export async function listChannelSubscriptions(userId: number, conn?: DB): Promi
     `SELECT s.id, s.ulid, s.name, s.slug, s.type
        FROM space_subscriptions sub
        JOIN spaces s ON s.id = sub.space_id
-      WHERE sub.user_id = ? AND sub.status = 'active'`,
+      WHERE sub.user_id = ? AND sub.status = 'active' AND (sub.ended_at IS NULL OR sub.ended_at > NOW())`,
     [userId]
   )
   return (rows as any[]).filter((r) => String(r.type) === 'channel')
@@ -89,11 +89,11 @@ export async function hasActiveSubscription(spaceId: number, userId: number, con
 }
 
 export async function isBannedFromSpace(spaceId: number, userId: number, conn?: DB): Promise<boolean> {
-  try {
+  {
     const [rows] = await db(conn).query(
       `SELECT 1 FROM suspensions WHERE user_id = ? AND kind = 'ban' AND (starts_at IS NULL OR starts_at <= NOW()) AND (ends_at IS NULL OR ends_at >= NOW()) AND (target_type = 'site' OR (target_type = 'space' AND target_id = ?)) LIMIT 1`,
       [userId, spaceId]
     )
     return (rows as any[]).length > 0
-  } catch { return false }
+  }
 }

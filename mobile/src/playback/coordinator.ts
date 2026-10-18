@@ -1,5 +1,7 @@
 import type { FeedVideoItem } from '../feed/types';
 import type { PlaybackDiagnosticEvent } from '../diagnostics/playbackDiagnostics';
+import { playerErrorDetails } from './playerError';
+import { PlayerBudgetError } from './playerBudget';
 
 export type PlaybackStatus = 'idle' | 'loading' | 'readyToPlay' | 'error';
 export interface PlayerPort {
@@ -12,7 +14,7 @@ export interface PlayerPort {
   status(): PlaybackStatus;
   bufferedSeconds?(): number;
   isPlaying?(): boolean;
-  subscribe(listener: (status: PlaybackStatus) => void): () => void;
+  subscribe(listener: (status: PlaybackStatus, error?: unknown) => void): () => void;
   subscribePlaying?(listener: (playing: boolean) => void): () => void;
   subscribeProgress?(listener: (seconds: number) => void): () => void;
 }
@@ -27,6 +29,7 @@ export type PlaybackSnapshot<P> = {
   userPaused: boolean;
   muted: boolean;
   appActive: boolean;
+  screenEligible: boolean;
   scrolling: boolean;
   livePlayers: number;
   prepared: boolean;
@@ -43,12 +46,15 @@ export class PlaybackCoordinator<P extends PlayerPort> {
   private state: PlaybackSnapshot<P> = {
     publicationId: null, activation: 0, player: null, status: 'idle', hasFrame: false,
     failed: false, userPaused: false, muted: true, appActive: false, scrolling: false,
-    livePlayers: 0, prepared: false,
+    livePlayers: 0, prepared: false, screenEligible:true,
   };
   private item: FeedVideoItem | null = null;
   private desired: FeedVideoItem[] = [];
   private entries = new Map<number, Entry<P>>();
   private listeners = new Set<() => void>();
+  // Scroll/tap callbacks may already be queued when an account/feed unmounts.
+  // Disposal is terminal: those callbacks must never acquire another player.
+  private disposed = false;
 
   constructor(private readonly createPlayer: () => P,
     private readonly diagnostic: (event: PlaybackDiagnosticEvent) => void = () => {}, initialMuted = true) {
@@ -72,7 +78,7 @@ export class PlaybackCoordinator<P extends PlayerPort> {
     return this.owns(entry) && this.state.player === entry.player && this.item?.publicationId === entry.item.publicationId;
   }
   private eligible() {
-    return this.state.appActive && !this.state.scrolling && !this.state.userPaused && !this.state.failed;
+    return this.state.appActive && this.state.screenEligible && !this.state.scrolling && !this.state.userPaused && !this.state.failed;
   }
   private current() { return this.item ? this.entries.get(this.item.publicationId) : undefined; }
 
@@ -94,6 +100,7 @@ export class PlaybackCoordinator<P extends PlayerPort> {
   }
 
   private reconcile() {
+    if (this.disposed) return;
     for (const entry of this.entries.values()) {
       const active = this.isActive(entry);
       entry.player.setMuted(active ? this.state.muted : true);
@@ -116,7 +123,7 @@ export class PlaybackCoordinator<P extends PlayerPort> {
   }
 
   private statusChanged(entry: Entry<P>, status: PlaybackStatus,
-    failureKind: 'native_error' | 'source_load' = 'native_error') {
+    failureKind: 'native_error' | 'source_load' = 'native_error', error?: unknown) {
     if (!this.owns(entry)) return;
     const changed = entry.status !== status;
     entry.status = status;
@@ -127,6 +134,7 @@ export class PlaybackCoordinator<P extends PlayerPort> {
       type: 'error', publicationId: entry.item.publicationId,
       activation: this.isActive(entry) ? this.state.activation : undefined,
       failureKind,
+      ...playerErrorDetails(error),
     });
     if (this.isActive(entry)) {
       this.syncActive();
@@ -137,41 +145,62 @@ export class PlaybackCoordinator<P extends PlayerPort> {
   private createEntry(item: FeedVideoItem) {
     let player: P;
     try { player = this.createPlayer(); }
-    catch { return; }
+    catch (error) {
+      this.diagnostic({ type: 'error', publicationId: item.publicationId,
+        activation: this.item?.publicationId === item.publicationId ? this.state.activation : undefined,
+        failureKind: 'player_allocation', allocationFailure: error instanceof PlayerBudgetError ? 'budget_exhausted' : 'native_creation',
+        ...playerErrorDetails(error) });
+      return;
+    }
     const entry: Entry<P> = { item, player, unsubscribe: () => {}, status: 'loading', failed: false,
       selectedBefore: false, readyOnce: false, playRequested: false };
     this.entries.set(item.publicationId, entry);
-    const subscriptions = [player.subscribe(status => this.statusChanged(entry, status))];
-    if (player.subscribePlaying) subscriptions.push(player.subscribePlaying(playing => {
-      if (!this.owns(entry)) return;
-      if (playing && (!this.isActive(entry) || !this.eligible())) {
-        const actuallyPlaying = player.isPlaying?.() ?? true;
-        entry.playRequested = false;
-        player.pause();
-        if (actuallyPlaying) this.diagnostic({ type: 'unexpected_playback', publicationId: item.publicationId,
-          activation: this.state.activation, selectedPublicationId: this.state.publicationId,
-          appActive: this.state.appActive, scrolling: this.state.scrolling, userPaused: this.state.userPaused,
-          reason: this.isActive(entry) ? 'ineligible' : 'nonselected' });
-        return;
-      }
-      if (this.isActive(entry)) this.diagnostic({ type: 'playing', activation: this.state.activation,
-        publicationId: item.publicationId, playing });
-    }));
-    if (player.subscribeProgress) subscriptions.push(player.subscribeProgress(currentTime => {
-      if (this.isActive(entry) && this.eligible() && this.state.hasFrame && currentTime > 0) {
-        this.diagnostic({ type: 'progress', activation: this.state.activation, publicationId: item.publicationId, currentTime });
-      }
-    }));
+    const subscriptions: (() => void)[] = [];
     entry.unsubscribe = () => subscriptions.forEach(unsubscribe => unsubscribe());
     this.diagnostic({ type: 'allocation', publicationId: item.publicationId, livePlayers: this.entries.size });
-    void player.load(item.playbackUrl!).then(() => {
-      if (this.owns(entry)) this.statusChanged(entry, player.status());
-    }).catch(() => { this.statusChanged(entry, 'error', 'source_load'); });
+    try {
+      subscriptions.push(player.subscribe((status, error) => this.statusChanged(entry, status, 'native_error', error)));
+      if (player.subscribePlaying) subscriptions.push(player.subscribePlaying(playing => {
+        if (!this.owns(entry)) return;
+        if (playing && (!this.isActive(entry) || !this.eligible())) {
+          const actuallyPlaying = player.isPlaying?.() ?? true;
+          entry.playRequested = false;
+          player.pause();
+          if (actuallyPlaying) this.diagnostic({ type: 'unexpected_playback', publicationId: item.publicationId,
+            activation: this.state.activation, selectedPublicationId: this.state.publicationId,
+            appActive: this.state.appActive, screenEligible:this.state.screenEligible, scrolling: this.state.scrolling, userPaused: this.state.userPaused,
+            reason: this.isActive(entry) ? 'ineligible' : 'nonselected' });
+          return;
+        }
+        if (this.isActive(entry)) this.diagnostic({ type: 'playing', activation: this.state.activation,
+          publicationId: item.publicationId, playing });
+      }));
+      if (player.subscribeProgress) subscriptions.push(player.subscribeProgress(currentTime => {
+        // Keep clock advancement independent of the view's first-frame callback:
+        // a missing presentation event must not hide otherwise-running playback.
+        if (this.isActive(entry) && this.eligible() && currentTime > 0) {
+          this.diagnostic({ type: 'progress', activation: this.state.activation, publicationId: item.publicationId, currentTime });
+        }
+      }));
+    } catch (error) {
+      this.drop(entry);
+      this.diagnostic({ type: 'error', publicationId: item.publicationId,
+        activation: this.item?.publicationId === item.publicationId ? this.state.activation : undefined,
+        failureKind: 'player_allocation', allocationFailure: 'native_creation', ...playerErrorDetails(error) });
+      return;
+    }
+    // A native bridge call may throw before returning its promise.
+    try {
+      void player.load(item.playbackUrl!).then(() => {
+        if (this.owns(entry)) this.statusChanged(entry, player.status());
+      }).catch(error => { this.statusChanged(entry, 'error', 'source_load', error); });
+    } catch (error) { this.statusChanged(entry, 'error', 'source_load', error); }
   }
 
   private fillWindow() {
+    if (this.disposed) return;
     const allowed = this.desired.filter(item => item.playbackUrl &&
-      (this.state.appActive || item.publicationId === this.item?.publicationId));
+      ((this.state.appActive && this.state.screenEligible) || item.publicationId === this.item?.publicationId));
     const desiredIds = new Map(allowed.map(item => [item.publicationId, item]));
     // Trim before allocation, including during a multi-item fling or source retry.
     for (const entry of [...this.entries.values()]) {
@@ -189,6 +218,7 @@ export class PlaybackCoordinator<P extends PlayerPort> {
   }
 
   private activate(item: FeedVideoItem | null, desired: FeedVideoItem[], force = false) {
+    if (this.disposed) return;
     this.desired = [...new Map(desired.map(row => [row.publicationId, row])).values()].slice(0, 3);
     if (!force && this.item?.publicationId === item?.publicationId && this.item?.playbackUrl === item?.playbackUrl) {
       this.fillWindow();
@@ -227,31 +257,44 @@ export class PlaybackCoordinator<P extends PlayerPort> {
     this.activate(item, desired);
   };
   setAppActive = (appActive: boolean) => {
+    if (this.disposed) return;
     this.publish({ appActive });
     this.diagnostic({ type: 'lifecycle', activation: this.state.activation, active: appActive });
     this.fillWindow();
   };
+  setScreenEligible = (screenEligible: boolean) => {
+    if (this.disposed) return;
+    if(this.state.screenEligible===screenEligible)return;
+    this.publish({screenEligible});
+    this.diagnostic({type:'eligibility',activation:this.state.activation,screenEligible});
+    this.fillWindow();
+  };
   setScrolling = (scrolling: boolean) => {
+    if (this.disposed) return;
     if (this.state.scrolling === scrolling) return;
     this.publish({ scrolling });
     this.reconcile();
   };
   togglePause = () => {
+    if (this.disposed) return;
     this.publish({ userPaused: !this.state.userPaused });
     this.reconcile();
   };
   setMuted = (muted: boolean) => {
+    if (this.disposed) return;
     this.publish({ muted });
     this.reconcile();
   };
   toggleMute = () => { this.setMuted(!this.state.muted); };
   firstFrame = (activation: number) => {
+    if (this.disposed) return;
     if (this.state.activation === activation && !this.state.hasFrame && this.state.player) {
       this.publish({ hasFrame: true });
       this.diagnostic({ type: 'first_frame', publicationId: this.state.publicationId, activation });
     }
   };
   fail = (activation: number) => {
+    if (this.disposed) return;
     if (this.state.activation !== activation) return;
     const entry = this.current();
     if (entry) { entry.failed = true; entry.status = 'error'; }
@@ -261,6 +304,8 @@ export class PlaybackCoordinator<P extends PlayerPort> {
   };
   retry = () => { this.activate(this.item, this.desired, true); };
   dispose = () => {
+    if (this.disposed) return;
+    this.disposed = true;
     for (const entry of [...this.entries.values()]) this.drop(entry);
     this.item = null;
     this.desired = [];

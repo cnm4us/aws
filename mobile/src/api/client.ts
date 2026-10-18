@@ -1,5 +1,5 @@
 export class ApiError extends Error {
-  constructor(message: string, readonly status?: number) {
+  constructor(message: string, readonly status?: number, readonly code?: string, readonly retryAfterSeconds?: number) {
     super(message);
     this.name = 'ApiError';
   }
@@ -15,10 +15,13 @@ export type ApiClient = ReturnType<typeof createApiClient>;
 
 export function createApiClient(baseUrl: string, options: ClientOptions = {}) {
   const fetchImpl = options.fetchImpl ?? fetch;
-  return {
-    async getJson(path: string, signal?: AbortSignal): Promise<unknown> {
-      if (!path.startsWith('/') || path.startsWith('//')) {
+  const requestJson = async (path: string, method: 'GET' | 'POST' | 'DELETE', body?: unknown, signal?: AbortSignal): Promise<unknown> => {
+      if (!path.startsWith('/') || path.startsWith('//') || /[\\\s]/.test(path) || new URL(`${baseUrl}${path}`).origin !== new URL(baseUrl).origin) {
         throw new ApiError('API paths must be relative to the configured server.');
+      }
+      const headers = { Accept: 'application/json', ...options.getHeaders?.() } as Record<string,string>;
+      if (Object.keys(headers).some(k=>k.toLowerCase()==='authorization') && !/^\/api\/(native|viewer)\/v1\//.test(path)) {
+        throw new ApiError('Credentials are only available to the viewing API.');
       }
       const controller = new AbortController();
       let timedOut = false;
@@ -33,13 +36,29 @@ export function createApiClient(baseUrl: string, options: ClientOptions = {}) {
       try {
         if (controller.signal.aborted) throw new Error('Cancelled');
         const response = await fetchImpl(`${baseUrl}${path}`, {
-          method: 'GET', credentials: 'omit',
-          headers: { Accept: 'application/json', ...options.getHeaders?.() },
+          method, credentials: 'omit', redirect: 'error',
+          headers: body === undefined ? headers : { ...headers, 'Content-Type': 'application/json' },
+          body: body === undefined ? undefined : JSON.stringify(body),
           signal: controller.signal,
         });
-        if (!response.ok) {
-          throw new ApiError('The feed could not be loaded. Please try again.', response.status);
+        if (response.redirected || (response.url && new URL(response.url).origin !== new URL(baseUrl).origin)) {
+          throw new ApiError('The server redirected this request. Check your connection.');
         }
+        if (!response.ok) {
+          let code: string | undefined;
+          try { const data = await response.json(); if (typeof data?.error === 'string') code = data.error; } catch {}
+          const messages: Record<string,string> = {
+            invalid_credentials: 'Email or password is incorrect.', unauthorized: 'Please sign in again.',
+            forbidden: 'You do not currently have access to this space.', space_not_found: 'This space is unavailable.',
+            rate_limited: 'Too many sign-in attempts. Please wait and try again.',
+            native_unavailable: 'App sign-in is temporarily unavailable.',
+          };
+          const safeCode = code && Object.hasOwn(messages,code) ? code : undefined;
+          const retry = Number(response.headers.get('Retry-After'));
+          throw new ApiError(safeCode ? messages[safeCode] : 'The request could not be completed. Please try again.', response.status,
+            safeCode, Number.isFinite(retry) && retry>0 ? retry : undefined);
+        }
+        if (response.status === 204) return null;
         try {
           return await response.json();
         } catch {
@@ -59,6 +78,10 @@ export function createApiClient(baseUrl: string, options: ClientOptions = {}) {
         clearTimeout(timer);
         signal?.removeEventListener('abort', cancel);
       }
-    },
+    };
+  return {
+    getJson: (path: string, signal?: AbortSignal) => requestJson(path,'GET',undefined,signal),
+    postJson: (path: string, body: unknown, signal?: AbortSignal) => requestJson(path,'POST',body,signal),
+    deleteJson: (path: string, signal?: AbortSignal) => requestJson(path,'DELETE',undefined,signal),
   };
 }

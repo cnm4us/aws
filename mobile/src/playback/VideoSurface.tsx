@@ -12,7 +12,7 @@ export function VideoSurface({ coordinator, snapshot, posterUrl, onNext }: {
   onNext: () => void;
 }) {
   const [showLoading, setShowLoading] = useState(false);
-  const eligible = snapshot.appActive && !snapshot.scrolling && !snapshot.userPaused;
+  const eligible = snapshot.appActive && snapshot.screenEligible && !snapshot.scrolling && !snapshot.userPaused;
   useEffect(() => {
     setShowLoading(false);
     if (snapshot.hasFrame || snapshot.failed || !eligible) return;

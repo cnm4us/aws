@@ -1,13 +1,17 @@
-import { useEffect, useMemo, useSyncExternalStore } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useSyncExternalStore } from 'react';
 import { AppState } from 'react-native';
 import { createVideoPlayer, type VideoPlayer } from 'expo-video';
 import { PlaybackCoordinator, type PlayerPort } from './coordinator';
 import { developmentDiagnostics } from '../diagnostics/development';
+import { PlayerBudget } from './playerBudget';
 
 export interface NativePlayerPort extends PlayerPort { native: VideoPlayer }
+const playerBudget=new PlayerBudget(3);
 
 function createNativePlayer(): NativePlayerPort {
-  const native = createVideoPlayer(null);
+  const lease=playerBudget.acquire(()=>createVideoPlayer(null),player=>player.release());
+  const native=lease.value;
+  try {
   native.loop = true;
   native.muted = true;
   native.staysActiveInBackground = false;
@@ -24,7 +28,7 @@ function createNativePlayer(): NativePlayerPort {
     isPlaying: () => native.playing,
     status: () => native.status,
     subscribe: listener => {
-      const subscription = native.addListener('statusChange', ({ status }) => listener(status));
+      const subscription = native.addListener('statusChange', ({ status, error }) => listener(status, error));
       return () => subscription.remove();
     },
     subscribePlaying: listener => {
@@ -35,15 +39,21 @@ function createNativePlayer(): NativePlayerPort {
       const subscription = native.addListener('timeUpdate', ({ currentTime }) => listener(currentTime));
       return () => subscription.remove();
     } : undefined,
-    release: () => native.release(),
+    release: lease.release,
   };
+  } catch(error) {lease.release();throw error;}
 }
 
-export function useFeedPlayback(muted: boolean) {
-  const coordinator = useMemo(() => new PlaybackCoordinator(createNativePlayer, developmentDiagnostics?.session(), muted), []);
+export function useFeedPlayback(muted: boolean, eligible = true, context?:{feedContext:string;authGeneration:number}) {
+  const {coordinator,diagnostic} = useMemo(() => {
+    const diagnostic=developmentDiagnostics?.session();
+    return {coordinator:new PlaybackCoordinator(createNativePlayer,diagnostic,muted),diagnostic};
+  }, []);
   const snapshot = useSyncExternalStore(coordinator.subscribe, coordinator.getSnapshot);
+  useEffect(()=>{if(context)diagnostic?.({type:'context',...context});},[coordinator]);
   useEffect(() => { coordinator.setMuted(muted); }, [coordinator, muted]);
-  useEffect(() => {
+  useLayoutEffect(()=>{coordinator.setScreenEligible(eligible);},[coordinator,eligible]);
+  useLayoutEffect(() => {
     coordinator.setAppActive(AppState.currentState === 'active');
     const subscription = AppState.addEventListener('change', state => coordinator.setAppActive(state === 'active'));
     return () => { subscription.remove(); coordinator.dispose(); };

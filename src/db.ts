@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import mysql from 'mysql2/promise';
+import { ensureNativeSessionSchema } from './features/native-sessions/schema';
 
 export type DB = mysql.Pool;
 
@@ -237,6 +238,7 @@ async function reconcileLegacyPromptNamedTables(db: DB): Promise<void> {
 }
 
 export async function ensureSchema(db: DB) {
+  await ensureNativeSessionSchema(db);
   const ddl = `
     CREATE TABLE IF NOT EXISTS uploads (
       id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,

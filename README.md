@@ -17,12 +17,16 @@ Build & Run (local development)
 - `npm run space:web:build` — build the Space Console bundle under `public/space-app` (run this after space console UI changes).
 - `npm run serve` — start the development server (serves the API and SPA shell).
 
-iPhone POC (Expo Go)
+iPhone viewer (Expo Go and development build)
 
-- The separate `mobile/` package provides an iPhone-tested Expo Go POC with anonymous public-feed videos, vertical paging, autoplay, cursor pagination, and next-video preloading. Settings saves the startup sound choice (default Unmuted); the mute pill's current choice survives Refresh.
+- The separate `mobile/` package provides native Global/space viewing, existing-account sign-in, secure session restore/logout, vertical paging, and bounded preloading. The expanded viewer passed host/API/browser and installed iPhone development-build acceptance in Plan 168 (Complete), including denial/expiry recovery. VoiceOver is deferred and recorded accessibility/evidence limits remain. Sound settings remain device-local.
 - Setup and device checks: [mobile/README.md](mobile/README.md).
-- Implementation and validation: [Plan 167](agents/implementation/plan_167.md).
-- Run `npm ci` in `mobile/`, configure `mobile/.env` from its example, then run `npm run start:tunnel` for a remote development host.
+- Accepted implementation and validation: [Plan 168](agents/implementation/plan_168.md). Original POC evidence: [Plan 167](agents/implementation/plan_167.md).
+- Run `npm ci` in `mobile/`, configure `mobile/.env` from its example, then run `npm run start:tunnel` for Expo Go or `npm run start:dev-client` for the installed development app on a remote development host.
+- Backend native sessions require `NATIVE_SESSIONS_ENABLED=1`; configure `NATIVE_TRUST_LOOPBACK_PROXY=1` only for a trusted local TLS proxy. The additive native session and login-limit tables are created by schema setup; no browser session migration is needed. See [API contracts](docs/API.md).
+- Mobile `eas.json` configures the independent iOS development app. Build signing needs Apple Developer credentials; setup and recorded acceptance are in the mobile README.
+- Backend checks: `npm run test:viewer`. Opt-in non-production fixtures: `npm run viewer:fixtures` (creates two ordinary users and labeled spaces, reusing public media only; credentials stay in ignored `.codex-local/plan168-fixtures.json`). Integration: `npm run viewer:check:sessions`, `npm run viewer:check`, and `npm run viewer:check:web`. Run the API scripts sequentially: they temporarily change fixture account/access state and restore it. Browser checks use the existing HTTPS development host and save sanitized evidence in ignored test-run folders.
+
 
 Useful Pages
 - Uploader: / (upload.html)

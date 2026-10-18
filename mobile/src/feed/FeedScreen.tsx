@@ -2,7 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, FlatList, Pressable, Share, StyleSheet, Text, View } from 'react-native';
 import { Action, Message } from '../ui/Message';
 import { FeedCard } from './FeedCard';
-import { useGlobalFeed } from './useGlobalFeed';
+import { useViewerFeed } from './useViewerFeed';
+import type { FeedContext } from './context';
+import { contextKey } from './context';
+import { useAuth } from '../auth/useAuth';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSpaceAccess } from '../auth/useSpaceAccess';
 import type { FeedSnapshot, FeedStore } from './feedStore';
 import type { FeedVideoItem } from './types';
 import { useFeedPlayback } from '../playback/useFeedPlayback';
@@ -10,33 +15,65 @@ import { VideoSurface } from '../playback/VideoSurface';
 import { PagingController } from '../playback/paging';
 import { developmentDiagnostics } from '../diagnostics/development';
 import type { PlaybackPreferences, PlaybackPreferencesSnapshot } from '../preferences/playbackPreferences';
-import { PlaybackSettings } from '../preferences/PlaybackSettings';
 
-export function FeedScreen({ baseUrl, preferences, sound }: {
-  baseUrl: string; preferences: PlaybackPreferences; sound: PlaybackPreferencesSnapshot;
+
+export function FeedScreen({ context, preferences, sound, focused, onSpaces, onAccount, onSettings, onGlobal }: {
+  context: FeedContext; preferences: PlaybackPreferences; sound: PlaybackPreferencesSnapshot; focused: boolean;
+  onSpaces:()=>void;onAccount:()=>void;onSettings:()=>void;onGlobal:()=>void;
 }) {
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const { store, snapshot } = useGlobalFeed(baseUrl);
-  if (snapshot.initialLoading) return <Message title="Loading videos" busy />;
-  if (snapshot.initialError) {
-    return <Message title="Cannot load the feed" message={snapshot.initialError} onRetry={() => { void store.refresh(); }} />;
-  }
-  return <>
-    <FeedSession key={snapshot.sessionId} store={store} snapshot={snapshot} muted={sound.muted}
-      onToggleMute={preferences.toggleMute} onSettings={() => setSettingsOpen(true)} />
-    <PlaybackSettings visible={settingsOpen} onClose={() => setSettingsOpen(false)} preferences={preferences} snapshot={sound} />
-  </>;
+  const { store:identity, snapshot:auth }=useAuth();
+  const { store, snapshot, client } = useViewerFeed(context);
+  const access=useSpaceAccess(context,client,store,focused);
+  const eligible=focused && !auth.validating && !snapshot.errorStatus && access.authorized
+    && (auth.status==='authenticated' || auth.status==='anonymous');
+  const refresh=()=>{void access.check().then(ok=>{if(ok)void store.refresh();});};
+  return <SafeAreaView style={styles.screen} edges={['top','bottom']}>
+    <View style={styles.toolbar}>
+      <View style={styles.titleRow}>
+        <Pressable onLongPress={__DEV__ ? sharePlaybackDiagnostics : undefined} accessibilityRole="header" style={{flex:1}}>
+          <Text style={styles.heading}>{context.kind==='global'?'Global':context.name}</Text>
+          {context.kind==='space' && <Text style={{color:'#c7c7ce'}}>{context.type}</Text>}
+        </Pressable>
+        <Action label="Refresh" onPress={refresh} />
+      </View>
+      <View style={styles.headerActions}>
+        <Action label="Spaces" onPress={onSpaces}/><Action label="Account" onPress={onAccount}/><Action label="Settings" onPress={onSettings}/>
+      </View>
+      {auth.status==='anonymous' && auth.message && <Text accessibilityRole="alert" style={{color:'#ffb4b4',fontSize:15}}>{auth.message}</Text>}
+    </View>
+    <View style={{flex:1}}>
+      {snapshot.initialLoading ? <Message title="Loading videos" busy/> : snapshot.initialError ?
+        <View style={{flex:1}}><Message title={snapshot.errorStatus===403 || snapshot.errorStatus===404?'Access unavailable':'Cannot load the feed'}
+          message={snapshot.initialError} onRetry={refresh}/>
+          <View style={styles.headerActions}><Action label="Spaces" onPress={onSpaces}/><Action label="Global" onPress={onGlobal}/></View>
+        </View> : <FeedSession key={snapshot.sessionId} store={store} snapshot={snapshot} muted={sound.muted}
+          onToggleMute={preferences.toggleMute} eligible={!!eligible} diagnosticContext={{feedContext:contextKey(context),authGeneration:auth.generation}} />}
+      {(auth.status==='unavailable' || (context.kind==='space' && access.checking) || auth.validating) &&
+        <View style={[StyleSheet.absoluteFill,{backgroundColor:'#000',padding:20,gap:12}]}>
+          <Message title={auth.status==='unavailable'?'Cannot verify access':'Checking access'} busy={auth.status!=='unavailable'}
+            message={auth.status==='unavailable'?auth.message??undefined:undefined}
+            onRetry={auth.status==='unavailable'?()=>{void identity.retryValidation().then(()=>access.check());}:undefined}/>
+          {auth.status==='unavailable' && <Action label="Browse Global" onPress={onGlobal}/>}
+        </View>}
+      {access.error && !access.checking && !snapshot.errorStatus && auth.status!=='unavailable' &&
+        <View style={[StyleSheet.absoluteFill,{backgroundColor:'#000',padding:20,gap:12}]}>
+          <Message title="Cannot verify access" message={access.error} onRetry={()=>{void access.check();}}/>
+          <Action label="Global" onPress={onGlobal}/><Action label="Spaces" onPress={onSpaces}/>
+        </View>}
+    </View>
+  </SafeAreaView>;
 }
 
-function FeedSession({ store, snapshot, muted, onToggleMute, onSettings }: {
-  store: FeedStore; snapshot: FeedSnapshot; muted: boolean; onToggleMute: () => void; onSettings: () => void;
+function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosticContext }: {
+  store: FeedStore; snapshot: FeedSnapshot; muted: boolean; onToggleMute: () => void; eligible: boolean;
+  diagnosticContext:{feedContext:string;authGeneration:number};
 }) {
   const [height, setHeight] = useState(0);
   const [index, setIndex] = useState(0);
   const list = useRef<FlatList<FeedVideoItem>>(null);
   const items = useRef(snapshot.items);
   items.current = snapshot.items;
-  const { coordinator, snapshot: playback } = useFeedPlayback(muted);
+  const { coordinator, snapshot: playback } = useFeedPlayback(muted, eligible, diagnosticContext);
   const paging = useMemo(() => new PagingController(
     () => coordinator.setScrolling(true),
     selected => {
@@ -62,21 +99,6 @@ function FeedSession({ store, snapshot, muted, onToggleMute, onSettings }: {
   const next = () => {
     paging.beginProgrammatic();
     list.current?.scrollToOffset({ offset: Math.min(index + 1, snapshot.items.length) * height, animated: true });
-  };
-  const shareDiagnostics = () => {
-    if (!developmentDiagnostics) return;
-    const report = developmentDiagnostics.report();
-    const compactReport = developmentDiagnostics.shareReport();
-    const p95 = report.summary.preparedFrames.p95Ms;
-    const share = (full: boolean) => {
-      const exported = full ? report : compactReport;
-      void Share.share({ message: JSON.stringify(exported, null, full ? 2 : undefined), title: 'Video POC diagnostics' }).catch(() => {});
-    };
-    Alert.alert('Playback diagnostics',
-      `Players: ${report.resources.livePlayers} live, ${report.resources.peakPlayers} peak.\nTransitions: ${report.summary.transitions}; errors: ${report.summary.errors}.\nUnexpected playback: ${report.resources.unexpectedPlayback}.\nPrepared first-frame p95: ${p95 === null ? 'no samples yet' : `${Math.round(p95)} ms`}.`,
-      [{ text: 'Close', style: 'cancel' },
-        { text: 'Share report', onPress: () => share(false) },
-        { text: 'Share full report', onPress: () => share(true) }]);
   };
   return (
     <View style={styles.screen} onLayout={event => setHeight(event.nativeEvent.layout.height)}>
@@ -110,15 +132,6 @@ function FeedSession({ store, snapshot, muted, onToggleMute, onSettings }: {
         onMomentumScrollEnd={event => paging.endMomentum(event.nativeEvent.contentOffset.y)}
         ListFooterComponent={<View style={{ height }}><FeedFooter snapshot={snapshot} store={store} /></View>}
       />}
-      <View style={styles.header} pointerEvents="box-none">
-        <Pressable onLongPress={__DEV__ ? shareDiagnostics : undefined} accessibilityRole="header">
-          <Text style={styles.heading}>Global</Text>
-        </Pressable>
-        <View style={styles.headerActions}>
-          <Action label="Settings" onPress={onSettings} />
-          <Action label="Refresh" onPress={() => { void store.refresh(); }} />
-        </View>
-      </View>
       {snapshot.items[index]?.playbackUrl && (
         <View style={styles.mute}>
           <Action label={muted ? 'Unmute' : 'Mute'} onPress={onToggleMute} />
@@ -127,6 +140,22 @@ function FeedSession({ store, snapshot, muted, onToggleMute, onSettings }: {
     </View>
   );
 }
+
+export function sharePlaybackDiagnostics() {
+    if (!developmentDiagnostics) return;
+    const report = developmentDiagnostics.report();
+    const compactReport = developmentDiagnostics.shareReport();
+    const p95 = report.summary.preparedFrames.p95Ms;
+    const share = (full: boolean) => {
+      const exported = full ? report : compactReport;
+      void Share.share({ message: JSON.stringify(exported, null, full ? 2 : undefined), title: 'Video playback diagnostics' }).catch(() => {});
+    };
+    Alert.alert('Playback diagnostics',
+      `Players: ${report.resources.livePlayers} live, ${report.resources.peakPlayers} peak.\nTransitions: ${report.summary.transitions}; errors: ${report.summary.errors}.\nUnexpected playback: ${report.resources.unexpectedPlayback}.\nPrepared first-frame p95: ${p95 === null ? 'no samples yet' : `${Math.round(p95)} ms`}.`,
+      [{ text: 'Close', style: 'cancel' },
+        { text: 'Share report', onPress: () => share(false) },
+        { text: 'Share full report', onPress: () => share(true) }]);
+  };
 
 export function FeedFooter({ snapshot, store }: { snapshot: FeedSnapshot; store: FeedStore }) {
   if (snapshot.loadingMore) return <Message title="Loading more videos" busy />;
@@ -141,8 +170,9 @@ export function FeedFooter({ snapshot, store }: { snapshot: FeedSnapshot; store:
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#000000' },
-  header: { position: 'absolute', top: 12, left: 20, right: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  headerActions: { flexDirection: 'row', gap: 8 },
+  toolbar: { paddingHorizontal:16, paddingVertical:8, gap:8, backgroundColor:'#000' },
+  titleRow: { flexDirection:'row', alignItems:'center', gap:12 },
+  headerActions: { flexDirection: 'row', gap: 8, flexWrap:'wrap', justifyContent:'center', paddingBottom:4 },
   heading: { color: '#ffffff', fontSize: 24, fontWeight: '700', textShadowColor: '#000000', textShadowRadius: 8 },
   mute: { position: 'absolute', right: 16, bottom: 24 },
   unavailable: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center' },

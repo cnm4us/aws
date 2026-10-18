@@ -1,0 +1,34 @@
+# EAS CLI reads this file at the Git repository root. The independently
+# installed mobile app is the only package needed by its cloud build.
+# This allowlist replaces .gitignore filtering for EAS uploads.
+/*
+!/mobile
+/mobile/*
+!/mobile/.nvmrc
+!/mobile/package.json
+!/mobile/package-lock.json
+!/mobile/app.json
+!/mobile/app.config.*
+!/mobile/eas.json
+!/mobile/tsconfig.json
+!/mobile/babel.config.*
+!/mobile/metro.config.*
+!/mobile/react-native.config.*
+!/mobile/index.ts
+!/mobile/App.tsx
+!/mobile/src
+!/mobile/assets
+
+# Also exclude local state and credentials nested within allowed directories.
+node_modules/
+.expo/
+.env*
+credentials.json
+*.p8
+*.p12
+*.pem
+*.key
+*.jks
+*.mobileprovision
+*.tsbuildinfo
+.DS_Store

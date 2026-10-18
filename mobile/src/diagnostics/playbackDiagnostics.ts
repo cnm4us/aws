@@ -1,5 +1,7 @@
-export type PlaybackDiagnosticEvent = {
-  type: 'allocation' | 'release' | 'selection' | 'ready' | 'first_frame' | 'error' | 'playing' | 'progress' | 'unexpected_playback' | 'lifecycle';
+import type { PlayerErrorDetails } from '../playback/playerError';
+
+export type PlaybackDiagnosticEvent = PlayerErrorDetails & {
+  type: 'allocation' | 'release' | 'selection' | 'ready' | 'first_frame' | 'error' | 'playing' | 'progress' | 'unexpected_playback' | 'lifecycle' | 'eligibility' | 'context';
   publicationId?: number | null;
   activation?: number;
   prepared?: boolean;
@@ -10,15 +12,20 @@ export type PlaybackDiagnosticEvent = {
   active?: boolean;
   selectedPublicationId?: number | null;
   appActive?: boolean;
+  screenEligible?: boolean;
+  feedContext?: string;
+  authGeneration?: number;
   scrolling?: boolean;
   userPaused?: boolean;
   reason?: 'nonselected' | 'ineligible';
-  failureKind?: 'native_error' | 'source_load' | 'startup_timeout' | 'unavailable_media';
+  failureKind?: 'native_error' | 'source_load' | 'startup_timeout' | 'unavailable_media' | 'player_allocation';
+  allocationFailure?: 'budget_exhausted' | 'native_creation';
 };
 
 type EventRecord = PlaybackDiagnosticEvent & { atMs: number; session: number };
 type Transition = {
   session: number; activation: number; publicationId: number;
+  feedContext?: string; authGeneration?: number;
   initial: boolean;
   selectedAtMs: number; prepared: boolean; bufferedSeconds: number;
   firstFrameMs: number | null; progressMs: number | null; error: boolean;
@@ -46,6 +53,7 @@ export class PlaybackDiagnostics {
   private unexpectedPlayback = 0;
   private issues: EventRecord[] = [];
   private droppedIssues = 0;
+  private contexts = new Map<number, Pick<PlaybackDiagnosticEvent, 'feedContext' | 'authGeneration'>>();
 
   constructor(private readonly clock: () => number = () => performance.now()) {}
 
@@ -55,6 +63,11 @@ export class PlaybackDiagnostics {
   }
 
   private record(session: number, event: PlaybackDiagnosticEvent) {
+    if (event.type === 'context') {
+      this.contexts.set(session, { feedContext: event.feedContext, authGeneration: event.authGeneration });
+      if (this.contexts.size > 10) this.contexts.delete(this.contexts.keys().next().value!);
+    }
+    event = { ...this.contexts.get(session), ...event };
     const atMs = this.clock();
     this.events.push({ ...event, session, atMs });
     if (this.events.length > 1000) { this.events.shift(); this.droppedEvents++; }
@@ -73,6 +86,7 @@ export class PlaybackDiagnostics {
     if (event.type === 'unexpected_playback') this.unexpectedPlayback++;
     if (event.type === 'selection' && event.publicationId != null && event.activation !== undefined) {
       this.transitions.push({ session, activation: event.activation, publicationId: event.publicationId,
+        feedContext: event.feedContext, authGeneration: event.authGeneration,
         initial: !this.transitions.some(row => row.session === session),
         selectedAtMs: atMs, prepared: Boolean(event.prepared), bufferedSeconds: event.bufferedSeconds ?? 0,
         firstFrameMs: null, progressMs: null, error: false, playingObserved: false, interrupted: false });
@@ -85,6 +99,7 @@ export class PlaybackDiagnostics {
     if (event.type === 'error') transition.error = true;
     if (event.type === 'playing' && event.playing) transition.playingObserved = true;
     if (event.type === 'lifecycle' && !event.active) transition.interrupted = true;
+    if (event.type === 'eligibility' && !event.screenEligible) transition.interrupted = true;
   }
 
   report() {

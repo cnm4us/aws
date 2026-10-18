@@ -1,19 +1,35 @@
-# iPhone video feed POC
+# iPhone video viewer
 
 This Expo app is the native client for the existing public video feed. Swipe vertically between full-screen videos; the selected video starts automatically and the previous video stops. It loops, supports tap to pause and mute/unmute, and pauses when the app leaves the foreground. Startup sound defaults to Unmuted and can be saved as Muted in Settings. Your current sound choice follows you between videos and through feed Refresh.
 
-Cursor pagination, deduplication, retry, refresh, and protection against stale playback callbacks are implemented. The user confirmed swipe playback, next-video preloading, and live/peak player counts at or below three on the target phone. [Plan 167](../agents/implementation/plan_167.md) records the accepted Expo Go POC and its validation limits. Newly selected cold videos can still show a loading poster. Application authentication is deferred.
+Cursor pagination, deduplication, retry, refresh, and protection against stale playback callbacks are implemented. The original anonymous POC was accepted on the test phone; [Plan 167](../agents/implementation/plan_167.md) retains that evidence. [Plan 168](../agents/implementation/plan_168.md) adds signed-in viewing and native navigation. Its host and recorded independent iPhone development-build acceptance checks pass; Plan 168 is Complete with VoiceOver deferred, large-text clipping accepted and other evidence limits retained.
+
+## Signed-in viewing
+
+Browse **Global** anonymously, or open **Account** and sign in with an existing application account. **Spaces** lists your personal space and existing accessible groups/channels, including active subscriptions. Selecting a space resets its feed to the beginning. Global always uses the public aggregator. Creating accounts, joining spaces, payments, comments, profiles, stories, and app-provided captions are subsequent features.
+
+The feed pauses while Account, Spaces, or Settings is open. Returning preserves an intentional pause. Protected viewing checks identity and space access after foregrounding and at least once per minute while active. A denied space clears its videos and offers Global/Spaces recovery; a lost session clears viewer state. Retryable verification failures hide and pause the existing feed so retry preserves manual pause. New app launches validate saved credentials, then start in Global.
+
+Native sign-in uses a separate revocable 30-day session. There is no sliding renewal yet; expiry requires signing in again. Credentials use Expo SecureStore with device-bound unlocked Keychain storage. A non-secret install/sign-out marker prevents a surviving Keychain item from restoring after reinstall or interrupted logout. Passwords and feeds are not persisted. Sound settings remain device preferences, separate from the account.
+
+When connectivity prevents session verification, Account keeps the saved sign-in separate from the fresh password form. It offers **Retry saved sign-in** and **Sign out**, including while verification is pending. Retry validates the retained session; offline sign-out removes local access before trying server revocation. A genuine expired/rejected session returns to the password form. The phone checks confirm both no-password recovery after reconnection and explicit offline sign-out staying signed out after reconnect/Reload; Plan 168 retains the evidence.
+
+**Sign out** removes local access immediately and revokes the native session when reachable. Offline sign-out cannot confirm server revocation; the app explains that limit. A storage failure offers retry and must be resolved before claiming durable sign-out. Switching accounts clears old spaces, feed requests, navigation history, and players.
+
+For another backend installation, enable `NATIVE_SESSIONS_ENABLED=1` and configure `NATIVE_TRUST_LOOPBACK_PROXY=1` only behind a trusted loopback TLS proxy. Startup applies the additive native session/login-limit tables; browser cookies remain unchanged. Keep `NATIVE_ALLOW_INSECURE_LOOPBACK=0` outside local test servers. [API contracts](../docs/API.md) document routes, limits, and errors. This development host has native sessions enabled.
+
+Viewer endpoints minimize response fields on the server. Legacy broad feed endpoints still require their own compatibility migration. Space API access does not protect copied public media URLs; current test fixtures reuse public Global videos, with confidential media delivery deferred.
 
 ## Requirements
 
 - Node 22.21.1, pinned in this directory's `.nvmrc`. The root server's Node configuration is separate.
 - Expo Go supporting **SDK 57** on the iPhone. Install Expo Go once on the phone; it can open multiple projects. This project's dependencies are installed separately in `mobile/node_modules`.
 - A free Expo account signed into both the CLI on the development machine and Expo Go on the phone when required by the installed Expo Go version.
-- An HTTPS API address reachable from the phone and public CloudFront HLS media.
+- An HTTPS API address reachable from the phone and the supplied CloudFront HLS media.
 
 This project uses Expo 57.0.30, React Native 0.86.3, React 19.2.3, expo-video 57.0.5, and AsyncStorage 2.2.0, with exact resolved dependencies in `package-lock.json`. AsyncStorage's Expo Go-compatible version was selected by `expo install` using the installed SDK's module map. SDK 57 was chosen because Expo's [project setup instructions](https://docs.expo.dev/get-started/create-a-project/) recommend it for physical-device Expo Go during the SDK 58 transition as of October 17, 2026. If the installed Expo Go reports a version mismatch, confirm its supported SDK before changing dependencies.
 
-The device target is iPhone 17 Pro Max running iOS 26.6.2 with Expo Go 57.0.9. The user confirmed initial launch, playback, swiping, the ten-minute manual lifecycle/audio checks, saved startup sound, current mute surviving Refresh, icon removal with CC still working, and fully-offline feed error/reconnect/Retry playback. Normal Wi-Fi and mixed cellular reports both show prepared-frame p95 around 122 ms and peak three players. Some diagnostic exports are compact or clipped; the ten-minute run has no separate resource export, and no native memory profile is claimed. Acceptance applies to this Expo Go POC on the recorded phone; a standalone production build needs its own validation.
+The original POC device target is iPhone 17 Pro Max running iOS 26.6.2 with Expo Go 57.0.9. The user confirmed initial launch, playback, swiping, the ten-minute manual lifecycle/audio checks, saved startup sound, current mute surviving Refresh, icon removal with CC still working, and fully-offline feed error/reconnect/Retry playback. Normal Wi-Fi and mixed cellular reports both show prepared-frame p95 around 122 ms and peak three players. Some diagnostic exports are compact or clipped; the ten-minute run has no separate resource export, and no native memory profile is claimed. Acceptance applies to this Expo Go POC on the recorded phone. For Plan 168, the initial sign-in, space navigation and restored-session checks passed; repeated Global/Channel playback passed after the navigation fix below, with subsequent signed-in acceptance completed as recorded in Plan 168. A standalone production build needs its own validation.
 
 ## Install and run
 
@@ -80,7 +96,7 @@ The phone connects to three services:
 
 An Expo tunnel exposes Metro only. It does not expose the API on port 3300. On the phone, `localhost` refers to the phone itself. The current HTTPS reverse proxy avoids a separate API tunnel. Starting this app does not start or restart the backend; use `npm run serve` from the repository root if needed.
 
-The app uses the provided `cdn_master` URL and does not guess alternate orientations or public S3 access. Its adapter discards creator email and internal storage/job fields from mobile state. The server still sends those fields; response minimization is separate backend work.
+The app uses the viewer API's provided `playbackUrl` and does not guess alternate orientations or public S3 access. The versioned viewer API minimizes fields on the server, and its mobile adapter also accepts only the viewer contract. Legacy web feed responses retain their existing broad payloads pending a separate compatibility migration.
 
 ## Checks
 
@@ -98,11 +114,44 @@ npm run export:ios
 
 `export:ios` compiles the JavaScript/Hermes bundle under ignored `mobile/dist/`. It verifies the iOS bundle graph without requiring Xcode, signing, or a physical device. It does not build an installable iOS app or prove native playback.
 
-The automated tests cover configuration validation, feed field mapping/minimization, malformed responses, publication identity, overlapping pages, cursor cycles, retry, refresh cancellation, playback ownership, stale callbacks, mute/pause state, and paging with or without momentum. Pool tests exercise a 40-video feed, the three-player cap at every allocation, prepared-player reuse, failed preloads, background cleanup, and listener disposal. Diagnostic tests cover timing, incomplete/error samples, resource totals, and bounded history. Preference tests cover delayed hydration, next-launch persistence, temporary mute across refreshed coordinators, serialized saves, failed/corrupt storage, and applying sound before the first native play request while keeping neighbors muted.
+The expanded tests cover secure session hydration and serialized writes, cancelled/late logins, failed/ambiguous storage, offline logout, identity generations, access validation, context isolation, field minimization, and playback eligibility/resource limits.
+
+The original playback tests cover configuration validation, feed field mapping/minimization, malformed responses, publication identity, overlapping pages, cursor cycles, retry, refresh cancellation, playback ownership, stale callbacks, mute/pause state, and paging with or without momentum. Pool tests exercise a 40-video feed, the three-player cap at every allocation, prepared-player reuse, failed preloads, background cleanup, and listener disposal. Diagnostic tests cover timing, incomplete/error samples, resource totals, and bounded history. Preference tests cover delayed hydration, next-launch persistence, temporary mute across refreshed coordinators, serialized saves, failed/corrupt storage, and applying sound before the first native play request while keeping neighbors muted.
 
 From the repository root, `npm run build` verifies the existing backend still compiles. All mobile install/build commands operate in the mobile package; root dependencies and build scripts are unchanged.
 
+## Independent development build
+
+The Expo project is linked to [mbcollins2/aws-video-feed-poc](https://expo.dev/accounts/mbcollins2/projects/aws-video-feed-poc). The application name is Video Viewer and the iOS bundle identifier is `com.bawebtech.videoviewer`. `eas.json` defines development/internal-distribution and simulator profiles, with the public HTTPS API address. Expo and root Node pins remain separate.
+
+The repository-root `.easignore` explicitly includes only mobile source/assets and build configuration. EAS uploads omit backend/web packages, local environment/credential files, dependencies and test evidence. Add any future mobile build inputs to that allowlist. The inspected package contains 44 files (about 0.38 MB), and its isolated Expo configuration resolves the expected SDK and native plugins. This inspection does not compile or sign an iOS app.
+
+From `mobile/`:
+
+```bash
+npx eas-cli@25.2.0 build --platform ios --profile development
+npm run start:dev-client
+```
+
+On this host, reuse the prepared CLI cache with `npm_config_cache=/dev/shm/plan168-npm-cache TMPDIR=/dev/shm npx eas-cli@25.2.0 build --platform ios --profile development`. Root disk space is limited; this keeps task cache and temporary build files in memory-backed storage.
+
+The device development build requires Apple Developer Program access and iOS signing credentials. The account holder completed Apple authentication directly in the terminal. [The first signed device build](https://expo.dev/accounts/mbcollins2/projects/aws-video-feed-poc/builds/66023796-973d-4c98-8ad3-39fc6433d0b7) succeeded (Video Viewer 0.1.0/build 1). The user confirmed installation, Global/space playback, sign-in restored after fully closing/reopening, and logout returning Spaces to its sign-in prompt. Its stable-Wi-Fi sample also passed: 33 prepared transitions, first-frame p95 about 110 ms, three peak players and zero errors; two cold/initial selections remain separately recorded. The independent-app core smoke is accepted, including session restore/isolation, sound/storage, offline recovery and mixed lifecycle/resource checks. Integrated denied/expired-access checks also passed; Plan 168 records the completed milestone and accepted limits. Linux uses the cloud build service; local Xcode/simulator work requires macOS. [Expo development builds](https://docs.expo.dev/develop/development-builds/introduction/).
+
+Install from the EAS build page on the registered iPhone, then open Video Viewer. Start Metro with `npm run start:dev-client`; scan its QR code or enter its HTTPS tunnel address manually in the app. Automatic local-server discovery may not find this remote host. If Reload cannot connect, verify the development server is still running; a stopped tunnel requires restarting Metro. The [debugging cookbook](../agents/tools/debugging.md#expo-development-client-reload-on-the-remote-host) records the verified remote-host checks and low-disk restart command. The CLI's `s` key switches an already-running server between development-client and Expo Go modes. A native development build still loads development JavaScript from Metro; it is not an offline preview/release bundle.
+
+Expo Go remains available through `npm run start:tunnel`. It and the independent app use separate Keychain namespaces, so sign in again in the independent app. TestFlight/App Store publication is separate scope.
+
 ## iPhone checks
+
+Plan 168 adds these required checks to the original playback checklist below. Plan 168 records completed phone checks and the remaining gates; this list is the full acceptance scope:
+
+- Sign in, reload, and confirm identity is restored only after server validation.
+- Switch Global → Personal → Group → Channel → Global; confirm title, content, pagination, and Refresh match the selected space.
+- Open Account/Spaces/Settings and perform a cancelled back gesture; confirm hidden audio stops and intentional pause survives returning.
+- Sign out, reload to anonymous Global, then sign in as an account with different spaces; confirm no old content or audio remains.
+- While a protected feed is open, test background/lock, offline recovery, and denied/expired access. Network failures must offer retry without deleting valid saved credentials.
+- Collect separate normal-Wi-Fi, rapid/context-switch, and ten-minute mixed reports. Confirm peak players ≤3; retain cold/error/incomplete records. Repeat the core checks in the independent build after signing.
+
 
 - Confirm Expo Go opens the project without an SDK mismatch.
 - Confirm the first available video appears, uses the saved startup sound choice (Unmuted by default), and loops.
@@ -130,6 +179,10 @@ iOS receives a five-second preferred forward-buffer duration. This is a system h
 
 In Expo's development preview, long-press **Global** to see live/peak player counts, transition/error counts, unexpected-playback count, and prepared first-frame p95. **Share report** exports compact JSON with aggregate metrics, the last ten error/unexpected-playback records, and the latest five transitions. It explicitly counts omitted details. This avoids the clipping observed when forwarding long reports. **Share full report** includes the complete retained transition/event history. Both use the iOS share sheet. Diagnostics send no application API requests and contain no raw media URLs, credentials, or creator details. The hidden entry and progress sampling are disabled in release execution.
 
+Compact issues/transitions retain their feed context and auth generation across context switches. Native status/source-load failures include recognized iOS error domains and numeric codes when available; original error messages are discarded because they can contain signed URLs. Allocation failures distinguish a full shared player budget from a native creation failure. Progress is recorded independently of the first-frame display event so missing presentation evidence does not hide a running playback clock.
+
+The Plan 168 Channel → Global failure report showed shared-budget exhaustion. Returning from Spaces/Account had pushed duplicate Feed routes, each retaining a paused player. These returns now pop to the existing feed; router/coordinator regression tests verify one Feed and preserve prepared playback, the three-player cap, and manual pause. The phone repeat confirms recovery across 81 transitions: zero errors/issues, peak three players, and prepared-frame p95 about 124 ms. Channel entry still checks session/space access and cold-loads its first player; subsequent prepared swipes are fast. Initial-load outliers remain in the report rather than being counted as prepared performance. Subsequent native device acceptance is complete with the exceptions and limits recorded in Plan 168.
+
 The report records monotonic selection-to-first-frame timing separately from playing/progress evidence, preserves incomplete/failed/interrupted transitions, and separates initial-load samples. The displayed transition count includes the initial selection: one immediately after reload is expected, and prepared first-frame p95 has no samples until a prepared destination is selected. It retains up to 200 transitions and 1,000 events while keeping cumulative allocation/release totals; discarded history is counted explicitly. A separate ten-record issue history prevents progress updates from evicting every error or unexpected-playback detail. New unexpected-playback records include the selected publication and eligibility state; the coordinator pauses the affected player immediately. Such a record needs investigation and does not establish that overlapping audio was audible.
 
 For a normal-swipe sample, reload the Expo project to start a fresh diagnostic run, stay on Wi-Fi, and spend at least two seconds on each video before swiping forward. Capture at least 30 forward transitions, using the app's **Refresh** if the available list is shorter. Feed Refresh preserves the diagnostic run and adds another initial selection; reloading Expo resets it. Confirm the diagnostic transition count starts at one before each separate run. Share the report before mixing in rapid swipes or background tests. Run those as separate samples and label network/device conditions. The user's stable-Wi-Fi report records 31 prepared swipes with p95 122 ms and a 100 percent normal preparation rate; its attachment was truncated, limiting independent full-row verification. Mixed-direction/rapid/cellular runs retain their cold and incomplete samples; their lower preparation rates are not compared to the forward-only Wi-Fi target.
@@ -148,6 +201,12 @@ For the Phase D resource check, try normal and rapid swipes, then background/for
 
 ## Implementation boundaries
 
-`src/api/client.ts` owns anonymous HTTP requests and has a header-provider extension point for future authentication. `src/feed/adaptFeed.ts` converts unknown API data into the stable mobile item shape. `FeedStore` owns cursor paging, cancellation, merging, and refresh sessions; the hook exposes it to the native screen. The playback coordinator owns the bounded native preload window, releases obsolete entries before allocation, and ignores callbacks from released sources or earlier activations. HLS loading uses `replaceAsync`. Diagnostics are device-local development support.
+`src/auth/` owns native sessions, secure persistence, serialized identity changes, and foreground validation. API calls use `expo/fetch` with redirects rejected and cookies omitted; bearer credentials attach only to native-session/viewer paths on the configured API origin. Credentials never enter the player, poster loader, navigation parameters, or diagnostics.
 
-No application account, privileged API request, database change, persistent feed cache, or production viewing analytics is introduced by this increment.
+`src/feed/adaptFeed.ts` validates the minimized viewer contract and context. FeedStore owns cancellation, cursor protection, deduplication, refresh, and removal of media after access denial. Navigation replaces the one feed context rather than leaving stacks of player-owning feeds alive. The playback coordinator owns the previous/current/next window and combines app state, screen eligibility, scrolling, source readiness, and intentional pause. A process-wide player budget enforces a maximum of three allocations across replacements. Diagnostics remain development-only and device-local.
+
+Backend native credentials work only on native-session/viewer routes. Existing browser sessions and CSRF behavior remain separate; both clients call the same feed and space permission services. Native session, API/browser integration scripts, and fixture setup are documented in the repository README. No production viewing analytics is introduced by this increment.
+
+Plan 168 native account-switch follow-up: one Video unavailable → Retry incident froze all controls until full close/reopen, with subsequent repeats successful. The supplied mixed report has 51 selections, zero recorded errors, peak three players and one selected-player scrolling guard event; it does not capture the frozen incident. Terminal coordinator disposal now ignores queued callbacks from removed feeds; synchronous native loading failures become retryable errors and partial subscription setup rolls back its player/listeners. Three new host regressions pass with the full 103-test suite. The updated-build account-switch repeat stayed responsive across 76 selections, with zero errors and three peak players (prepared first-frame p95 about 135 ms). The original whole-app freeze remains recorded with unconfirmed root cause; no failed-source Retry was explicitly reported in the successful repeat. Native offline recovery to the same account without a password, explicit offline sign-out staying anonymous after full close/reopen, and saved startup Muted also passed. The first mixed run was about five minutes; a subsequent requested ten-minute protocol passed with 104 selections/frames, zero errors/incomplete, three peak players and prepared p95 about 136 ms. Three selected-player ineligible guard events are retained (one scrolling, two screen suppressed); no overlap/freeze was reported in that protocol. Final device access checks passed: denial stopped audible playback while Account stayed signed in, restoration plus Refresh recovered without login, and expired sign-in returned to anonymous Global. Test subscription restored and expired fixture session revoked; Plan 168 is Complete with the recorded limits.
+
+Known accessibility limit on the test iPhone: text-size slider left-to-middle looks good, but larger sizes clip text within pills. The user accepts this limitation for the current milestone; full maximum-size readability is not claimed. VoiceOver was explicitly deferred at the user's request; no physical screen-reader pass is claimed.

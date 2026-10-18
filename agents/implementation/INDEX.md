@@ -12,6 +12,7 @@ This file is a lightweight index for ongoing implementation work.
 
 ## Roadmaps
 - `agents/roadmaps/roadmap_create_video.md` — timeline-based Create Video composer
+- `agents/roadmaps/roadmap_native_viewing.md` — web and native viewing over a shared backend
 
 ## Recent Plans
 - `agents/implementation/plan_129.md` — Prompt/message targeting model completion
@@ -39,11 +40,13 @@ This file is a lightweight index for ongoing implementation work.
 - `agents/implementation/plan_165.md` — Moderation signal classification evolution (`polarity` + `signal_family`)
 - `agents/implementation/plan_166.md` — Retire moderation categories and move reporting entry to moderation user groups
 - `agents/implementation/plan_167.md` — Anonymous iOS video feed POC with Expo Go, vertical paging, and preloaded playback
+- `agents/implementation/plan_168.md` — Signed-in native viewing across Global and existing accessible personal/group/channel spaces
 
 ## Active / Next
-- Latest completed: `agents/implementation/plan_167.md` (A–F Complete — anonymous iPhone Expo Go POC)
+- Next native scope: creator profiles and authorized personal-space entry; detailed plan pending. `agents/implementation/plan_168.md` is Complete (A–H; VoiceOver deferred and other acceptance limits recorded).
+- Latest completed: `agents/implementation/plan_168.md` (A–H Complete — signed-in native Global/Spaces viewing alongside web; local commit authorized)
 - Other active work: `agents/implementation/plan_166.md` (moderation user groups)
-- Feature contract: `none`
+- Native feature contract: `agents/features/feature_02_personal-space-global-feed-context-integrity.md`
 - Check latest `plan_NN.md` with `Status: Active`.
 - Continue from that plan's `Resume Here` section.
 - If no plan is `Active`, create a new `plan_NN.md` from `PLAN_TEMPLATE.md`.
