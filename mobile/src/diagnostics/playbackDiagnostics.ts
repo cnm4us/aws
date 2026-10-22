@@ -1,4 +1,5 @@
 import type { PlayerErrorDetails } from '../playback/playerError';
+import { sanitizeBuildIdentity, type ViewerBuildIdentity } from '../config/buildPolicy';
 
 export type PlaybackDiagnosticEvent = PlayerErrorDetails & {
   type: 'allocation' | 'release' | 'load_started' | 'load_resolved' | 'selection' | 'ready' | 'first_frame' | 'error' | 'playing' | 'progress' | 'unexpected_playback' | 'lifecycle' | 'eligibility' | 'context' | 'restore';
@@ -44,7 +45,7 @@ function timings(values: number[]) {
     p95Ms: sorted[Math.ceil(sorted.length * 0.95) - 1], maxMs: sorted[sorted.length - 1] };
 }
 
-// No network transport: counters and a bounded event history live only on the development device.
+// No network transport: counters and a bounded event history live only on the device.
 export class PlaybackDiagnostics {
   private events: EventRecord[] = [];
   private transitions: Transition[] = [];
@@ -62,8 +63,29 @@ export class PlaybackDiagnostics {
   // Only live loads stay in this map. Retained transitions keep their own load's
   // timings even after release and progress-event rollover (at most 200 rows).
   private activeLoads = new Map<string, SourceLoad>();
+  private selectedSessions = new Set<number>();
+  private resetCount = 0;
+  private carriedPlayers = 0;
+  private sampleStartedAtMs: number;
+  private readonly build: ViewerBuildIdentity | undefined;
 
-  constructor(private readonly clock: () => number = () => performance.now()) {}
+  constructor(private readonly clock: () => number = () => performance.now(), build?: unknown) {
+    this.build = sanitizeBuildIdentity(build);
+    this.sampleStartedAtMs = clock();
+  }
+
+  // Begin a new measurement epoch without touching a coordinator or native player.
+  // Keep in-flight/preloaded source timings and current ownership. Events for the
+  // old activation cannot manufacture a partial transition in the new epoch.
+  reset() {
+    this.events = []; this.transitions = []; this.issues = [];
+    this.allocations = 0; this.releases = 0; this.unexpectedPlayback = 0;
+    this.droppedEvents = 0; this.droppedTransitions = 0; this.droppedIssues = 0;
+    this.carriedPlayers = [...this.liveBySession.values()].reduce((a,b) => a+b,0);
+    this.peakPlayers = this.carriedPlayers;
+    this.selectedSessions = new Set([...this.selectedSessions].filter(session => this.liveBySession.has(session)));
+    this.sampleStartedAtMs = this.clock(); this.resetCount++;
+  }
 
   session() {
     const session = ++this.nextSession;
@@ -111,11 +133,13 @@ export class PlaybackDiagnostics {
     if (event.type === 'selection' && event.publicationId != null && event.activation !== undefined) {
       this.transitions.push({ session, activation: event.activation, publicationId: event.publicationId,
         feedContext: event.feedContext, authGeneration: event.authGeneration,
-        initial: !this.transitions.some(row => row.session === session),
+        initial: !this.selectedSessions.has(session),
         selectedAtMs: atMs, prepared: Boolean(event.prepared), bufferedSeconds: event.bufferedSeconds ?? 0,
         firstFrameMs: null, progressMs: null, error: false, playingObserved: false, interrupted: false,
         sourceLoad: this.activeLoads.get(loadKey) });
       if (this.transitions.length > 200) { this.transitions.shift(); this.droppedTransitions++; }
+      this.selectedSessions.add(session);
+      if (this.selectedSessions.size > 200) this.selectedSessions.delete(this.selectedSessions.values().next().value!);
     }
     const transition = this.transitions.findLast(row => row.session === session && row.activation === event.activation);
     if (!transition) return;
@@ -132,10 +156,14 @@ export class PlaybackDiagnostics {
     const normal = this.transitions.filter(row => !row.initial);
     return {
       schemaVersion: 1,
+      ...(this.build ? { build: { ...this.build } } : {}),
+      sample: { startedAtMs: this.sampleStartedAtMs, resetCount: this.resetCount },
       generatedAt: new Date().toISOString(),
       clock: 'monotonic milliseconds',
-      note: 'First frame measures presentation readiness. Review progress and playing evidence separately. Interrupted, incomplete, and failed transitions remain in the records. sourceLoad times start at the load request; replaceResolvedMs measures source replacement completion, not buffered readiness.',
+      note: 'First frame measures presentation readiness. Review progress and playing evidence separately. Interrupted, incomplete, and failed transitions remain in the records. sourceLoad times start at the load request; replaceResolvedMs measures source replacement completion, not buffered readiness.'
+        + (this.resetCount ? ' Reset retains carriedPlayers and active source timings; carriedPlayers + allocations - releases equals livePlayers. New timings start at the next selection.' : ''),
       resources: { allocations: this.allocations, releases: this.releases,
+        ...(this.resetCount ? { carriedPlayers: this.carriedPlayers } : {}),
         livePlayers: [...this.liveBySession.values()].reduce((a, b) => a + b, 0), peakPlayers: this.peakPlayers,
         unexpectedPlayback: this.unexpectedPlayback },
       issues: this.issues.map(row => ({ ...row })), droppedIssues: this.droppedIssues,

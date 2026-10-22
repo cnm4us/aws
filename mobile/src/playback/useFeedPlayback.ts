@@ -2,10 +2,12 @@ import { useEffect, useLayoutEffect, useMemo, useSyncExternalStore } from 'react
 import { AppState } from 'react-native';
 import { createVideoPlayer, type VideoPlayer } from 'expo-video';
 import { PlaybackCoordinator, type PlayerPort } from './coordinator';
-import { developmentDiagnostics } from '../diagnostics/development';
+import { playbackDiagnostics } from '../diagnostics/development';
+import { viewerBuildPolicy } from '../config/build';
 import { PlayerBudget } from './playerBudget';
+import { createCaptionClock } from './captionClock';
 
-export interface NativePlayerPort extends PlayerPort { native: VideoPlayer }
+export interface NativePlayerPort extends PlayerPort { native: VideoPlayer; subscribeClock(listener: (seconds: number) => void): () => void }
 const playerBudget=new PlayerBudget(3);
 
 function createNativePlayer(): NativePlayerPort {
@@ -16,7 +18,9 @@ function createNativePlayer(): NativePlayerPort {
   native.muted = true;
   native.staysActiveInBackground = false;
   native.bufferOptions = { preferredForwardBufferDuration: 5 };
-  native.timeUpdateEventInterval = __DEV__ ? 0.25 : 0;
+  const diagnosticInterval = viewerBuildPolicy.diagnostics ? .25 : 0;
+  native.timeUpdateEventInterval = diagnosticInterval;
+  const clock = createCaptionClock(native, diagnosticInterval);
   return {
     native,
     load: url => native.replaceAsync({ uri: url, contentType: 'hls' }),
@@ -25,6 +29,8 @@ function createNativePlayer(): NativePlayerPort {
     setMuted: muted => { native.muted = muted; },
     seekToStart: () => { native.currentTime = 0; },
     currentTime: () => native.currentTime,
+    durationSeconds: () => native.duration,
+    subscribeClock: clock.subscribe,
     seekTo: async seconds => {
       native.currentTime=seconds;
       // The setter starts the native seek. Confirm the timeline reached its
@@ -46,18 +52,18 @@ function createNativePlayer(): NativePlayerPort {
       const subscription = native.addListener('playingChange', ({ isPlaying }) => listener(isPlaying));
       return () => subscription.remove();
     },
-    subscribeProgress: __DEV__ ? listener => {
+    subscribeProgress: viewerBuildPolicy.diagnostics ? listener => {
       const subscription = native.addListener('timeUpdate', ({ currentTime }) => listener(currentTime));
       return () => subscription.remove();
     } : undefined,
-    release: lease.release,
+    release: () => { clock.dispose(); lease.release(); },
   };
   } catch(error) {lease.release();throw error;}
 }
 
 export function useFeedPlayback(muted: boolean, eligible = true, context?:{feedContext:string;authGeneration:number}) {
   const {coordinator,diagnostic} = useMemo(() => {
-    const diagnostic=developmentDiagnostics?.session();
+    const diagnostic=playbackDiagnostics?.session();
     return {coordinator:new PlaybackCoordinator(createNativePlayer,diagnostic,muted),diagnostic};
   }, []);
   const snapshot = useSyncExternalStore(coordinator.subscribe, coordinator.getSnapshot);

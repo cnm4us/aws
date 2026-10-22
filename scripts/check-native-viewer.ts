@@ -29,7 +29,7 @@ async function main() {
       if (denied) {eq(Object.keys(native.body),['error']);} else {
         eq(native.body.context.space.id,id);eq(native.body.items.map((x:any)=>x.publicationId),web.body.items.map((x:any)=>x.publicationId));
         for(const item of native.body.items) {
-          eq(Object.keys(item).sort(),['publicationId','uploadId','spaceId','productionUlid','playbackUrl','posterUrl','creator','description','width','height','durationSeconds'].sort());
+          eq(Object.keys(item).sort(),['publicationId','uploadId','spaceId','productionUlid','playbackUrl','posterUrl','creator','description','width','height','durationSeconds','hasStory','storyPreview','hasCaptions'].sort());
           eq(Object.keys(item.creator).sort(),['id','displayName','avatarUrl'].sort());
         }
       }

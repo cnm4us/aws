@@ -1,9 +1,11 @@
-import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Action } from '../ui/Message';
+import type { CaptionPreferences } from './captionPreferences';
 import type { PlaybackPreferences, PlaybackPreferencesSnapshot } from './playbackPreferences';
 
-export function PlaybackSettings({ visible, onClose, preferences, snapshot }: {
+export function PlaybackSettings({ visible, onClose, preferences, snapshot, captionPreferences, captions }: {
+  captionPreferences: CaptionPreferences; captions: ReturnType<CaptionPreferences['getSnapshot']>;
   visible: boolean;
   onClose: () => void;
   preferences: PlaybackPreferences;
@@ -17,7 +19,7 @@ export function PlaybackSettings({ visible, onClose, preferences, snapshot }: {
             <Text style={styles.title} accessibilityRole="header">Playback settings</Text>
             <Action label="Done" onPress={onClose} />
           </View>
-          <Text style={styles.label}>Start videos</Text>
+          <ScrollView contentContainerStyle={{gap: 20}}><Text style={styles.label}>Start videos</Text>
           <View style={styles.choices} accessibilityRole="radiogroup">
             {[false, true].map(muted => (
               <Pressable key={String(muted)} accessibilityRole="radio"
@@ -32,6 +34,18 @@ export function PlaybackSettings({ visible, onClose, preferences, snapshot }: {
           <Text style={styles.body}>Applies the next time you open the app. Use Mute or Unmute to change sound while browsing.</Text>
           {snapshot.saving && <View style={styles.saving}><ActivityIndicator color="#ffffff" /><Text style={styles.body}>Saving…</Text></View>}
           {snapshot.error && <Text style={styles.error} accessibilityRole="alert">{snapshot.error}</Text>}
+          <Text style={styles.label}>Captions</Text>
+          <View style={styles.choices} accessibilityRole="radiogroup">
+            {[false, true].map(enabled => <Pressable key={String(enabled)} accessibilityRole="radio"
+              accessibilityLabel={`Captions ${enabled ? 'On' : 'Off'}`} accessibilityState={{ checked: captions.enabled === enabled, disabled: !captions.ready }}
+              disabled={!captions.ready} onPress={() => { void captionPreferences.setEnabled(enabled); }} style={[styles.choice, captions.enabled === enabled && styles.selected]}>
+              <Text style={styles.choiceText}>{enabled ? 'On' : 'Off'}</Text>
+            </Pressable>)}
+          </View>
+          <Text style={styles.body}>Applies now and next time you open the app, where captions are available. Story expansion temporarily hides captions.</Text>
+          {captions.saving && <Text style={styles.body}>Saving captions…</Text>}
+          {captions.error && <View><Text accessibilityRole="alert" style={styles.error}>{captions.error}</Text><Action label="Retry saving captions" onPress={() => { void captionPreferences.retry(); }}/></View>}
+          </ScrollView>
         </SafeAreaView>
       </View>
     </Modal>
@@ -40,7 +54,7 @@ export function PlaybackSettings({ visible, onClose, preferences, snapshot }: {
 
 const styles = StyleSheet.create({
   backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.65)' },
-  panel: { backgroundColor: '#18181c', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, gap: 20 },
+  panel: { maxHeight: '90%', backgroundColor: '#18181c', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, gap: 20 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   title: { color: '#ffffff', fontSize: 22, fontWeight: '700', flexShrink: 1 },
   label: { color: '#ffffff', fontSize: 18, fontWeight: '600' },

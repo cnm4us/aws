@@ -13,14 +13,19 @@ import type { FeedVideoItem } from './types';
 import { useFeedPlayback } from '../playback/useFeedPlayback';
 import { VideoSurface } from '../playback/VideoSurface';
 import { PagingController } from '../playback/paging';
-import { developmentDiagnostics } from '../diagnostics/development';
+import { playbackDiagnostics } from '../diagnostics/development';
 import type { PlaybackPreferences, PlaybackPreferencesSnapshot } from '../preferences/playbackPreferences';
 import type { FeedCheckpoint, PlaybackCheckpoint } from '../navigation/viewerJourney';
+import { TextResources } from '../content/resources';
+import { CaptionLayer } from '../content/CaptionLayer';
+import type { CaptionPreferences } from '../preferences/captionPreferences';
+import type { ApiClient } from '../api/client';
 
 export type FeedPlaybackHandle={capture:()=>PlaybackCheckpoint;release:()=>void};
 
 
-export function FeedScreen({ context, preferences, sound, focused, onSpaces, onAccount, onSettings, onGlobal, onCreator, registerPlayback, restore, onBackProfile }: {
+export function FeedScreen({ context, preferences, sound, captionPreferences, captions, focused, onSpaces, onAccount, onSettings, onGlobal, onCreator, registerPlayback, restore, onBackProfile }: {
+  captionPreferences: CaptionPreferences; captions: ReturnType<CaptionPreferences['getSnapshot']>;
   context: FeedContext; preferences: PlaybackPreferences; sound: PlaybackPreferencesSnapshot; focused: boolean;
   onSpaces:()=>void;onAccount:()=>void;onSettings:()=>void;onGlobal:()=>void;
   onCreator?:(id:number)=>void;registerPlayback?:(handle:FeedPlaybackHandle)=>()=>void;
@@ -35,7 +40,7 @@ export function FeedScreen({ context, preferences, sound, focused, onSpaces, onA
   return <SafeAreaView style={styles.screen} edges={['top','bottom']}>
     <View style={styles.toolbar}>
       <View style={styles.titleRow}>
-        <Pressable onLongPress={__DEV__ ? sharePlaybackDiagnostics : undefined} accessibilityRole="header" style={{flex:1}}>
+        <Pressable onLongPress={playbackDiagnostics ? sharePlaybackDiagnostics : undefined} accessibilityRole="header" style={{flex:1}}>
           <Text style={styles.heading}>{context.kind==='global'?'Global':context.name}</Text>
           {context.kind==='space' && <Text style={{color:'#c7c7ce'}}>{context.type}</Text>}
         </Pressable>
@@ -55,7 +60,7 @@ export function FeedScreen({ context, preferences, sound, focused, onSpaces, onA
           <View style={styles.headerActions}><Action label="Spaces" onPress={onSpaces}/><Action label="Global" onPress={onGlobal}/></View>
         </View> : <FeedSession key={snapshot.sessionId} store={store} snapshot={snapshot} muted={sound.muted}
           onToggleMute={preferences.toggleMute} eligible={!!eligible} diagnosticContext={{feedContext:contextKey(context),authGeneration:auth.generation}}
-          restore={restore} onCreator={onCreator} registerPlayback={registerPlayback}/>}
+          restore={restore} onCreator={onCreator} registerPlayback={registerPlayback} client={client} context={context} captionPreferences={captionPreferences} captions={captions}/>}
       {(auth.status==='unavailable' || (context.kind==='space' && access.checking) || auth.validating) &&
         <View style={[StyleSheet.absoluteFill,{backgroundColor:'#000',padding:20,gap:12}]}>
           <Message title={auth.status==='unavailable'?'Cannot verify access':'Checking access'} busy={auth.status!=='unavailable'}
@@ -72,10 +77,11 @@ export function FeedScreen({ context, preferences, sound, focused, onSpaces, onA
   </SafeAreaView>;
 }
 
-function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosticContext, restore, onCreator, registerPlayback }: {
+function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosticContext, restore, onCreator, registerPlayback, client, context, captionPreferences, captions }: {
   store: FeedStore; snapshot: FeedSnapshot; muted: boolean; onToggleMute: () => void; eligible: boolean;
   diagnosticContext:{feedContext:string;authGeneration:number};
   restore?:FeedCheckpoint;onCreator?:(id:number)=>void;registerPlayback?:(handle:FeedPlaybackHandle)=>()=>void;
+  client: ApiClient; context: FeedContext; captionPreferences: CaptionPreferences; captions: ReturnType<CaptionPreferences['getSnapshot']>;
 }) {
   const [height, setHeight] = useState(0);
   const [index, setIndex] = useState(()=>Math.max(0,snapshot.items.findIndex(item=>item.publicationId===snapshot.resume?.restoredPublicationId)));
@@ -83,6 +89,12 @@ function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosti
   const items = useRef(snapshot.items);
   items.current = snapshot.items;
   const { coordinator, snapshot: playback } = useFeedPlayback(muted, eligible, diagnosticContext);
+  const resources = useMemo(() => new TextResources(client, context, error => store.denyAccess(error)), [client, contextKey(context), store]);
+  const textEligible = eligible && playback.appActive && playback.screenEligible && !playback.scrolling;
+  const [storyExpanded, setStoryExpanded] = useState(false);
+  const [textHeight, setTextHeight] = useState(0);
+  useLayoutEffect(() => { if (!textEligible) { resources.clear(); setStoryExpanded(false); } }, [resources, textEligible]);
+  useEffect(() => resources.clear, [resources]);
   const initialSelection=useRef(false);
   useLayoutEffect(()=>registerPlayback?.({capture:coordinator.capture,release:coordinator.dispose}),[coordinator,registerPlayback]);
   const paging = useMemo(() => new PagingController(
@@ -124,7 +136,7 @@ function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosti
       {height > 0 && <FlatList
         ref={list}
         data={snapshot.items}
-        extraData={{ index, playback, height }}
+        extraData={{ index, playback, height, textEligible }}
         keyExtractor={item => String(item.publicationId)}
         pagingEnabled
         initialNumToRender={2}
@@ -135,7 +147,9 @@ function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosti
         showsVerticalScrollIndicator={false}
         getItemLayout={(_data, itemIndex) => ({ length: height, offset: height * itemIndex, index: itemIndex })}
         renderItem={({ item, index: rowIndex }) => (
-          <FeedCard item={item} height={height} onCreator={rowIndex===index?onCreator:undefined}>
+          <FeedCard item={item} height={height} onCreator={rowIndex===index?onCreator:undefined}
+            resources={resources} active={rowIndex===index && textEligible} onStoryExpanded={rowIndex===index?setStoryExpanded:undefined}
+            onTextHeight={rowIndex===index?setTextHeight:undefined}>
             {rowIndex === index && item.publicationId === playback.publicationId && item.playbackUrl && (
               <VideoSurface coordinator={coordinator} snapshot={playback} posterUrl={item.posterUrl} onNext={next} />
             )}
@@ -152,8 +166,20 @@ function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosti
         onMomentumScrollEnd={event => paging.endMomentum(event.nativeEvent.contentOffset.y)}
         ListFooterComponent={<View style={{ height }}><FeedFooter snapshot={snapshot} store={store} /></View>}
       />}
+      {/* Upload duration may precede production edits; bound cues with the loaded video's duration. */}
+      {snapshot.items[index]?.hasCaptions && playback.publicationId === snapshot.items[index].publicationId && <CaptionLayer
+        key={`${playback.activation}:${snapshot.items[index].publicationId}`} resources={resources}
+        publicationId={snapshot.items[index].publicationId}
+        duration={playback.player?.durationSeconds?.() || null}
+        player={playback.player} paused={playback.userPaused} bottom={Math.min(textHeight + 40, height * .65)}
+        visible={captions.ready && captions.enabled && textEligible && !storyExpanded && !playback.failed && !playback.restoring && !playback.restoreError}/>}
       {snapshot.items[index]?.playbackUrl && (
         <View style={styles.mute}>
+          {snapshot.items[index]?.hasCaptions && <Pressable accessibilityRole="button"
+            accessibilityLabel={captions.enabled ? 'Hide captions' : 'Show captions'} accessibilityState={{ selected: captions.enabled, disabled: !captions.ready }}
+            disabled={!captions.ready} onPress={() => { void captionPreferences.toggle(); }} style={styles.cc}>
+            <Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>{captions.enabled ? 'CC On' : 'CC Off'}</Text>
+          </Pressable>}
           <Action label={muted ? 'Unmute' : 'Mute'} onPress={onToggleMute} />
         </View>
       )}
@@ -162,19 +188,24 @@ function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosti
 }
 
 export function sharePlaybackDiagnostics() {
-    if (!developmentDiagnostics) return;
-    const report = developmentDiagnostics.report();
-    const compactReport = developmentDiagnostics.shareReport();
+    const diagnostics = playbackDiagnostics;
+    if (!diagnostics) return;
+    const report = diagnostics.report();
+    const compactReport = diagnostics.shareReport();
     const p95 = report.summary.preparedFrames.p95Ms;
     const share = (full: boolean) => {
       const exported = full ? report : compactReport;
       void Share.share({ message: JSON.stringify(exported, null, full ? 2 : undefined), title: 'Video playback diagnostics' }).catch(() => {});
     };
     Alert.alert('Playback diagnostics',
-      `Players: ${report.resources.livePlayers} live, ${report.resources.peakPlayers} peak.\nTransitions: ${report.summary.transitions}; errors: ${report.summary.errors}.\nUnexpected playback: ${report.resources.unexpectedPlayback}.\nPrepared first-frame p95: ${p95 === null ? 'no samples yet' : `${Math.round(p95)} ms`}.`,
+      `${report.build?.kind ?? 'development'} ${report.build?.appVersion ?? ''} (${report.build?.appBuild ?? '?'})\nSource: ${report.build?.sourceId?.slice(0,12) ?? 'unprepared'}\nPlayers: ${report.resources.livePlayers} live, ${report.resources.peakPlayers} peak.\nTransitions: ${report.summary.transitions}; errors: ${report.summary.errors}.\nUnexpected playback: ${report.resources.unexpectedPlayback}.\nPrepared first-frame p95: ${p95 === null ? 'no samples yet' : `${Math.round(p95)} ms`}.`,
       [{ text: 'Close', style: 'cancel' },
         { text: 'Share report', onPress: () => share(false) },
-        { text: 'Share full report', onPress: () => share(true) }]);
+        { text: 'Share full report', onPress: () => share(true) },
+        { text: 'Reset diagnostics', onPress: () => {
+          diagnostics.reset();
+          Alert.alert('Diagnostics reset', 'The next video selection starts the new timing sample. Playback and settings are unchanged.');
+        } }]);
   };
 
 export function FeedFooter({ snapshot, store }: { snapshot: FeedSnapshot; store: FeedStore }) {
@@ -194,6 +225,7 @@ const styles = StyleSheet.create({
   titleRow: { flexDirection:'row', alignItems:'center', gap:12 },
   headerActions: { flexDirection: 'row', gap: 8, flexWrap:'wrap', justifyContent:'center', paddingBottom:4 },
   heading: { color: '#ffffff', fontSize: 24, fontWeight: '700', textShadowColor: '#000000', textShadowRadius: 8 },
-  mute: { position: 'absolute', right: 16, bottom: 24 },
+  mute: { position: 'absolute', right: 16, bottom: 24, gap: 8, maxWidth: 80 },
+  cc: { minHeight: 44, paddingHorizontal: 8, borderRadius: 12, borderWidth: 1, borderColor: '#777', backgroundColor: 'rgba(0,0,0,0.7)', alignItems: 'center', justifyContent: 'center' },
   unavailable: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center' },
 });

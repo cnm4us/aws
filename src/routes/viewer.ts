@@ -6,10 +6,31 @@ import { serializeViewerFeedWithCreators, parseViewerQuery } from '../features/f
 import { aroundPublication } from '../features/feeds/resume';
 import { getCreatorView } from '../features/profiles/viewer';
 import { sendViewerError } from './native-session';
+import { viewerText, textId, type TextContext } from '../features/publications/viewerText';
 
 export function createViewerRouter() {
   const router=Router();
   router.use((_req,res,next)=>{res.set('Cache-Control','no-store');next();});
+  for (const scope of ['global', 'space'] as const) {
+    const prefix = scope === 'global' ? '/feed/global/publications/:publicationId' : '/spaces/:spaceId/publications/:publicationId';
+    for (const resource of ['story', 'captions.vtt'] as const) router.get(`${prefix}/${resource}`, async (req, res) => {
+      const controller = new AbortController();
+      const cancel = () => controller.abort();
+      res.on('close', cancel);
+      try {
+        const principal = await resolveViewer(req, scope === 'space');
+        const publicationId = textId(req.params.publicationId);
+        const context: TextContext = scope === 'global' ? { kind: 'global' } : { kind: 'space', spaceId: textId((req.params as Record<string,string>).spaceId) };
+        const userId = principal?.viewer.id ?? null;
+        if (resource === 'story') res.json(await viewerText.story(context, publicationId, userId));
+        else {
+          const text = await viewerText.captions(context, publicationId, userId, controller.signal);
+          res.set('Content-Type', 'text/vtt; charset=utf-8').send(text);
+        }
+      } catch (e) { if (!controller.signal.aborted) sendViewerError(res, e); }
+      finally { res.off('close', cancel); }
+    });
+  }
   router.get('/creators/:userId',async(req,res)=>{
     try {
       const p=await resolveViewer(req,false);

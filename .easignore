@@ -18,6 +18,9 @@
 !/mobile/App.tsx
 !/mobile/src
 !/mobile/assets
+!/mobile/scripts
+/mobile/scripts/*
+!/mobile/scripts/preview-build.cjs
 
 # Also exclude local state and credentials nested within allowed directories.
 node_modules/

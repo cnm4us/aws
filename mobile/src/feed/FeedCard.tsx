@@ -1,20 +1,25 @@
 import { memo, type ReactNode } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { FeedVideoItem } from './types';
+import type { TextResources } from '../content/resources';
+import { StoryPanel } from '../content/StoryPanel';
 
-export const FeedCard = memo(function FeedCard({ item, height, children, onCreator }: {
+export const FeedCard = memo(function FeedCard({ item, height, children, onCreator, resources, active = true, onStoryExpanded, onTextHeight }: {
   item: FeedVideoItem; height: number; children?: ReactNode; onCreator?:(id:number)=>void;
+  resources?: TextResources; active?: boolean; onStoryExpanded?: (expanded: boolean) => void; onTextHeight?: (height: number) => void;
 }) {
   return (
     <View style={[styles.card, { height }]}>
       {item.posterUrl && <Image source={{ uri: item.posterUrl }} resizeMode="contain" style={StyleSheet.absoluteFill} />}
       {children}
-      <View style={styles.caption} pointerEvents="box-none">
+      <View style={styles.caption} pointerEvents="box-none" onLayout={event => onTextHeight?.(event.nativeEvent.layout.height)}>
         {item.creator.id && onCreator ? <Pressable onPress={()=>onCreator(item.creator.id!)} style={{minHeight:44,justifyContent:'center'}}
           accessibilityRole="button" accessibilityLabel={`View ${item.creator.displayName}'s profile`}>
           <Text style={styles.creator}>{item.creator.displayName}</Text>
         </Pressable> : <Text style={styles.creator}>{item.creator.displayName}</Text>}
-        {item.description && <Text pointerEvents="none" style={styles.description} numberOfLines={3}>{item.description}</Text>}
+        {item.hasStory && resources && onStoryExpanded ? <StoryPanel publicationId={item.publicationId} preview={item.storyPreview ?? null}
+          resources={resources} active={active} height={height} onExpanded={onStoryExpanded}/> :
+          !item.hasStory && item.description && <Text pointerEvents="none" style={styles.description} numberOfLines={3}>{item.description}</Text>}
         {!item.playbackUrl && <Text style={styles.description}>This video is unavailable. Swipe to continue.</Text>}
       </View>
     </View>

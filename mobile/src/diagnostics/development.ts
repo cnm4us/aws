@@ -1,4 +1,6 @@
 import { PlaybackDiagnostics } from './playbackDiagnostics';
+import { viewerBuildIdentity, viewerBuildPolicy } from '../config/build';
 
-// Excluded from release execution; never posted to the application API.
-export const developmentDiagnostics = __DEV__ ? new PlaybackDiagnostics() : null;
+// Device-local, explicit internal preview opt-in; no application API transport.
+export const playbackDiagnostics = viewerBuildPolicy.diagnostics
+  ? new PlaybackDiagnostics(undefined, viewerBuildIdentity) : null;

@@ -83,6 +83,7 @@ export function adaptViewerFeedPage(value: unknown, expected: FeedContext, ancho
     items.push({publicationId,uploadId:id(row.uploadId),spaceId:id(row.spaceId),productionUlid:text(row.productionUlid,26),
       playbackUrl:httpsUrl(row.playbackUrl),posterUrl:httpsUrl(row.posterUrl),
       creator:{id:id(creator?.id),displayName:text(creator?.displayName,120)??'Creator',avatarUrl:httpsUrl(creator?.avatarUrl)},
+      hasStory:row.hasStory===true,storyPreview:text(row.storyPreview,200),hasCaptions:row.hasCaptions===true,
       description:text(row.description,2000),width:positiveNumber(row.width),height:positiveNumber(row.height),durationSeconds:positiveNumber(row.durationSeconds)});
   }
   if(anchor!==undefined) {

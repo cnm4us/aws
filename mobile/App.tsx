@@ -9,13 +9,13 @@ import { usePlaybackPreferences } from './src/preferences/usePlaybackPreferences
 
 export default function App() {
   const environment = useMemo(() => readEnvironment(), []);
-  const { store: preferences, snapshot: sound } = usePlaybackPreferences();
+  const { store: preferences, snapshot: sound, captionPreferences, captions } = usePlaybackPreferences();
   return (
     <SafeAreaProvider>
       <StatusBar barStyle="light-content" />
         {environment.ok ? (sound.ready ? (
           <AuthProvider baseUrl={environment.value.apiBaseUrl}>
-            <ViewerNavigator preferences={preferences} sound={sound}/>
+            <ViewerNavigator preferences={preferences} sound={sound} captionPreferences={captionPreferences} captions={captions}/>
           </AuthProvider>
         ) : <Message title="Loading preferences" busy />) : (
           <Message title="Configure your connection" message={environment.message} />

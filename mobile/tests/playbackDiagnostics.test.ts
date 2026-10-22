@@ -2,6 +2,47 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { PlaybackDiagnostics } from '../src/diagnostics/playbackDiagnostics';
 
+test('reset retains live ownership and speculative readiness without partial old transitions', () => {
+  let now = 0;
+  const diagnostics = new PlaybackDiagnostics(() => now, { kind: 'internal-preview', diagnostics: true, appVersion: '0.1.0', appBuild: '2', sourceId: 'a'.repeat(64), token: 'private' });
+  const record = diagnostics.session();
+  record({ type: 'context', feedContext: 'space:9', authGeneration: 2 });
+  record({ type: 'selection', activation: 1, publicationId: 1 });
+  record({ type: 'allocation', publicationId: 1, livePlayers: 1 });
+  record({ type: 'allocation', publicationId: 2, livePlayers: 2 });
+  record({ type: 'load_started', publicationId: 2 });
+  now = 100; record({ type: 'load_resolved', publicationId: 2 });
+  record({ type: 'error', activation: 1 });
+  now = 200; diagnostics.reset();
+  assert.deepEqual(diagnostics.report().resources, { allocations: 0, releases: 0, carriedPlayers: 2, livePlayers: 2, peakPlayers: 2, unexpectedPlayback: 0 });
+  assert.deepEqual(diagnostics.report().sample, { startedAtMs: 200, resetCount: 1 });
+  record({ type: 'first_frame', activation: 1 });
+  record({ type: 'progress', activation: 1, currentTime: 9 });
+  assert.equal(diagnostics.report().summary.transitions, 0, 'old activation cannot count as a new timing sample');
+  assert.equal(diagnostics.report().issues.length, 0);
+  now = 300; record({ type: 'ready', publicationId: 2 });
+  now = 400; record({ type: 'selection', publicationId: 2, activation: 2, prepared: true, bufferedSeconds: 6 });
+  now = 475; record({ type: 'first_frame', activation: 2 });
+  record({ type: 'playing', activation: 2, playing: true });
+  const row = diagnostics.shareReport().recentTransitions[0];
+  assert.equal(row.initial, false); assert.equal(row.firstFrameMs, 75); assert.equal(row.feedContext, 'space:9');
+  assert.deepEqual(row.sourceLoad, { startedAtMs: 0, replaceResolvedMs: 100, readyMs: 300 });
+  record({ type: 'release', publicationId: 1, livePlayers: 1 });
+  record({ type: 'release', publicationId: 2, livePlayers: 0 });
+  const resources = diagnostics.report().resources;
+  assert.equal(resources.carriedPlayers! + resources.allocations - resources.releases, resources.livePlayers);
+  assert.equal(resources.livePlayers, 0);
+  assert.equal(diagnostics.report().summary.normalPreparationRate, 1);
+  assert.deepEqual(diagnostics.report().build, diagnostics.shareReport().build);
+  assert.equal(JSON.stringify(diagnostics.shareReport()).includes('private'), false);
+  diagnostics.report().build!.appBuild = '999';
+  assert.equal(diagnostics.report().build!.appBuild, '2');
+  diagnostics.reset();
+  const next = diagnostics.session(); next({ type: 'selection', activation: 1, publicationId: 1 });
+  assert.equal(diagnostics.report().transitions[0].initial, true, 'new feed still has a cold initial selection');
+  assert.equal(diagnostics.report().resources.carriedPlayers, 0);
+});
+
 test('first-frame timing is monotonic, counted once, and separate from playing/progress evidence', () => {
   let now = 0;
   const diagnostics = new PlaybackDiagnostics(() => now);

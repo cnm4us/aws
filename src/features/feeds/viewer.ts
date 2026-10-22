@@ -14,6 +14,7 @@ export function serializeViewerVideo(item: GlobalFeedItem) {
     playbackUrl:url(u.cdn_master),posterUrl:url(u.poster_cdn),
     creator:{id:id(owner?.id),displayName:owner?.displayName?.trim() || null,avatarUrl:null},
     description:typeof u.description==='string' ? u.description : null,
+    hasStory:p.has_story===true,storyPreview:typeof p.story_preview==='string'?p.story_preview.slice(0,200):null,hasCaptions:p.has_captions===true,
     width:number(u.width),height:number(u.height),durationSeconds:number(u.duration_seconds) };
 }
 export function serializeViewerFeed(feed: FeedResponse, context: unknown) {

@@ -42,10 +42,15 @@ This file is a lightweight index for ongoing implementation work.
 - `agents/implementation/plan_167.md` — Anonymous iOS video feed POC with Expo Go, vertical paging, and preloaded playback
 - `agents/implementation/plan_168.md` — Signed-in native viewing across Global and existing accessible personal/group/channel spaces
 - `agents/implementation/plan_169.md` — Creator profiles, authorized personal-space entry, and return to the original native feed/video
+- `agents/implementation/plan_170.md` — Native publication stories and timed captions; A–F Complete for recorded bundled milestone with limits
+- `agents/implementation/plan_171.md` — Bundled internal iPhone Release preview; A–F Complete, build2 accepted with limits
 
 ## Active / Next
-- Latest completed native increment: `agents/implementation/plan_169.md` (A–F Complete for the recorded iPhone development milestone; creator profiles and authorized personal-feed return, final 40/40 normal transitions prepared, p95 120.38 ms, peak three. Coverage limits and prior unconfirmed native-freeze cause retained. Recent plan retained through review/Git handoff; user authorized commit/push, staging in progress).
-- Next native scope: remaining viewing/discovery from `agents/roadmaps/roadmap_native_viewing.md`; create its detailed plan before implementation.
+- Latest completed bundled milestone: `agents/implementation/plan_171.md` — A–F Complete. Signed 0.1.0/build2 installed, Metro/tunnel off, API online. Functional phone acceptance and stable-Wi-Fi/CC-on sample pass: 40/40 normal prepared, p95 126.87ms, peak3, zero errors/incomplete/unexpected playback; no user-observed spinners/freeze/audio overlap. Fixtures restored, no active test sessions. Medium text readable; larger-size clipping and recorded coverage limits remain. Uncommitted/unpushed; retained through Git handoff.
+- Completed text milestone: `agents/implementation/plan_170.md` — A–F Complete. Publication-correct stories/captions, saved CC, host/API/browser/rendered and bundled phone acceptance, with explicit limits.
+- Proposed next native work: focused control/header/menu UI refinement recorded in `agents/roadmaps/roadmap_native_viewing.md`; no implementation or new plan started.
+- Latest completed native increment: `agents/implementation/plan_169.md` (A–F Complete for the recorded iPhone development milestone; committed/pushed as `49e8dd6`; creator profiles and authorized personal-feed return, final 40/40 normal transitions prepared, p95 120.38 ms, peak three. Coverage limits and prior unconfirmed native-freeze cause retained).
+- Later native scope: discovery/shared links, participation and TestFlight/public-release distribution from `agents/roadmaps/roadmap_native_viewing.md`; separate plans before implementation. Bundled internal distribution is complete for Plan171's recorded internal milestone; store release remains separate.
 - Previous completed: `agents/implementation/plan_168.md` (A–H Complete — signed-in native Global/Spaces viewing alongside web; committed/pushed as `6cfad70`; VoiceOver deferred and other acceptance limits recorded)
 - Other active work: `agents/implementation/plan_166.md` (moderation user groups)
 - Native feature contract: `agents/features/feature_02_personal-space-global-feed-context-integrity.md`

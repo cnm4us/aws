@@ -11,6 +11,7 @@ export interface PlayerPort {
   setMuted(muted: boolean): void;
   seekToStart(): void;
   currentTime?(): number;
+  durationSeconds?(): number;
   seekTo?(seconds: number): Promise<void>;
   release(): void;
   status(): PlaybackStatus;
@@ -182,6 +183,9 @@ export class PlaybackCoordinator<P extends PlayerPort> {
     };
     try {
       if(!entry.player.seekTo)throw Error('Time restoration unavailable');
+      // A publication may play an edited production with a different duration than its upload.
+      const duration = entry.player.durationSeconds ? entry.player.durationSeconds() : entry.item.durationSeconds;
+      if (duration && Number.isFinite(duration) && duration > 0) pending.seconds = Math.min(pending.seconds, Math.max(0, duration - .1));
       void entry.player.seekTo(pending.seconds).then(()=>finish(),finish);
     }catch(error){finish(error);}
   }
@@ -198,9 +202,8 @@ export class PlaybackCoordinator<P extends PlayerPort> {
     const item=items[index];if(!item || this.disposed)return;
     this.clearRestore();
     if(!item.playbackUrl){this.publish({restoring:false,restoreError:null});this.selectAt(items,index);this.publish({userPaused:restore.userPaused});return;}
-    const duration=item.durationSeconds;
     const seconds=Number.isFinite(restore.positionSeconds)?Math.max(0,restore.positionSeconds):0;
-    this.pendingRestore={publicationId:item.publicationId,seconds:duration?Math.min(seconds,Math.max(0,duration-0.1)):seconds,userPaused:restore.userPaused,started:false,journeyGeneration:restore.journeyGeneration};
+    this.pendingRestore={publicationId:item.publicationId,seconds,userPaused:restore.userPaused,started:false,journeyGeneration:restore.journeyGeneration};
     const pending=this.pendingRestore;
     pending.timer=setTimeout(()=>{
       if(this.pendingRestore!==pending || this.disposed)return;

@@ -29,7 +29,12 @@
     "test": "tsx --test tests/*.test.ts",
     "check:api": "node --env-file-if-exists=.env --import tsx scripts/check-public-feed.ts",
     "export:ios": "expo export --platform ios",
-    "start:dev-client": "expo start --dev-client --tunnel"
+    "start:dev-client": "expo start --dev-client --tunnel",
+    "check:text": "node --env-file-if-exists=.env --import tsx scripts/check-text-api.ts",
+    "prepare:preview": "node scripts/preview-build.cjs prepare",
+    "export:preview": "node scripts/preview-build.cjs export",
+    "build:preview": "node scripts/preview-build.cjs build",
+    "eas-build-pre-install": "node scripts/preview-build.cjs verify"
   },
   "private": true
 }

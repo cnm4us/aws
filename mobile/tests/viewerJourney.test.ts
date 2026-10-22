@@ -18,6 +18,18 @@ class Player implements PlayerPort {
   seekTo=async(seconds:number)=>{this.seeks.push(seconds);this.seconds=seconds;};
   release=()=>{this.released=true;};
 }
+test('return seeks and clamps using loaded production duration, not pre-edit upload metadata', async () => {
+  for (const [uploadDuration, loadedDuration, expected] of [[1, 20, 8], [30, 5, 4.9], [1, 0, 8]]) {
+    const player = Object.assign(new Player(), { durationSeconds: () => loadedDuration });
+    const coordinator = new PlaybackCoordinator(() => player);
+    coordinator.setAppActive(true);
+    coordinator.restoreAt([{ ...item, durationSeconds: uploadDuration }], 0, { positionSeconds: 8, userPaused: true });
+    await tick();
+    assert.equal(player.seeks[0], expected);
+    assert.equal(coordinator.getSnapshot().userPaused, true); assert.equal(player.playing, false);
+    coordinator.dispose();
+  }
+});
 test('bounded creator detours keep one original context and reject obsolete entry',()=>{
   const journey=new ViewerJourney();
   const origin={apiOrigin:'https://api.test',authGeneration:2,context:{kind:'global' as const},publicationId:9,positionSeconds:8,userPaused:true};

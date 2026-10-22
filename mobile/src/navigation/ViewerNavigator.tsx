@@ -13,12 +13,13 @@ import type { PlaybackPreferences,PlaybackPreferencesSnapshot } from '../prefere
 import { CreatorProfileScreen } from '../profiles/CreatorProfileScreen';
 import { ViewerJourney, type FeedCheckpoint } from './viewerJourney';
 import { returnToFeed } from './returnToFeed';
+import type { CaptionPreferences } from '../preferences/captionPreferences';
 import { viewerIdentityKey } from './viewerIdentityKey';
 
 type Routes={Feed:undefined;Spaces:undefined;Account:undefined;Settings:undefined;CreatorProfile:{creatorId:number;journeyGeneration:number}};
 const Stack=createNativeStackNavigator<Routes>();
-type Props={preferences:PlaybackPreferences;sound:PlaybackPreferencesSnapshot};
-export function ViewerNavigator({preferences,sound}:Props) {
+type Props={preferences:PlaybackPreferences;sound:PlaybackPreferencesSnapshot;captionPreferences:CaptionPreferences;captions:ReturnType<CaptionPreferences['getSnapshot']>};
+export function ViewerNavigator({preferences,sound,captionPreferences,captions}:Props) {
   const {store:auth,snapshot,baseUrl}=useAuth();
   const journey=useMemo(()=>new ViewerJourney(),[baseUrl,snapshot.generation]);
   const visit=useSyncExternalStore(journey.subscribe,journey.getSnapshot);
@@ -49,7 +50,7 @@ export function ViewerNavigator({preferences,sound}:Props) {
     <Stack.Navigator screenOptions={{contentStyle:{backgroundColor:'#000'}}}>
       <Stack.Group navigationKey={viewerIdentityKey(baseUrl,snapshot.viewer?.id)}>
       <Stack.Screen name="Feed" options={{headerShown:false}}>
-        {props=><FeedRoute {...props} key={`${snapshot.generation}:${contextKey(context)}:${current.visitId}`} context={context} select={select} preferences={preferences} sound={sound}
+        {props=><FeedRoute {...props} key={`${snapshot.generation}:${contextKey(context)}:${current.visitId}`} context={context} select={select} preferences={preferences} sound={sound} captionPreferences={captionPreferences} captions={captions}
           restore={current.restore} registerPlayback={registerPlayback}
           onCreator={id=>{
             if(!isCurrent())return;
@@ -79,12 +80,12 @@ export function ViewerNavigator({preferences,sound}:Props) {
       </Stack.Screen>
       <Stack.Screen name="Spaces">{({navigation})=><SpacesScreen selected={context} onSelect={c=>{select(c);returnToFeed(navigation);}} onSignIn={()=>navigation.navigate('Account')}/>}</Stack.Screen>
       <Stack.Screen name="Account">{({navigation})=><AccountScreen onDone={()=>{if(navigation.isFocused() && navigation.canGoBack())navigation.goBack();}}/>}</Stack.Screen>
-      <Stack.Screen name="Settings" options={{headerShown:false}}>{({navigation})=><PlaybackSettings visible preferences={preferences} snapshot={sound} onClose={()=>navigation.goBack()}/>}</Stack.Screen>
+      <Stack.Screen name="Settings" options={{headerShown:false}}>{({navigation})=><PlaybackSettings visible preferences={preferences} snapshot={sound} captionPreferences={captionPreferences} captions={captions} onClose={()=>navigation.goBack()}/>}</Stack.Screen>
       </Stack.Group>
     </Stack.Navigator>
   </NavigationContainer>;
 }
-function FeedRoute({navigation,context,select,preferences,sound,restore,onCreator,onBackProfile,registerPlayback}:NativeStackScreenProps<Routes,'Feed'> & Props & {
+function FeedRoute({navigation,context,select,preferences,sound,captionPreferences,captions,restore,onCreator,onBackProfile,registerPlayback}:NativeStackScreenProps<Routes,'Feed'> & Props & {
   context:FeedContext;select:(c:FeedContext)=>void;restore?:FeedCheckpoint;onCreator:(id:number)=>void;onBackProfile?:()=>void;
   registerPlayback:(handle:FeedPlaybackHandle)=>()=>void;
 }) {
@@ -94,7 +95,7 @@ function FeedRoute({navigation,context,select,preferences,sound,restore,onCreato
     <Message title="Cannot verify sign-in" message={snapshot.message??undefined} onRetry={()=>{void auth.retryValidation();}}/>
     <Action label="Browse Global" onPress={goGlobal}/><Action label="Account" onPress={()=>navigation.navigate('Account')}/>
   </View>;
-  return <FeedScreen context={context} preferences={preferences} sound={sound} focused={focused} restore={restore}
+  return <FeedScreen context={context} preferences={preferences} sound={sound} captionPreferences={captionPreferences} captions={captions} focused={focused} restore={restore}
     onCreator={onCreator} onBackProfile={onBackProfile} registerPlayback={registerPlayback}
     onSpaces={()=>navigation.navigate('Spaces')} onAccount={()=>navigation.navigate('Account')} onSettings={()=>navigation.navigate('Settings')} onGlobal={goGlobal}/>;
 }

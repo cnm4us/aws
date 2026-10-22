@@ -13,13 +13,42 @@ type ClientOptions = {
 
 export type ApiClient = ReturnType<typeof createApiClient>;
 
+export async function readBoundedText(response: Response, maxBytes: number, signal: AbortSignal): Promise<string> {
+  if (Number(response.headers.get('content-length')) > maxBytes) {
+    await response.body?.cancel().catch(() => {});
+    throw new ApiError('This text is too large to display.');
+  }
+  if (!response.body) return '';
+  const reader = response.body.getReader();
+  const cancel = () => { void reader.cancel().catch(() => {}); };
+  signal.addEventListener('abort', cancel, { once: true });
+  const decoder = new TextDecoder('utf-8', { fatal: true });
+  const parts: string[] = []; let bytes = 0;
+  try {
+    while (true) {
+      if (signal.aborted) throw new Error('Cancelled');
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > maxBytes) throw new ApiError('This text is too large to display.');
+      parts.push(decoder.decode(value, { stream: true }));
+    }
+    if (signal.aborted) throw new Error('Cancelled');
+    parts.push(decoder.decode());
+    return parts.join('');
+  } finally {
+    signal.removeEventListener('abort', cancel);
+    await reader.cancel().catch(() => {}); reader.releaseLock();
+  }
+}
+
 export function createApiClient(baseUrl: string, options: ClientOptions = {}) {
   const fetchImpl = options.fetchImpl ?? fetch;
-  const requestJson = async (path: string, method: 'GET' | 'POST' | 'DELETE', body?: unknown, signal?: AbortSignal): Promise<unknown> => {
+  const requestJson = async (path: string, method: 'GET' | 'POST' | 'DELETE', body?: unknown, signal?: AbortSignal, text = false): Promise<unknown> => {
       if (!path.startsWith('/') || path.startsWith('//') || /[\\\s]/.test(path) || new URL(`${baseUrl}${path}`).origin !== new URL(baseUrl).origin) {
         throw new ApiError('API paths must be relative to the configured server.');
       }
-      const headers = { Accept: 'application/json', ...options.getHeaders?.() } as Record<string,string>;
+      const headers = { Accept: text ? 'text/vtt' : 'application/json', ...options.getHeaders?.() } as Record<string,string>;
       if (Object.keys(headers).some(k=>k.toLowerCase()==='authorization') && !/^\/api\/(native|viewer)\/v1\//.test(path)) {
         throw new ApiError('Credentials are only available to the viewing API.');
       }
@@ -52,6 +81,10 @@ export function createApiClient(baseUrl: string, options: ClientOptions = {}) {
             forbidden: 'You do not currently have access to this space.', space_not_found: 'This space is unavailable.',
             rate_limited: 'Too many sign-in attempts. Please wait and try again.',
             native_unavailable: 'App sign-in is temporarily unavailable.',
+            publication_not_found: 'This video is no longer available in this feed.',
+            captions_not_found: 'Captions are not available for this video.',
+            captions_unavailable: 'Cannot load captions. Please try again.',
+            story_unavailable: 'Cannot load the story. Please try again.',
           };
           const safeCode = code && Object.hasOwn(messages,code) ? code : undefined;
           const retry = Number(response.headers.get('Retry-After'));
@@ -59,6 +92,13 @@ export function createApiClient(baseUrl: string, options: ClientOptions = {}) {
             safeCode, Number.isFinite(retry) && retry>0 ? retry : undefined);
         }
         if (response.status === 204) return null;
+        if (text) {
+          if (!/^text\/vtt(?:;|$)/i.test(response.headers.get('content-type') || '')) {
+            await response.body?.cancel().catch(() => {});
+            throw new ApiError('The server returned unexpected captions.');
+          }
+          return await readBoundedText(response, 1024 * 1024, controller.signal);
+        }
         try {
           return await response.json();
         } catch {
@@ -80,6 +120,7 @@ export function createApiClient(baseUrl: string, options: ClientOptions = {}) {
       }
     };
   return {
+    getText: (path: string, signal?: AbortSignal) => requestJson(path,'GET',undefined,signal,true) as Promise<string>,
     getJson: (path: string, signal?: AbortSignal) => requestJson(path,'GET',undefined,signal),
     postJson: (path: string, body: unknown, signal?: AbortSignal) => requestJson(path,'POST',body,signal),
     deleteJson: (path: string, signal?: AbortSignal) => requestJson(path,'DELETE',undefined,signal),
