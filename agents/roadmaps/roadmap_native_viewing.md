@@ -93,7 +93,7 @@ An existing user can browse Global anonymously, sign in, select an existing acce
 
 ## Execution documents
 
-The first delivered viewer milestone is [Plan168](../implementation/plan_168.md). [Plan169](../implementation/plan_169.md) completes creator profiles, authorized personal-space entry and return for the recorded development milestone, pushed as `49e8dd6`. [Plan170](../implementation/plan_170.md) and [Plan171](../implementation/plan_171.md) are Complete (A–F) for native stories/captions and the signed bundled internal iPhone milestone, with recorded limits; their implementation is not yet committed/pushed. The proposed control/header/menu refinement recorded here needs its own focused plan when requested. Implementation status/evidence belongs in the repository plans; this roadmap retains high-level sequencing.
+The first delivered viewer milestone is [Plan168](../implementation/plan_168.md). [Plan169](../implementation/plan_169.md) completes creator profiles, authorized personal-space entry and return for the recorded development milestone, pushed as `49e8dd6`. [Plan170](../implementation/plan_170.md) and [Plan171](../implementation/plan_171.md) are Complete (A–F) for native stories/captions and the signed bundled internal iPhone milestone, with recorded limits; their implementation is committed and pushed as `1dfd494`, with remote implementation SHA verified. The proposed control/header/menu refinement recorded here needs its own focused plan when requested. Implementation status/evidence belongs in the repository plans; this roadmap retains high-level sequencing.
 
 ## Repository references
 
