@@ -80,3 +80,11 @@ UploadRow (selected fields)
 - width, height, duration_seconds
 - status, etag, mediaconvert_job_id, output_prefix, profile, asset_uuid, date_ymd
 - cdn_prefix, cdn_master, s3_master (computed)
+
+Creator viewing and original-feed return
+
+- `GET /api/viewer/v1/creators/:userId` accepts optional viewer authentication and returns `{ creator: { id, displayName, handle, avatarUrl, bio }, personalEntry }`. Existing active users have nominal identity even without a public profile. Hidden profile fields are omitted through null optional values; public bio also requires `show_bio`. Missing/deleted users return 404.
+- `personalEntry` is `{ state: "sign_in_required" }` for anonymous viewing, `{ state: "unavailable" }` for a missing/denied personal destination, or `{ state: "allowed", space: { id, ulid, name, slug, type: "personal" } }`. Only allowed viewers receive destination metadata. Entry does not create a space or relationship.
+- Personal feeds require sign-in and explicit owner/member/site-admin authority, after current bans. Public flags, following and subscriptions alone do not grant personal access. This shared rule applies to existing browser and native feed routes; group/channel rules remain as before.
+- Viewer feed GETs accept `anchorPublicationId` instead of `cursor` to obtain a fresh authorized window around an exact publication. Use `limit=60` for native return. The normal envelope adds `resume: { requestedPublicationId, restoredPublicationId, outcome: "restored" | "unavailable" }`. A missing/hidden/wrong-context anchor returns a fresh first page and null restored ID; denied spaces still return an error-only 403/404. Normal cursor responses are unchanged.
+- The bounded window includes nearby newer rows and continues forward through the normal `nextCursor`. Publication ID plus context is the restore identity; matching upload/production IDs cannot restore another space's publication. Creator/anchored reads use no-store, validate supplied credentials, and send sanitized retryable 503 errors on backend failure.

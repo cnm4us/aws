@@ -4,7 +4,7 @@ Status: Complete
 
 Created: 2026-10-18
 
-Implementation authorized and completed on 2026-10-18. Phases A–H are complete for signed-in native Global/Spaces viewing alongside the web client. VoiceOver was deferred at the user's explicit request; high-text-size pill clipping is accepted and recorded. Cancellation races passed controlled actual-component tests; the ~100 ms physical in-flight gesture remains unexercised. The earlier non-reproduced freeze and other evidence limits remain below. TestFlight/public release and later viewer parity are separate scope. The user requested a local implementation commit on 2026-10-18; final staging is in progress. No push is requested.
+Implementation authorized and completed on 2026-10-18. Phases A–H are complete for signed-in native Global/Spaces viewing alongside the web client. VoiceOver was deferred at the user's explicit request; high-text-size pill clipping is accepted and recorded. Cancellation races passed controlled actual-component tests; the ~100 ms physical in-flight gesture remains unexercised. The earlier non-reproduced freeze and other evidence limits remain below. TestFlight/public release and later viewer parity are separate scope. Implementation committed as `6cfad70` on 2026-10-18 and pushed to `origin/main` at the user's explicit request; remote HEAD verified against local HEAD.
 
 ## Feature Reference
 
@@ -408,6 +408,10 @@ Do not introduce a shared React package or change root/mobile Node pinning by de
 
 ## Change Log
 
+- 2026-10-18 — User explicitly requested pushing. Fetched origin and verified zero remote-only commits and one outgoing commit; normal fast-forward push published `6cfad70` to `origin/main`. Remote `refs/heads/main` and local HEAD both resolve to `6cfad7021f9fc1658887c08b765e82b80c97142c`. No new commit or history rewrite; local continuity note remains uncommitted.
+
+- 2026-10-18 — `6cfad70` — Committed signed-in native Global/Spaces viewing, native sessions/shared viewer APIs, playback/account lifecycle fixes, iOS development-build setup, regression tests, and developer/roadmap docs (69 files). A–H remain Complete. No push performed. This is the repository-required local post-commit continuity note.
+
 - 2026-10-18 — User explicitly requested committing the completed Plan 168 implementation, developer docs, roadmap, and earlier Plan 167 continuity notes. Final diff/secret/whitespace review is in progress; no push requested.
 
 - 2026-10-18 — Uncommitted closeout: completed A–H, including installed native build, final device denial/expiry and fixture cleanup. VoiceOver deferred by user; accessibility/cancellation/freeze/media limits retained. No implementation commit or push requested/performed.
@@ -417,6 +421,8 @@ Do not introduce a shared React package or change root/mobile Node pinning by de
 - 2026-10-18 — Planning only: created this implementation plan and the linked web/native roadmap. No implementation commit, dependency install, schema migration, or push performed for this request.
 
 ## Validation
+
+- Commit gate: reviewed and staged exactly 69 intended files; staged whitespace, scope and credential checks passed. Private fixtures, credentials, environment files, generated output and test-run artifacts stayed excluded. Agent docs checker retains the same 16 pre-existing older-plan errors and no Plan 168 finding. Latest 103 mobile tests, typecheck/iOS export, backend/API/browser checks and recorded physical-device acceptance remain applicable; no application code changed during final commit preparation. Root README already covers the committed developer workflow; no additional README change needed.
 
 - Final closeout verification: fixture driver finish/status confirms phase complete, original active subscription and zero new active fixture sessions. JSON/plan structure and all A–H Complete statuses verified; no unchecked phase tasks remain. Whitespace check passes. Scanned 146 changed/source/evidence text files: no fixture passwords exported and no native credential strings in evidence. `npm run check:agents:docs` still reports the same 16 pre-existing status/header errors in Plans 138, 140–142 and 148–159; no Plan 168 finding. Log: `tests/runs/device/plan_168_phase_g/closeout-doc-check.log`. A stale mobile README pending-status sentence found during review was reconciled. No new application code or broad runtime suite rerun; no commit/push.
 
@@ -572,6 +578,6 @@ Plan 168 is Complete (A–H), with user-approved deferrals and recorded evidence
 1. Final device access/expiry checks and fixture cleanup passed. Private driver state is **complete**; original fixture subscription active/ended_at null, expired session revoked, zero new active fixture sessions. Normal accounts were not changed. User can return to their normal account; no further test-account login is needed.
 2. Preserve the limits: VoiceOver explicitly deferred, high-text pill clipping accepted, too-fast manual cancellation replaced by controlled actual-component race checks, prior one-off whole-app freeze non-reproduced/unexplained, public fixture media only, no release memory/thermal or App Store qualification. User-observed mixed protocol and compact-history limits remain recorded. Do not repeat passed tests absent a regression.
 3. Metro remains in development-client mode on port 8081, unified exec session **21522** (old 68614 dead). Address `https://tt3-jho-mbcollins2-8081.exp.direct`; native launch link ends `/_expo/link?choice=expo-dev-client&platform=ios`. Restart from mobile with `npm_config_cache=/dev/shm/plan168-npm-cache TMPDIR=/dev/shm NODE_COMPILE_CACHE=/dev/shm/plan168-node-compile-cache npm run start:dev-client`. The existing iOS build needs Metro; ordinary JS changes need no new native build. Npm download-cache cleanup recovered 3.54 GiB, leaving ~3.9G free; preserve active editor/browser/monitoring files and private credential records. Tmpfs caches are regenerable.
-4. User authorized a local commit of these changes on 2026-10-18. Preserve earlier Plan 167 continuity edits and record the resulting SHA here immediately after committing. No push requested. Next recommended product increment: creator profiles and authorized personal-space entry under a new detailed implementation plan. Later discovery/stories/captions/sharing, participation, TestFlight/App Store and Android remain separate scope.
+4. Implementation committed as `6cfad70` (`feat: add signed-in native viewing across Global and Spaces`), including prior Plan 167 continuity edits. Pushed to `origin/main` at the user's explicit request; remote HEAD matches local HEAD. Only this required post-commit SHA/validation/push note remains uncommitted; no application-code change remains outside the commit. Next recommended product increment: creator profiles and authorized personal-space entry under a new detailed implementation plan. Later discovery/stories/captions/sharing, participation, TestFlight/App Store and Android remain separate scope.
 
 The repository roadmap is the primary user-accessible artifact; the optional Page link was unavailable to the user. This milestone maintains the existing web client over the shared backend and accepts the installed iPhone development viewer, with the exceptions above.

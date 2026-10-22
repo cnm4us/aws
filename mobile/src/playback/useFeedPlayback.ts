@@ -24,6 +24,17 @@ function createNativePlayer(): NativePlayerPort {
     pause: () => native.pause(),
     setMuted: muted => { native.muted = muted; },
     seekToStart: () => { native.currentTime = 0; },
+    currentTime: () => native.currentTime,
+    seekTo: async seconds => {
+      native.currentTime=seconds;
+      // The setter starts the native seek. Confirm the timeline reached its
+      // target before unblocking playback, using reads available in release builds.
+      const started=Date.now();
+      while(Math.abs(native.currentTime-seconds)>1) {
+        if(Date.now()-started>8000)throw Error('Seek timed out');
+        await new Promise(resolve=>setTimeout(resolve,50));
+      }
+    },
     bufferedSeconds: () => Math.max(0, native.bufferedPosition - native.currentTime),
     isPlaying: () => native.playing,
     status: () => native.status,

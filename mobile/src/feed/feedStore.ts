@@ -11,6 +11,7 @@ export type FeedSnapshot = {
   nextCursor: string | null;
   autoPaused: boolean;
   errorStatus: number | null;
+  resume?: FeedPage['resume'];
 };
 
 export type PageLoader = (cursor: string | null, signal: AbortSignal) => Promise<FeedPage>;
@@ -18,7 +19,7 @@ export type PageLoader = (cursor: string | null, signal: AbortSignal) => Promise
 export class FeedStore {
   private state: FeedSnapshot = {
     sessionId: 0, items: [], initialLoading: true, loadingMore: false,
-    initialError: null, moreError: null, nextCursor: null, autoPaused: false, errorStatus:null,
+    initialError: null, moreError: null, nextCursor: null, autoPaused: false, errorStatus:null, resume:undefined,
   };
   private listeners = new Set<() => void>();
   private request: { controller: AbortController; promise?: Promise<void> } | null = null;
@@ -55,7 +56,7 @@ export class FeedStore {
     this.emptyAdvances = 0;
     this.publish({
       sessionId: this.state.sessionId + 1, items: [], initialLoading: true,
-      loadingMore: false, initialError: null, moreError: null, nextCursor: null, autoPaused: false, errorStatus:null,
+      loadingMore: false, initialError: null, moreError: null, nextCursor: null, autoPaused: false, errorStatus:null, resume:undefined,
     });
     return this.fetchPage(null, true);
   };
@@ -97,6 +98,7 @@ export class FeedStore {
           nextCursor: repeatedCursor ? cursor : page.nextCursor,
           moreError: repeatedCursor ? 'The feed could not advance. Try again.' : null,
           autoPaused: repeatedCursor || this.emptyAdvances >= 2,
+          ...(initial?{resume:page.resume}:{}),
         });
       } catch (error) {
         if (this.request !== request || request.controller.signal.aborted) return;

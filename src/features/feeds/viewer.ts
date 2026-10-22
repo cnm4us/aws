@@ -1,5 +1,6 @@
 import type { GlobalFeedItem, FeedResponse } from './types';
 import { ViewerApiError } from '../native-sessions/service';
+import { loadCreators } from '../profiles/viewer';
 
 const id = (value: unknown) => Number.isSafeInteger(Number(value)) && Number(value)>0 ? Number(value) : null;
 const number = (value: unknown) => value !== null && value !== undefined && Number.isFinite(Number(value)) && Number(value)>=0 ? Number(value) : null;
@@ -18,6 +19,15 @@ export function serializeViewerVideo(item: GlobalFeedItem) {
 export function serializeViewerFeed(feed: FeedResponse, context: unknown) {
   return { context,items:feed.items.map(serializeViewerVideo),nextCursor:feed.nextCursor };
 }
+export async function serializeViewerFeedWithCreators(feed: FeedResponse, context: unknown) {
+  const creators = await loadCreators(feed.items.map(item => item.owner?.id ?? 0));
+  const result = serializeViewerFeed(feed, context);
+  return { ...result, items: result.items.map(item => {
+    const creator = item.creator.id ? creators.get(item.creator.id) : null;
+    return { ...item, creator: creator ? { id: creator.id, displayName: creator.displayName, avatarUrl: creator.avatarUrl }
+      : { id: null, displayName: null, avatarUrl: null } };
+  }) };
+}
 export function parseViewerQuery(query: Record<string,unknown>) {
   const limit=query.limit===undefined?20:Number(query.limit);
   if ((query.limit!==undefined && (typeof query.limit!=='string' || !/^\d+$/.test(query.limit))) || !Number.isInteger(limit) || limit<1 || limit>100)
@@ -25,5 +35,8 @@ export function parseViewerQuery(query: Record<string,unknown>) {
   const cursor=query.cursor;
   if (cursor!==undefined && (typeof cursor!=='string' || cursor.length>160 || !/^\d{4}-\d\d-\d\d[ T]\d\d:\d\d:\d\d(?:\.\d{1,6})?(?:Z)?\|[1-9]\d*$/.test(cursor)
     || !Number.isFinite(Date.parse(cursor.split('|')[0])) || !Number.isSafeInteger(Number(cursor.split('|')[1])))) throw new ViewerApiError(400,'invalid_query');
-  return {limit,cursor:cursor as string | undefined};
+  const anchor = query.anchorPublicationId;
+  if (anchor !== undefined && (typeof anchor !== 'string' || !/^[1-9]\d*$/.test(anchor)
+    || !Number.isSafeInteger(Number(anchor)) || cursor !== undefined)) throw new ViewerApiError(400,'invalid_query');
+  return {limit,cursor:cursor as string | undefined, ...(anchor === undefined ? {} : { anchorPublicationId: Number(anchor) })};
 }

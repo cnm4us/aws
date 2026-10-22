@@ -124,3 +124,86 @@ test('compact failures and transitions keep feed context after progress rolls co
   assert.equal(report.issues[0].nativeErrorCode, -1009);
   assert.deepEqual(report.recentTransitions.map(row => row.feedContext), ['space:4', 'global']);
 });
+
+test('cold transition retains distinct replacement and readiness timings after event rollover', () => {
+  let now = 0;
+  const diagnostics = new PlaybackDiagnostics(() => now);
+  const record = diagnostics.session();
+  record({ type: 'selection', activation: 1, publicationId: 1 });
+  now = 5; record({ type: 'load_started', publicationId: 1 });
+  now = 1000; record({ type: 'load_resolved', publicationId: 1 });
+  now = 2500; record({ type: 'ready', publicationId: 1 });
+  now = 3000; record({ type: 'load_started', publicationId: 2 });
+  now = 4000; record({ type: 'load_resolved', publicationId: 2 });
+  now = 4500; record({ type: 'selection', activation: 2, publicationId: 2, prepared: false });
+  now = 7000; record({ type: 'ready', publicationId: 2 });
+  now = 7100; record({ type: 'first_frame', activation: 2 });
+  record({ type: 'release', publicationId: 1 });
+  record({ type: 'release', publicationId: 2 });
+  for (let activation = 3; activation <= 10; activation++) {
+    record({ type: 'selection', activation, publicationId: activation, prepared: true });
+    record({ type: 'first_frame', activation });
+  }
+  for (let i = 0; i < 1100; i++) record({ type: 'progress', activation: 10, currentTime: i / 4 });
+  const report = diagnostics.shareReport();
+  assert.equal(report.recentTransitions.some(row => row.publicationId === 2), false);
+  assert.equal(report.slowTransitions[0].publicationId, 2);
+  assert.equal(report.slowTransitions[0].firstFrameMs, 2600);
+  assert.deepEqual(report.slowTransitions[0].sourceLoad, { startedAtMs: 3000, replaceResolvedMs: 1000, readyMs: 4000 });
+  assert.equal(report.omittedTransitionDetails, 4, 'count unique recent and outlier rows');
+  assert.equal(report.omittedSlowTransitionDetails, 0);
+  assert.ok(diagnostics.report().events.every(row => row.type !== 'load_started'));
+  report.slowTransitions[0].sourceLoad!.readyMs = -1;
+  assert.equal(diagnostics.shareReport().slowTransitions[0].sourceLoad!.readyMs, 4000);
+});
+
+test('retry/revisit and different sessions never reuse old source load timings', () => {
+  let now = 0;
+  const diagnostics = new PlaybackDiagnostics(() => now);
+  const record = diagnostics.session();
+  record({ type: 'selection', publicationId: 1, activation: 1 });
+  record({ type: 'load_started', publicationId: 1 });
+  now = 100; record({ type: 'load_resolved', publicationId: 1 });
+  now = 200; record({ type: 'ready', publicationId: 1 });
+  record({ type: 'release', publicationId: 1 });
+  record({ type: 'selection', publicationId: 1, activation: 2 });
+  now = 300; record({ type: 'load_started', publicationId: 1 });
+  now = 800; record({ type: 'load_resolved', publicationId: 1 });
+  now = 900; record({ type: 'ready', publicationId: 1 });
+  // A speculative reload of a past publication must not rewrite its history.
+  record({ type: 'release', publicationId: 1 });
+  record({ type: 'selection', publicationId: 2, activation: 3 });
+  now = 1000; record({ type: 'load_started', publicationId: 1 });
+  const otherSession = diagnostics.session();
+  otherSession({ type: 'selection', publicationId: 1, activation: 1 });
+  const rows = diagnostics.report().transitions;
+  assert.deepEqual(rows[0].sourceLoad, { startedAtMs: 0, replaceResolvedMs: 100, readyMs: 200 });
+  assert.deepEqual(rows[1].sourceLoad, { startedAtMs: 300, replaceResolvedMs: 500, readyMs: 600 });
+  assert.equal(rows[2].sourceLoad, undefined);
+  assert.equal(rows[3].sourceLoad, undefined);
+});
+
+test('compact outliers are bounded, include incomplete selections, and stay small with load timings', () => {
+  let now = 123456789.123456;
+  const diagnostics = new PlaybackDiagnostics(() => now);
+  const record = diagnostics.session();
+  record({ type: 'context', feedContext: 'space:123456789', authGeneration: 12345 });
+  for (let activation = 1; activation <= 220; activation++) {
+    record({ type: 'selection', activation, publicationId: activation });
+    record({ type: 'load_started', publicationId: activation });
+    now += 4000;
+    record({ type: 'load_resolved', publicationId: activation });
+    record({ type: 'ready', publicationId: activation });
+    if (activation !== 219) record({ type: 'first_frame', activation });
+    record({ type: 'release', publicationId: activation });
+    record({ type: 'unexpected_playback', activation, publicationId: activation, selectedPublicationId: activation,
+      appActive: true, screenEligible: true, scrolling: true, userPaused: false, reason: 'ineligible' });
+  }
+  const report = diagnostics.shareReport();
+  assert.equal(report.slowTransitions.length, 5);
+  assert.equal(report.slowTransitions[0].activation, 219);
+  assert.equal(report.slowTransitions[0].firstFrameMs, null);
+  assert.equal(report.omittedSlowTransitionDetails, 195);
+  assert.equal(report.droppedTransitions, 20);
+  assert.ok(JSON.stringify(report).length < 10000, 'retain the compact export clipping budget');
+});

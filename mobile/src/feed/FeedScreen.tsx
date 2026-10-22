@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Alert, FlatList, Pressable, Share, StyleSheet, Text, View } from 'react-native';
 import { Action, Message } from '../ui/Message';
 import { FeedCard } from './FeedCard';
@@ -15,18 +15,23 @@ import { VideoSurface } from '../playback/VideoSurface';
 import { PagingController } from '../playback/paging';
 import { developmentDiagnostics } from '../diagnostics/development';
 import type { PlaybackPreferences, PlaybackPreferencesSnapshot } from '../preferences/playbackPreferences';
+import type { FeedCheckpoint, PlaybackCheckpoint } from '../navigation/viewerJourney';
+
+export type FeedPlaybackHandle={capture:()=>PlaybackCheckpoint;release:()=>void};
 
 
-export function FeedScreen({ context, preferences, sound, focused, onSpaces, onAccount, onSettings, onGlobal }: {
+export function FeedScreen({ context, preferences, sound, focused, onSpaces, onAccount, onSettings, onGlobal, onCreator, registerPlayback, restore, onBackProfile }: {
   context: FeedContext; preferences: PlaybackPreferences; sound: PlaybackPreferencesSnapshot; focused: boolean;
   onSpaces:()=>void;onAccount:()=>void;onSettings:()=>void;onGlobal:()=>void;
+  onCreator?:(id:number)=>void;registerPlayback?:(handle:FeedPlaybackHandle)=>()=>void;
+  restore?:FeedCheckpoint;onBackProfile?:()=>void;
 }) {
   const { store:identity, snapshot:auth }=useAuth();
-  const { store, snapshot, client } = useViewerFeed(context);
+  const { store, snapshot, client,clearResume } = useViewerFeed(context,restore);
   const access=useSpaceAccess(context,client,store,focused);
   const eligible=focused && !auth.validating && !snapshot.errorStatus && access.authorized
     && (auth.status==='authenticated' || auth.status==='anonymous');
-  const refresh=()=>{void access.check().then(ok=>{if(ok)void store.refresh();});};
+  const refresh=(fromStart=false)=>{if(fromStart)clearResume();void access.check().then(ok=>{if(ok)void store.refresh();});};
   return <SafeAreaView style={styles.screen} edges={['top','bottom']}>
     <View style={styles.toolbar}>
       <View style={styles.titleRow}>
@@ -34,20 +39,23 @@ export function FeedScreen({ context, preferences, sound, focused, onSpaces, onA
           <Text style={styles.heading}>{context.kind==='global'?'Global':context.name}</Text>
           {context.kind==='space' && <Text style={{color:'#c7c7ce'}}>{context.type}</Text>}
         </Pressable>
-        <Action label="Refresh" onPress={refresh} />
+        <Action label="Refresh" onPress={()=>refresh(true)} />
       </View>
       <View style={styles.headerActions}>
+        {onBackProfile && <Action label="Back to profile" onPress={onBackProfile}/>}
         <Action label="Spaces" onPress={onSpaces}/><Action label="Account" onPress={onAccount}/><Action label="Settings" onPress={onSettings}/>
       </View>
       {auth.status==='anonymous' && auth.message && <Text accessibilityRole="alert" style={{color:'#ffb4b4',fontSize:15}}>{auth.message}</Text>}
+      {snapshot.resume?.outcome==='unavailable' && <Text style={{color:'#c7c7ce'}}>The original video is no longer available. Showing the current feed.</Text>}
     </View>
     <View style={{flex:1}}>
       {snapshot.initialLoading ? <Message title="Loading videos" busy/> : snapshot.initialError ?
         <View style={{flex:1}}><Message title={snapshot.errorStatus===403 || snapshot.errorStatus===404?'Access unavailable':'Cannot load the feed'}
-          message={snapshot.initialError} onRetry={refresh}/>
+          message={snapshot.initialError} onRetry={()=>refresh()}/>
           <View style={styles.headerActions}><Action label="Spaces" onPress={onSpaces}/><Action label="Global" onPress={onGlobal}/></View>
         </View> : <FeedSession key={snapshot.sessionId} store={store} snapshot={snapshot} muted={sound.muted}
-          onToggleMute={preferences.toggleMute} eligible={!!eligible} diagnosticContext={{feedContext:contextKey(context),authGeneration:auth.generation}} />}
+          onToggleMute={preferences.toggleMute} eligible={!!eligible} diagnosticContext={{feedContext:contextKey(context),authGeneration:auth.generation}}
+          restore={restore} onCreator={onCreator} registerPlayback={registerPlayback}/>}
       {(auth.status==='unavailable' || (context.kind==='space' && access.checking) || auth.validating) &&
         <View style={[StyleSheet.absoluteFill,{backgroundColor:'#000',padding:20,gap:12}]}>
           <Message title={auth.status==='unavailable'?'Cannot verify access':'Checking access'} busy={auth.status!=='unavailable'}
@@ -64,16 +72,19 @@ export function FeedScreen({ context, preferences, sound, focused, onSpaces, onA
   </SafeAreaView>;
 }
 
-function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosticContext }: {
+function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosticContext, restore, onCreator, registerPlayback }: {
   store: FeedStore; snapshot: FeedSnapshot; muted: boolean; onToggleMute: () => void; eligible: boolean;
   diagnosticContext:{feedContext:string;authGeneration:number};
+  restore?:FeedCheckpoint;onCreator?:(id:number)=>void;registerPlayback?:(handle:FeedPlaybackHandle)=>()=>void;
 }) {
   const [height, setHeight] = useState(0);
-  const [index, setIndex] = useState(0);
+  const [index, setIndex] = useState(()=>Math.max(0,snapshot.items.findIndex(item=>item.publicationId===snapshot.resume?.restoredPublicationId)));
   const list = useRef<FlatList<FeedVideoItem>>(null);
   const items = useRef(snapshot.items);
   items.current = snapshot.items;
   const { coordinator, snapshot: playback } = useFeedPlayback(muted, eligible, diagnosticContext);
+  const initialSelection=useRef(false);
+  useLayoutEffect(()=>registerPlayback?.({capture:coordinator.capture,release:coordinator.dispose}),[coordinator,registerPlayback]);
   const paging = useMemo(() => new PagingController(
     () => coordinator.setScrolling(true),
     selected => {
@@ -86,7 +97,15 @@ function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosti
   paging.configure(height, snapshot.items.length);
   useEffect(() => () => paging.dispose(), [paging]);
   useEffect(() => { store.ensureAhead(index); }, [store, index, snapshot]);
-  useEffect(() => { coordinator.selectAt(snapshot.items, index); }, [coordinator, snapshot.items, index]);
+  useEffect(() => {
+    if(!initialSelection.current) {
+      initialSelection.current=true;
+      if(restore && snapshot.resume?.restoredPublicationId===snapshot.items[index]?.publicationId) {
+        coordinator.restoreAt(snapshot.items,index,restore);return;
+      }
+    }
+    coordinator.selectAt(snapshot.items, index);
+  }, [coordinator, snapshot.items, index]);
   const previousHeight = useRef(height);
   useEffect(() => {
     if (previousHeight.current > 0 && previousHeight.current !== height) {
@@ -109,13 +128,14 @@ function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosti
         keyExtractor={item => String(item.publicationId)}
         pagingEnabled
         initialNumToRender={2}
+        initialScrollIndex={index}
         maxToRenderPerBatch={3}
         windowSize={5}
         removeClippedSubviews={false}
         showsVerticalScrollIndicator={false}
         getItemLayout={(_data, itemIndex) => ({ length: height, offset: height * itemIndex, index: itemIndex })}
         renderItem={({ item, index: rowIndex }) => (
-          <FeedCard item={item} height={height}>
+          <FeedCard item={item} height={height} onCreator={rowIndex===index?onCreator:undefined}>
             {rowIndex === index && item.publicationId === playback.publicationId && item.playbackUrl && (
               <VideoSurface coordinator={coordinator} snapshot={playback} posterUrl={item.posterUrl} onNext={next} />
             )}

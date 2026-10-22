@@ -1,7 +1,8 @@
 import { listGlobalFeedRows, getGlobalFeedPinnedRowByProductionUlid, getSpaceFeedPinnedRowByProductionUlid } from './repo'
 import { enhanceUploadRow } from '../../utils/enhance'
 import { type FeedResponse } from './types'
-import { listSpaceFeedRows } from './repo'
+import { listSpaceFeedRows, type FeedSelection } from './repo'
+type ViewerSelection = Pick<FeedSelection, 'publicationId' | 'newerThan' | 'ascending'>
 import { clampLimit, parseTsIdCursor, buildTsIdCursor } from '../../core/pagination'
 import { SpacePublicationStatus, SpacePublicationVisibility } from '../../db'
 import * as uploadsSvc from '../uploads/service'
@@ -29,13 +30,13 @@ async function buildFeedUpload(uploadRaw: any): Promise<any> {
   return upload
 }
 
-export async function getGlobalFeed(opts: { userId?: number | null; limit?: number; cursor?: string | null }): Promise<FeedResponse> {
+export async function getGlobalFeed(opts: { userId?: number | null; limit?: number; cursor?: string | null } & ViewerSelection): Promise<FeedResponse> {
   const limit = clampLimit(opts.limit, 20, 1, 100)
   const parsed = parseTsIdCursor(opts.cursor ?? null)
   const cursorPublishedAt = parsed?.ts ?? null
   const cursorId = parsed?.id ?? null
 
-  const rows = await listGlobalFeedRows({ cursorPublishedAt, cursorId, limit, userId: opts.userId })
+  const rows = await listGlobalFeedRows({ cursorPublishedAt, cursorId, limit, userId: opts.userId, publicationId: opts.publicationId, newerThan: opts.newerThan, ascending: opts.ascending })
   const items = await Promise.all(rows.map(async (row) => {
     let distribution: any = null
     if (row.distribution_flags) {
@@ -113,13 +114,13 @@ export async function getGlobalFeed(opts: { userId?: number | null; limit?: numb
   return { items, nextCursor }
 }
 
-export async function getSpaceFeed(spaceId: number, opts: { userId: number; limit?: number; cursor?: string | null }): Promise<FeedResponse> {
+export async function getSpaceFeed(spaceId: number, opts: { userId: number; limit?: number; cursor?: string | null } & ViewerSelection): Promise<FeedResponse> {
   const limit = clampLimit(opts.limit, 20, 1, 100)
   const parsed = parseTsIdCursor(opts.cursor ?? null)
   const cursorPublishedAt = parsed?.ts ?? null
   const cursorId = parsed?.id ?? null
 
-  const rows = await listSpaceFeedRows(spaceId, { cursorPublishedAt, cursorId, limit, userId: opts.userId })
+  const rows = await listSpaceFeedRows(spaceId, { cursorPublishedAt, cursorId, limit, userId: opts.userId, publicationId: opts.publicationId, newerThan: opts.newerThan, ascending: opts.ascending })
   const items = await Promise.all(rows.map(async (row) => {
     let distribution: any = null
     if (row.distribution_flags) {

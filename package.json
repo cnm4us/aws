@@ -91,7 +91,10 @@
     "viewer:fixtures": "ts-node scripts/native-viewer-fixtures.ts",
     "viewer:check:sessions": "ts-node scripts/check-native-sessions.ts",
     "viewer:check": "ts-node scripts/check-native-viewer.ts",
-    "viewer:check:web": "ts-node scripts/check-native-viewer-web.ts"
+    "viewer:check:web": "ts-node scripts/check-native-viewer-web.ts",
+    "viewer:fixtures:creators": "ts-node scripts/native-creator-fixtures.ts",
+    "viewer:check:creators": "ts-node scripts/check-native-creators.ts",
+    "viewer:check:creators:web": "ts-node scripts/check-native-creators-web.ts"
   },
   "dependencies": {
     "@aws-sdk/client-mediaconvert": "^3.645.0",

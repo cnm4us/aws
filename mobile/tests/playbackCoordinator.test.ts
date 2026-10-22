@@ -375,6 +375,149 @@ test('preloads while paused and promotes the exact prepared player without reloa
   assert.equal(players[2].playing, false);
 });
 
+test('source replacement completion is timed independently from buffered readiness', async () => {
+  let now = 0;
+  const diagnostics = new PlaybackDiagnostics(() => now);
+  const players: FakePlayer[] = [];
+  const c = new PlaybackCoordinator(() => {
+    const player = new FakePlayer();
+    // AVPlayer may accept play while it continues waiting for buffered data.
+    player.play = () => { player.plays += 1; };
+    players.push(player); return player;
+  }, diagnostics.session());
+  c.setAppActive(true); c.selectAt([item(1), item(2)], 0);
+  now = 100; players[0].resolveLoad(); await Promise.resolve();
+  assert.equal(players[0].playing, false);
+  assert.equal(players[0].plays, 1, 'queue selected playback as soon as replacement resolves');
+  assert.equal(players.length, 1, 'metadata replacement alone must not trigger speculative work');
+  now = 2000; players[0].ready();
+  assert.equal(players.length, 2);
+  now = 4500; c.selectAt([item(1), item(2)], 1);
+  assert.equal(c.getSnapshot().prepared, false);
+  now = 5000; players[1].resolveLoad(); await Promise.resolve();
+  assert.equal(players[1].playing, false, 'the native player can still be waiting for data');
+  assert.equal(players[1].plays, 1, 'selection queues a cold play request after replacement');
+  now = 8000; players[1].ready();
+  now = 8100; c.firstFrame(c.getSnapshot().activation);
+  const rows = diagnostics.report().transitions;
+  assert.deepEqual(rows[0].sourceLoad, { startedAtMs: 0, replaceResolvedMs: 100, readyMs: 2000 });
+  assert.deepEqual(rows[1].sourceLoad, { startedAtMs: 2000, replaceResolvedMs: 3000, readyMs: 6000 });
+  assert.equal(diagnostics.shareReport().slowTransitions[0].firstFrameMs, 3600);
+  c.dispose();
+});
+
+test('resolved cold source queues only selected eligible playback and never starts its neighbor', async () => {
+  const {coordinator: c, players} = poolSetup();
+  c.selectAt([item(1), item(2)], 0); players[0].ready();
+  players[1].resolveLoad(); await Promise.resolve();
+  assert.equal(players[1].plays, 0);
+  c.setScrolling(true); c.selectAt([item(1), item(2)], 1);
+  assert.equal(players[1].plays, 0);
+  c.setScreenEligible(false); c.setScrolling(false);
+  assert.equal(players[1].plays, 0);
+  c.setScreenEligible(true);
+  assert.equal(players[1].plays, 1);
+  assert.equal(c.getSnapshot().prepared, false, 'queued playback does not reclassify cold selection');
+  assert.equal(players[0].playing, false);
+  c.togglePause(); assert.equal(players[1].playing, false);
+  c.dispose();
+});
+
+test('a displayed frame without playback still times out and late readiness cannot restart it', async t => {
+  t.mock.timers.enable({apis: ['setTimeout']});
+  const diagnostics = new PlaybackDiagnostics();
+  const player = new FakePlayer();
+  player.play = () => { player.plays += 1; };
+  const c = new PlaybackCoordinator(() => player, diagnostics.session());
+  try {
+    c.setAppActive(true); c.select(item(1));
+    player.resolveLoad(); await Promise.resolve();
+    c.firstFrame(c.getSnapshot().activation);
+    assert.equal(c.getSnapshot().hasFrame, true);
+    assert.equal(c.getSnapshot().playbackStarted, false);
+    t.mock.timers.tick(10001);
+    assert.equal(c.getSnapshot().failed, true);
+    assert.equal(diagnostics.report().issues[0].failureKind, 'startup_timeout');
+    player.ready();
+    assert.equal(c.getSnapshot().failed, true);
+    assert.equal(player.plays, 1, 'late ready must not undo the retryable failure');
+  } finally { c.dispose(); t.mock.timers.reset(); }
+});
+
+test('startup deadline respects pause, background, observed playing, selection and disposal', async t => {
+  t.mock.timers.enable({apis: ['setTimeout']});
+  const players: FakePlayer[] = [];
+  const c = new PlaybackCoordinator(() => {
+    const p = new FakePlayer(); p.play = () => { p.plays += 1; }; players.push(p); return p;
+  });
+  try {
+    c.setAppActive(true); c.select(item(1));
+    players[0].resolveLoad(); await Promise.resolve();
+    t.mock.timers.tick(9000); c.togglePause();
+    t.mock.timers.tick(20000); assert.equal(c.getSnapshot().failed, false);
+    c.togglePause(); t.mock.timers.tick(9000); c.setAppActive(false);
+    t.mock.timers.tick(20000); assert.equal(c.getSnapshot().failed, false);
+    c.setAppActive(true); t.mock.timers.tick(9000);
+    c.select(item(2));
+    t.mock.timers.tick(2000); assert.equal(c.getSnapshot().failed, false, 'old selection deadline is cancelled');
+    players[1].playing = true; players[1].playingListeners.forEach(fn => fn(true));
+    assert.equal(c.getSnapshot().playbackStarted, true);
+    c.firstFrame(c.getSnapshot().activation);
+    t.mock.timers.tick(20000); assert.equal(c.getSnapshot().failed, false);
+    c.select(item(3)); c.dispose();
+    t.mock.timers.tick(20000); assert.equal(c.getSnapshot().failed, false);
+  } finally { c.dispose(); t.mock.timers.reset(); }
+});
+
+test('zero-like progress cannot hide stalled startup; retry accepts genuine progress evidence', async t => {
+  t.mock.timers.enable({apis: ['setTimeout']});
+  const players: FakePlayer[] = [];
+  const c = new PlaybackCoordinator(() => {
+    const p = new FakePlayer(); p.play = () => { p.plays += 1; }; players.push(p); return p;
+  });
+  try {
+    c.setAppActive(true); c.select(item(1));
+    players[0].resolveLoad(); await Promise.resolve();
+    players[0].progressListeners.forEach(fn => fn(0.000001));
+    assert.equal(c.getSnapshot().playbackStarted, false);
+    t.mock.timers.tick(10001); assert.equal(c.getSnapshot().failed, true);
+    c.retry(); assert.equal(players[0].released, true);
+    assert.equal(c.getSnapshot().failed, false);
+    players[1].resolveLoad(); await Promise.resolve();
+    c.togglePause(); players[1].progressListeners.forEach(fn => fn(0.25));
+    assert.equal(c.getSnapshot().playbackStarted, false, 'paused progress cannot satisfy startup');
+    c.togglePause(); players[1].progressListeners.forEach(fn => fn(0.25));
+    assert.equal(c.getSnapshot().playbackStarted, true);
+    c.firstFrame(c.getSnapshot().activation);
+    t.mock.timers.tick(10001); assert.equal(c.getSnapshot().failed, false);
+  } finally { c.dispose(); t.mock.timers.reset(); }
+});
+
+test('playing without a displayed frame retains the startup deadline', t => {
+  t.mock.timers.enable({apis: ['setTimeout']});
+  const player = new FakePlayer();
+  const c = new PlaybackCoordinator(() => player);
+  try {
+    c.setAppActive(true); c.select(item(1)); player.ready();
+    assert.equal(c.getSnapshot().playbackStarted, true);
+    assert.equal(c.getSnapshot().hasFrame, false);
+    t.mock.timers.tick(10001);
+    assert.equal(c.getSnapshot().failed, true);
+    assert.equal(player.playing, false);
+  } finally { c.dispose(); t.mock.timers.reset(); }
+});
+
+test('late native replacement completion cannot record a new load after disposal', async () => {
+  const diagnostics = new PlaybackDiagnostics();
+  const players: FakePlayer[] = [];
+  const c = new PlaybackCoordinator(() => { const player = new FakePlayer(); players.push(player); return player; }, diagnostics.session());
+  c.setAppActive(true); c.select(item(1)); c.dispose();
+  const before = diagnostics.report();
+  players[0].resolveLoad(); await Promise.resolve();
+  assert.deepEqual(diagnostics.report().events, before.events);
+  assert.equal(diagnostics.report().resources.livePlayers, 0);
+});
+
 test('three-player cap holds at every allocation across a long feed and teardown removes all listeners', () => {
   const { coordinator, players, diagnostics, peak } = poolSetup();
   const items = Array.from({ length: 40 }, (_, index) => item(index + 1));

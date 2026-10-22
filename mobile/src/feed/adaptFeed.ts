@@ -69,7 +69,7 @@ export function adaptFeedPage(value: unknown): FeedPage {
   return { items, nextCursor: page.nextCursor || null };
 }
 
-export function adaptViewerFeedPage(value: unknown, expected: FeedContext): FeedPage {
+export function adaptViewerFeedPage(value: unknown, expected: FeedContext, anchor?:number): FeedPage {
   const page=record(value),context=record(page?.context),space=record(context?.space);
   if (!page || !Array.isArray(page.items) || !(page.nextCursor===null || typeof page.nextCursor==='string') ||
     context?.kind!==expected.kind || (expected.kind==='space' && space?.id!==expected.spaceId)) {
@@ -84,6 +84,13 @@ export function adaptViewerFeedPage(value: unknown, expected: FeedContext): Feed
       playbackUrl:httpsUrl(row.playbackUrl),posterUrl:httpsUrl(row.posterUrl),
       creator:{id:id(creator?.id),displayName:text(creator?.displayName,120)??'Creator',avatarUrl:httpsUrl(creator?.avatarUrl)},
       description:text(row.description,2000),width:positiveNumber(row.width),height:positiveNumber(row.height),durationSeconds:positiveNumber(row.durationSeconds)});
+  }
+  if(anchor!==undefined) {
+    const resume=record(page.resume);
+    if(!resume || resume.requestedPublicationId!==anchor || !['restored','unavailable'].includes(String(resume.outcome))
+      || (resume.outcome==='restored' ? resume.restoredPublicationId!==anchor || !items.some(i=>i.publicationId===anchor) : resume.restoredPublicationId!==null))
+      throw new ApiError('The server returned an unexpected return position. Please try again.');
+    return {items,nextCursor:page.nextCursor || null,resume:{requestedPublicationId:anchor,restoredPublicationId:resume.restoredPublicationId as number|null,outcome:resume.outcome as 'restored'|'unavailable'}};
   }
   return {items,nextCursor:page.nextCursor || null};
 }

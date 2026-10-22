@@ -12,4 +12,5 @@ export type FeedVideoItem = {
   durationSeconds: number | null;
 };
 
-export type FeedPage = { items: FeedVideoItem[]; nextCursor: string | null };
+export type FeedPage = { items: FeedVideoItem[]; nextCursor: string | null;
+  resume?: {requestedPublicationId:number;restoredPublicationId:number|null;outcome:'restored'|'unavailable'} };

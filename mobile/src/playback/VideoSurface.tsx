@@ -15,11 +15,10 @@ export function VideoSurface({ coordinator, snapshot, posterUrl, onNext }: {
   const eligible = snapshot.appActive && snapshot.screenEligible && !snapshot.scrolling && !snapshot.userPaused;
   useEffect(() => {
     setShowLoading(false);
-    if (snapshot.hasFrame || snapshot.failed || !eligible) return;
+    if ((snapshot.hasFrame && snapshot.playbackStarted) || snapshot.failed || snapshot.restoring || snapshot.restoreError || !eligible) return;
     const spinner = setTimeout(() => setShowLoading(true), 250);
-    const timeout = setTimeout(() => coordinator.fail(snapshot.activation), 10_000);
-    return () => { clearTimeout(spinner); clearTimeout(timeout); };
-  }, [coordinator, snapshot.activation, snapshot.hasFrame, snapshot.failed, eligible]);
+    return () => { clearTimeout(spinner); };
+  }, [snapshot.activation, snapshot.hasFrame, snapshot.playbackStarted, snapshot.failed, snapshot.restoring, snapshot.restoreError, eligible]);
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
@@ -35,7 +34,11 @@ export function VideoSurface({ coordinator, snapshot, posterUrl, onNext }: {
       {!snapshot.hasFrame && posterUrl && <Image source={{ uri: posterUrl }} resizeMode="contain" style={StyleSheet.absoluteFill} />}
       <Pressable style={StyleSheet.absoluteFill} onPress={coordinator.togglePause}
         accessibilityRole="button" accessibilityLabel={snapshot.userPaused ? 'Play video' : 'Pause video'} />
-      {snapshot.failed ? (
+      {snapshot.restoreError ? <View style={styles.feedback}>
+        <Text style={styles.text}>{snapshot.restoreError}</Text>
+        <Action label="Start from beginning" onPress={coordinator.retryRestore}/>
+        <Action label="Next video" onPress={onNext}/>
+      </View> : snapshot.restoring ? <View style={styles.center} pointerEvents="none"><ActivityIndicator color="#fff"/></View> : snapshot.failed ? (
         <View style={styles.feedback}>
           <Text style={styles.text}>Video unavailable</Text>
           <Action label="Retry" onPress={coordinator.retry} />

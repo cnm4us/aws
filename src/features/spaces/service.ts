@@ -80,6 +80,9 @@ export async function canViewSpaceFeed(space: SpaceRow, userId: number): Promise
   if (siteAdmin) return true
   if (space.owner_user_id != null && space.owner_user_id === userId) return true
   if (await isMember(db, space.id, userId)) return true
+  // Personal content requires explicit authority. Public flags and following /
+  // subscription relationships are not invitations into someone's personal space.
+  if (space.type === 'personal') return false
   const settings = parseSettings(space)
   if (settingsAllowPublicView(settings)) return true
   if (await repo.hasActiveSubscription(space.id, userId, db)) return true

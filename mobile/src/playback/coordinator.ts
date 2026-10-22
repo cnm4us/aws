@@ -10,6 +10,8 @@ export interface PlayerPort {
   pause(): void;
   setMuted(muted: boolean): void;
   seekToStart(): void;
+  currentTime?(): number;
+  seekTo?(seconds: number): Promise<void>;
   release(): void;
   status(): PlaybackStatus;
   bufferedSeconds?(): number;
@@ -25,6 +27,7 @@ export type PlaybackSnapshot<P> = {
   player: P | null;
   status: PlaybackStatus;
   hasFrame: boolean;
+  playbackStarted: boolean;
   failed: boolean;
   userPaused: boolean;
   muted: boolean;
@@ -33,20 +36,22 @@ export type PlaybackSnapshot<P> = {
   scrolling: boolean;
   livePlayers: number;
   prepared: boolean;
+  restoring: boolean;
+  restoreError: string | null;
 };
 
 type Entry<P> = {
   item: FeedVideoItem; player: P; unsubscribe: () => void;
   status: PlaybackStatus; failed: boolean; selectedBefore: boolean;
-  readyOnce: boolean; playRequested: boolean;
+  readyOnce: boolean; loadResolved: boolean; playRequested: boolean;
 };
 
 // Owns at most previous/current/next. Only the selected entry may play.
 export class PlaybackCoordinator<P extends PlayerPort> {
   private state: PlaybackSnapshot<P> = {
-    publicationId: null, activation: 0, player: null, status: 'idle', hasFrame: false,
+    publicationId: null, activation: 0, player: null, status: 'idle', hasFrame: false, playbackStarted: false,
     failed: false, userPaused: false, muted: true, appActive: false, scrolling: false,
-    livePlayers: 0, prepared: false, screenEligible:true,
+    livePlayers: 0, prepared: false, screenEligible:true, restoring:false, restoreError:null,
   };
   private item: FeedVideoItem | null = null;
   private desired: FeedVideoItem[] = [];
@@ -55,6 +60,8 @@ export class PlaybackCoordinator<P extends PlayerPort> {
   // Scroll/tap callbacks may already be queued when an account/feed unmounts.
   // Disposal is terminal: those callbacks must never acquire another player.
   private disposed = false;
+  private startupTimer: { activation: number; timer: ReturnType<typeof setTimeout> } | null = null;
+  private pendingRestore: { publicationId:number; seconds:number; userPaused:boolean; started:boolean; journeyGeneration?:number; timer?:ReturnType<typeof setTimeout> } | null = null;
 
   constructor(private readonly createPlayer: () => P,
     private readonly diagnostic: (event: PlaybackDiagnosticEvent) => void = () => {}, initialMuted = true) {
@@ -78,7 +85,8 @@ export class PlaybackCoordinator<P extends PlayerPort> {
     return this.owns(entry) && this.state.player === entry.player && this.item?.publicationId === entry.item.publicationId;
   }
   private eligible() {
-    return this.state.appActive && this.state.screenEligible && !this.state.scrolling && !this.state.userPaused && !this.state.failed;
+    return this.state.appActive && this.state.screenEligible && !this.state.scrolling && !this.state.userPaused && !this.state.failed
+      && !this.state.restoring && !this.state.restoreError;
   }
   private current() { return this.item ? this.entries.get(this.item.publicationId) : undefined; }
 
@@ -101,14 +109,45 @@ export class PlaybackCoordinator<P extends PlayerPort> {
 
   private reconcile() {
     if (this.disposed) return;
+    this.watchStartup();
     for (const entry of this.entries.values()) {
       const active = this.isActive(entry);
       entry.player.setMuted(active ? this.state.muted : true);
       // iOS also reports loading while seeking/rebuffering. Pausing then cancels
       // playback intent and can strand the selected source waiting for readiness.
-      const canPlay = entry.status === 'readyToPlay' || (entry.readyOnce && entry.status === 'loading');
+      // Once replaceAsync resolves, queue the selected player's play intent and
+      // let AVPlayer wait for data. Waiting for readyToPlay before requesting play
+      // can leave a cold selected source loading with no native play request.
+      const canPlay = entry.status !== 'error' && (entry.loadResolved || entry.status === 'readyToPlay' || entry.readyOnce);
       this.requestPlayback(entry, active && this.eligible() && canPlay);
     }
+  }
+
+  private clearStartupTimer() {
+    if (this.startupTimer) clearTimeout(this.startupTimer.timer);
+    this.startupTimer = null;
+  }
+
+  private watchStartup() {
+    if (!this.current() || !this.eligible() || (this.state.hasFrame && this.state.playbackStarted)) {
+      this.clearStartupTimer(); return;
+    }
+    if (this.startupTimer?.activation === this.state.activation) return;
+    this.clearStartupTimer();
+    const activation = this.state.activation;
+    const timer = setTimeout(() => {
+      if (!this.disposed && this.state.activation === activation && this.eligible()
+        && !(this.state.hasFrame && this.state.playbackStarted)) this.fail(activation);
+    }, 10_000);
+    // Node test processes need not stay alive solely for an unused native player.
+    (timer as ReturnType<typeof setTimeout> & { unref?: () => void }).unref?.();
+    this.startupTimer = { activation, timer };
+  }
+
+  private observedPlayback() {
+    if (this.state.playbackStarted) return;
+    this.publish({ playbackStarted: true });
+    if (this.state.hasFrame) this.clearStartupTimer();
   }
 
   private syncActive() {
@@ -119,8 +158,68 @@ export class PlaybackCoordinator<P extends PlayerPort> {
       failed: entry?.failed ?? Boolean(this.item?.playbackUrl),
       livePlayers: this.entries.size,
     });
+    this.applyRestore();
     this.reconcile();
   }
+
+  private clearRestore() {
+    if(this.pendingRestore?.timer)clearTimeout(this.pendingRestore.timer);
+    this.pendingRestore=null;
+  }
+  private applyRestore() {
+    const pending=this.pendingRestore,entry=this.current();
+    if(!pending || pending.started || !entry || !this.isActive(entry) || entry.status!=='readyToPlay')return;
+    pending.started=true;
+    const finish=(error?:unknown)=>{
+      if(this.disposed || this.pendingRestore!==pending || !this.isActive(entry))return;
+      this.clearRestore();
+      this.publish({restoring:false,restoreError:error?'Cannot restore playback position. Try again or start from the beginning.':null});
+      let delta:number|undefined;
+      try{const time=entry.player.currentTime?.();if(time!==undefined && Number.isFinite(time))delta=Math.abs(time-pending.seconds);}catch{}
+      this.diagnostic({type:'restore',publicationId:entry.item.publicationId,activation:this.state.activation,restoreOutcome:error?'failed':'restored',positionDeltaSeconds:delta,journeyGeneration:pending.journeyGeneration});
+      if(error)this.diagnostic({type:'error',publicationId:entry.item.publicationId,activation:this.state.activation,failureKind:'position_restore'});
+      this.reconcile();
+    };
+    try {
+      if(!entry.player.seekTo)throw Error('Time restoration unavailable');
+      void entry.player.seekTo(pending.seconds).then(()=>finish(),finish);
+    }catch(error){finish(error);}
+  }
+
+  capture = () => {
+    const userPaused=this.state.userPaused;
+    this.setScreenEligible(false);
+    let seconds=0;
+    try {seconds=this.current()?.player.currentTime?.()??0;}catch{}
+    return {publicationId:this.state.publicationId,positionSeconds:Number.isFinite(seconds)?Math.max(0,seconds):0,userPaused};
+  };
+
+  restoreAt = (items:FeedVideoItem[],index:number,restore:{positionSeconds:number;userPaused:boolean;journeyGeneration?:number}) => {
+    const item=items[index];if(!item || this.disposed)return;
+    this.clearRestore();
+    if(!item.playbackUrl){this.publish({restoring:false,restoreError:null});this.selectAt(items,index);this.publish({userPaused:restore.userPaused});return;}
+    const duration=item.durationSeconds;
+    const seconds=Number.isFinite(restore.positionSeconds)?Math.max(0,restore.positionSeconds):0;
+    this.pendingRestore={publicationId:item.publicationId,seconds:duration?Math.min(seconds,Math.max(0,duration-0.1)):seconds,userPaused:restore.userPaused,started:false,journeyGeneration:restore.journeyGeneration};
+    const pending=this.pendingRestore;
+    pending.timer=setTimeout(()=>{
+      if(this.pendingRestore!==pending || this.disposed)return;
+      this.clearRestore();this.publish({restoring:false,restoreError:'Cannot restore playback position. Refresh or start from the beginning.'});this.reconcile();
+      this.diagnostic({type:'restore',publicationId:pending.publicationId,activation:this.state.activation,restoreOutcome:'failed',journeyGeneration:pending.journeyGeneration});
+      this.diagnostic({type:'error',publicationId:pending.publicationId,activation:this.state.activation,failureKind:'position_restore'});
+    },10_000);
+    this.publish({restoring:true,restoreError:null,userPaused:restore.userPaused});
+    this.selectAt(items,index);
+    this.publish({userPaused:restore.userPaused});
+    this.applyRestore();
+  };
+  retryRestore = () => {
+    // The pending seek has already been abandoned after an error. Retry through
+    // an authorized feed reload; starting over is the local safe escape.
+    if(this.disposed)return;
+    try{this.current()?.player.seekToStart();this.publish({restoreError:null,restoring:false});this.reconcile();}
+    catch{this.publish({restoreError:'Cannot start this video. Refresh to try again.'});}
+  };
 
   private statusChanged(entry: Entry<P>, status: PlaybackStatus,
     failureKind: 'native_error' | 'source_load' = 'native_error', error?: unknown) {
@@ -153,7 +252,7 @@ export class PlaybackCoordinator<P extends PlayerPort> {
       return;
     }
     const entry: Entry<P> = { item, player, unsubscribe: () => {}, status: 'loading', failed: false,
-      selectedBefore: false, readyOnce: false, playRequested: false };
+      selectedBefore: false, readyOnce: false, loadResolved: false, playRequested: false };
     this.entries.set(item.publicationId, entry);
     const subscriptions: (() => void)[] = [];
     entry.unsubscribe = () => subscriptions.forEach(unsubscribe => unsubscribe());
@@ -172,13 +271,17 @@ export class PlaybackCoordinator<P extends PlayerPort> {
             reason: this.isActive(entry) ? 'ineligible' : 'nonselected' });
           return;
         }
-        if (this.isActive(entry)) this.diagnostic({ type: 'playing', activation: this.state.activation,
-          publicationId: item.publicationId, playing });
+        if (this.isActive(entry)) {
+          if (playing) this.observedPlayback();
+          this.diagnostic({ type: 'playing', activation: this.state.activation,
+            publicationId: item.publicationId, playing });
+        }
       }));
       if (player.subscribeProgress) subscriptions.push(player.subscribeProgress(currentTime => {
         // Keep clock advancement independent of the view's first-frame callback:
         // a missing presentation event must not hide otherwise-running playback.
         if (this.isActive(entry) && this.eligible() && currentTime > 0) {
+          if (currentTime >= 0.05) this.observedPlayback();
           this.diagnostic({ type: 'progress', activation: this.state.activation, publicationId: item.publicationId, currentTime });
         }
       }));
@@ -191,8 +294,13 @@ export class PlaybackCoordinator<P extends PlayerPort> {
     }
     // A native bridge call may throw before returning its promise.
     try {
+      this.diagnostic({ type: 'load_started', publicationId: item.publicationId });
       void player.load(item.playbackUrl!).then(() => {
-        if (this.owns(entry)) this.statusChanged(entry, player.status());
+        if (this.owns(entry)) {
+          entry.loadResolved = true;
+          this.diagnostic({ type: 'load_resolved', publicationId: item.publicationId });
+          this.statusChanged(entry, player.status());
+        }
       }).catch(error => { this.statusChanged(entry, 'error', 'source_load', error); });
     } catch (error) { this.statusChanged(entry, 'error', 'source_load', error); }
   }
@@ -219,6 +327,10 @@ export class PlaybackCoordinator<P extends PlayerPort> {
 
   private activate(item: FeedVideoItem | null, desired: FeedVideoItem[], force = false) {
     if (this.disposed) return;
+    if(this.pendingRestore && this.pendingRestore.publicationId!==item?.publicationId) {
+      this.clearRestore();this.publish({restoring:false,restoreError:null});
+    }
+    if(!this.pendingRestore && (this.state.publicationId!==item?.publicationId || force))this.publish({restoring:false,restoreError:null});
     this.desired = [...new Map(desired.map(row => [row.publicationId, row])).values()].slice(0, 3);
     if (!force && this.item?.publicationId === item?.publicationId && this.item?.playbackUrl === item?.playbackUrl) {
       this.fillWindow();
@@ -235,10 +347,10 @@ export class PlaybackCoordinator<P extends PlayerPort> {
     this.item = item;
     const activation = this.state.activation + 1;
     this.publish({ publicationId: item?.publicationId ?? null, activation, player: null,
-      status: 'idle', hasFrame: false, failed: false, userPaused: false, prepared });
+      status: 'idle', hasFrame: false, playbackStarted: false, failed: false, userPaused: this.pendingRestore?.userPaused??false, prepared });
     if (item) this.diagnostic({ type: 'selection', publicationId: item.publicationId, activation,
       prepared, bufferedSeconds: Math.max(0, bufferedSeconds) });
-    if (!force && reusable?.selectedBefore) reusable.player.seekToStart();
+    if (!force && reusable?.selectedBefore && !this.pendingRestore) reusable.player.seekToStart();
     this.fillWindow();
     const selected = this.current();
     if (selected) selected.selectedBefore = true;
@@ -290,6 +402,7 @@ export class PlaybackCoordinator<P extends PlayerPort> {
     if (this.disposed) return;
     if (this.state.activation === activation && !this.state.hasFrame && this.state.player) {
       this.publish({ hasFrame: true });
+      this.watchStartup();
       this.diagnostic({ type: 'first_frame', publicationId: this.state.publicationId, activation });
     }
   };
@@ -306,10 +419,12 @@ export class PlaybackCoordinator<P extends PlayerPort> {
   dispose = () => {
     if (this.disposed) return;
     this.disposed = true;
+    this.clearStartupTimer();
+    this.clearRestore();
     for (const entry of [...this.entries.values()]) this.drop(entry);
     this.item = null;
     this.desired = [];
     this.publish({ player: null, publicationId: null, activation: this.state.activation + 1,
-      hasFrame: false, status: 'idle', failed: false, livePlayers: 0 });
+      hasFrame: false, playbackStarted: false, status: 'idle', failed: false, livePlayers: 0 });
   };
 }

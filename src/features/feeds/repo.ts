@@ -4,7 +4,18 @@ import { can } from '../../security/permissions'
 import { PERM } from '../../security/perm'
 import { getPool } from '../../db'
 
-export async function listGlobalFeedRows(opts: { cursorPublishedAt?: string | null; cursorId?: number | null; limit: number; userId?: number | null }) {
+export type FeedSelection = {
+  cursorPublishedAt?: string | null; cursorId?: number | null; limit: number; userId?: number | null;
+  publicationId?: number; newerThan?: { ts: string; id: number }; ascending?: boolean;
+};
+function addSelection(where: string[], params: any[], opts: FeedSelection) {
+  if (opts.publicationId !== undefined) { where.push('sp.id = ?'); params.push(opts.publicationId); }
+  if (opts.newerThan) {
+    where.push('(sp.published_at > ? OR (sp.published_at = ? AND sp.id > ?))');
+    params.push(opts.newerThan.ts, opts.newerThan.ts, opts.newerThan.id);
+  }
+}
+export async function listGlobalFeedRows(opts: FeedSelection) {
   const db = getPool()
   const params: any[] = []
   const userId = opts.userId ?? null
@@ -21,6 +32,8 @@ export async function listGlobalFeedRows(opts: { cursorPublishedAt?: string | nu
     where.push('(sp.published_at < ? OR (sp.published_at = ? AND sp.id < ?))')
     params.push(opts.cursorPublishedAt, opts.cursorPublishedAt, opts.cursorId)
   }
+  addSelection(where, params, opts)
+  const direction = opts.ascending ? 'ASC' : 'DESC'
   const sql = `
     SELECT
       EXISTS (
@@ -94,7 +107,7 @@ export async function listGlobalFeedRows(opts: { cursorPublishedAt?: string | nu
     LEFT JOIN users owner ON owner.id = u.user_id
     LEFT JOIN profiles prof ON prof.user_id = owner.id
     WHERE ${where.join(' AND ')}
-    ORDER BY sp.published_at DESC, sp.id DESC
+    ORDER BY sp.published_at ${direction}, sp.id ${direction}
     LIMIT ?
   `
   params.push(opts.limit)
@@ -294,7 +307,7 @@ export async function getSpaceFeedPinnedRowByProductionUlid(
 
 export async function listSpaceFeedRows(
   spaceId: number,
-  opts: { cursorPublishedAt?: string | null; cursorId?: number | null; limit: number; userId?: number | null }
+  opts: FeedSelection
 ) {
   const db = getPool()
   const userId = opts.userId ?? null
@@ -311,6 +324,8 @@ export async function listSpaceFeedRows(
     where.push('(sp.published_at < ? OR (sp.published_at = ? AND sp.id < ?))')
     params.push(opts.cursorPublishedAt, opts.cursorPublishedAt, opts.cursorId)
   }
+  addSelection(where, params, opts)
+  const direction = opts.ascending ? 'ASC' : 'DESC'
   const sql = `
     SELECT
       EXISTS (
@@ -384,7 +399,7 @@ export async function listSpaceFeedRows(
     LEFT JOIN users owner ON owner.id = u.user_id
     LEFT JOIN profiles prof ON prof.user_id = owner.id
     WHERE ${where.join(' AND ')}
-    ORDER BY sp.published_at DESC, sp.id DESC
+    ORDER BY sp.published_at ${direction}, sp.id ${direction}
     LIMIT ?
   `
   params.push(opts.limit)

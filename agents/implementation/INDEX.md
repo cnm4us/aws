@@ -41,10 +41,12 @@ This file is a lightweight index for ongoing implementation work.
 - `agents/implementation/plan_166.md` — Retire moderation categories and move reporting entry to moderation user groups
 - `agents/implementation/plan_167.md` — Anonymous iOS video feed POC with Expo Go, vertical paging, and preloaded playback
 - `agents/implementation/plan_168.md` — Signed-in native viewing across Global and existing accessible personal/group/channel spaces
+- `agents/implementation/plan_169.md` — Creator profiles, authorized personal-space entry, and return to the original native feed/video
 
 ## Active / Next
-- Next native scope: creator profiles and authorized personal-space entry; detailed plan pending. `agents/implementation/plan_168.md` is Complete (A–H; VoiceOver deferred and other acceptance limits recorded).
-- Latest completed: `agents/implementation/plan_168.md` (A–H Complete — signed-in native Global/Spaces viewing alongside web; local commit authorized)
+- Latest completed native increment: `agents/implementation/plan_169.md` (A–F Complete for the recorded iPhone development milestone; creator profiles and authorized personal-feed return, final 40/40 normal transitions prepared, p95 120.38 ms, peak three. Coverage limits and prior unconfirmed native-freeze cause retained. Recent plan retained through review/Git handoff; user authorized commit/push, staging in progress).
+- Next native scope: remaining viewing/discovery from `agents/roadmaps/roadmap_native_viewing.md`; create its detailed plan before implementation.
+- Previous completed: `agents/implementation/plan_168.md` (A–H Complete — signed-in native Global/Spaces viewing alongside web; committed/pushed as `6cfad70`; VoiceOver deferred and other acceptance limits recorded)
 - Other active work: `agents/implementation/plan_166.md` (moderation user groups)
 - Native feature contract: `agents/features/feature_02_personal-space-global-feed-context-integrity.md`
 - Check latest `plan_NN.md` with `Status: Active`.
