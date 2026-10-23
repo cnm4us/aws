@@ -60,17 +60,17 @@ Add comments, likes, contextual follows, reporting, and membership or invitation
 
 Integrate in-feed messages and production viewing analytics separately from the POC's local diagnostic reports. Account for platform-specific requirements before introducing subscription or donation checkout.
 
-### Candidate UI refinement after bundled acceptance
+### Delivered UI refinement after bundled acceptance
 
-User design notes from 2026-10-22, retained for a separate focused plan after Plan 171 acceptance. No UI implementation is requested in the current binary:
+The user’s design notes from 2026-10-22 are implemented in [Plan 172](../implementation/plan_172.md), following Plan171. Signed build6 is installed, and controls/header/navigation/pause/Refresh/lifecycle/settings/offline-signout checks pass over recorded ranges. The final confirmed stable-Wi-Fi/CC-on sample passes:42/42 normal prepared, first-frame p95121.03ms, peak3, zero errors/incomplete/unexpected playback. User confirms the brief separate CC spinner is gone, captions follow speech and no controls freeze or audio overlaps. Build5’s earlier155.13ms p95 miss remains recorded; no causal performance claim. Plan172 A–F and documentation handoff are Complete with recorded limits. The implemented changes are:
 
-- Replace changing CC On/Off text with a constant **CC** in a compact rounded-square pill. White at 50% opacity means off; white at 100% means on.
-- Replace Mute/Unmute text with an audio symbol in a matching rounded-square pill. The user listed 50% opacity for both sound states; the on-state treatment remains open. Matching CC's 50% off / 100% on is a recommendation, not a locked choice.
-- Make the current space label (for example Global) open the existing full-screen space selector when tapped.
-- Put a hamburger menu at the upper right with Login/Logout and Settings, reducing the persistent toolbar labels.
-- Validate readable labels, touch targets, state announcements and text/layout scaling across controls. Build 2 is readable at medium text sizes; some buttons clip/become unreadable at larger sizes. Constant icon labels can reduce width pressure but do not establish full large-text support. Preserve original-feed return, intentional pause, sound and selected-only playback through the navigation change.
+- Replaced changing CC On/Off text with a constant **CC** in a compact rounded-square pill. White at 50% opacity means off; white at 100% means on.
+- Replaced Mute/Unmute text with an audio symbol in a matching rounded-square pill. The user confirmed 50% off / 100% on, matching CC; speaker artwork also distinguishes states.
+- Made the current space label (for example Global) open the existing full-screen space selector when tapped.
+- Added a hamburger menu at the upper right with Login/Logout and Settings, reducing the persistent toolbar labels.
+- Validated controls and layout over recorded phone/host ranges while preserving original-feed return, intentional pause, sound and selected-only playback. The new header passes at the largest tested size; full large-text and physical VoiceOver qualification remain separate.
 
-VoiceOver remains deferred by the user. Keep internal diagnostic access available while reviewing the space-title gesture. This is a recorded design direction, not completion of accessibility or public-release qualification.
+VoiceOver remains deferred by the user. Plan172 moves internal diagnostics to Menu and retains Refresh there, preserving one Feed owner, current authority and original-feed checkpoints. The header passes at the largest tested size with accepted ellipsis; full maximum-size qualification across other screens remains unverified. Fresh preference persistence passes; pre/post upgrade comparison is unverified. Brief Checking Access on protected returns remains current policy and a separate polish candidate. Host/navigation tests, signed artifact and focused phone acceptance are recorded. This plan does not establish accessibility or public-release qualification.
 
 ### 5 Validate and distribute
 
@@ -93,7 +93,7 @@ An existing user can browse Global anonymously, sign in, select an existing acce
 
 ## Execution documents
 
-The first delivered viewer milestone is [Plan168](../implementation/plan_168.md). [Plan169](../implementation/plan_169.md) completes creator profiles, authorized personal-space entry and return for the recorded development milestone, pushed as `49e8dd6`. [Plan170](../implementation/plan_170.md) and [Plan171](../implementation/plan_171.md) are Complete (A–F) for native stories/captions and the signed bundled internal iPhone milestone, with recorded limits; their implementation is committed and pushed as `1dfd494`, with remote implementation SHA verified. The proposed control/header/menu refinement recorded here needs its own focused plan when requested. Implementation status/evidence belongs in the repository plans; this roadmap retains high-level sequencing.
+The first delivered viewer milestone is [Plan168](../implementation/plan_168.md). [Plan169](../implementation/plan_169.md) completes creator profiles, authorized personal-space entry and return for the recorded development milestone, pushed as `49e8dd6`. [Plan170](../implementation/plan_170.md) and [Plan171](../implementation/plan_171.md) are Complete (A–F) for native stories/captions and the signed bundled internal iPhone milestone, with recorded limits; their implementation is committed and pushed as `1dfd494`, with remote implementation SHA verified. [Plan172](../implementation/plan_172.md) delivers the control/header/menu refinement; build6 functional and numerical phone acceptance passes with recorded limits, and A–F and documentation handoff are Complete with recorded limits. Its worktree is not yet committed/pushed. Implementation status/evidence belongs in the repository plans; this roadmap retains high-level sequencing.
 
 ## Repository references
 
@@ -101,6 +101,7 @@ The first delivered viewer milestone is [Plan168](../implementation/plan_168.md)
 - [Creator profiles and personal-feed return plan](../implementation/plan_169.md)
 - [Publication stories and timed captions plan](../implementation/plan_170.md)
 - [Bundled internal iPhone plan](../implementation/plan_171.md)
+- [Native controls, space navigation and account menu plan](../implementation/plan_172.md)
 - [Accepted native POC](../implementation/plan_167.md)
 - [Context integrity contract](../features/feature_02_personal-space-global-feed-context-integrity.md)
 

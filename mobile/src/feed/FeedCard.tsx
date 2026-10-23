@@ -1,3 +1,4 @@
+import { CONTROL_LANE } from '../ui/IconButton';
 import { memo, type ReactNode } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { FeedVideoItem } from './types';
@@ -28,7 +29,7 @@ export const FeedCard = memo(function FeedCard({ item, height, children, onCreat
 
 const styles = StyleSheet.create({
   card: { backgroundColor: '#000000', overflow: 'hidden' },
-  caption: { position: 'absolute', left: 20, right: 96, bottom: 28 },
+  caption: { position: 'absolute', left: 20, right: CONTROL_LANE.textRight, bottom: 28 },
   creator: { color: '#ffffff', fontSize: 18, fontWeight: '700', textShadowColor: '#000000', textShadowRadius: 8 },
   description: { color: '#ffffff', fontSize: 15, lineHeight: 21, marginTop: 8, textShadowColor: '#000000', textShadowRadius: 8 },
 });

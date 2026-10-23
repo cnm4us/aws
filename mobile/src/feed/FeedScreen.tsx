@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Alert, FlatList, Pressable, Share, StyleSheet, Text, View } from 'react-native';
+import { FlatList, StyleSheet, Text, View } from 'react-native';
 import { Action, Message } from '../ui/Message';
 import { FeedCard } from './FeedCard';
 import { useViewerFeed } from './useViewerFeed';
@@ -13,7 +13,8 @@ import type { FeedVideoItem } from './types';
 import { useFeedPlayback } from '../playback/useFeedPlayback';
 import { VideoSurface } from '../playback/VideoSurface';
 import { PagingController } from '../playback/paging';
-import { playbackDiagnostics } from '../diagnostics/development';
+import { FeedHeader } from '../ui/FeedHeader';
+import { IconButton, CONTROL_LANE } from '../ui/IconButton';
 import type { PlaybackPreferences, PlaybackPreferencesSnapshot } from '../preferences/playbackPreferences';
 import type { FeedCheckpoint, PlaybackCheckpoint } from '../navigation/viewerJourney';
 import { TextResources } from '../content/resources';
@@ -21,13 +22,15 @@ import { CaptionLayer } from '../content/CaptionLayer';
 import type { CaptionPreferences } from '../preferences/captionPreferences';
 import type { ApiClient } from '../api/client';
 
+export type FeedCommands={requestRefresh:()=>void};
 export type FeedPlaybackHandle={capture:()=>PlaybackCheckpoint;release:()=>void};
 
 
-export function FeedScreen({ context, preferences, sound, captionPreferences, captions, focused, onSpaces, onAccount, onSettings, onGlobal, onCreator, registerPlayback, restore, onBackProfile }: {
+export function FeedScreen({ context, preferences, sound, captionPreferences, captions, focused, onSpaces, onMenu, onGlobal, onCreator, registerPlayback, registerCommands, restore, onBackProfile }: {
   captionPreferences: CaptionPreferences; captions: ReturnType<CaptionPreferences['getSnapshot']>;
   context: FeedContext; preferences: PlaybackPreferences; sound: PlaybackPreferencesSnapshot; focused: boolean;
-  onSpaces:()=>void;onAccount:()=>void;onSettings:()=>void;onGlobal:()=>void;
+  onSpaces:()=>void;onMenu:()=>void;onGlobal:()=>void;
+  registerCommands?:(handle:FeedCommands)=>()=>void;
   onCreator?:(id:number)=>void;registerPlayback?:(handle:FeedPlaybackHandle)=>()=>void;
   restore?:FeedCheckpoint;onBackProfile?:()=>void;
 }) {
@@ -36,20 +39,30 @@ export function FeedScreen({ context, preferences, sound, captionPreferences, ca
   const access=useSpaceAccess(context,client,store,focused);
   const eligible=focused && !auth.validating && !snapshot.errorStatus && access.authorized
     && (auth.status==='authenticated' || auth.status==='anonymous');
-  const refresh=(fromStart=false)=>{if(fromStart)clearResume();void access.check().then(ok=>{if(ok)void store.refresh();});};
+  // Bound to this feed/auth generation. Unmount and context replacement invalidate commands.
+  const pendingRefresh = useRef(false);
+  const live = useRef({ mounted: false, focused });
+  live.current.focused = focused;
+  const refresh = (fromStart=false) => {
+    const generation=auth.generation;
+    if(fromStart)clearResume();
+    void access.check().then(ok=>{
+      if(ok && live.current.mounted && live.current.focused && identity.getSnapshot().generation===generation)void store.refresh();
+    });
+  };
+  useLayoutEffect(()=>{
+    live.current.mounted=true;
+    const unregister=registerCommands?.({requestRefresh:()=>{
+      if(live.current.mounted && identity.getSnapshot().generation===auth.generation)pendingRefresh.current=true;
+    }});
+    return()=>{live.current.mounted=false;pendingRefresh.current=false;unregister?.();};
+  },[store,identity,auth.generation,registerCommands]);
+  useEffect(()=>{
+    if(focused && pendingRefresh.current){pendingRefresh.current=false;refresh(true);}
+  },[focused,store]);
   return <SafeAreaView style={styles.screen} edges={['top','bottom']}>
     <View style={styles.toolbar}>
-      <View style={styles.titleRow}>
-        <Pressable onLongPress={playbackDiagnostics ? sharePlaybackDiagnostics : undefined} accessibilityRole="header" style={{flex:1}}>
-          <Text style={styles.heading}>{context.kind==='global'?'Global':context.name}</Text>
-          {context.kind==='space' && <Text style={{color:'#c7c7ce'}}>{context.type}</Text>}
-        </Pressable>
-        <Action label="Refresh" onPress={()=>refresh(true)} />
-      </View>
-      <View style={styles.headerActions}>
-        {onBackProfile && <Action label="Back to profile" onPress={onBackProfile}/>}
-        <Action label="Spaces" onPress={onSpaces}/><Action label="Account" onPress={onAccount}/><Action label="Settings" onPress={onSettings}/>
-      </View>
+      <FeedHeader context={context} onSpaces={onSpaces} onMenu={onMenu} onBackProfile={onBackProfile}/>
       {auth.status==='anonymous' && auth.message && <Text accessibilityRole="alert" style={{color:'#ffb4b4',fontSize:15}}>{auth.message}</Text>}
       {snapshot.resume?.outcome==='unavailable' && <Text style={{color:'#c7c7ce'}}>The original video is no longer available. Showing the current feed.</Text>}
     </View>
@@ -175,38 +188,17 @@ function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosti
         visible={captions.ready && captions.enabled && textEligible && !storyExpanded && !playback.failed && !playback.restoring && !playback.restoreError}/>}
       {snapshot.items[index]?.playbackUrl && (
         <View style={styles.mute}>
-          {snapshot.items[index]?.hasCaptions && <Pressable accessibilityRole="button"
-            accessibilityLabel={captions.enabled ? 'Hide captions' : 'Show captions'} accessibilityState={{ selected: captions.enabled, disabled: !captions.ready }}
-            disabled={!captions.ready} onPress={() => { void captionPreferences.toggle(); }} style={styles.cc}>
-            <Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>{captions.enabled ? 'CC On' : 'CC Off'}</Text>
-          </Pressable>}
-          <Action label={muted ? 'Unmute' : 'Mute'} onPress={onToggleMute} />
+          {snapshot.items[index]?.hasCaptions && <IconButton icon="cc"
+            label={captions.enabled ? 'Hide captions' : 'Show captions'} selected={captions.enabled}
+            disabled={!captions.ready} onPress={() => { void captionPreferences.toggle(); }} />}
+          <IconButton icon={muted ? 'soundOff' : 'soundOn'} label={muted ? 'Unmute' : 'Mute'}
+            selected={!muted} onPress={onToggleMute} />
         </View>
       )}
     </View>
   );
 }
 
-export function sharePlaybackDiagnostics() {
-    const diagnostics = playbackDiagnostics;
-    if (!diagnostics) return;
-    const report = diagnostics.report();
-    const compactReport = diagnostics.shareReport();
-    const p95 = report.summary.preparedFrames.p95Ms;
-    const share = (full: boolean) => {
-      const exported = full ? report : compactReport;
-      void Share.share({ message: JSON.stringify(exported, null, full ? 2 : undefined), title: 'Video playback diagnostics' }).catch(() => {});
-    };
-    Alert.alert('Playback diagnostics',
-      `${report.build?.kind ?? 'development'} ${report.build?.appVersion ?? ''} (${report.build?.appBuild ?? '?'})\nSource: ${report.build?.sourceId?.slice(0,12) ?? 'unprepared'}\nPlayers: ${report.resources.livePlayers} live, ${report.resources.peakPlayers} peak.\nTransitions: ${report.summary.transitions}; errors: ${report.summary.errors}.\nUnexpected playback: ${report.resources.unexpectedPlayback}.\nPrepared first-frame p95: ${p95 === null ? 'no samples yet' : `${Math.round(p95)} ms`}.`,
-      [{ text: 'Close', style: 'cancel' },
-        { text: 'Share report', onPress: () => share(false) },
-        { text: 'Share full report', onPress: () => share(true) },
-        { text: 'Reset diagnostics', onPress: () => {
-          diagnostics.reset();
-          Alert.alert('Diagnostics reset', 'The next video selection starts the new timing sample. Playback and settings are unchanged.');
-        } }]);
-  };
 
 export function FeedFooter({ snapshot, store }: { snapshot: FeedSnapshot; store: FeedStore }) {
   if (snapshot.loadingMore) return <Message title="Loading more videos" busy />;
@@ -222,10 +214,7 @@ export function FeedFooter({ snapshot, store }: { snapshot: FeedSnapshot; store:
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#000000' },
   toolbar: { paddingHorizontal:16, paddingVertical:8, gap:8, backgroundColor:'#000' },
-  titleRow: { flexDirection:'row', alignItems:'center', gap:12 },
   headerActions: { flexDirection: 'row', gap: 8, flexWrap:'wrap', justifyContent:'center', paddingBottom:4 },
-  heading: { color: '#ffffff', fontSize: 24, fontWeight: '700', textShadowColor: '#000000', textShadowRadius: 8 },
-  mute: { position: 'absolute', right: 16, bottom: 24, gap: 8, maxWidth: 80 },
-  cc: { minHeight: 44, paddingHorizontal: 8, borderRadius: 12, borderWidth: 1, borderColor: '#777', backgroundColor: 'rgba(0,0,0,0.7)', alignItems: 'center', justifyContent: 'center' },
+  mute: { position: 'absolute', right: CONTROL_LANE.right, bottom: 24, gap: 8, width: CONTROL_LANE.width },
   unavailable: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center' },
 });

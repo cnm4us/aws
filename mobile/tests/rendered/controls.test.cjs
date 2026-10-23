@@ -1,0 +1,31 @@
+const assert = require('node:assert/strict');
+const test = require('node:test');
+const { bundle, React: R, Test, flatten } = require('./harness.cjs');
+
+test('actual compact controls preserve enabled off state, action labels and constant glyph', async () => {
+  const { IconButton, FeedHeader } = await bundle("export {IconButton} from './src/ui/IconButton';export {FeedHeader} from './src/ui/FeedHeader';");
+  let root, taps = 0;
+  await Test.act(async () => { root = Test.create(R.createElement(IconButton, { icon: 'cc', label: 'Show captions', selected: false, onPress: () => taps++ })); });
+  const button = () => root.root.findByType('Pressable');
+  assert.equal(button().props.disabled, false);
+  assert.equal(button().props.accessibilityState.selected, false);
+  assert.equal(root.root.findByType('Text').props.children, 'CC');
+  assert.equal(flatten(root.root.findByType('Text').props.style).opacity, .5);
+  await Test.act(async () => button().props.onPress()); assert.equal(taps, 1);
+  await Test.act(async () => root.update(R.createElement(IconButton, { icon: 'cc', label: 'Hide captions', selected: true, onPress: () => taps++ })));
+  assert.equal(root.root.findByType('Text').props.children, 'CC');
+  assert.equal(flatten(root.root.findByType('Text').props.style).opacity, 1);
+  await Test.act(async () => root.update(R.createElement(IconButton, { icon: 'soundOff', label: 'Unmute', selected: false, onPress: () => taps++ })));
+  const off = root.root.findByType('Image').props.source;
+  await Test.act(async () => root.update(R.createElement(IconButton, { icon: 'soundOn', label: 'Mute', selected: true, onPress: () => taps++ })));
+  assert.notEqual(root.root.findByType('Image').props.source, off);
+  await Test.act(async () => root.update(R.createElement(IconButton, { icon: 'cc', label: 'Show captions', selected: false, disabled: true, onPress: () => taps++ })));
+  assert.equal(button().props.disabled, true);
+  let spaces = 0, menu = 0, back = 0;
+  await Test.act(async () => root.update(R.createElement(FeedHeader, { context: { kind: 'global' }, onSpaces: () => spaces++, onMenu: () => menu++, onBackProfile: () => back++ })));
+  const pressables = root.root.findAllByType('Pressable');
+  await Test.act(async () => { pressables.forEach(node => node.props.onPress()); });
+  assert.deepEqual([spaces, menu, back], [1, 1, 1]);
+  assert.match(pressables[0].props.accessibilityLabel, /Current space: Global/);
+  await Test.act(async () => root.unmount());
+});

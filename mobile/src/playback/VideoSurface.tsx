@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View, ScrollView } from 'react-native';
 import { VideoView } from 'expo-video';
 import { Action } from '../ui/Message';
 import type { PlaybackCoordinator, PlaybackSnapshot } from './coordinator';
@@ -34,16 +34,16 @@ export function VideoSurface({ coordinator, snapshot, posterUrl, onNext }: {
       {!snapshot.hasFrame && posterUrl && <Image source={{ uri: posterUrl }} resizeMode="contain" style={StyleSheet.absoluteFill} />}
       <Pressable style={StyleSheet.absoluteFill} onPress={coordinator.togglePause}
         accessibilityRole="button" accessibilityLabel={snapshot.userPaused ? 'Play video' : 'Pause video'} />
-      {snapshot.restoreError ? <View style={styles.feedback}>
+      {snapshot.restoreError ? <ScrollView style={styles.feedback} contentContainerStyle={styles.feedbackContent}>
         <Text style={styles.text}>{snapshot.restoreError}</Text>
         <Action label="Start from beginning" onPress={coordinator.retryRestore}/>
         <Action label="Next video" onPress={onNext}/>
-      </View> : snapshot.restoring ? <View style={styles.center} pointerEvents="none"><ActivityIndicator color="#fff"/></View> : snapshot.failed ? (
-        <View style={styles.feedback}>
+      </ScrollView> : snapshot.restoring ? <View style={styles.center} pointerEvents="none"><ActivityIndicator color="#fff"/></View> : snapshot.failed ? (
+        <ScrollView style={styles.feedback} contentContainerStyle={styles.feedbackContent}>
           <Text style={styles.text}>Video unavailable</Text>
           <Action label="Retry" onPress={coordinator.retry} />
           <Action label="Next video" onPress={onNext} />
-        </View>
+        </ScrollView>
       ) : showLoading || snapshot.userPaused ? (
         <View style={styles.center} pointerEvents="none">
           {snapshot.userPaused ? <Text style={styles.text}>Paused</Text> : <ActivityIndicator color="#ffffff" size="large" />}
@@ -55,6 +55,7 @@ export function VideoSurface({ coordinator, snapshot, posterUrl, onNext }: {
 
 const styles = StyleSheet.create({
   center: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center' },
-  feedback: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center', gap: 16, backgroundColor: 'rgba(0,0,0,0.6)' },
+  feedback: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.6)' },
+  feedbackContent: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', gap: 16, padding: 16 },
   text: { color: '#ffffff', fontSize: 20, fontWeight: '600', textShadowColor: '#000000', textShadowRadius: 8 },
 });

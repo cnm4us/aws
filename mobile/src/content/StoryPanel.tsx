@@ -45,7 +45,7 @@ export function StoryPanel({ publicationId, preview, resources, active, height, 
 }
 const styles = StyleSheet.create({
   panel: { gap: 4, backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 12, paddingHorizontal: 10, paddingBottom: 8 },
-  button: { minHeight: 44, justifyContent: 'center' },
+  button: { minHeight: 44, paddingVertical: 8, justifyContent: 'center' },
   action: { color: '#fff', fontSize: 16, fontWeight: '700' },
   text: { color: '#fff', fontSize: 16, lineHeight: 23 },
 });

@@ -19,7 +19,7 @@ export function SpacesScreen({selected,onSelect,onSignIn}:{selected:FeedContext;
       setError(e instanceof Error?e.message:'Cannot load spaces.');
     });return()=>controller.abort();
   },[client,revision,snapshot.status]);
-  if(snapshot.status!=='authenticated')return <View style={styles.flex}><Message title="Sign in to view your spaces"/><Action label="Account" onPress={onSignIn}/><Action label="Global" onPress={()=>onSelect({kind:'global'})}/></View>;
+  if(snapshot.status!=='authenticated')return <ScrollView contentContainerStyle={styles.flex}><Message scrollable={false} title="Sign in to view your spaces"/><Action label="Account" onPress={onSignIn}/><Action label="Global" onPress={()=>onSelect({kind:'global'})}/></ScrollView>;
   const render=(space:SpaceSummary)=>{
     const context:FeedContext={kind:'space',spaceId:space.id,name:space.name,type:space.type};
     return <View key={space.id} style={styles.entry}>
@@ -29,7 +29,7 @@ export function SpacesScreen({selected,onSelect,onSignIn}:{selected:FeedContext;
   };
   return <ScrollView contentContainerStyle={styles.content}>
     <Action label={selected.kind==='global'?'✓ Global':'Global'} onPress={()=>onSelect({kind:'global'})}/>
-    {error?<Message title="Cannot load spaces" message={error} onRetry={()=>setRevision(v=>v+1)}/>:!data?<Message title="Loading spaces" busy/>:<>
+    {error?<Message scrollable={false} title="Cannot load spaces" message={error} onRetry={()=>setRevision(v=>v+1)}/>:!data?<Message scrollable={false} title="Loading spaces" busy/>:<>
       {data.personal && <><Text style={styles.heading}>Personal</Text>{render(data.personal)}</>}
       <Text style={styles.heading}>Groups</Text>{data.groups.length?data.groups.map(render):<Text style={styles.detail}>No groups yet.</Text>}
       <Text style={styles.heading}>Channels</Text>{data.channels.length?data.channels.map(render):<Text style={styles.detail}>No channels yet.</Text>}
@@ -37,4 +37,4 @@ export function SpacesScreen({selected,onSelect,onSignIn}:{selected:FeedContext;
     </>}
   </ScrollView>;
 }
-const styles=StyleSheet.create({flex:{flex:1,backgroundColor:'#000',padding:20,gap:12},content:{padding:20,gap:16},heading:{color:'#fff',fontSize:22,fontWeight:'700'},detail:{color:'#c7c7ce',fontSize:15},entry:{gap:6}});
+const styles=StyleSheet.create({flex:{flexGrow:1,backgroundColor:'#000',padding:20,gap:12},content:{padding:20,gap:16},heading:{color:'#fff',fontSize:22,fontWeight:'700'},detail:{color:'#c7c7ce',fontSize:15},entry:{gap:6}});
