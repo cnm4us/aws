@@ -19,15 +19,19 @@ export function useSpaceAccess(context:FeedContext,client:ApiClient,feed:FeedSto
   const state=useSyncExternalStore(guard.subscribe,guard.getSnapshot);
   useLayoutEffect(()=>{
     if(!protectedFeed)return;
-    guard.setActive(focused && AppState.currentState==='active');
-    const sub=AppState.addEventListener('change',state=>guard.setActive(focused && state==='active'));
-    return()=>{sub.remove();guard.setActive(false);};
-  },[guard,focused,protectedFeed]);
-  useEffect(()=>{
-    if(!protectedFeed)return;
-    const timer=setInterval(()=>{if(focused && AppState.currentState==='active')void guard.check();},60_000);
-    return()=>clearInterval(timer);
-  },[guard,focused,protectedFeed]);
+    let release:(()=>void)|undefined;
+    const update=(appActive:boolean)=>{
+      const active=focused && appActive && auth.getSnapshot().status==='authenticated';
+      if(active && !release)release=auth.claimRoutineValidation();
+      else if(!active){release?.();release=undefined;}
+      guard.setActive(active);
+    };
+    update(AppState.currentState==='active');
+    const sub=AppState.addEventListener('change',state=>update(state==='active'));
+    // Invalidate synchronously on account failure, before recovery can reuse old authority.
+    const unsubscribe=auth.subscribe(()=>update(AppState.currentState==='active'));
+    return()=>{sub.remove();unsubscribe();release?.();guard.setActive(false);};
+  },[guard,auth,focused,protectedFeed]);
   useEffect(()=>()=>guard.dispose(),[guard]);
   return {authorized:!protectedFeed || state.authorized,checking:protectedFeed && state.checking,error:protectedFeed?state.error:null,
     check:()=>protectedFeed?guard.check():Promise.resolve(true)};

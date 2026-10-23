@@ -6,6 +6,7 @@ import { serializeViewerFeedWithCreators, parseViewerQuery } from '../features/f
 import { aroundPublication } from '../features/feeds/resume';
 import { getCreatorView } from '../features/profiles/viewer';
 import { sendViewerError } from './native-session';
+import { viewerLaunch, launchId } from '../features/publications/viewerLaunch';
 import { viewerText, textId, type TextContext } from '../features/publications/viewerText';
 
 export function createViewerRouter() {
@@ -31,6 +32,18 @@ export function createViewerRouter() {
       finally { res.off('close', cancel); }
     });
   }
+  for (const resolve of [false,true]) router.get(`/feed/global/publications/:publicationId/spaces${resolve?'/:spaceId':''}`,async(req,res)=>{
+    const controller=new AbortController();const cancel=()=>controller.abort();res.on('close',cancel);
+    try {
+      const principal=(await resolveViewer(req,true))!;
+      const publicationId=launchId(req.params.publicationId);
+      if(resolve && Object.keys(req.query).length)throw new ViewerApiError(400,'invalid_query');
+      const result=resolve?await viewerLaunch.resolve(publicationId,launchId((req.params as Record<string,string>).spaceId),principal.viewer.id,controller.signal)
+        :await viewerLaunch.list(publicationId,principal.viewer.id,req.query,controller.signal);
+      if(!controller.signal.aborted)res.json(result);
+    }catch(e){if(!controller.signal.aborted)sendViewerError(res,e);}
+    finally{res.off('close',cancel);}
+  });
   router.get('/creators/:userId',async(req,res)=>{
     try {
       const p=await resolveViewer(req,false);

@@ -32,7 +32,7 @@ exports.createVideoPlayer = () => {
     count: () => [...events.values()].reduce((n, set) => n + set.size, 0) };
   e.players.push(player); return player;
 };
-exports.useAuth = () => ({ store: e.auth, snapshot: e.auth ? R.useSyncExternalStore(e.auth.subscribe, e.auth.getSnapshot) : e.snapshot, baseUrl: 'https://api.test' });
+exports.useAuth = () => ({ store: e.auth, snapshot: e.auth ? R.useSyncExternalStore(e.auth.subscribe, e.auth.getSnapshot) : e.snapshot, baseUrl: e.baseUrl || 'https://api.test' });
 exports.useSpaceAccess = () => ({ authorized: true, checking: false, error: null, check: async () => true });
 exports.useViewerFeed = (context,restore) => {
   const store = R.useMemo(() => e.feedFactory ? e.feedFactory(context,restore) : e.feed, [context.kind,context.spaceId,restore]);
@@ -41,3 +41,5 @@ exports.useViewerFeed = (context,restore) => {
     clearResume:()=>{e.clearedResume=(e.clearedResume||0)+1;}};
 };
 exports.useViewerClient = () => ({ client: e.client, auth: e.auth, generation: e.auth.getSnapshot().generation });
+
+exports.nativeFetch = (...args) => e.fetch(...args);

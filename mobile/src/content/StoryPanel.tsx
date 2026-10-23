@@ -1,13 +1,18 @@
-import { useLayoutEffect, useState } from 'react';
+import { useLayoutEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { TextResources } from './resources';
+import { VerifiedRefresh } from '../auth/verifiedRefresh';
 
 export function StoryPanel({ publicationId, preview, resources, active, height, onExpanded }: {
   publicationId: number; preview: string | null; resources: TextResources; active: boolean; height: number;
   onExpanded: (expanded: boolean) => void;
 }) {
   const [expanded, setExpanded] = useState(false), [attempt, setAttempt] = useState(0);
-  const [state, setState] = useState<{ busy: boolean; text: string | null; error: string | null }>({ busy: true, text: null, error: null });
+  const renewal = useMemo(() => new VerifiedRefresh((signal, force) => resources.verifiedStory(publicationId, signal, force),
+    { protected: resources.context.kind === 'space', now: resources.now }), [resources, publicationId, attempt]);
+  const refreshed = useSyncExternalStore(renewal.subscribe, renewal.getSnapshot);
+  const state = { busy: refreshed.value === undefined && !refreshed.error, text: refreshed.value,
+    error: refreshed.error ? 'Cannot load the story. Try again.' : null };
   useLayoutEffect(() => {
     if (!active) setExpanded(false);
     onExpanded(active && expanded);
@@ -15,23 +20,13 @@ export function StoryPanel({ publicationId, preview, resources, active, height, 
   }, [active, expanded, onExpanded]);
   useLayoutEffect(() => {
     if (!expanded || !active) return;
-    const request = new AbortController();
-    const load = (force = false) => {
-      setState({ busy: true, text: null, error: null });
-      void resources.story(publicationId, request.signal, force).then(text => {
-        if (!request.signal.aborted) setState({ busy: false, text, error: null });
-      }, error => {
-        if (!request.signal.aborted && error?.name !== 'AbortError') setState({ busy: false, text: null, error: 'Cannot load the story. Try again.' });
-      });
-    };
-    load(attempt > 0);
-    const timer = setInterval(() => load(true), 60_000);
-    return () => { request.abort(); clearInterval(timer); };
-  }, [expanded, active, publicationId, resources, attempt]);
+    renewal.setActive(true, attempt > 0);
+    return () => renewal.setActive(false);
+  }, [expanded, active, renewal, attempt]);
   if (!active) return null;
   return <View style={styles.panel}>
     <Pressable accessibilityRole="button" accessibilityLabel={expanded ? 'Collapse story' : 'Expand story'}
-      accessibilityState={{ expanded }} onPress={() => { if (!expanded) setState({ busy: true, text: null, error: null }); setExpanded(!expanded); }} style={styles.button}>
+      accessibilityState={{ expanded }} onPress={() => setExpanded(!expanded)} style={styles.button}>
       <Text style={styles.action}>{expanded ? 'Collapse story' : 'Expand story'}</Text>
     </Pressable>
     {expanded ? <ScrollView style={{ maxHeight: Math.max(80, height * .45) }} nestedScrollEnabled

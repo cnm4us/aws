@@ -23,6 +23,15 @@ Native sessions store token and current-password-hash digests. Expiry, revocatio
 
 Native client installation, Metro/dev-client startup and EAS signing are documented in [mobile setup](../mobile/README.md). Native credentials are stored through SecureStore; offline sign-out removes local access before best-effort server revocation. Fixture and sequential API/browser regression commands are in [repository setup](../README.md). Native development-build acceptance is complete in [Plan 168](../agents/implementation/plan_168.md), including device access denial/restoration and expired-session recovery. VoiceOver is deferred and the plan retains the other acceptance limits.
 
+## Global launch destinations
+
+Authenticated viewer reads (native bearer or browser cookie, never both) use `Cache-Control: no-store`:
+
+- `GET /api/viewer/v1/feed/global/publications/:publicationId/spaces?limit=20&cursor=...` returns `{ sourcePublicationId, productionUlid, items: [{ space: { id, name, type }, publicationId }], nextCursor }`. Limit1–50, default20; cursor is opaque and scoped to source/viewer. Only currently viewable group/channel publications of the source production appear, including the source's own group/channel when eligible. Personal and Global aliases are excluded. No mapped production yields an empty list.
+- `GET /api/viewer/v1/feed/global/publications/:publicationId/spaces/:spaceId` resolves the chosen destination again and returns `{ sourcePublicationId, productionUlid, space: { id, name, type }, publicationId }`. It accepts no query parameters. The destination publication ID can equal or differ from the source ID; context remains distinct.
+
+Both verify exact current Global source eligibility and destination space/publication eligibility. Hidden destinations, engagement fields, media URLs, settings and private identities are omitted. Invalid queries/cursors return400 `invalid_query`; missing/ineligible source404 `publication_not_found`; absent/inaccessible destination404 `launch_target_unavailable`; missing auth401; service/scan budget failure503. Candidate work is serial in batches of50, capped at5000 scanned rows/10 seconds, returning explicit503 rather than false exhaustion. Final target access and source are checked again; responses are snapshots, not reusable access capabilities. Native must still use the authorized destination feed and reject a missing/mismatched anchor before playback. Existing legacy browser Jump is unchanged and does not accept native bearer credentials.
+
 ## Existing browser API
 
 Auth: cookie session in development (httpOnly `sid` + `csrf` cookie). `x-admin-token` still allowed for automation.

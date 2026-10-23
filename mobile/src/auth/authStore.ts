@@ -12,6 +12,7 @@ export class AuthStore {
   private request: AbortController|null=null;
   private writes: Promise<unknown>=Promise.resolve();
   private validation: Promise<boolean>|null=null;
+  private routineOwners=new Set<object>();
   constructor(private readonly origin:string,private readonly api:NativeSessionApi,private readonly storage:SessionStorage) {}
   getSnapshot=()=>this.state;
   subscribe=(fn:()=>void)=>{this.listeners.add(fn);return()=>{this.listeners.delete(fn);};};
@@ -28,6 +29,10 @@ export class AuthStore {
   credentialFor=(generation:number)=>this.state.generation===generation && this.state.viewer
     && ['authenticated','unavailable'].includes(this.state.status) ? this.credential?.token : undefined;
   retryValidation=()=>this.credential ? this.validate() : this.restore();
+  // An active protected feed renews account + space together on its own clock.
+  // The provider keeps its fallback cadence for Global and non-feed screens.
+  claimRoutineValidation=()=>{const owner={};this.routineOwners.add(owner);return()=>{this.routineOwners.delete(owner);};};
+  validateRoutine=()=>this.routineOwners.size ? Promise.resolve(false) : this.validate();
   restore=async()=>{
     const {generation}=this.next('restoring');
     try {
@@ -104,5 +109,5 @@ export class AuthStore {
     this.publish({status:'anonymous',hasSavedSession:!durable,message:durable?null:'Could not remove saved sign-in. Retry sign-out before closing the app.'});
     if(old){try{await this.api.revoke(old.token);}catch{if(this.state.generation===generation && durable)this.publish({message:'Signed out on this phone. The server could not be reached to revoke the session.'});}}
   };
-  dispose=()=>{this.request?.abort();this.state={...this.state,generation:this.state.generation+1};this.listeners.clear();};
+  dispose=()=>{this.request?.abort();this.routineOwners.clear();this.state={...this.state,generation:this.state.generation+1};this.listeners.clear();};
 }

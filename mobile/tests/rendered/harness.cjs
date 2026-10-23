@@ -6,7 +6,7 @@ const React = require('react');
 const Test = require('react-test-renderer');
 global.IS_REACT_ACT_ENVIRONMENT = true;
 
-async function bundle(entries, preview = false) {
+async function bundle(entries, preview = false, realFeed = false, realAccess = false) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'viewer-ui-'));
   const outfile = path.join(directory, 'test.cjs');
   global.__viewerUi = { React, players: [], listeners: new Set(), state: 'active', requests: [], scrolls: [] };
@@ -19,7 +19,7 @@ async function bundle(entries, preview = false) {
       build.onResolve({ filter: /^@react-navigation\/(native|native-stack)$/ }, () => ({path:'navigation',namespace:'controlled-nav'}));
       build.onLoad({filter:/.*/,namespace:'controlled-nav'},()=>({contents:fs.readFileSync(path.join(__dirname,'navigation.cjs'),'utf8'),loader:'js',resolveDir:path.resolve(__dirname,'../..')}));
       build.onResolve({ filter: /^(react-native|react-native-safe-area-context|expo-video)$|\/(useAuth|useViewerFeed|useSpaceAccess)$/ },
-        () => ({ path: 'ports', namespace: 'controlled' }));
+        args => (realFeed && /\/useViewerFeed$/.test(args.path) || realAccess && /\/useSpaceAccess$/.test(args.path)) ? undefined : ({ path: 'ports', namespace: 'controlled' }));
       build.onLoad({ filter: /.*/, namespace: 'controlled' }, () => ({ contents: fs.readFileSync(path.join(__dirname, 'native.cjs'), 'utf8'), loader: 'js' }));
     } }], logLevel: 'silent' });
   const result = require(outfile);

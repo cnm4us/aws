@@ -105,3 +105,12 @@ test('preference failures retain the in-session choice and can retry persistence
   await store.setEnabled(true); assert.equal(store.getSnapshot().enabled, true); assert.match(store.getSnapshot().error!, /could not be saved/);
   fail = false; await store.retry(); assert.equal(store.getSnapshot().error, null);
 });
+test('caption/story cache hits preserve verification age and count request start, not response completion',async()=>{
+ let now=1000,resolve!:(v:any)=>void;
+ const client={getText:async()=>vtt,getJson:async()=>new Promise(r=>resolve=r)};
+ const resources=new TextResources(client,{kind:'space',spaceId:9,name:'Test',type:'group'},()=>{},()=>now),signal=new AbortController().signal;
+ const pending=resources.verifiedStory(1,signal);now=5000;resolve({context:{kind:'space',spaceId:9},publicationId:1,storyText:'protected'});
+ assert.equal((await pending).verifiedAt,1000);now=55_000;assert.equal((await resources.verifiedStory(1,signal)).verifiedAt,1000);
+ const captions=await resources.verifiedCaptions(1,null,signal);assert.equal(captions.verifiedAt,55_000);
+ now=59_000;assert.equal((await resources.verifiedCaptions(1,null,signal)).verifiedAt,55_000);resources.clear();
+});

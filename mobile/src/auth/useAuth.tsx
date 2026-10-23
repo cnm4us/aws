@@ -20,7 +20,7 @@ export function AuthProvider({baseUrl,children}:{baseUrl:string;children:ReactNo
   useEffect(()=>{
     const validate=()=>{if(['authenticated','unavailable'].includes(store.getSnapshot().status))void store.validate();};
     const sub=AppState.addEventListener('change',state=>{if(state==='active')validate();});
-    const timer=setInterval(()=>{if(AppState.currentState==='active' && store.getSnapshot().status==='authenticated')validate();},60_000);
+    const timer=setInterval(()=>{if(AppState.currentState==='active' && store.getSnapshot().status==='authenticated')void store.validateRoutine();},60_000);
     return()=>{sub.remove();clearInterval(timer);};
   },[store]);
   return <Context.Provider value={{store,snapshot,baseUrl}}>{children}</Context.Provider>;

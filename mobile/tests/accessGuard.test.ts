@@ -10,7 +10,7 @@ test('protected access is withheld until validation completes and backgrounding 
   guard.setActive(true);const pending=guard.check();assert.equal(guard.getSnapshot().checking,true);assert.equal(guard.getSnapshot().authorized,false);
   guard.setActive(false);gate.resolve();assert.equal(await pending,false);assert.equal(guard.getSnapshot().authorized,false);
 });
-test('foreground/retry and periodic checks coalesce while pausing eligibility',async()=>{
+test('foreground/retry and explicit checks coalesce while pausing eligibility',async()=>{
   let checks=0;const guard=new AccessGuard(async()=>{checks++;},()=>{});
   guard.setActive(true);await guard.check();assert.equal(guard.getSnapshot().authorized,true);
   const one=guard.check(),two=guard.check();assert.equal(one,two);assert.equal(guard.getSnapshot().authorized,false);

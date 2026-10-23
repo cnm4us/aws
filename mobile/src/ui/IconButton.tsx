@@ -1,6 +1,7 @@
 import { Image, Pressable, StyleSheet, Text } from 'react-native';
 
 const icons = {
+  launch: require('../../assets/icons/launch.png'),
   soundOn: require('../../assets/icons/speaker-on.png'),
   soundOff: require('../../assets/icons/speaker-off.png'),
   menu: require('../../assets/icons/menu.png'),
@@ -11,7 +12,7 @@ export function IconButton({ icon, label, onPress, selected, disabled = false }:
   selected?: boolean; disabled?: boolean;
 }) {
   const opacity = selected === false || disabled ? .5 : 1;
-  const playbackControl = icon === 'cc' || icon === 'soundOn' || icon === 'soundOff';
+  const playbackControl = icon === 'launch' || icon === 'cc' || icon === 'soundOn' || icon === 'soundOff';
   return <Pressable accessibilityRole="button" accessibilityLabel={label}
     accessibilityState={{ selected, disabled }} disabled={disabled} onPress={onPress}
     style={({ pressed }) => [styles.button, pressed && styles.pressed, playbackControl && styles.playback]}>

@@ -46,9 +46,10 @@ test('caption notice waits while cues, errors and retry remain immediate; stale 
     await Test.act(async () => requests[4].resolve(vtt('Current cue')));
     assert.ok(texts().includes('Current cue'));
 
-    // Periodic revalidation uses the same delay, without retaining old cues while loading.
-    await tick(60_000); assert.equal(loading(), 0); assert.equal(subscriptions, 0);
-    await tick(300); assert.equal(loading(), 1);
+    // Public Global keeps its current cue and clock while the periodic fetch is pending.
+    await tick(60_000); assert.equal(loading(), 0); assert.equal(subscriptions, 1);
+    assert.ok(texts().includes('Current cue'));
+    await tick(300); assert.equal(loading(), 0); assert.ok(texts().includes('Current cue'));
     await Test.act(async () => requests[5].resolve(vtt('Fresh cue')));
     assert.equal(loading(), 0); assert.ok(texts().includes('Fresh cue'));
     await render({ publicationId: 5 });
@@ -59,4 +60,44 @@ test('caption notice waits while cues, errors and retry remain immediate; stale 
     if (root) await Test.act(async () => root.unmount());
     resources.clear(); t.mock.timers.reset();
   }
+});
+
+for(const kind of ['global','space'])test(`periodic captions (${kind}): paused/playing refresh, failure/denial and stale completion`,async t=>{
+ const {CaptionLayer,TextResources,ApiError}=await bundle("export {CaptionLayer} from './src/content/CaptionLayer';export {TextResources} from './src/content/resources';export {ApiError} from './src/api/client';");
+ t.mock.timers.enable({apis:['setTimeout','setInterval']});
+ const requests=[],denied=[];let root,subscriptions=0,sample,now=0;
+ const resources=new TextResources({getText:(_path,signal)=>new Promise((resolve,reject)=>requests.push({resolve,reject,signal}))},kind==='global'?{kind}:{kind,spaceId:9},error=>denied.push(error),()=>now);
+ const vtt=text=>`WEBVTT\n\n00:00.000 --> 00:02.000\n${text}`;
+ const player={subscribeClock:fn=>{subscriptions++;sample=fn;fn(.5);return()=>subscriptions--;}};
+ let props={resources,publicationId:1,duration:10,player,visible:true,bottom:40,paused:true};
+ const render=async patch=>{props={...props,...patch};await Test.act(async()=>root?root.update(R.createElement(CaptionLayer,props)):root=Test.create(R.createElement(CaptionLayer,props)));};
+ const tick=async ms=>{now+=ms;await Test.act(async()=>t.mock.timers.tick(ms));};
+ const texts=()=>root.root.findAllByType('Text').map(n=>n.props.children);
+ const loading=()=>root.root.findAllByType('ActivityIndicator').length;
+ try{
+  await render({});await Test.act(async()=>requests[0].resolve(vtt('Original cue')));
+  for(const paused of [true,false]){
+   await render({paused});const original=paused?'Original cue':'Updated paused cue';
+   await tick(kind==='space'?45_000:60_000);const pending=requests.at(-1);
+   assert.ok(texts().includes(original));assert.equal(subscriptions,1);
+   await tick(500);assert.equal(loading(),0);
+   if(paused && kind==='global'){const count=requests.length;await tick(60_000);assert.equal(requests.length,count,'overlapping refresh requests must be bounded');}
+   const updated=paused?'Updated paused cue':'Updated playing cue';await Test.act(async()=>pending.resolve(vtt(updated)));
+   assert.ok(texts().includes(updated));assert.equal(loading(),0);assert.equal(subscriptions,1);
+   if(!paused){await Test.act(async()=>sample(3));assert.ok(!texts().includes(updated));await Test.act(async()=>sample(.5));assert.ok(texts().includes(updated));}
+  }
+  // A failed recheck clears public cues too; explicit Retry must not restore stale text.
+  await tick(kind==='space'?45_000:60_000);await Test.act(async()=>requests.at(-1).reject(Error('Offline')));
+  assert.ok(!texts().includes('Updated playing cue'));assert.ok(texts().includes('Captions are unavailable. Try again.'));assert.equal(subscriptions,0);
+  await Test.act(async()=>root.root.findByType('Pressable').props.onPress());await Test.act(async()=>requests.at(-1).resolve(vtt('Recovered cue')));
+  assert.ok(texts().includes('Recovered cue'));
+  await tick(kind==='space'?45_000:60_000);await Test.act(async()=>requests.at(-1).reject(new ApiError('Access unavailable',403,'forbidden')));
+  assert.equal(denied.length,1);assert.ok(!texts().includes('Recovered cue'));assert.equal(subscriptions,0);
+  await Test.act(async()=>root.root.findByType('Pressable').props.onPress());await Test.act(async()=>requests.at(-1).resolve(vtt('Before hiding')));
+  await tick(kind==='space'?45_000:60_000);const hidden=requests.at(-1);await render({visible:false});assert.equal(hidden.signal.aborted,true);assert.equal(root.toJSON(),null);
+  await render({publicationId:2,visible:true});const current=requests.at(-1);
+  await Test.act(async()=>hidden.resolve(vtt('Stale cue')));assert.ok(!texts().includes('Stale cue'));
+  await Test.act(async()=>current.resolve(vtt('Current publication cue')));assert.ok(texts().includes('Current publication cue'));
+ }finally{if(root)await Test.act(async()=>root.unmount());resources.clear();t.mock.timers.reset();}
+ assert.equal(subscriptions,0);
 });

@@ -1,8 +1,9 @@
 import { CONTROL_LANE } from '../ui/IconButton';
-import { useLayoutEffect, useState } from 'react';
+import { useLayoutEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { TextResources } from './resources';
-import { cueAt, type Cue } from './vtt';
+import { cueAt } from './vtt';
+import { VerifiedRefresh } from '../auth/verifiedRefresh';
 
 export interface CaptionPlayer {
   currentTime?(): number;
@@ -13,42 +14,35 @@ export function CaptionLayer({ resources, publicationId, duration, player, visib
   visible: boolean; bottom: number; paused: boolean;
 }) {
   const [attempt, setAttempt] = useState(0);
-  const [state, setState] = useState<{ cues: Cue[]; loading: boolean; error: string | null }>({ cues: [], loading: true, error: null });
+  const renewal = useMemo(() => new VerifiedRefresh((signal, force) => resources.verifiedCaptions(publicationId, duration, signal, force),
+    { protected: resources.context.kind === 'space', now: resources.now }), [resources, publicationId, duration, attempt]);
+  const refreshed = useSyncExternalStore(renewal.subscribe, renewal.getSnapshot);
+  const [clockError, setClockError] = useState(false);
+  const state = { cues: refreshed.value, loading: refreshed.value === undefined && !refreshed.error,
+    error: refreshed.error || clockError ? 'Captions are unavailable. Try again.' : refreshed.value?.length === 0 ? 'Captions are not available.' : null };
   const [loadingNotice, setLoadingNotice] = useState(false);
   const [text, setText] = useState<string | null>(null);
   useLayoutEffect(() => {
     setText(null);
+    setClockError(false);
     if (!visible) return;
-    const request = new AbortController();
-    let noticeTimer: ReturnType<typeof setTimeout>;
-    const load = (force: boolean) => {
-      clearTimeout(noticeTimer);
-      setLoadingNotice(false);
-      setState({ cues: [], loading: true, error: null });
-      // Caption files load independently of video. Keep fast loads quiet without delaying cues.
-      noticeTimer = setTimeout(() => setLoadingNotice(true), 300);
-      void resources.captions(publicationId, duration, request.signal, force).then(cues => {
-        if (!request.signal.aborted) {
-          clearTimeout(noticeTimer);
-          setState({ cues, loading: false, error: cues.length ? null : 'Captions are not available.' });
-        }
-      }, error => {
-        if (!request.signal.aborted && error?.name !== 'AbortError') {
-          clearTimeout(noticeTimer);
-          setState({ cues: [], loading: false, error: 'Captions are unavailable. Try again.' });
-        }
-      });
-    };
-    load(attempt > 0);
-    const timer = setInterval(() => load(true), 60_000);
-    return () => { request.abort(); clearTimeout(noticeTimer); clearInterval(timer); };
-  }, [resources, publicationId, duration, visible, attempt]);
+    renewal.setActive(true, attempt > 0);
+    return () => renewal.setActive(false);
+  }, [renewal, visible, attempt]);
+  useLayoutEffect(() => {
+    setLoadingNotice(false);
+    if (!visible || !state.loading) return;
+    const timer = setTimeout(() => setLoadingNotice(true), 300);
+    return () => clearTimeout(timer);
+  }, [renewal, visible, state.loading]);
   useLayoutEffect(() => {
     setText(null);
-    if (!visible || !player || !state.cues.length) return;
+    setClockError(false);
+    if (!visible || !player || !state.cues?.length) return;
     // Subscribe samples immediately and runs in release; pause/seek causes an immediate resample.
-    try { return player.subscribeClock(seconds => setText(cueAt(state.cues, seconds))); }
-    catch { setState({ cues: [], loading: false, error: 'Captions are unavailable. Try again.' }); }
+    const cues = state.cues;
+    try { return player.subscribeClock(seconds => setText(cueAt(cues, seconds))); }
+    catch { setClockError(true); }
   }, [visible, player, state.cues, paused]);
   if (!visible) return null;
   return <View style={[styles.position, { bottom }]} pointerEvents="box-none">

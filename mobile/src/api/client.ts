@@ -81,6 +81,7 @@ export function createApiClient(baseUrl: string, options: ClientOptions = {}) {
             forbidden: 'You do not currently have access to this space.', space_not_found: 'This space is unavailable.',
             rate_limited: 'Too many sign-in attempts. Please wait and try again.',
             native_unavailable: 'App sign-in is temporarily unavailable.',
+            launch_target_unavailable: 'This video is no longer available in this space. Choose another space or return to Global.',
             publication_not_found: 'This video is no longer available in this feed.',
             captions_not_found: 'Captions are not available for this video.',
             captions_unavailable: 'Cannot load captions. Please try again.',

@@ -9,8 +9,8 @@ const spaceIcons = {
   personal: require('../../assets/icons/personal.png'),
 };
 
-export function FeedHeader({ context, onSpaces, onMenu, onBackProfile }: {
-  context: FeedContext; onSpaces: () => void; onMenu: () => void; onBackProfile?: () => void;
+export function FeedHeader({ context, onSpaces, onMenu, onBackProfile, onBackGlobal }: {
+  context: FeedContext; onSpaces: () => void; onMenu: () => void; onBackProfile?: () => void; onBackGlobal?: () => void;
 }) {
   const {width,fontScale}=useWindowDimensions();
   const stacked=width/fontScale<200;
@@ -27,7 +27,7 @@ export function FeedHeader({ context, onSpaces, onMenu, onBackProfile }: {
       </Pressable>
       <View style={stacked ? {alignSelf:'flex-end'} : undefined}><IconButton icon="menu" label="Open menu" onPress={onMenu} /></View>
     </View>
-    {onBackProfile && <Action label="Back to profile" onPress={onBackProfile} />}
+    {onBackProfile ? <Action label="Back to profile" onPress={onBackProfile} /> : onBackGlobal && <Action label="Back to Global" onPress={onBackGlobal} />}
   </View>;
 }
 const styles = StyleSheet.create({

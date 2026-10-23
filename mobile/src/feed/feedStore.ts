@@ -11,6 +11,7 @@ export type FeedSnapshot = {
   nextCursor: string | null;
   autoPaused: boolean;
   errorStatus: number | null;
+  errorCode?: string;
   resume?: FeedPage['resume'];
 };
 
@@ -19,7 +20,7 @@ export type PageLoader = (cursor: string | null, signal: AbortSignal) => Promise
 export class FeedStore {
   private state: FeedSnapshot = {
     sessionId: 0, items: [], initialLoading: true, loadingMore: false,
-    initialError: null, moreError: null, nextCursor: null, autoPaused: false, errorStatus:null, resume:undefined,
+    initialError: null, moreError: null, nextCursor: null, autoPaused: false, errorStatus:null, errorCode:undefined, resume:undefined,
   };
   private listeners = new Set<() => void>();
   private request: { controller: AbortController; promise?: Promise<void> } | null = null;
@@ -46,7 +47,7 @@ export class FeedStore {
   denyAccess = (error:ApiError) => {
     this.cancel();
     this.publish({items:[],nextCursor:null,initialLoading:false,loadingMore:false,initialError:error.message,
-      moreError:null,errorStatus:error.status??403,autoPaused:true});
+      moreError:null,errorStatus:error.status??403,errorCode:error.code,autoPaused:true});
     this.onFailure(error);
   };
 
@@ -56,7 +57,7 @@ export class FeedStore {
     this.emptyAdvances = 0;
     this.publish({
       sessionId: this.state.sessionId + 1, items: [], initialLoading: true,
-      loadingMore: false, initialError: null, moreError: null, nextCursor: null, autoPaused: false, errorStatus:null, resume:undefined,
+      loadingMore: false, initialError: null, moreError: null, nextCursor: null, autoPaused: false, errorStatus:null, errorCode:undefined, resume:undefined,
     });
     return this.fetchPage(null, true);
   };
@@ -105,7 +106,7 @@ export class FeedStore {
         this.request = null;
         const message = error instanceof Error ? error.message : 'The feed could not be loaded. Try again.';
         if(error instanceof ApiError && [401,403,404].includes(error.status??0)) {
-          this.publish({items:[],nextCursor:null,initialLoading:false,loadingMore:false,initialError:message,moreError:null,errorStatus:error.status!,autoPaused:true});
+          this.publish({items:[],nextCursor:null,initialLoading:false,loadingMore:false,initialError:message,moreError:null,errorStatus:error.status!,errorCode:error.code,autoPaused:true});
           this.onFailure(error);return;
         }
         this.publish(initial
