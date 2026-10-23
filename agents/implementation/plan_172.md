@@ -4,7 +4,7 @@ Status: Complete
 
 Created: 2026-10-22
 
-A–F Complete for the recorded internal iPhone UI milestone with explicit coverage limits. Signed build6 is installed; phone acceptance, source-matched playback gate and documentation checks pass. User requested commit and push; delivery is in progress.
+A–F Complete for the recorded internal iPhone UI milestone with explicit coverage limits. Signed build6 is installed; phone acceptance, source-matched playback gate and documentation checks pass. Implementation committed and pushed as `f0ed1b387166ccd42913e0168e388a6afa0d67e9`; remote `main` verified. This follow-up documentation commit records delivery.
 
 ## Feature Reference
 
@@ -201,6 +201,8 @@ No endpoint, migration, preference key, native plugin or dependency upgrade is e
 
 ## Change Log
 
+- `f0ed1b387166ccd42913e0168e388a6afa0d67e9` — native controls/header/menu implementation, guarded navigation/Refresh, caption-notice follow-up, reproducible component tests and build6 acceptance documentation. Pushed to `origin/main` and remote implementation SHA verified; follow-up delivery records contain this SHA.
+
 - Uncommitted — build6 installed and final phone/performance sample accepted; A–F complete with recorded limits and final documentation checks passed. No commit/push requested for this milestone.
 
 - Uncommitted — build 3 phone follow-up: controls/space navigation work and sound stops while covered; requested 25% playback-control background applied for build 4. Access/pause policies unchanged.
@@ -211,6 +213,8 @@ No endpoint, migration, preference key, native plugin or dependency upgrade is e
 - Baseline: `1dfd494` — accepted text/bundled-preview implementation; `a12d2b2` — delivery documentation.
 
 ## Validation
+
+- Delivery: implementation `f0ed1b387166ccd42913e0168e388a6afa0d67e9` pushed to `origin/main`; `git ls-remote --heads origin main` returned this exact SHA. Accepted build6 source manifest remains identical, so prior tests and phone acceptance apply. Post-commit root README review found setup/Menu/report/test workflow documentation current; no additional root README change needed. Private artifacts remain ignored. Follow-up commit changes only delivery records.
 
 - Commit review: staged source still matches signed/accepted build6 exactly. Staged whitespace check identifies one cosmetic terminal blank line in `mobile/src/diagnostics/share.ts`; retained to preserve the accepted source identity, with no runtime effect. Other whitespace checks pass with `blank-at-eof` excluded. Earlier unstaged checks did not include this then-untracked file. No private artifacts staged; agent-docs remains the same16 older findings. Evidence: `tests/runs/build/plan_172/build6/commit-review.json`.
 
@@ -287,6 +291,6 @@ Validation entries retain newest-first chronology; earlier “pending” notes d
 
 - E Complete for recorded phone coverage/limits. Build6 installed; brief CC spinner removed; source-matched report and explicit conditions/observations pass. All previous icon/header/navigation/pause/journey/Refresh/lifecycle/preferences/offline-signout evidence retained. No further phone run is needed.
 - A–F Complete, including final documentation/checks. Final app0.1.0/build6, EAS `0f520676-1d89-4b8f-9f0a-b21a78fb59c0`, source `9e4731aebeb1c8aafdf99e313bcd1bca7a47292e708fbf978faa72726283ba65`. Final42/42 normal prepared, median104.23ms/p95121.03ms/max124.76ms, peak3, zero errors/incomplete/unexpected playback. Two initial/cold frames remain in report, including1469.71ms maximum.
-- Next: user requested commit/push; review and publish the accepted implementation and delivery records. No further implementation or phone check for Plan172. Subsequent discovery/shared links, participation, release qualification or access-return polish need separately scoped planning.
+- Delivered: implementation `f0ed1b387166ccd42913e0168e388a6afa0d67e9` committed/pushed to `origin/main`; remote implementation SHA verified. This documentation-only follow-up records delivery. No further implementation or phone check for Plan172. Subsequent discovery/shared links, participation, release qualification or access-return polish need separately scoped planning.
 - All-screen maximum text size and pre/post upgrade settings comparison remain unverified; retain tested ranges. VoiceOver user-deferred; native memory/battery, private-media delivery and TestFlight/App Store require separate plans. Quieter/faster Checking Access return is a follow-up candidate without changing current freshness policy.
-- No host fixture/account mutation or Metro/tunnel restart. Commit/push explicitly requested; delivery in progress.
+- No host fixture/account mutation or Metro/tunnel restart. User-requested implementation commit/push complete; delivery records follow in a documentation-only commit.
