@@ -4,7 +4,7 @@ Status: Complete
 
 Created: 2026-10-23
 
-Implementation authorized on 2026-10-23; A–F Complete for the signed build15 internal iPhone milestone with recorded limits. Contextual Like/unlike and top-level Comments are implemented; Global remains discovery-only. Focused phone checks, source-matched performance and scoped fixture cleanup pass. Commit/push authorized by the user on2026-10-23; delivery verification pending.
+Implementation authorized on 2026-10-23; A–F Complete for the signed build15 internal iPhone milestone with recorded limits. Contextual Like/unlike and top-level Comments are implemented; Global remains discovery-only. Focused phone checks, source-matched performance and scoped fixture cleanup pass. Implementation committed/pushed as `90005a088104aa4f1f58e4b3cbc561e5fa5e7b9a`; remote implementation SHA verified on2026-10-23.
 
 ## Feature Reference
 
@@ -194,6 +194,8 @@ No dependency, schema, credential scope, CDN or OTA change is assumed. Avoid a g
 
 ## Change Log
 
+- 2026-10-23 — Delivered implementation `90005a088104aa4f1f58e4b3cbc561e5fa5e7b9a` to `origin/main` after user authorization; `git ls-remote` matches the local implementation SHA. Accepted build15 source is unchanged. Delivery documentation follows separately; private inputs/evidence remain excluded.
+
 - 2026-10-23 — User requested commit and push of the completed Plan174 milestone. Product source remains fixed to the accepted signed build15; private fixtures/heavy evidence remain ignored. Delivery verification pending.
 
 - 2026-10-23 — Build15 focused functional phone checks pass; full performance report passes numerical thresholds:43 prepared normals,p95117.39ms,91.49% normal preparation,peak3,zero errors/incomplete/unexpected. Final40 forward normals all prepared with playing/progress,p95113.64ms. Preserved earlier missing/delayed progress and build10 cold186 residual. User confirms requested conditions, smooth run and local sign-out; exact phone-post/session cleanup passed. Remote revocation observation remains limited as documented below. No source changes after signing; no commit/push requested.
@@ -271,4 +273,4 @@ No dependency, schema, credential scope, CDN or OTA change is assumed. Avoid a g
 - Stable Wi-Fi/usual text/CC+sound On and smooth run confirmed. Full report:68 transitions,43/47 normal prepared,p95117.39ms; final40/40 forward prepared,p95113.64ms,all42 final selections playing/progress,peak3,zero recorded errors/incomplete/unexpected. Earlier missing/delayed functional progress and event-history limits remain in Validation; build10 cold186 cause remains unresolved.
 - Exact fixture cleanup passed:23 work-created comments removed in total, no fixture Likes/comments/suspensions or active fixture native/browser sessions; original group grant/posting flag restored. User sign-out UI/draft/audio passes; host did not observe server revocation and separately revoked only exact fixture session96. No ordinary account/session/content touched. No further phone action requested.
 - Host39 backend,169 mobile unit/33 rendered/typecheck,237 real API assertions and12 browser checks pass with the recorded source scope; signed export/archive/IPA identity and final docs/privacy/whitespace checks pass. Physical offline Send/pending-write account replacement remain controlled-only; upgrade audio preservation uncertain; tested text sizes do not qualify all devices/maximum sizes, VoiceOver, native memory/battery, TestFlight/store or public release.
-- User authorized commit/push on2026-10-23; delivery verification is pending. Any new implementation or distribution increment needs its own explicit scope. Recent completed plans remain here through handoff; archive later under the normal lifecycle.
+- Implementation committed/pushed as `90005a088104aa4f1f58e4b3cbc561e5fa5e7b9a` on `main`; remote implementation SHA verified. Delivery documentation follows separately. Any new implementation or distribution increment needs its own explicit scope. Recent completed plans remain here through handoff; archive later under the normal lifecycle.
