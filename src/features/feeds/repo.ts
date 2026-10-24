@@ -2,7 +2,7 @@ import { isMember, loadSpace } from '../../services/spaceMembership'
 import { hasActiveSubscription } from '../spaces/repo'
 import { can } from '../../security/permissions'
 import { PERM } from '../../security/perm'
-import { getPool } from '../../db'
+import { getPool, type Queryable } from '../../db'
 
 export type FeedSelection = {
   cursorPublishedAt?: string | null; cursorId?: number | null; limit: number; userId?: number | null;
@@ -307,15 +307,15 @@ export async function getSpaceFeedPinnedRowByProductionUlid(
 
 export async function listSpaceFeedRows(
   spaceId: number,
-  opts: FeedSelection
+  opts: FeedSelection,
+  db: Queryable = getPool()
 ) {
-  const db = getPool()
   const userId = opts.userId ?? null
   const params: any[] = [userId, userId, userId, spaceId]
   const where: string[] = [
     'sp.space_id = ?',
     'sp.visible_in_space = 1',
-    await membersVisibilityClause(spaceId, userId),
+    await membersVisibilityClause(spaceId, userId, db),
     "sp.status = 'published'",
     'sp.published_at IS NOT NULL',
     "u.status = 'completed'",
@@ -407,12 +407,12 @@ export async function listSpaceFeedRows(
   return rows as any[]
 }
 
-async function membersVisibilityClause(spaceId: number, userId: number | null) {
+async function membersVisibilityClause(spaceId: number, userId: number | null, db: Queryable = getPool()) {
   let allowed = false;
   if (userId) {
-    const space = await loadSpace(spaceId);
-    allowed = space?.owner_user_id === userId || await isMember(getPool(), spaceId, userId)
-      || await hasActiveSubscription(spaceId, userId) || await can(userId, PERM.VIDEO_DELETE_ANY);
+    const space = await loadSpace(spaceId, db);
+    allowed = space?.owner_user_id === userId || await isMember(db, spaceId, userId)
+      || await hasActiveSubscription(spaceId, userId, db) || await can(userId, PERM.VIDEO_DELETE_ANY, {db});
   }
   return allowed ? '1=1' : "sp.visibility <> 'members'";
 }

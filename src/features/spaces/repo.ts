@@ -1,4 +1,4 @@
-import { getPool, type DB } from '../../db'
+import { getPool, type Queryable as DB } from '../../db'
 
 function db(conn?: DB) { return conn || getPool() }
 

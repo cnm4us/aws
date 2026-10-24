@@ -1,3 +1,5 @@
+import { engagement } from '../features/engagement/service';
+import { positiveId, parsePage, commentBody, emptyQuery, noBody } from '../features/engagement/contract';
 import { Router } from 'express';
 import { resolveViewer, ViewerApiError } from '../features/native-sessions/service';
 import * as feeds from '../features/feeds/service';
@@ -9,7 +11,7 @@ import { sendViewerError } from './native-session';
 import { viewerLaunch, launchId } from '../features/publications/viewerLaunch';
 import { viewerText, textId, type TextContext } from '../features/publications/viewerText';
 
-export function createViewerRouter() {
+export function createViewerRouter(engagementDeps = { resolveViewer, engagement }) {
   const router=Router();
   router.use((_req,res,next)=>{res.set('Cache-Control','no-store');next();});
   for (const scope of ['global', 'space'] as const) {
@@ -84,5 +86,23 @@ export function createViewerRouter() {
         ...('resume' in data?{resume:data.resume}:{})});
     }catch(e){sendViewerError(res,e);}
   });
+  const engagementPrefix='/spaces/:spaceId/publications/:publicationId';
+  for(const resource of ['engagement','like','comments'] as const) {
+    const methods=resource==='engagement'?['get'] as const:resource==='like'?['post','delete'] as const:['get','post'] as const;
+    for(const method of methods)router[method](`${engagementPrefix}/${resource}`,async(req,res)=>{
+      try {
+        const principal=(await engagementDeps.resolveViewer(req,true))!;
+        const ctx={spaceId:positiveId((req.params as any).spaceId),publicationId:positiveId((req.params as any).publicationId),userId:principal.viewer.id};
+        if(resource==='comments' && method==='get') {noBody(req.body);res.json(await engagementDeps.engagement.comments(ctx,parsePage(req.query,ctx)));}
+        else {
+          emptyQuery(req.query);
+          if(resource==='comments') {
+            if(!req.is('application/json'))throw new ViewerApiError(400,'invalid_body');
+            res.status(201).json(await engagementDeps.engagement.create(ctx,commentBody(req.body).body));
+          } else {noBody(req.body);res.json(resource==='engagement'?await engagementDeps.engagement.summary(ctx):await engagementDeps.engagement.like(ctx,method==='post'));}
+        }
+      }catch(e){sendViewerError(res,e);}
+    });
+  }
   return router;
 }

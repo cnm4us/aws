@@ -3,6 +3,7 @@ import mysql from 'mysql2/promise';
 import { ensureNativeSessionSchema } from './features/native-sessions/schema';
 
 export type DB = mysql.Pool;
+export type Queryable = Pick<mysql.Pool, 'query'>;
 
 let pool: mysql.Pool | undefined;
 

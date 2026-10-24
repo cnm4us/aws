@@ -1,4 +1,4 @@
-import { getPool } from '../db';
+import { getPool, type Queryable } from '../db';
 import { PERM } from './perm'
 
 // Widen to string so we can evolve permissions without chasing union types everywhere
@@ -16,10 +16,10 @@ export type PermissionChecker = {
 
 export type CanOptions = PermissionContext & {
   checker?: PermissionChecker;
+  db?: Queryable;
 };
 
-export async function resolveChecker(userId: number): Promise<PermissionChecker> {
-  const db = getPool();
+export async function resolveChecker(userId: number, db: Queryable = getPool()): Promise<PermissionChecker> {
   const [globalRows] = await db.query(
     `SELECT p.name
        FROM user_roles ur
@@ -69,9 +69,8 @@ async function hasAnySpaceModeration(checker: PermissionChecker): Promise<boolea
 }
 
 // Helper: check if user is currently suspended from posting (global or specific space)
-async function isPostingSuspended(userId: number, spaceId?: number | null): Promise<boolean> {
+async function isPostingSuspended(userId: number, spaceId?: number | null, db: Queryable = getPool(), strict = false): Promise<boolean> {
   try {
-    const db = getPool();
     const params: any[] = [userId];
     let sql = `SELECT 1 FROM suspensions WHERE user_id = ? AND kind = 'posting' AND (starts_at IS NULL OR starts_at <= NOW()) AND (ends_at IS NULL OR ends_at >= NOW())`;
     if (spaceId) {
@@ -83,7 +82,8 @@ async function isPostingSuspended(userId: number, spaceId?: number | null): Prom
     sql += ` LIMIT 1`;
     const [rows] = await db.query(sql, params);
     return (rows as any[]).length > 0;
-  } catch {
+  } catch (error) {
+    if (strict) throw error;
     // Table may not exist yet; treat as not suspended
     return false;
   }
@@ -91,7 +91,7 @@ async function isPostingSuspended(userId: number, spaceId?: number | null): Prom
 
 export async function can(userId: number, permission: Permission, options: CanOptions = {}): Promise<boolean> {
   const { ownerId, spaceId } = options;
-  const checker = options.checker ?? (await resolveChecker(userId));
+  const checker = options.checker ?? (await resolveChecker(userId, options.db));
 
   // Admin shortcut
   if (await checker.hasGlobalPermission(PERM.VIDEO_DELETE_ANY)) {
@@ -99,8 +99,8 @@ export async function can(userId: number, permission: Permission, options: CanOp
   }
 
   // Posting suspension check (affects posting to spaces only)
-  if (permission === PERM.SPACE_POST || permission === PERM.VIDEO_POST_SPACE) {
-    if (await isPostingSuspended(userId, spaceId ?? null)) return false;
+  if (permission === PERM.SPACE_POST || permission === PERM.VIDEO_POST_SPACE || permission === PERM.COMMENT_CREATE) {
+    if (await isPostingSuspended(userId, spaceId ?? null, options.db, permission === PERM.COMMENT_CREATE)) return false;
   }
 
   // Own-type permissions

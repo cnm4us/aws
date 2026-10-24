@@ -22,9 +22,10 @@ import { resolveLaunch } from '../spaces/launchApi';
 import { useViewerClient } from '../feed/useViewerFeed';
 import { ApiError } from '../api/client';
 import type { FeedVideoItem } from '../feed/types';
+import { CommentsScreen } from '../engagement/CommentsScreen';
 import { IconButton } from '../ui/IconButton';
 
-type Routes={Feed:undefined;LaunchSpaces:{sourceId:number;productionUlid:string|null;generation:number};Menu:{source:'feed'|'profile';feedKey?:string};Spaces:undefined;Account:undefined;Settings:undefined;CreatorProfile:{creatorId:number;journeyGeneration:number}};
+type Routes={Feed:undefined;Comments:{spaceId:number;publicationId:number;generation:number;feedKey:string};LaunchSpaces:{sourceId:number;productionUlid:string|null;generation:number};Menu:{source:'feed'|'profile';feedKey?:string};Spaces:undefined;Account:undefined;Settings:undefined;CreatorProfile:{creatorId:number;journeyGeneration:number}};
 const Stack=createNativeStackNavigator<Routes>();
 type Props={preferences:PlaybackPreferences;sound:PlaybackPreferencesSnapshot;captionPreferences:CaptionPreferences;captions:ReturnType<CaptionPreferences['getSnapshot']>};
 export function ViewerNavigator({preferences,sound,captionPreferences,captions}:Props) {
@@ -77,6 +78,11 @@ export function ViewerNavigator({preferences,sound,captionPreferences,captions}:
       <Stack.Screen name="Feed" options={{headerShown:false}}>
         {props=><FeedRoute {...props} key={`${snapshot.generation}:${contextKey(context)}:${current.visitId}`} context={context} select={select} preferences={preferences} sound={sound} captionPreferences={captionPreferences} captions={captions}
           restore={current.restore} entry={current.entry} blocked={context.kind==='global' && launchVisit.sourceUnavailable} registerPlayback={registerPlayback} registerCommands={registerCommands} feedKey={feedKey}
+          onComments={publicationId=>{
+            if(!isCurrent() || !props.navigation.isFocused() || context.kind!=='space' || auth.getSnapshot().status!=='authenticated')return;
+            if(playback.current?.capture().publicationId!==publicationId)return;
+            props.navigation.navigate('Comments',{spaceId:context.spaceId,publicationId,generation:snapshot.generation,feedKey});
+          }}
           onLaunch={item=>{
             if(!isCurrent() || !props.navigation.isFocused() || context.kind!=='global')return;
             const saved=playback.current?.capture();if(!saved?.publicationId || saved.publicationId!==item.publicationId)return;
@@ -121,6 +127,9 @@ export function ViewerNavigator({preferences,sound,captionPreferences,captions}:
             props.navigation.navigate('CreatorProfile',{creatorId,journeyGeneration:journey.getSnapshot().generation});
           }:undefined}/>}
       </Stack.Screen>
+      <Stack.Screen name="Comments" options={{headerShown:false,presentation:'transparentModal',animation:'fade',gestureEnabled:false,contentStyle:{backgroundColor:'transparent'}}}>{({navigation,route})=><CommentsScreen key={route.params.feedKey}
+        {...route.params} onClose={()=>{if(navigation.isFocused())navigation.goBack();}}
+        onDenied={error=>{if(isCurrent() && liveFeedKey.current===route.params.feedKey && error instanceof ApiError)commands.current?.denyAccess?.(error);}}/>}</Stack.Screen>
       <Stack.Screen name="LaunchSpaces" options={{title:'Open in a space'}}>{({navigation,route})=><LaunchSpacesScreen
         sourceId={route.params.sourceId} productionUlid={route.params.productionUlid}
         onClose={()=>{if(navigation.isFocused())navigation.goBack();}}
@@ -157,8 +166,8 @@ export function ViewerNavigator({preferences,sound,captionPreferences,captions}:
     </Stack.Navigator>
   </NavigationContainer>;
 }
-function FeedRoute({navigation,context,select,preferences,sound,captionPreferences,captions,restore,onCreator,onBackProfile,onBackGlobal,onLaunch,onRetryEntry,onChooseLaunch,entry,blocked,registerPlayback,registerCommands,feedKey}:NativeStackScreenProps<Routes,'Feed'> & Props & {
-  context:FeedContext;select:(c:FeedContext)=>void;restore?:FeedCheckpoint;entry?:LaunchEntry;blocked?:boolean;onLaunch:(item:FeedVideoItem)=>void;onBackGlobal?:()=>void;onRetryEntry:()=>Promise<void>;onChooseLaunch:()=>void;onCreator:(id:number)=>void;onBackProfile?:()=>void;
+function FeedRoute({navigation,context,select,preferences,sound,captionPreferences,captions,restore,onCreator,onBackProfile,onBackGlobal,onLaunch,onComments,onRetryEntry,onChooseLaunch,entry,blocked,registerPlayback,registerCommands,feedKey}:NativeStackScreenProps<Routes,'Feed'> & Props & {
+  context:FeedContext;select:(c:FeedContext)=>void;restore?:FeedCheckpoint;entry?:LaunchEntry;blocked?:boolean;onLaunch:(item:FeedVideoItem)=>void;onComments:(publicationId:number)=>void;onBackGlobal?:()=>void;onRetryEntry:()=>Promise<void>;onChooseLaunch:()=>void;onCreator:(id:number)=>void;onBackProfile?:()=>void;
   registerPlayback:(handle:FeedPlaybackHandle)=>()=>void;registerCommands:(handle:FeedCommands)=>()=>void;feedKey:string;
 }) {
   const focused=useIsFocused();const {store:auth,snapshot}=useAuth();
@@ -167,7 +176,7 @@ function FeedRoute({navigation,context,select,preferences,sound,captionPreferenc
     <Message title="Cannot verify sign-in" message={snapshot.message??undefined} onRetry={()=>{void auth.retryValidation();}}/>
     <Action label="Browse Global" onPress={goGlobal}/><Action label="Account" onPress={()=>navigation.navigate('Account')}/>
   </View>;
-  return <FeedScreen context={context} preferences={preferences} sound={sound} captionPreferences={captionPreferences} captions={captions} focused={focused} restore={restore} entry={entry} blocked={blocked} onLaunch={onLaunch} onBackGlobal={onBackGlobal} onRetryEntry={onRetryEntry} onChooseLaunch={onChooseLaunch}
+  return <FeedScreen context={context} preferences={preferences} sound={sound} captionPreferences={captionPreferences} captions={captions} focused={focused} restore={restore} entry={entry} blocked={blocked} onLaunch={onLaunch} onComments={onComments} onBackGlobal={onBackGlobal} onRetryEntry={onRetryEntry} onChooseLaunch={onChooseLaunch}
     onCreator={onCreator} onBackProfile={onBackProfile} registerPlayback={registerPlayback} registerCommands={registerCommands}
     onSpaces={()=>{if(navigation.isFocused())navigation.navigate('Spaces');}} onMenu={()=>{if(navigation.isFocused())navigation.navigate('Menu',{source:'feed',feedKey});}} onGlobal={goGlobal}/>;
 }

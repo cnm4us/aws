@@ -1,4 +1,4 @@
-import { getPool } from '../../db'
+import { getPool, type Queryable } from '../../db'
 import * as repo from './repo'
 import { can, resolveChecker } from '../../security/permissions'
 import { PERM } from '../../security/perm'
@@ -71,11 +71,10 @@ export async function getMySpaces(userId: number) {
   return { personal, global, groups, channels }
 }
 
-export async function canViewSpaceFeed(space: SpaceRow, userId: number): Promise<boolean> {
-  const db = getPool()
+export async function canViewSpaceFeed(space: SpaceRow, userId: number, db: Queryable = getPool()): Promise<boolean> {
   const banned = await repo.isBannedFromSpace(space.id, userId, db)
   if (banned) return false
-  const checker = await resolveChecker(userId)
+  const checker = await resolveChecker(userId, db)
   const siteAdmin = await can(userId, PERM.VIDEO_DELETE_ANY, { checker })
   if (siteAdmin) return true
   if (space.owner_user_id != null && space.owner_user_id === userId) return true
@@ -90,8 +89,7 @@ export async function canViewSpaceFeed(space: SpaceRow, userId: number): Promise
 }
 
 // Helper: load a space or throw a domain error with legacy code for route shape compatibility
-export async function loadSpaceOrThrow(spaceId: number): Promise<SpaceRow> {
-  const db = getPool()
+export async function loadSpaceOrThrow(spaceId: number, db: Queryable = getPool()): Promise<SpaceRow> {
   const space = await loadSpace(spaceId, db)
   if (!space) {
     // Preserve legacy error code used by routes

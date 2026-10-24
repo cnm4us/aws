@@ -866,7 +866,7 @@ export default function Feed() {
   const [commentedByMeMap, setCommentedByMeMap] = useState<Record<number, boolean>>({})
   const [commentsOpen, setCommentsOpen] = useState(false)
   const [commentsForPub, setCommentsForPub] = useState<number | null>(null)
-  const [commentsItems, setCommentsItems] = useState<Array<{ id: number; userId: number; displayName: string; email: string | null; body: string; createdAt: string }>>([])
+  const [commentsItems, setCommentsItems] = useState<Array<{ id: number; userId: number; displayName: string; body: string; createdAt: string }>>([])
   const [commentsCursor, setCommentsCursor] = useState<string | null>(null)
   const [commentsLoading, setCommentsLoading] = useState(false)
   const [commentText, setCommentText] = useState('')
@@ -899,7 +899,7 @@ export default function Feed() {
   // Who liked modal state
   const [likersOpen, setLikersOpen] = useState(false)
   const [likersForPub, setLikersForPub] = useState<number | null>(null)
-  const [likersItems, setLikersItems] = useState<Array<{ userId: number; displayName: string; email: string | null; createdAt: string }>>([])
+  const [likersItems, setLikersItems] = useState<Array<{ userId: number; displayName: string; createdAt: string }>>([])
   const [likersCursor, setLikersCursor] = useState<string | null>(null)
   const [likersLoading, setLikersLoading] = useState(false)
   // Profile peek overlay state
@@ -1377,12 +1377,18 @@ export default function Feed() {
     return `${spaceId}:${userId}`
   }
 
+  function engagementUrl(publicationId: number, resource: string, params = new URLSearchParams()): string {
+    if (isGlobalBillboard || feedMode.kind !== 'space') throw new Error('engagement_requires_space');
+    params.set('spaceId', String(feedMode.spaceId));
+    return `/api/publications/${publicationId}/${resource}?${params.toString()}`;
+  }
+
   async function ensureLikeSummary(publicationId: number | null | undefined) {
     if (!publicationId || !isAuthed) return
     if (likesCountMap[publicationId] != null && likedMap[publicationId] != null) return
     try {
       try { debug.log('feed', 'like summary fetch start', { publicationId }) } catch {}
-      const res = await fetch(`/api/publications/${publicationId}/likes`, { credentials: 'same-origin' })
+      const res = await fetch(engagementUrl(publicationId, 'likes'), { credentials: 'same-origin' })
       if (!res.ok) return
       const data = await res.json()
       setLikesCountMap((m) => ({ ...m, [publicationId]: Number(data?.count ?? 0) }))
@@ -1773,8 +1779,8 @@ export default function Feed() {
     try {
       try { debug.log('feed', 'comments fetch start', { publicationId, cursor: commentsCursor, order }) } catch {}
       const params = new URLSearchParams({ limit: '50', order })
-      if (commentsCursor) params.set('cursor', commentsCursor)
-      const res = await fetch(`/api/publications/${publicationId}/comments?${params.toString()}`, { credentials: 'same-origin' })
+      if (!replace && commentsCursor) params.set('cursor', commentsCursor)
+      const res = await fetch(engagementUrl(publicationId, 'comments', params), { credentials: 'same-origin' })
       if (!res.ok) throw new Error('comments_fetch_failed')
       const data = await res.json()
       const items = Array.isArray(data?.items) ? data.items : []
@@ -1782,7 +1788,6 @@ export default function Feed() {
         id: Number(c.id),
         userId: Number(c.userId),
         displayName: String(c.displayName || ''),
-        email: c.email ?? null,
         body: String(c.body || ''),
         createdAt: String(c.createdAt || ''),
       }))
@@ -1819,7 +1824,7 @@ export default function Feed() {
       debug.time('perf', `comment submit:${pubId}`)
     } catch {}
     try {
-      const res = await fetch(`/api/publications/${pubId}/comments`, {
+      const res = await fetch(engagementUrl(pubId, 'comments'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(csrf ? { 'x-csrf-token': csrf } : {}) },
         credentials: 'same-origin',
@@ -1834,7 +1839,7 @@ export default function Feed() {
       try { (document.activeElement as any)?.blur?.() } catch {}
       // After successful post, collapse composer back to 1 line
       setCommentRows(1)
-      await loadMoreComments(pubId)
+      await loadMoreComments(pubId, commentsOrder, true)
       setCommentedByMeMap((m) => ({ ...m, [pubId]: true }))
       try { debug.log('feed', 'comment submit done', { publicationId: pubId, id: created?.id }) } catch {}
     } catch (e) {
@@ -1869,7 +1874,7 @@ export default function Feed() {
     } catch {}
     try {
       const method = currentlyLiked ? 'DELETE' : 'POST'
-      const res = await fetch(`/api/publications/${publicationId}/likes`, {
+      const res = await fetch(engagementUrl(publicationId, 'likes'), {
         method,
         headers: { ...(csrf ? { 'x-csrf-token': csrf } : {}) },
         credentials: 'same-origin',
@@ -1908,9 +1913,9 @@ export default function Feed() {
     if (likersLoading) return
     setLikersLoading(true)
     try {
-      const params = new URLSearchParams({ limit: '50' })
+      const params = new URLSearchParams({ limit: '50', order: 'newest' })
       if (likersCursor) params.set('cursor', likersCursor)
-      const res = await fetch(`/api/publications/${pubId}/likes/users?${params.toString()}`, { credentials: 'same-origin' })
+      const res = await fetch(engagementUrl(pubId, 'likes/users', params), { credentials: 'same-origin' })
       if (!res.ok) throw new Error('likers_fetch_failed')
       const data = await res.json()
       const items = Array.isArray(data?.items) ? data.items : []
@@ -5079,7 +5084,7 @@ export default function Feed() {
                 <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
                   {likersItems.map((u) => (
                     <li key={`${u.userId}-${u.createdAt}`} style={{ padding: '10px 14px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-                      <div style={{ fontSize: 15 }}>{u.displayName || u.email || `User ${u.userId}`}</div>
+                      <div style={{ fontSize: 15 }}>{u.displayName || 'Viewer'}</div>
                       <div style={{ fontSize: 12, opacity: 0.7 }}>{new Date(u.createdAt).toLocaleString()}</div>
                     </li>
                   ))}
@@ -5256,7 +5261,7 @@ export default function Feed() {
                         color: '#000',
                       }}
                     >
-                      <div style={{ fontSize: 14, opacity: 0.9 }}>{c.displayName || c.email || `User ${c.userId}`}</div>
+                      <div style={{ fontSize: 14, opacity: 0.9 }}>{c.displayName || 'Viewer'}</div>
                       <div style={{ whiteSpace: 'pre-wrap', fontSize: 15, lineHeight: 1.35, marginTop: 4 }}>{c.body}</div>
                       <div style={{ fontSize: 12, opacity: 0.6, marginTop: 6, color: '#555' }}>
                         {new Date(c.createdAt).toLocaleString()}

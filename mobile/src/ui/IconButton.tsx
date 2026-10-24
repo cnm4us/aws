@@ -1,6 +1,7 @@
 import { Image, Pressable, StyleSheet, Text } from 'react-native';
 
 const icons = {
+  close: require('../../assets/icons/close.png'),
   launch: require('../../assets/icons/launch.png'),
   soundOn: require('../../assets/icons/speaker-on.png'),
   soundOff: require('../../assets/icons/speaker-off.png'),

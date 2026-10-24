@@ -29,7 +29,7 @@ function Body({ screens }) {
     const screen = screens.find(s => s.props.name === route.name), navigation = nav(route);
     const resolved = typeof screen.props.options === 'function' ? screen.props.options({ route, navigation }) : screen.props.options;
     return R.createElement(Focus.Provider, { key: route.key, value: index === state.index },
-      R.createElement('Screen', { name: route.name, focused: index === state.index, navigation },
+      R.createElement('Screen', { name: route.name, focused: index === state.index, navigation, options: resolved },
         resolved?.headerRight?.(), screen.props.children({ route, navigation })));
   });
 }

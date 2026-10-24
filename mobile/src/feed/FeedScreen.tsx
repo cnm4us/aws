@@ -22,20 +22,21 @@ import { TextResources } from '../content/resources';
 import { CaptionLayer } from '../content/CaptionLayer';
 import type { CaptionPreferences } from '../preferences/captionPreferences';
 import type { LaunchEntry } from '../navigation/globalLaunchJourney';
-import type { ApiClient } from '../api/client';
+import { ApiError, type ApiClient } from '../api/client';
+import { EngagementControls } from '../engagement/EngagementControls';
 
-export type FeedCommands={requestRefresh:()=>void};
+export type FeedCommands={requestRefresh:()=>void;denyAccess?:(error:ApiError)=>void};
 export type FeedPlaybackHandle={capture:()=>PlaybackCheckpoint;release:()=>void};
 
 
-export function FeedScreen({ context, preferences, sound, captionPreferences, captions, focused, onSpaces, onMenu, onGlobal, onCreator, registerPlayback, registerCommands, restore, entry, onBackProfile, onBackGlobal, onLaunch, onRetryEntry, onChooseLaunch, blocked=false }: {
+export function FeedScreen({ context, preferences, sound, captionPreferences, captions, focused, onSpaces, onMenu, onGlobal, onCreator, registerPlayback, registerCommands, restore, entry, onBackProfile, onBackGlobal, onLaunch, onRetryEntry, onChooseLaunch, onComments, blocked=false }: {
   captionPreferences: CaptionPreferences; captions: ReturnType<CaptionPreferences['getSnapshot']>;
   context: FeedContext; preferences: PlaybackPreferences; sound: PlaybackPreferencesSnapshot; focused: boolean;
   onSpaces:()=>void;onMenu:()=>void;onGlobal:()=>void;
   registerCommands?:(handle:FeedCommands)=>()=>void;
   onCreator?:(id:number)=>void;registerPlayback?:(handle:FeedPlaybackHandle)=>()=>void;
   restore?:FeedCheckpoint;entry?:LaunchEntry;onBackProfile?:()=>void;onBackGlobal?:()=>void;onLaunch?:(item:FeedVideoItem)=>void;
-  onRetryEntry?:()=>Promise<void>;onChooseLaunch?:()=>void;blocked?:boolean;
+  onRetryEntry?:()=>Promise<void>;onChooseLaunch?:()=>void;onComments?:(publicationId:number)=>void;blocked?:boolean;
 }) {
   const { store:identity, snapshot:auth }=useAuth();
   const { store, snapshot, client,clearResume,entryPending } = useViewerFeed(context,restore,entry);
@@ -61,7 +62,7 @@ export function FeedScreen({ context, preferences, sound, captionPreferences, ca
     live.current.mounted=true;
     const unregister=registerCommands?.({requestRefresh:()=>{
       if(live.current.mounted && identity.getSnapshot().generation===auth.generation)pendingRefresh.current=true;
-    }});
+    },denyAccess:error=>{if(live.current.mounted && identity.getSnapshot().generation===auth.generation)store.denyAccess(error);}});
     return()=>{live.current.mounted=false;pendingRefresh.current=false;unregister?.();};
   },[store,identity,auth.generation,registerCommands]);
   useEffect(()=>{
@@ -81,7 +82,7 @@ export function FeedScreen({ context, preferences, sound, captionPreferences, ca
           <View style={styles.headerActions}><Action label="Spaces" onPress={onSpaces}/><Action label="Global" onPress={onGlobal}/></View>
         </View> : <FeedSession key={snapshot.sessionId} store={store} snapshot={snapshot} muted={sound.muted}
           onToggleMute={preferences.toggleMute} eligible={!!eligible} diagnosticContext={{feedContext:contextKey(context),authGeneration:auth.generation}}
-          restore={restore} entry={entry} onCreator={onCreator} onLaunch={onLaunch} registerPlayback={registerPlayback} client={client} context={context} captionPreferences={captionPreferences} captions={captions}/>}
+          restore={restore} entry={entry} onCreator={onCreator} onLaunch={onLaunch} onComments={onComments} registerPlayback={registerPlayback} client={client} context={context} captionPreferences={captionPreferences} captions={captions}/>}
       {(auth.status==='unavailable' || (context.kind==='space' && access.checking && !access.authorized)) &&
         <View style={[StyleSheet.absoluteFill,{backgroundColor:'#000',padding:20,gap:12}]}>
           <Message title={auth.status==='unavailable'?'Cannot verify access':'Checking access'} busy={auth.status!=='unavailable'}
@@ -98,10 +99,10 @@ export function FeedScreen({ context, preferences, sound, captionPreferences, ca
   </SafeAreaView>;
 }
 
-function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosticContext, restore, entry, onCreator, onLaunch, registerPlayback, client, context, captionPreferences, captions }: {
+function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosticContext, restore, entry, onCreator, onLaunch, onComments, registerPlayback, client, context, captionPreferences, captions }: {
   store: FeedStore; snapshot: FeedSnapshot; muted: boolean; onToggleMute: () => void; eligible: boolean;
   diagnosticContext:{feedContext:string;authGeneration:number};
-  restore?:FeedCheckpoint;entry?:LaunchEntry;onLaunch?:(item:FeedVideoItem)=>void;onCreator?:(id:number)=>void;registerPlayback?:(handle:FeedPlaybackHandle)=>()=>void;
+  restore?:FeedCheckpoint;entry?:LaunchEntry;onLaunch?:(item:FeedVideoItem)=>void;onComments?:(publicationId:number)=>void;onCreator?:(id:number)=>void;registerPlayback?:(handle:FeedPlaybackHandle)=>()=>void;
   client: ApiClient; context: FeedContext; captionPreferences: CaptionPreferences; captions: ReturnType<CaptionPreferences['getSnapshot']>;
 }) {
   const [height, setHeight] = useState(0);
@@ -153,8 +154,8 @@ function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosti
     paging.beginProgrammatic();
     list.current?.scrollToOffset({ offset: Math.min(index + 1, snapshot.items.length) * height, animated: true });
   };
-  const controlCount=(snapshot.items[index]?.creator.id && onCreator?1:0)+(context.kind==='global' && onLaunch?1:0)+(snapshot.items[index]?.hasCaptions?1:0)+1;
-  const controlHeight=Math.min(controlCount*52-8,Math.max(44,height-48));
+  const controlCount=(snapshot.items[index]?.creator.id && onCreator?1:0)+(context.kind==='global' && onLaunch?1:0)+(context.kind==='space' && onComments?2:0)+(snapshot.items[index]?.hasCaptions?1:0)+1;
+  const controlHeight=Math.min(controlCount*52-8+(context.kind==='space' && onComments?40:0),Math.max(44,height-48));
   return (
     <View style={styles.screen} onLayout={event => setHeight(event.nativeEvent.layout.height)}>
       {height > 0 && <FlatList
@@ -202,6 +203,9 @@ function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosti
           {snapshot.items[index]?.creator.id && onCreator && <CreatorButton key={snapshot.items[index].publicationId} name={snapshot.items[index].creator.displayName}
             avatarUrl={snapshot.items[index].creator.avatarUrl} disabled={!textEligible} onPress={()=>onCreator(snapshot.items[index].creator.id!)}/>}
           {context.kind==='global' && onLaunch && <IconButton icon="launch" label="Open spaces for this video" disabled={!textEligible || playback.publicationId!==snapshot.items[index].publicationId} onPress={()=>onLaunch(snapshot.items[index])}/>}
+          {context.kind==='space' && onComments && <EngagementControls client={client} spaceId={context.spaceId} publicationId={snapshot.items[index].publicationId}
+            eligible={textEligible && playback.publicationId===snapshot.items[index].publicationId}
+            onDenied={error=>{if(error instanceof ApiError)store.denyAccess(error);}} onComments={()=>onComments(snapshot.items[index].publicationId)}/>}
           {snapshot.items[index]?.hasCaptions && <IconButton icon="cc"
             label={captions.enabled ? 'Hide captions' : 'Show captions'} selected={captions.enabled}
             disabled={!captions.ready} onPress={() => { void captionPreferences.toggle(); }} />}

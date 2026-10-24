@@ -77,6 +77,11 @@ export function createApiClient(baseUrl: string, options: ClientOptions = {}) {
           let code: string | undefined;
           try { const data = await response.json(); if (typeof data?.error === 'string') code = data.error; } catch {}
           const messages: Record<string,string> = {
+            comments_disabled: 'New comments are disabled for this video.',
+            comment_forbidden: 'You cannot currently post comments in this space.',
+            invalid_body: 'Check your comment and try again.',
+            request_too_large: 'This comment is too large.',
+            service_unavailable: 'The service is temporarily unavailable. Please try again.',
             invalid_credentials: 'Email or password is incorrect.', unauthorized: 'Please sign in again.',
             forbidden: 'You do not currently have access to this space.', space_not_found: 'This space is unavailable.',
             rate_limited: 'Too many sign-in attempts. Please wait and try again.',

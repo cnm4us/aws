@@ -78,6 +78,7 @@ export function buildServer(): express.Application {
   });
   app.use(cors(corsOptions));
   app.use('/api/native/v1/session',express.json({limit:'4kb'}));
+  app.use(/^\/api\/viewer\/v1\/spaces\/[1-9]\d*\/publications\/[1-9]\d*\/comments\/?$/,express.json({limit:'16kb'}));
   app.use(express.json({ limit: '2mb' }));
   app.use(express.urlencoded({ extended: true, limit: '2mb' }));
   // Parser failures can contain the submitted credential body. Never log or reflect it.

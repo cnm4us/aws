@@ -5,13 +5,16 @@ for (const name of ['View','Text','Pressable','ScrollView','ActivityIndicator','
 }
 exports.SafeAreaView = exports.View;
 exports.Platform = { OS: 'ios' };
+exports.Keyboard = { dismiss: () => { e.keyboardDismissed = true; } };
 exports.useWindowDimensions = () => e.dimensions || { width: 375, height: 812, fontScale: 1 };
 exports.StyleSheet = { create: value => value, absoluteFill: {}, absoluteFillObject: {} };
 exports.Share = { share: async value => { e.shared = value; } };
 exports.Alert = { alert: (...args) => { e.alert = args; } };
 exports.FlatList = R.forwardRef((props, ref) => {
   R.useImperativeHandle(ref, () => ({ scrollToOffset: value => e.scrolls.push(value) }));
-  return R.createElement('FlatList', props, ...props.data.map((item, index) => R.createElement(R.Fragment, { key: item.publicationId }, props.renderItem({ item, index }))));
+  const content = value => typeof value === 'function' ? R.createElement(value) : value;
+  return R.createElement('FlatList', props, content(props.ListHeaderComponent),
+    ...(props.data.length ? props.data.map((item, index) => R.createElement(R.Fragment, { key: props.keyExtractor?.(item,index) ?? item.publicationId ?? item.id }, props.renderItem({ item, index }))) : [content(props.ListEmptyComponent)]),content(props.ListFooterComponent));
 });
 exports.AppState = { get currentState() { return e.state; }, addEventListener: (_name, fn) => {
   e.listeners.add(fn); return { remove: () => e.listeners.delete(fn) };

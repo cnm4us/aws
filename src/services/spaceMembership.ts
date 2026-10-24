@@ -1,4 +1,4 @@
-import { type DB, getPool } from '../db';
+import { type Queryable as DB, getPool } from '../db';
 
 export type SpaceType = 'personal' | 'group' | 'channel';
 

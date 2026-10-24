@@ -42,7 +42,7 @@ test('real protected hook expires a hanging renewal at 60 seconds and rejects la
  await h.tick(14_999);assert.equal(h.player.playing,true);await h.tick(1);
  assert.equal(h.player.playing,false);assert.ok(!h.texts().includes('Protected caption'));assert.ok(h.texts().includes('Cannot verify access'));
  await Test.act(async()=>h.pending.shift().resolve(h.session));assert.equal(h.player.playing,false);assert.ok(!h.texts().includes('Protected caption'));
- h.setMode('success');await Test.act(async()=>h.getRoot().root.findAllByType('Pressable').find(n=>n.props.accessibilityLabel==='Try again').props.onPress());
+ h.setMode('success');await Test.act(async()=>h.getRoot().root.findAll(n=>n.props.title==='Cannot verify access')[0].findByType('Pressable').props.onPress());
  assert.equal(h.player.playing,true);assert.equal(h.player.currentTime,5);assert.ok(h.texts().includes('Protected caption'));
 });
 for(const status of [401,503])test(`real protected hook blocks immediately on account failure ${status}`,async t=>{
