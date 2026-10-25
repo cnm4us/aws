@@ -5,6 +5,8 @@ import { PlaybackCoordinator, type PlayerPort } from './coordinator';
 import { playbackDiagnostics } from '../diagnostics/development';
 import { viewerBuildPolicy } from '../config/build';
 import { PlayerBudget } from './playerBudget';
+import type { NavigationTrace } from '../diagnostics/playbackDiagnostics';
+import type { PlayerHandoff } from './playerHandoff';
 import { createCaptionClock } from './captionClock';
 
 export interface NativePlayerPort extends PlayerPort { native: VideoPlayer; subscribeClock(listener: (seconds: number) => void): () => void }
@@ -61,10 +63,10 @@ function createNativePlayer(): NativePlayerPort {
   } catch(error) {lease.release();throw error;}
 }
 
-export function useFeedPlayback(muted: boolean, eligible = true, context?:{feedContext:string;authGeneration:number}) {
+export function useFeedPlayback(muted: boolean, eligible = true, context?:{feedContext:string;authGeneration:number},handoff?:PlayerHandoff<NativePlayerPort>,trace?:NavigationTrace) {
   const {coordinator,diagnostic} = useMemo(() => {
     const diagnostic=playbackDiagnostics?.session();
-    return {coordinator:new PlaybackCoordinator(createNativePlayer,diagnostic,muted),diagnostic};
+    return {coordinator:new PlaybackCoordinator(createNativePlayer,diagnostic,muted,handoff,trace),diagnostic};
   }, []);
   const snapshot = useSyncExternalStore(coordinator.subscribe, coordinator.getSnapshot);
   useEffect(()=>{if(context)diagnostic?.({type:'context',...context});},[coordinator]);

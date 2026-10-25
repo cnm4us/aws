@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod'
 import { requireAuth } from '../middleware/auth';
 import * as feedsSvc from '../features/feeds/service'
-import * as followsSvc from '../features/follows/service'
+import { createFollowRouter } from '../features/follows/router'
 import * as spacesSvc from '../features/spaces/service'
 import * as reportsSvc from '../features/reports/service'
 import { isResolvedResolutionCode } from '../features/reports/resolution-codes'
@@ -403,7 +403,7 @@ spacesRouter.put('/api/spaces/:id/settings', requireAuth, async (req, res, next)
     const body = (req.body || {}) as any
     const wantComments = body.commentsPolicy
     const wantRequire = body.requireReview
-    const data = await spacesSvc.updateSettings(spaceId, currentUserId, { commentsPolicy: wantComments, requireReview: wantRequire })
+    const data = await spacesSvc.updateSettings(spaceId, currentUserId, { commentsPolicy: wantComments, requireReview: wantRequire, discoveryDescription: body.discoveryDescription })
     res.json(data)
   } catch (err: any) { next(err) }
 })
@@ -526,48 +526,8 @@ spacesRouter.get('/api/spaces/:id/feed', requireAuth, async (req, res, next) => 
   }
 })
 
-// Per-space, per-user follow status and mutation
-spacesRouter.get('/api/spaces/:id/users/:userId/follow', requireAuth, async (req, res, next) => {
-  try {
-    const spaceId = Number(req.params.id)
-    const targetUserId = Number(req.params.userId)
-    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' })
-    if (!Number.isFinite(targetUserId) || targetUserId <= 0) return res.status(400).json({ error: 'bad_user_id' })
-    const currentUserId = Number(req.user!.id)
-    const summary = await followsSvc.getSpaceUserFollowSummary(spaceId, targetUserId, currentUserId)
-    res.json(summary)
-  } catch (err: any) {
-    next(err)
-  }
-})
-
-spacesRouter.post('/api/spaces/:id/users/:userId/follow', requireAuth, async (req, res, next) => {
-  try {
-    const spaceId = Number(req.params.id)
-    const targetUserId = Number(req.params.userId)
-    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' })
-    if (!Number.isFinite(targetUserId) || targetUserId <= 0) return res.status(400).json({ error: 'bad_user_id' })
-    const currentUserId = Number(req.user!.id)
-    const summary = await followsSvc.followSpaceUser(spaceId, targetUserId, currentUserId)
-    res.json(summary)
-  } catch (err: any) {
-    next(err)
-  }
-})
-
-spacesRouter.delete('/api/spaces/:id/users/:userId/follow', requireAuth, async (req, res, next) => {
-  try {
-    const spaceId = Number(req.params.id)
-    const targetUserId = Number(req.params.userId)
-    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' })
-    if (!Number.isFinite(targetUserId) || targetUserId <= 0) return res.status(400).json({ error: 'bad_user_id' })
-    const currentUserId = Number(req.user!.id)
-    const summary = await followsSvc.unfollowSpaceUser(spaceId, targetUserId, currentUserId)
-    res.json(summary)
-  } catch (err: any) {
-    next(err)
-  }
-})
+// Cookie-only legacy Follow shares exact publication/creator authority with native.
+spacesRouter.use(createFollowRouter(true));
 
 // Global feed aggregator: includes items explicitly marked visible_in_global and published.
 // Public route: anonymous callers are allowed and receive the same feed payload without

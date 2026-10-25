@@ -1,7 +1,8 @@
 import type { FeedVideoItem } from '../feed/types';
-import type { PlaybackDiagnosticEvent } from '../diagnostics/playbackDiagnostics';
+import type { NavigationTrace, PlaybackDiagnosticEvent } from '../diagnostics/playbackDiagnostics';
 import { playerErrorDetails } from './playerError';
 import { PlayerBudgetError } from './playerBudget';
+import { PlayerHandoff } from './playerHandoff';
 
 export type PlaybackStatus = 'idle' | 'loading' | 'readyToPlay' | 'error';
 export interface PlayerPort {
@@ -44,7 +45,7 @@ export type PlaybackSnapshot<P> = {
 type Entry<P> = {
   item: FeedVideoItem; player: P; unsubscribe: () => void;
   status: PlaybackStatus; failed: boolean; selectedBefore: boolean;
-  readyOnce: boolean; loadResolved: boolean; playRequested: boolean;
+  retained:boolean; readyOnce: boolean; loadResolved: boolean; playRequested: boolean;
 };
 
 // Owns at most previous/current/next. Only the selected entry may play.
@@ -65,7 +66,7 @@ export class PlaybackCoordinator<P extends PlayerPort> {
   private pendingRestore: { publicationId:number; seconds:number; userPaused:boolean; started:boolean; journeyGeneration?:number; timer?:ReturnType<typeof setTimeout> } | null = null;
 
   constructor(private readonly createPlayer: () => P,
-    private readonly diagnostic: (event: PlaybackDiagnosticEvent) => void = () => {}, initialMuted = true) {
+    private readonly diagnostic: (event: PlaybackDiagnosticEvent) => void = () => {}, initialMuted = true, private handoff?:PlayerHandoff<P>,private trace?:NavigationTrace) {
     this.state = { ...this.state, muted: initialMuted };
   }
 
@@ -174,6 +175,7 @@ export class PlaybackCoordinator<P extends PlayerPort> {
     const finish=(error?:unknown)=>{
       if(this.disposed || this.pendingRestore!==pending || !this.isActive(entry))return;
       this.clearRestore();
+      if(!error){this.trace?.mark('restore_ready');if(this.state.hasFrame)this.trace?.finish('ready');}else this.trace?.finish('failed');
       this.publish({restoring:false,restoreError:error?'Cannot restore playback position. Try again or start from the beginning.':null});
       let delta:number|undefined;
       try{const time=entry.player.currentTime?.();if(time!==undefined && Number.isFinite(time))delta=Math.abs(time-pending.seconds);}catch{}
@@ -186,7 +188,8 @@ export class PlaybackCoordinator<P extends PlayerPort> {
       // A publication may play an edited production with a different duration than its upload.
       const duration = entry.player.durationSeconds ? entry.player.durationSeconds() : entry.item.durationSeconds;
       if (duration && Number.isFinite(duration) && duration > 0) pending.seconds = Math.min(pending.seconds, Math.max(0, duration - .1));
-      void entry.player.seekTo(pending.seconds).then(()=>finish(),finish);
+      if(entry.retained && Math.abs((entry.player.currentTime?.()??Infinity)-pending.seconds)<.025)finish();
+      else void entry.player.seekTo(pending.seconds).then(()=>finish(),finish);
     }catch(error){finish(error);}
   }
 
@@ -246,7 +249,9 @@ export class PlaybackCoordinator<P extends PlayerPort> {
 
   private createEntry(item: FeedVideoItem) {
     let player: P;
-    try { player = this.createPlayer(); }
+    const carried=this.pendingRestore?.publicationId===item.publicationId?this.handoff?.take(item):undefined;
+    this.handoff?.dispose();this.handoff=undefined;
+    try { player = carried??this.createPlayer(); }
     catch (error) {
       this.diagnostic({ type: 'error', publicationId: item.publicationId,
         activation: this.item?.publicationId === item.publicationId ? this.state.activation : undefined,
@@ -254,12 +259,12 @@ export class PlaybackCoordinator<P extends PlayerPort> {
         ...playerErrorDetails(error) });
       return;
     }
-    const entry: Entry<P> = { item, player, unsubscribe: () => {}, status: 'loading', failed: false,
-      selectedBefore: false, readyOnce: false, loadResolved: false, playRequested: false };
+    const entry: Entry<P> = { item, player, unsubscribe: () => {}, status: carried?'readyToPlay':'loading', failed: false,
+      selectedBefore: false, retained:!!carried, readyOnce: !!carried, loadResolved: !!carried, playRequested: false };
     this.entries.set(item.publicationId, entry);
     const subscriptions: (() => void)[] = [];
     entry.unsubscribe = () => subscriptions.forEach(unsubscribe => unsubscribe());
-    this.diagnostic({ type: 'allocation', publicationId: item.publicationId, livePlayers: this.entries.size });
+    this.diagnostic({ type: carried?'transfer_in':'allocation', publicationId: item.publicationId, livePlayers: this.entries.size });
     try {
       subscriptions.push(player.subscribe((status, error) => this.statusChanged(entry, status, 'native_error', error)));
       if (player.subscribePlaying) subscriptions.push(player.subscribePlaying(playing => {
@@ -295,6 +300,7 @@ export class PlaybackCoordinator<P extends PlayerPort> {
         failureKind: 'player_allocation', allocationFailure: 'native_creation', ...playerErrorDetails(error) });
       return;
     }
+    if(carried)return;
     // A native bridge call may throw before returning its promise.
     try {
       this.diagnostic({ type: 'load_started', publicationId: item.publicationId });
@@ -405,6 +411,7 @@ export class PlaybackCoordinator<P extends PlayerPort> {
     if (this.disposed) return;
     if (this.state.activation === activation && !this.state.hasFrame && this.state.player) {
       this.publish({ hasFrame: true });
+      this.trace?.mark('first_frame');if(!this.state.restoring)this.trace?.finish('ready');
       this.watchStartup();
       this.diagnostic({ type: 'first_frame', publicationId: this.state.publicationId, activation });
     }
@@ -419,11 +426,22 @@ export class PlaybackCoordinator<P extends PlayerPort> {
     this.reconcile();
   };
   retry = () => { this.activate(this.item, this.desired, true); };
+  handOff = ():PlayerHandoff<P>|undefined => {
+    const entry=this.current();
+    if(this.disposed || !entry || entry.failed || entry.status!=='readyToPlay' || !entry.loadResolved || this.state.restoring || this.state.restoreError || !entry.item.productionUlid)return;
+    this.setScreenEligible(false);
+    for(const other of [...this.entries.values()])if(other!==entry)this.drop(other);
+    entry.unsubscribe();this.entries.delete(entry.item.publicationId);
+    const handoff=new PlayerHandoff(entry.item,entry.player,this.diagnostic);
+    // The parked lease still belongs to this diagnostic session until consumed/released.
+    this.dispose();return handoff;
+  };
   dispose = () => {
     if (this.disposed) return;
-    this.disposed = true;
+    this.disposed = true;this.trace?.finish('interrupted');
     this.clearStartupTimer();
     this.clearRestore();
+    this.handoff?.dispose();this.handoff=undefined;
     for (const entry of [...this.entries.values()]) this.drop(entry);
     this.item = null;
     this.desired = [];

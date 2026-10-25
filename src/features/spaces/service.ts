@@ -1,3 +1,4 @@
+import { validateDiscoveryDescription } from './discoveryDescription';
 import { getPool, type Queryable } from '../../db'
 import * as repo from './repo'
 import { can, resolveChecker } from '../../security/permissions'
@@ -125,7 +126,7 @@ export async function getSettings(spaceId: number, currentUserId: number) {
   }
 }
 
-export async function updateSettings(spaceId: number, currentUserId: number, input: { commentsPolicy?: string; requireReview?: boolean }) {
+export async function updateSettings(spaceId: number, currentUserId: number, input: { commentsPolicy?: string; requireReview?: boolean; discoveryDescription?: unknown }) {
   const db = getPool()
   const space = await loadSpace(spaceId, db)
   if (!space) throw new Error('space_not_found')
@@ -133,20 +134,23 @@ export async function updateSettings(spaceId: number, currentUserId: number, inp
   const siteAdmin = await can(currentUserId, PERM.VIDEO_DELETE_ANY, { checker })
   const allowed = siteAdmin || (await can(currentUserId, PERM.SPACE_MANAGE, { spaceId, checker }))
   if (!allowed) throw Object.assign(new Error('forbidden'), { code: 'forbidden', status: 403 })
-  const settings = parseSettings(space)
-  if (!settings.publishing || typeof settings.publishing !== 'object') settings.publishing = {}
+  const patch: Record<string, unknown> = {}
   if (input.commentsPolicy !== undefined) {
     const allowed = new Set(['on', 'off', 'inherit'])
     const val = String(input.commentsPolicy || '').toLowerCase()
     if (!allowed.has(val)) throw Object.assign(new Error('bad_comments_policy'), { code: 'bad_comments_policy', status: 400 })
-    settings.comments = val
+    patch.comments = val
+  }
+  if (input.discoveryDescription !== undefined) {
+    if (!['group','channel'].includes(space.type)) throw Object.assign(new Error('discovery_description_not_supported'), { status: 400 })
+    patch.discoveryDescription = validateDiscoveryDescription(input.discoveryDescription)
   }
   const review = (await repo.fetchSiteReviewFlags(db)) || { requireGroupReview: false, requireChannelReview: true }
   const siteEnforced = space.type === 'group' ? review.requireGroupReview : space.type === 'channel' ? review.requireChannelReview : false
-  if (!siteEnforced && input.requireReview !== undefined) {
-    settings.publishing.requireApproval = !!input.requireReview
-  }
-  await db.query(`UPDATE spaces SET settings = ? WHERE id = ?`, [JSON.stringify(settings), spaceId])
+  if (!siteEnforced && input.requireReview !== undefined) patch.publishing = { requireApproval: !!input.requireReview }
+  // Merge only supplied fields at write time; unrelated or concurrently updated settings survive.
+  if (Object.keys(patch).length) await db.query(`UPDATE spaces SET settings = JSON_MERGE_PATCH(COALESCE(settings, JSON_OBJECT()), ?) WHERE id = ?`, [JSON.stringify(patch), spaceId])
+  const settings = parseSettings((await loadSpace(spaceId, db))!)
   return { ok: true, id: spaceId, settings }
 }
 

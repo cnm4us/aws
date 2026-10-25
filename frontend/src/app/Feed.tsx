@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
+import { contextualFollow } from './contextualFollow'
 import FeedVideo from '../components/FeedVideo'
 import SharedNav from '../ui/SharedNav'
 import { prefetchForHref } from '../ui/routes'
@@ -861,6 +862,7 @@ export default function Feed() {
   const [likeBusy, setLikeBusy] = useState<Record<number, boolean>>({})
   // Per-space follow state keyed by "spaceId:userId"
   const [followMap, setFollowMap] = useState<Record<string, boolean>>({})
+  const [followBusy, setFollowBusy] = useState<Record<string, boolean>>({})
   // Comments state
   const [commentsCountMap, setCommentsCountMap] = useState<Record<number, number>>({})
   const [commentedByMeMap, setCommentedByMeMap] = useState<Record<number, boolean>>({})
@@ -906,6 +908,8 @@ export default function Feed() {
   const [peekOpen, setPeekOpen] = useState(false)
   const [peekUserId, setPeekUserId] = useState<number | null>(null)
   const [peekSpaceId, setPeekSpaceId] = useState<number | null>(null)
+  const [peekPublicationId, setPeekPublicationId] = useState<number | null>(null)
+  const [peekFollowError, setPeekFollowError] = useState<string | null>(null)
   const [peekProfile, setPeekProfile] = useState<{
     userId: number
     displayName: string
@@ -1372,6 +1376,18 @@ export default function Feed() {
     return flattenSpaces(spaceList).find((s) => s.id === spaceId) || null
   }
 
+  const followScope = `${isAuthed}:${myUserId}:${feedMode.kind === 'space' ? feedMode.spaceId : 'global'}:${feedKey(feedMode)}:${isGlobalBillboard}`
+  const liveFollowScope = useRef(followScope)
+  liveFollowScope.current = followScope
+  const peekVisit = useRef(0)
+  const followWrite = useRef<AbortController | null>(null)
+  useEffect(() => {
+    peekVisit.current++
+    followWrite.current?.abort()
+    setFollowMap({}); setFollowBusy({}); setPeekOpen(false)
+    return () => { peekVisit.current++; followWrite.current?.abort() }
+  }, [followScope])
+
   function followKey(spaceId: number | null, userId: number | null): string | null {
     if (!spaceId || !userId) return null
     return `${spaceId}:${userId}`
@@ -1665,88 +1681,62 @@ export default function Feed() {
   }, [captionsEnabled, captionsSlideIndex, items, storyOpenForPub])
 
   const openProfilePeek = useCallback(
-    async (
-      ownerId: number | null | undefined,
-      contextSpaceId: number | null | undefined,
-      initialName?: string | null,
-      initialAvatarUrl?: string | null,
-    ) => {
-      if (!ownerId || !Number.isFinite(ownerId)) return
-      const uid = Number(ownerId)
-      const spaceId = contextSpaceId && Number.isFinite(contextSpaceId) ? Number(contextSpaceId) : null
-      setPeekOpen(true)
-      setPeekUserId(uid)
-      setPeekSpaceId(spaceId)
-      if (initialName || initialAvatarUrl) {
-        setPeekProfile({
-          userId: uid,
-          displayName: initialName || '',
-          avatarUrl: initialAvatarUrl || null,
-          bio: null,
-          memberSince: null,
-          slug: undefined,
-        })
-      } else {
-        setPeekProfile(null)
-      }
-      setPeekLoading(true)
-      setPeekError(null)
-      setPeekFollowing(null)
-      setPeekFollowersCount(null)
+    async (ownerId: number | null | undefined, contextSpaceId: number | null | undefined,
+      initialName?: string | null, initialAvatarUrl?: string | null, publicationId?: number | null) => {
+      if (!ownerId || !Number.isSafeInteger(ownerId)) return
+      const uid = Number(ownerId), visit = ++peekVisit.current, scope = followScope
+      followWrite.current?.abort()
+      const current = () => peekVisit.current === visit && liveFollowScope.current === scope
+      const spaceId = !isGlobalBillboard && feedMode.kind === 'space' && contextSpaceId === feedMode.spaceId ? contextSpaceId : null
+      const pubId = spaceId && Number.isSafeInteger(publicationId) && Number(publicationId) > 0 ? Number(publicationId) : null
+      setPeekOpen(true); setPeekUserId(uid); setPeekSpaceId(spaceId); setPeekPublicationId(pubId)
+      setPeekFollowing(null); setPeekFollowersCount(null); setPeekFollowBusy(false); setPeekFollowError(null)
+      setPeekProfile(initialName || initialAvatarUrl ? {userId:uid,displayName:initialName || '',avatarUrl:initialAvatarUrl || null,bio:null,memberSince:null} : null)
+      setPeekLoading(true); setPeekError(null)
       try {
         const res = await fetch(`/api/profile/${uid}`)
         if (!res.ok) throw new Error('profile_failed')
         const data = await res.json()
-        const p = data?.profile
-        if (p) {
-          setPeekProfile((prev) => ({
-            userId: Number(p.userId ?? uid),
-            displayName: String(p.displayName || prev?.displayName || ''),
-            avatarUrl: p.avatarUrl || prev?.avatarUrl || null,
-            bio: p.bio ?? prev?.bio ?? null,
-            memberSince: p.memberSince ? String(p.memberSince) : prev?.memberSince ?? null,
-            slug: typeof p.slug === 'string' && p.slug.length ? String(p.slug) : prev?.slug ?? null,
-          }))
-        } else {
-          setPeekError('Profile not found.')
-        }
-      } catch {
-        setPeekError('Failed to load profile.')
-      } finally {
-        setPeekLoading(false)
-      }
-
-      if (!spaceId || !isAuthed) return
+        if (!current()) return
+        const profile = data?.profile
+        if (profile) setPeekProfile({userId:uid,displayName:String(profile.displayName || initialName || ''),avatarUrl:profile.avatarUrl || initialAvatarUrl || null,
+          bio:profile.bio ?? null,memberSince:profile.memberSince ? String(profile.memberSince) : null,slug:profile.slug || null})
+        else setPeekError('Profile not found.')
+      } catch { if (current()) setPeekError('Failed to load profile.') }
+      finally { if (current()) setPeekLoading(false) }
+      if (!current() || !spaceId || !pubId || !isAuthed) return
       const space = findSpaceSummaryById(spaceId)
-      if (!space || (space.type !== 'group' && space.type !== 'channel')) return
+      if (!space || !['group','channel'].includes(space.type)) return
       try {
-        const res = await fetch(`/api/spaces/${spaceId}/users/${uid}/follow`, { credentials: 'same-origin' })
-        if (!res.ok) return
-        const data = await res.json()
-        setPeekFollowing(Boolean(data?.following))
-        const key = followKey(spaceId, uid)
-        if (key) {
-          setFollowMap((m) => ({ ...m, [key]: Boolean(data?.following) }))
-        }
-        const count = typeof data?.followersCount === 'number' ? Number(data.followersCount) : null
-        setPeekFollowersCount(count)
-      } catch {
-        // ignore follow summary errors; overlay is still useful without them
-      }
-    },
-    [isAuthed, spaceList],
+        const data = await contextualFollow({spaceId,publicationId:pubId,creatorId:uid})
+        if (!current()) return
+        setPeekFollowing(data.following); setPeekFollowersCount(data.followersCount)
+        const key = followKey(spaceId,uid)
+        if (key) setFollowMap(m => ({...m,[key]:data.following}))
+      } catch { if (current()) setPeekFollowError('Cannot verify Follow status.') }
+    }, [isAuthed, spaceList, feedMode, isGlobalBillboard, followScope],
   )
-
   const closeProfilePeek = useCallback(() => {
-    setPeekOpen(false)
-    setPeekUserId(null)
-    setPeekSpaceId(null)
-    setPeekProfile(null)
-    setPeekError(null)
-    setPeekFollowing(null)
-    setPeekFollowersCount(null)
-    setPeekFollowBusy(false)
+    peekVisit.current++; followWrite.current?.abort()
+    setPeekOpen(false); setPeekUserId(null); setPeekSpaceId(null); setPeekPublicationId(null)
+    setPeekProfile(null); setPeekError(null); setPeekFollowing(null); setPeekFollowersCount(null)
+    setPeekFollowBusy(false); setPeekFollowError(null)
   }, [])
+
+  // Only the selected explicit-space card hydrates browser inline Follow state.
+  useEffect(() => {
+    if (!isAuthed || isGlobalBillboard || feedMode.kind !== 'space' || !activeItem?.publicationId || !activeItem.ownerId) return
+    const space = findSpaceSummaryById(feedMode.spaceId)
+    if (!space || !['group','channel'].includes(space.type)) return
+    const controller = new AbortController(), scope = followScope
+    const ctx = {spaceId:feedMode.spaceId,publicationId:activeItem.publicationId,creatorId:activeItem.ownerId}
+    const key = followKey(ctx.spaceId,ctx.creatorId)!
+    setFollowMap(m => { const next={...m}; delete next[key]; return next })
+    void contextualFollow(ctx,'GET',undefined,controller.signal).then(data => {
+      if (!controller.signal.aborted && liveFollowScope.current === scope) setFollowMap(m => ({...m,[key]:data.following}))
+    }).catch(() => {})
+    return () => controller.abort()
+  }, [followScope, activeItem?.publicationId, activeItem?.ownerId, spaceList])
 
   function ensureCommentCountHydrated(pubId: number | null | undefined, fallback?: number | null) {
     if (!pubId) return
@@ -3951,12 +3941,12 @@ export default function Feed() {
         const fk = followKey(slideSpaceId, it.ownerId ?? null)
         const slideFollowing = fk ? !!followMap[fk] : false
         const canInlineFollow =
-          !!slideSpace &&
+          !isGlobalBillboard && feedMode.kind === 'space' && !!it.publicationId && !!slideSpace &&
           (slideSpace.type === 'group' || slideSpace.type === 'channel') &&
           isAuthed &&
           it.ownerId != null &&
           it.ownerId !== myUserId
-        const showInlineFollow = canInlineFollow && !slideFollowing
+        const showInlineFollow = canInlineFollow && fk != null && followMap[fk] === false
         const alreadyReported =
           it.publicationId != null
             ? (reportedMap[it.publicationId] ?? (typeof it.reportedByMe === 'boolean' ? it.reportedByMe : false))
@@ -4206,6 +4196,7 @@ export default function Feed() {
                             slideSpaceId,
                             it.ownerName ?? null,
                             it.ownerAvatarUrl ?? null,
+                            it.publicationId ?? null,
                           )
                         }
                         title={it.ownerName ? `View ${it.ownerName}` : 'View author'}
@@ -4220,36 +4211,18 @@ export default function Feed() {
                         <button
                           type="button"
                           className={styles.authorFollowButton}
+                          disabled={!!(fk && followBusy[fk])}
                           onClick={(e) => {
                             e.stopPropagation()
-                            const uid = it.ownerId
-                            if (!uid) return
-                            const sid = slideSpaceId
-                            const key = followKey(sid, uid)
-                            if (!sid || !key) return
-                            const csrf = getCsrfToken()
-                            // optimistic: mark as following so button disappears
-                            setFollowMap((m) => ({ ...m, [key]: true }))
-                            ;(async () => {
-                              try {
-                                const res = await fetch(`/api/spaces/${sid}/users/${uid}/follow`, {
-                                  method: 'POST',
-                                  headers: { ...(csrf ? { 'x-csrf-token': csrf } : {}) },
-                                  credentials: 'same-origin',
-                                })
-                                if (!res.ok) throw new Error('inline_follow_failed')
-                                const data = await res.json()
-                                const serverFollowing = Boolean(data?.following)
-                                setFollowMap((m) => ({ ...m, [key]: serverFollowing }))
-                              } catch {
-                                // rollback
-                                setFollowMap((m) => {
-                                  const copy = { ...m }
-                                  delete copy[key]
-                                  return copy
-                                })
-                              }
-                            })()
+                            const uid=it.ownerId, sid=slideSpaceId, pubId=it.publicationId, key=followKey(sid,uid ?? null)
+                            if (!uid || !sid || !pubId || !key || followBusy[key] || isGlobalBillboard || feedMode.kind!=='space') return
+                            const scope=followScope
+                            setFollowBusy(m=>({...m,[key]:true}))
+                            void contextualFollow({spaceId:sid,publicationId:pubId,creatorId:uid},'POST',getCsrfToken()).then(data=>{
+                              if(liveFollowScope.current===scope)setFollowMap(m=>({...m,[key]:data.following}))
+                            }).catch(()=>{
+                              if(liveFollowScope.current===scope)setFollowMap(m=>{const next={...m};delete next[key];return next})
+                            }).finally(()=>{if(liveFollowScope.current===scope)setFollowBusy(m=>({...m,[key]:false}))})
                           }}
                           aria-label="Follow author in this space"
                         >
@@ -4548,7 +4521,7 @@ export default function Feed() {
           </div>
         )
       }),
-    [renderedSequenceItems, activeSequenceIndex, isPortrait, posterAvail, videoFrameReadyBySequenceKey, playingIndex, startedMap, likesCountMap, likedMap, likeBusy, commentsCountMap, commentedByMeMap, reportedMap, isAuthed, feedMode, followMap, spaceList, myUserId, storyOpenForPub, storyTextMap, storyBusyMap, captionsEnabled]
+    [renderedSequenceItems, activeSequenceIndex, isPortrait, posterAvail, videoFrameReadyBySequenceKey, playingIndex, startedMap, likesCountMap, likedMap, likeBusy, commentsCountMap, commentedByMeMap, reportedMap, isAuthed, feedMode, followMap, followBusy, followScope, openProfilePeek, isGlobalBillboard, spaceList, myUserId, storyOpenForPub, storyTextMap, storyBusyMap, captionsEnabled]
   )
 
   // Debug: log index changes explicitly (outside slides memo)
@@ -5446,68 +5419,29 @@ export default function Feed() {
               {(() => {
                 const space = peekSpaceId != null ? findSpaceSummaryById(peekSpaceId) : null
                 const canFollow =
-                  !!space && (space.type === 'group' || space.type === 'channel') && isAuthed && peekUserId != null && peekUserId !== myUserId
+                  !isGlobalBillboard && feedMode.kind === 'space' && peekPublicationId != null && !!space && (space.type === 'group' || space.type === 'channel') && isAuthed && peekUserId != null && peekUserId !== myUserId
                 if (!canFollow) return null
                 const following = !!peekFollowing
                 return (
                   <button
                     type="button"
-                    disabled={peekFollowBusy}
+                    disabled={peekFollowBusy || peekFollowing === null}
                     onClick={(e) => {
                       e.preventDefault()
                       e.stopPropagation()
-                      const space = peekSpaceId != null ? findSpaceSummaryById(peekSpaceId) : null
-                      const sid = space?.id
-                      const uid = peekUserId
-                      if (!sid || !uid) return
-                      const currentlyFollowing = !!peekFollowing
-                      const csrf = getCsrfToken()
-                      setPeekFollowBusy(true)
-                      setPeekFollowing(!currentlyFollowing)
-                      const fk = followKey(sid ?? null, uid ?? null)
-                      if (fk) {
-                        setFollowMap((m) => ({ ...m, [fk]: !currentlyFollowing }))
-                      }
-                      setPeekFollowersCount((prev) => {
-                        const base = typeof prev === 'number' ? prev : 0
-                        const next = base + (currentlyFollowing ? -1 : 1)
-                        return next < 0 ? 0 : next
-                      })
-                      ;(async () => {
-                        try {
-                          const method = currentlyFollowing ? 'DELETE' : 'POST'
-                          const res = await fetch(`/api/spaces/${sid}/users/${uid}/follow`, {
-                            method,
-                            headers: { ...(csrf ? { 'x-csrf-token': csrf } : {}) },
-                            credentials: 'same-origin',
-                          })
-                          if (!res.ok) throw new Error('follow_toggle_failed')
-                          const data = await res.json()
-                          const serverFollowing = Boolean(data?.following)
-                          setPeekFollowing(serverFollowing)
-                          if (fk) {
-                            setFollowMap((m) => ({ ...m, [fk]: serverFollowing }))
-                          }
-                          const count =
-                            data && typeof data.followersCount === 'number'
-                              ? Number(data.followersCount)
-                              : null
-                          setPeekFollowersCount(count)
-                        } catch {
-                          // rollback
-                          setPeekFollowing(currentlyFollowing)
-                          if (fk) {
-                            setFollowMap((m) => ({ ...m, [fk]: currentlyFollowing }))
-                          }
-                          setPeekFollowersCount((prev) => {
-                            const base = typeof prev === 'number' ? prev : 0
-                            const next = base + (currentlyFollowing ? 1 : -1)
-                            return next < 0 ? 0 : next
-                          })
-                        } finally {
-                          setPeekFollowBusy(false)
-                        }
-                      })()
+                      const sid=peekSpaceId, uid=peekUserId, pubId=peekPublicationId
+                      if(!sid || !uid || !pubId || peekFollowing===null || peekFollowBusy || isGlobalBillboard || feedMode.kind!=='space')return
+                      const visit=peekVisit.current, scope=followScope, request=new AbortController(), fk=followKey(sid,uid)!
+                      followWrite.current=request; setPeekFollowBusy(true); setPeekFollowError(null)
+                      const current=()=>peekVisit.current===visit && liveFollowScope.current===scope && !request.signal.aborted
+                      void contextualFollow({spaceId:sid,publicationId:pubId,creatorId:uid},peekFollowing?'DELETE':'POST',getCsrfToken(),request.signal).then(data=>{
+                        if(!current())return
+                        setPeekFollowing(data.following);setPeekFollowersCount(data.followersCount);setFollowMap(m=>({...m,[fk]:data.following}))
+                      }).catch(()=>{
+                        if(!current())return
+                        setPeekFollowing(null);setPeekFollowersCount(null);setPeekFollowError('Follow may have changed. Refresh status before trying again.')
+                        setFollowMap(m=>{const next={...m};delete next[fk];return next})
+                      }).finally(()=>{if(current())setPeekFollowBusy(false)})
                     }}
                     style={{
                       padding: '6px 12px',
@@ -5519,11 +5453,12 @@ export default function Feed() {
                       cursor: peekFollowBusy ? 'default' : 'pointer',
                     }}
                   >
-                    {following ? 'Following' : 'Follow'}
+                    {peekFollowBusy ? 'Updating…' : peekFollowing === null ? 'Follow unavailable' : following ? 'Following' : 'Follow'}
                   </button>
                 )
               })()}
             </div>
+            {peekFollowError && <div role="alert">{peekFollowError} <button type="button" onClick={()=>{void openProfilePeek(peekUserId,peekSpaceId,peekProfile?.displayName,peekProfile?.avatarUrl,peekPublicationId)}}>Refresh Follow status</button></div>}
             {peekFollowersCount != null && peekSpaceId != null && (
               <div style={{ marginTop: 4, fontSize: 12, opacity: 0.8 }}>
                 {peekFollowersCount} follower{peekFollowersCount === 1 ? '' : 's'} in this space

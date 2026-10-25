@@ -103,7 +103,13 @@
     "viewer:check:launch:web": "ts-node scripts/check-native-launch-web.ts",
     "viewer:fixtures:engagement": "ts-node scripts/native-engagement-fixtures.ts",
     "viewer:check:engagement": "ts-node scripts/check-native-engagement.ts",
-    "viewer:check:engagement:web": "ts-node scripts/check-native-engagement-web.ts"
+    "viewer:check:engagement:web": "ts-node scripts/check-native-engagement-web.ts",
+    "viewer:fixtures:follows": "ts-node scripts/native-follow-fixtures.ts",
+    "viewer:check:follows": "ts-node scripts/check-native-follows.ts",
+    "viewer:check:follows:web": "ts-node scripts/check-native-follows-web.ts",
+    "viewer:fixtures:launch-introductions": "ts-node scripts/native-launch-introduction-fixtures.ts",
+    "viewer:check:launch-introductions": "ts-node scripts/check-native-launch-introductions.ts",
+    "viewer:check:launch-introductions:web": "ts-node scripts/check-native-launch-introductions-web.ts"
   },
   "dependencies": {
     "@aws-sdk/client-mediaconvert": "^3.645.0",

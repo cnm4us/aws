@@ -6,9 +6,10 @@ import { GlobalLaunchJourney, validateLaunchEntry, validateOriginProduction } fr
 import { ViewerJourney } from '../src/navigation/viewerJourney';
 import { ApiError } from '../src/api/client';
 const ulid='01ARZ3NDEKTSV4RRFFQ69G5FAV';
-const destination={space:{id:12,name:'Group',type:'group' as const},publicationId:205};
-const resolved={sourcePublicationId:100,productionUlid:ulid,...destination};
-const page={sourcePublicationId:100,productionUlid:ulid,items:[destination],nextCursor:null};
+const creator={id:2,displayName:'Creator',avatarUrl:null,bio:'Public bio'};
+const destination={space:{id:12,name:'Group',type:'group' as const,description:'A thoughtful community'},publicationId:205};
+const resolved={sourcePublicationId:100,productionUlid:ulid,creator,...destination};
+const page={sourcePublicationId:100,productionUlid:ulid,creator,items:[destination],nextCursor:null};
 const origin={apiOrigin:'https://api.test',authGeneration:1,journeyGeneration:1,context:{kind:'global' as const},publicationId:100,positionSeconds:8,userPaused:true,productionUlid:ulid};
 test('launch adapters minimize fields, enforce source/target/context identities and reject changed production',()=>{
   assert.equal(JSON.stringify(adaptLaunchPage({...page,secret:'private',items:[{...destination,space:{...destination.space,email:'private'}}]},100,ulid)).includes('private'),false);
@@ -40,9 +41,22 @@ test('bounded outer/inner journeys preserve distinct roots and reject obsolete o
 });
 test('strict entry never accepts fallback or wrong-space/production item; tolerant origin return cannot seek a changed production',()=>{
   const launch=new GlobalLaunchJourney(),g=launch.open(origin),entry=launch.enter(resolved,g)!.entry;
-  const item:any={publicationId:205,spaceId:12,productionUlid:ulid};const feed:any={items:[item],nextCursor:null,resume:{requestedPublicationId:205,restoredPublicationId:205,outcome:'restored'}};
+  const item:any={creator:{id:2},publicationId:205,spaceId:12,productionUlid:ulid};const feed:any={items:[item],nextCursor:null,resume:{requestedPublicationId:205,restoredPublicationId:205,outcome:'restored'}};
   assert.equal(validateLaunchEntry(feed,entry),feed);
   for(const altered of [{...feed,resume:{...feed.resume,outcome:'unavailable',restoredPublicationId:null}},{...feed,items:[{...item,spaceId:13}]},{...feed,items:[{...item,productionUlid:null}]}])assert.throws(()=>validateLaunchEntry(altered,entry),{code:'launch_target_unavailable'});
   const global:any={...feed,items:[{...item,publicationId:100,productionUlid:null}],resume:{requestedPublicationId:100,restoredPublicationId:100,outcome:'restored'}};
   assert.equal(validateOriginProduction(global,origin).resume?.outcome,'unavailable');
+});
+
+test('Launch introduction validates public identity, safe avatar and bounded authored descriptions',()=>{
+ const value={...page,creator:{...creator,avatarUrl:'http://unsafe.test/a',privateRule:'secret'},items:[{...destination,space:{...destination.space,privateSetting:'secret'}}]};
+ const dto=adaptLaunchPage(value,100,ulid,2);assert.equal(dto.creator.avatarUrl,null);assert.equal(JSON.stringify(dto).includes('secret'),false);
+ assert.equal(dto.items[0].space.description,'A thoughtful community');
+ for(const changed of [{...page,creator:{...creator,bio:3}},{...page,creator:{...creator,id:0}},{...page,items:[{...destination,space:{...destination.space,description:'x'.repeat(501)}}]}])assert.throws(()=>adaptLaunchPage(changed,100,ulid,2));
+ assert.throws(()=>adaptLaunchPage({...page,creator:{...creator,id:3}},100,ulid,2),{code:'publication_not_found'});
+ assert.throws(()=>adaptLaunchResolved({...resolved,creator:{...creator,id:3}},100,ulid,12,2),{code:'publication_not_found'});
+});
+test('source creator mismatch in a fresh destination resolve masks old chooser data',async()=>{
+ let missing=0;const store=new LaunchStore({getJson:async path=>path.includes('?')?page:{...resolved,creator:{...creator,id:3}}},100,ulid,()=>{},()=>missing++,2);
+ await store.refresh();assert.equal(store.getSnapshot().creator?.id,2);assert.equal(await store.enter(12),null);assert.equal(missing,1);assert.equal(store.getSnapshot().creator,null);assert.deepEqual(store.getSnapshot().items,[]);
 });

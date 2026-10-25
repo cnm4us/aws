@@ -1,3 +1,5 @@
+import { createFollowRouter } from '../features/follows/router';
+import { createGlobalRecognitionRouter } from '../features/follows/globalRecognition';
 import { engagement } from '../features/engagement/service';
 import { positiveId, parsePage, commentBody, emptyQuery, noBody } from '../features/engagement/contract';
 import { Router } from 'express';
@@ -14,6 +16,8 @@ import { viewerText, textId, type TextContext } from '../features/publications/v
 export function createViewerRouter(engagementDeps = { resolveViewer, engagement }) {
   const router=Router();
   router.use((_req,res,next)=>{res.set('Cache-Control','no-store');next();});
+  router.use(createFollowRouter());
+  router.use(createGlobalRecognitionRouter());
   for (const scope of ['global', 'space'] as const) {
     const prefix = scope === 'global' ? '/feed/global/publications/:publicationId' : '/spaces/:spaceId/publications/:publicationId';
     for (const resource of ['story', 'captions.vtt'] as const) router.get(`${prefix}/${resource}`, async (req, res) => {

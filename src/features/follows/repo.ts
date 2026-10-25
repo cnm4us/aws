@@ -1,87 +1,42 @@
-import { getPool } from '../../db'
-import { clampLimit } from '../../core/pagination'
+import { getPool, type Queryable } from '../../db';
+import { ViewerApiError } from '../native-sessions/service';
 
-export type SpaceUserFollowSummary = {
-  following: boolean
-  followersCount: number
+const columnSpace = `s.type IN ('group','channel') AND LOWER(s.slug) NOT IN ('global','global-feed')
+  AND COALESCE(JSON_UNQUOTE(JSON_EXTRACT(s.settings,'$.global')),'')<>'true'
+  AND COALESCE(JSON_UNQUOTE(JSON_EXTRACT(s.settings,'$.isGlobal')),'')<>'true'
+  AND COALESCE(JSON_UNQUOTE(JSON_EXTRACT(s.settings,'$.feed')),'')<>'global'`;
+export async function followingInSpaces(creatorId:number, followerId:number, db:Queryable=getPool()) {
+  const [rows]=await db.query(`SELECT EXISTS(SELECT 1 FROM space_user_follows f JOIN spaces s ON s.id=f.space_id
+    WHERE f.follower_user_id=? AND f.target_user_id=? AND ${columnSpace}) AS followingInSpaces`,[followerId,creatorId]);
+  return !!Number((rows as any[])[0]?.followingInSpaces);
 }
 
-export async function getSummary(spaceId: number, targetUserId: number, followerUserId: number): Promise<SpaceUserFollowSummary> {
-  const db = getPool()
-  const [rows] = await db.query(
-    `
-      SELECT
-        EXISTS (
-          SELECT 1 FROM space_user_follows
-          WHERE space_id = ? AND target_user_id = ? AND follower_user_id = ?
-        ) AS following,
-        (
-          SELECT COUNT(*) FROM space_user_follows
-          WHERE space_id = ? AND target_user_id = ?
-        ) AS followersCount
-    `,
-    [spaceId, targetUserId, followerUserId, spaceId, targetUserId],
-  )
-  const row = (rows as any[])[0] || { following: 0, followersCount: 0 }
-  return {
-    following: Boolean(row.following),
-    followersCount: Number(row.followersCount ?? 0),
-  }
+export async function getSummary(spaceId: number, creatorId: number, followerId: number, db: Queryable = getPool()) {
+  const [rows] = await db.query(`SELECT
+    EXISTS(SELECT 1 FROM space_user_follows WHERE space_id=? AND target_user_id=? AND follower_user_id=?) AS following,
+    EXISTS(SELECT 1 FROM space_user_follows f JOIN spaces s ON s.id=f.space_id
+      WHERE f.follower_user_id=? AND f.target_user_id=? AND f.space_id<>? AND ${columnSpace}) AS followingElsewhere,
+    (SELECT COUNT(*) FROM space_user_follows WHERE space_id=? AND target_user_id=?) AS followersCount`,
+  [spaceId, creatorId, followerId, followerId, creatorId, spaceId, spaceId, creatorId]);
+  const row = (rows as any[])[0], count = Number(row?.followersCount);
+  if (!Number.isSafeInteger(count) || count < 0) throw new ViewerApiError(503, 'service_unavailable');
+  return { following: !!Number(row.following), followingElsewhere: !!Number(row.followingElsewhere), followersCount: count };
 }
-
-export async function follow(spaceId: number, targetUserId: number, followerUserId: number): Promise<SpaceUserFollowSummary> {
-  const db = getPool()
-  await db.query(
-    `
-      INSERT IGNORE INTO space_user_follows (follower_user_id, target_user_id, space_id)
-      VALUES (?, ?, ?)
-    `,
-    [followerUserId, targetUserId, spaceId],
-  )
-  return getSummary(spaceId, targetUserId, followerUserId)
+export async function setFollowing(spaceId: number, creatorId: number, followerId: number, following: boolean, db: Queryable) {
+  if (following) await db.query(`INSERT INTO space_user_follows(follower_user_id,target_user_id,space_id) VALUES(?,?,?)
+    ON DUPLICATE KEY UPDATE follower_user_id=VALUES(follower_user_id)`, [followerId, creatorId, spaceId]);
+  else await db.query('DELETE FROM space_user_follows WHERE follower_user_id=? AND target_user_id=? AND space_id=?', [followerId, creatorId, spaceId]);
 }
-
-export async function unfollow(spaceId: number, targetUserId: number, followerUserId: number): Promise<SpaceUserFollowSummary> {
-  const db = getPool()
-  await db.query(
-    `
-      DELETE FROM space_user_follows
-      WHERE follower_user_id = ? AND target_user_id = ? AND space_id = ?
-    `,
-    [followerUserId, targetUserId, spaceId],
-  )
-  return getSummary(spaceId, targetUserId, followerUserId)
+// Publication lock protects the source; tuple uniqueness also handles concurrent
+// desired-state writes reached through different publications by this creator.
+export async function transaction<T>(publicationId: number, work: (db: Queryable) => Promise<T>): Promise<T> {
+  const db = await getPool().getConnection();
+  try {
+    await db.query('SET TRANSACTION ISOLATION LEVEL READ COMMITTED');
+    await db.beginTransaction();
+    const [rows] = await db.query('SELECT id FROM space_publications WHERE id=? FOR UPDATE', [publicationId]);
+    if (!(rows as any[]).length) throw new ViewerApiError(404, 'publication_not_found');
+    const result = await work(db); await db.commit(); return result;
+  } catch (error) { await db.rollback(); throw error; }
+  finally { db.release(); }
 }
-
-export async function listFollowers(
-  spaceId: number,
-  targetUserId: number,
-  opts: { limit?: number; cursor?: number | null },
-) {
-  const db = getPool()
-  const limit = clampLimit(opts.limit, 50, 1, 200)
-  const cursor = opts.cursor ?? null
-  const params: any[] = [spaceId, targetUserId]
-  const where: string[] = ['space_id = ?', 'target_user_id = ?']
-  if (cursor != null) {
-    where.push('follower_user_id < ?')
-    params.push(cursor)
-  }
-  const sql = `
-    SELECT follower_user_id, created_at
-    FROM space_user_follows
-    WHERE ${where.join(' AND ')}
-    ORDER BY follower_user_id DESC
-    LIMIT ?
-  `
-  params.push(limit + 1)
-  const [rows] = await db.query(sql, params)
-  const all = rows as any[]
-  const items = all.slice(0, limit).map((row) => ({
-    userId: Number(row.follower_user_id),
-    createdAt: String(row.created_at),
-  }))
-  const nextCursor = all.length > limit ? Number(all[limit].follower_user_id) : null
-  return { items, nextCursor }
-}
-

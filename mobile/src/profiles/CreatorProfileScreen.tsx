@@ -2,12 +2,14 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { AppState, Image, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { CreatorFollow } from '../follows/CreatorFollow';
+import type { FollowProof } from '../follows/api';
 import { CreatorStore } from './creatorStore';
 import { useViewerClient } from '../feed/useViewerFeed';
 import { Action, Message } from '../ui/Message';
 import type { FeedContext } from '../feed/context';
 
-export function CreatorProfileScreen({creatorId,returnName,onEnter,onAccount}:{creatorId:number;returnName:string;
+export function CreatorProfileScreen({creatorId,returnName,onEnter,onAccount,followProof,onFollowDenied}:{creatorId:number;returnName:string;followProof?:FollowProof;onFollowDenied?:(e:Error)=>void;
   onEnter:(context:Extract<FeedContext,{kind:'space'}>)=>void;onAccount:()=>void}) {
   const {client,auth,generation}=useViewerClient();const focused=useIsFocused();
   const store=useMemo(()=>new CreatorStore(client,creatorId,()=>{void auth.invalidate(generation);}),[client,creatorId,generation]);
@@ -30,6 +32,7 @@ export function CreatorProfileScreen({creatorId,returnName,onEnter,onAccount}:{c
       <Text accessibilityRole="header" style={styles.name}>{view.creator.displayName}</Text>
       {view.creator.handle && <Text style={styles.body}>@{view.creator.handle}</Text>}
       {view.creator.bio && <Text style={styles.body}>{view.creator.bio}</Text>}
+      {followProof?.creatorId===creatorId && <CreatorFollow proof={followProof} onDenied={onFollowDenied}/>}
       <Text accessibilityRole="header" style={styles.section}>Personal space</Text>
       {state.entering?<Message scrollable={false} title="Checking personal-space access" busy/>:view.personalEntry.state==='allowed'?
         <Action label="View personal space" onPress={()=>{void enter();}}/>:view.personalEntry.state==='sign_in_required'?<>

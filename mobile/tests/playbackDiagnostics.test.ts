@@ -248,3 +248,11 @@ test('compact outliers are bounded, include incomplete selections, and stay smal
   assert.equal(report.droppedTransitions, 20);
   assert.ok(JSON.stringify(report).length < 10000, 'retain the compact export clipping budget');
 });
+
+test('transferring ownership ends the old live source timing while retaining its completed transition history',()=>{
+ let now=0;const d=new PlaybackDiagnostics(()=>now),old=d.session(),next=d.session();
+ old({type:'selection',publicationId:1,activation:1});old({type:'allocation',publicationId:1,livePlayers:1});old({type:'load_started',publicationId:1});now=10;old({type:'load_resolved',publicationId:1});now=20;old({type:'ready',publicationId:1});
+ old({type:'transfer_out',publicationId:1,livePlayers:0});next({type:'transfer_in',publicationId:2,livePlayers:1});
+ old({type:'selection',publicationId:1,activation:2});
+ const report=d.report();assert.deepEqual(report.transitions[0].sourceLoad,{startedAtMs:0,replaceResolvedMs:10,readyMs:20});assert.equal(report.transitions[1].sourceLoad,undefined);assert.equal(report.resources.allocations,1);assert.equal(report.resources.releases,0);assert.equal(report.resources.livePlayers,1);assert.equal(report.resources.peakPlayers,1);
+});

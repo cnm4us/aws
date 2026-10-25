@@ -27,4 +27,4 @@ export function EngagementControls({client,spaceId,publicationId,eligible,onDeni
   </Pressable>
  </>;
 }
-const styles=StyleSheet.create({action:{minWidth:44,minHeight:64,alignItems:'center',justifyContent:'center',gap:3,borderRadius:12,backgroundColor:'rgba(24,24,28,0.25)'},icon:{width:24,height:24},count:{fontSize:12,color:'#fff',maxWidth:44}});
+const styles=StyleSheet.create({action:{minWidth:44,minHeight:64,alignItems:'center',justifyContent:'center',gap:3,borderRadius:12,backgroundColor:'rgba(24,24,28,0.25)',borderWidth:1,borderColor:'#777'},icon:{width:24,height:24},count:{fontSize:12,color:'#fff',maxWidth:44}});

@@ -2,7 +2,7 @@ import type { PlayerErrorDetails } from '../playback/playerError';
 import { sanitizeBuildIdentity, type ViewerBuildIdentity } from '../config/buildPolicy';
 
 export type PlaybackDiagnosticEvent = PlayerErrorDetails & {
-  type: 'allocation' | 'release' | 'load_started' | 'load_resolved' | 'selection' | 'ready' | 'first_frame' | 'error' | 'playing' | 'progress' | 'unexpected_playback' | 'lifecycle' | 'eligibility' | 'context' | 'restore';
+  type: 'allocation' | 'release' | 'load_started' | 'load_resolved' | 'selection' | 'ready' | 'first_frame' | 'error' | 'playing' | 'progress' | 'unexpected_playback' | 'lifecycle' | 'eligibility' | 'context' | 'restore' | 'transfer_out' | 'transfer_in';
   restoreOutcome?:'restored'|'failed';
   positionDeltaSeconds?:number;
   journeyGeneration?:number;
@@ -26,6 +26,9 @@ export type PlaybackDiagnosticEvent = PlayerErrorDetails & {
   allocationFailure?: 'budget_exhausted' | 'native_creation';
 };
 
+export type NavigationTrace={mark:(stage:'chooser_ready'|'destination_resolved'|'account_verified'|'feed_ready'|'restore_ready'|'first_frame')=>void;finish:(outcome:'ready'|'failed'|'interrupted')=>void};
+type NavigationRecord={id:number;kind:'launch'|'space'|'global_return';startedAtMs:number;stages:Partial<Record<'chooser_ready'|'destination_resolved'|'account_verified'|'feed_ready'|'restore_ready'|'first_frame',number>>;outcome:'pending'|'ready'|'failed'|'interrupted'};
+
 type EventRecord = PlaybackDiagnosticEvent & { atMs: number; session: number };
 type SourceLoad = { startedAtMs: number; replaceResolvedMs: number | null; readyMs: number | null };
 type Transition = {
@@ -48,6 +51,8 @@ function timings(values: number[]) {
 // No network transport: counters and a bounded event history live only on the device.
 export class PlaybackDiagnostics {
   private events: EventRecord[] = [];
+  private navigation:NavigationRecord[]=[];
+  private navigationSerial=0;
   private transitions: Transition[] = [];
   private liveBySession = new Map<number, number>();
   private allocations = 0;
@@ -78,6 +83,7 @@ export class PlaybackDiagnostics {
   // Keep in-flight/preloaded source timings and current ownership. Events for the
   // old activation cannot manufacture a partial transition in the new epoch.
   reset() {
+    this.navigation=[];
     this.events = []; this.transitions = []; this.issues = [];
     this.allocations = 0; this.releases = 0; this.unexpectedPlayback = 0;
     this.droppedEvents = 0; this.droppedTransitions = 0; this.droppedIssues = 0;
@@ -85,6 +91,13 @@ export class PlaybackDiagnostics {
     this.peakPlayers = this.carriedPlayers;
     this.selectedSessions = new Set([...this.selectedSessions].filter(session => this.liveBySession.has(session)));
     this.sampleStartedAtMs = this.clock(); this.resetCount++;
+  }
+
+  navigationStart(kind:NavigationRecord['kind']):NavigationTrace {
+    const row:NavigationRecord={id:++this.navigationSerial,kind,startedAtMs:this.clock(),stages:{},outcome:'pending'};
+    this.navigation.push(row);if(this.navigation.length>50)this.navigation.shift();
+    return {mark:stage=>{if(row.outcome==='pending' && row.stages[stage]===undefined)row.stages[stage]=Math.max(0,this.clock()-row.startedAtMs);},
+      finish:outcome=>{if(row.outcome==='pending')row.outcome=outcome;}};
   }
 
   session() {
@@ -114,7 +127,7 @@ export class PlaybackDiagnostics {
         const load = this.activeLoads.get(loadKey);
         if (load && event.type === 'load_resolved' && load.replaceResolvedMs === null) load.replaceResolvedMs = atMs - load.startedAtMs;
         if (load && event.type === 'ready' && load.readyMs === null) load.readyMs = atMs - load.startedAtMs;
-        if (event.type === 'release') this.activeLoads.delete(loadKey);
+        if (event.type === 'release' || event.type === 'transfer_out') this.activeLoads.delete(loadKey);
       }
     }
     // Preserve errors and ownership violations even when frequent progress events roll out.
@@ -160,7 +173,7 @@ export class PlaybackDiagnostics {
       sample: { startedAtMs: this.sampleStartedAtMs, resetCount: this.resetCount },
       generatedAt: new Date().toISOString(),
       clock: 'monotonic milliseconds',
-      note: 'First frame measures presentation readiness. Review progress and playing evidence separately. Interrupted, incomplete, and failed transitions remain in the records. sourceLoad times start at the load request; replaceResolvedMs measures source replacement completion, not buffered readiness.'
+      note: 'First frame measures presentation readiness. Review progress and playing evidence separately. Interrupted, incomplete, and failed transitions remain in the records. sourceLoad times start at the load request; replaceResolvedMs measures source replacement completion, not buffered readiness. Navigation stages are cumulative from the tap, before feed selection; first_frame can precede seek completion. Ready requires frame and completed restoration. Transfers move ownership without counting a new allocation.'
         + (this.resetCount ? ' Reset retains carriedPlayers and active source timings; carriedPlayers + allocations - releases equals livePlayers. New timings start at the next selection.' : ''),
       resources: { allocations: this.allocations, releases: this.releases,
         ...(this.resetCount ? { carriedPlayers: this.carriedPlayers } : {}),
@@ -179,6 +192,7 @@ export class PlaybackDiagnostics {
         all: timings(framed.map(row => row.firstFrameMs!)),
         preparedFrames: timings(framed.filter(row => row.prepared).map(row => row.firstFrameMs!)),
         coldFrames: timings(framed.filter(row => !row.prepared).map(row => row.firstFrameMs!)) },
+      navigation:this.navigation.map(row=>({...row,stages:{...row.stages}})),
       droppedEvents: this.droppedEvents, droppedTransitions: this.droppedTransitions,
       transitions: this.transitions.map(row => ({ ...row, sourceLoad: row.sourceLoad ? { ...row.sourceLoad } : undefined })), events: this.events.map(row => ({ ...row })),
     };
@@ -191,7 +205,7 @@ export class PlaybackDiagnostics {
       .sort((a, b) => (b.firstFrameMs ?? Infinity) - (a.firstFrameMs ?? Infinity));
     const recent = transitions.slice(-5), outliers = slow.slice(0, 5);
     const included = new Set([...recent, ...outliers].map(row => `${row.session}:${row.activation}`));
-    return { ...report, reportKind: 'compact',
+    return { ...report, navigation:report.navigation.slice(-5),omittedNavigationDetails:Math.max(0,report.navigation.length-5),reportKind: 'compact',
       note: `${report.note} Compact export includes the latest five transitions and up to five slow/cold/incomplete normal transitions; use Share full report for the complete retained history.`,
       omittedTransitionDetails: transitions.length - included.size,
       omittedEventDetails: events.length,

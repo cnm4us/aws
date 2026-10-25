@@ -73,7 +73,8 @@ export function buildServer(): express.Application {
     credentials: true,
   };
   app.use((req,res,next)=>{
-    if(req.path.startsWith('/api/native/v1/') || req.path.startsWith('/api/viewer/v1/'))res.set('Cache-Control','no-store');
+    if(req.path.startsWith('/api/native/v1/') || req.path.startsWith('/api/viewer/v1/')
+      || /^\/api\/spaces\/[^/]+\/users\/[^/]+\/follow\/?$/.test(req.path))res.set('Cache-Control','no-store');
     next();
   });
   app.use(cors(corsOptions));

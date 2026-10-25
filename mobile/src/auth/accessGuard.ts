@@ -6,10 +6,10 @@ export type AccessSnapshot = { authorized: boolean; checking: boolean; error: st
 export class AccessGuard {
   private state: AccessSnapshot = { authorized: false, checking: false, error: null };
   private refresh: VerifiedRefresh<boolean>;
-  constructor(verify: (signal: AbortSignal) => Promise<void>, onDenied: (error: ApiError) => void,
+  constructor(verify: (signal: AbortSignal) => Promise<void|{verifiedAt:number}>, onDenied: (error: ApiError) => void,
     now = verificationClock) {
     this.refresh = new VerifiedRefresh(async signal => {
-      const verifiedAt = now(); await verify(signal); return { value: true, verifiedAt };
+      const startedAt = now(),result=await verify(signal); return { value: true, verifiedAt:result?.verifiedAt??startedAt };
     }, { protected: true, now, onError: error => {
       if (error instanceof ApiError && [401, 403, 404].includes(error.status ?? 0)) onDenied(error);
     } });

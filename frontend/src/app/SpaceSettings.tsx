@@ -26,6 +26,7 @@ export default function SpaceSettingsPage() {
   const [data, setData] = useState<SettingsResponse | null>(null)
   const [comments, setComments] = useState<'inherit'|'on'|'off'>('inherit')
   const [requireReview, setRequireReview] = useState<boolean>(false)
+  const [description, setDescription] = useState('')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState<string | null>(null)
 
@@ -45,6 +46,7 @@ export default function SpaceSettingsPage() {
         setComments(c === 'on' || c === 'off' ? c : 'inherit')
         const rr = !!(s.publishing && typeof s.publishing === 'object' && s.publishing.requireApproval === true)
         setRequireReview(rr)
+        setDescription(typeof s.discoveryDescription === 'string' ? s.discoveryDescription : '')
       } catch (e) {
         if (!canceled) setError('Failed to load settings')
       } finally { if (!canceled) setLoading(false) }
@@ -59,6 +61,7 @@ export default function SpaceSettingsPage() {
     try {
       const body: any = { commentsPolicy: comments }
       if (!data.site.siteEnforced && (data.type === 'group' || data.type === 'channel')) body.requireReview = requireReview
+      if (data.type === 'group' || data.type === 'channel') body.discoveryDescription = description
       const csrf = getCsrfToken()
       const res = await fetch(`/api/spaces/${spaceId}/settings`, {
         method: 'PUT',
@@ -92,6 +95,13 @@ export default function SpaceSettingsPage() {
               {saved && <span style={{ fontSize: 12, opacity: 0.8 }}>{saved}</span>}
             </div>
           </div>
+          {(s.type === 'group' || s.type === 'channel') && <label style={{ display: 'grid', gap: 6, marginBottom: 16 }}>
+            <span>Space introduction</span>
+            <span style={{ fontSize: 14, opacity: .8 }}>Briefly describe this community and its moderation culture. Shown with the space in Open in a space.</span>
+            <textarea value={description} maxLength={500} rows={4} onChange={e => setDescription(e.target.value)}
+              style={{ width: '100%', boxSizing: 'border-box', color: '#fff', background: '#17171c', padding: 10, border: '1px solid #777', borderRadius: 8 }} />
+            <span style={{ fontSize: 12 }}>{description.length}/500</span>
+          </label>}
           <label style={{ display: 'grid', gap: 6, marginBottom: 12 }}>
             <span>Comments</span>
             <select value={comments} onChange={(e) => setComments(e.target.value as any)} style={{ width: 220, padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(255,255,255,0.04)', color: '#fff' }}>

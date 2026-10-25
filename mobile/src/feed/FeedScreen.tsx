@@ -10,7 +10,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSpaceAccess } from '../auth/useSpaceAccess';
 import type { FeedSnapshot, FeedStore } from './feedStore';
 import type { FeedVideoItem } from './types';
-import { useFeedPlayback } from '../playback/useFeedPlayback';
+import { useFeedPlayback, type NativePlayerPort } from '../playback/useFeedPlayback';
+import type { PlayerHandoff } from '../playback/playerHandoff';
+import type { NavigationTrace } from '../diagnostics/playbackDiagnostics';
 import { VideoSurface } from '../playback/VideoSurface';
 import { PagingController } from '../playback/paging';
 import { FeedHeader } from '../ui/FeedHeader';
@@ -24,12 +26,15 @@ import type { CaptionPreferences } from '../preferences/captionPreferences';
 import type { LaunchEntry } from '../navigation/globalLaunchJourney';
 import { ApiError, type ApiClient } from '../api/client';
 import { EngagementControls } from '../engagement/EngagementControls';
+import { FeedFollow } from '../follows/FeedFollow';
+import { GlobalCreatorRecognition } from '../follows/GlobalCreatorRecognition';
 
 export type FeedCommands={requestRefresh:()=>void;denyAccess?:(error:ApiError)=>void};
-export type FeedPlaybackHandle={capture:()=>PlaybackCheckpoint;release:()=>void};
+export type FeedPlaybackHandle={capture:()=>PlaybackCheckpoint;release:()=>void;handOff:()=>PlayerHandoff<NativePlayerPort>|undefined};
 
 
-export function FeedScreen({ context, preferences, sound, captionPreferences, captions, focused, onSpaces, onMenu, onGlobal, onCreator, registerPlayback, registerCommands, restore, entry, onBackProfile, onBackGlobal, onLaunch, onRetryEntry, onChooseLaunch, onComments, blocked=false }: {
+export function FeedScreen({ context, preferences, sound, captionPreferences, captions, focused, onSpaces, onMenu, onGlobal, onCreator, registerPlayback, registerCommands, restore, entry, onBackProfile, onBackGlobal, onLaunch, onRetryEntry, onChooseLaunch, onComments, onPrepareLaunch, handoff, trace, blocked=false }: {
+  onPrepareLaunch?:(item:FeedVideoItem)=>void;handoff?:PlayerHandoff<NativePlayerPort>;trace?:NavigationTrace;
   captionPreferences: CaptionPreferences; captions: ReturnType<CaptionPreferences['getSnapshot']>;
   context: FeedContext; preferences: PlaybackPreferences; sound: PlaybackPreferencesSnapshot; focused: boolean;
   onSpaces:()=>void;onMenu:()=>void;onGlobal:()=>void;
@@ -39,8 +44,8 @@ export function FeedScreen({ context, preferences, sound, captionPreferences, ca
   onRetryEntry?:()=>Promise<void>;onChooseLaunch?:()=>void;onComments?:(publicationId:number)=>void;blocked?:boolean;
 }) {
   const { store:identity, snapshot:auth }=useAuth();
-  const { store, snapshot, client,clearResume,entryPending } = useViewerFeed(context,restore,entry);
-  const access=useSpaceAccess(context,client,store,focused);
+  const { store, snapshot, client,clearResume,entryPending,initialAccess } = useViewerFeed(context,restore,entry,trace);
+  const access=useSpaceAccess(context,client,store,focused,initialAccess);
   // Verified spaces stay eligible during bounded routine renewal. Entry/return,
   // failure and expiry still withhold authority through the access guard.
   const eligible=!blocked && focused && !snapshot.errorStatus && access.authorized
@@ -82,7 +87,7 @@ export function FeedScreen({ context, preferences, sound, captionPreferences, ca
           <View style={styles.headerActions}><Action label="Spaces" onPress={onSpaces}/><Action label="Global" onPress={onGlobal}/></View>
         </View> : <FeedSession key={snapshot.sessionId} store={store} snapshot={snapshot} muted={sound.muted}
           onToggleMute={preferences.toggleMute} eligible={!!eligible} diagnosticContext={{feedContext:contextKey(context),authGeneration:auth.generation}}
-          restore={restore} entry={entry} onCreator={onCreator} onLaunch={onLaunch} onComments={onComments} registerPlayback={registerPlayback} client={client} context={context} captionPreferences={captionPreferences} captions={captions}/>}
+          restore={restore} entry={entry} handoff={handoff} trace={trace} onPrepareLaunch={onPrepareLaunch} onCreator={onCreator} onLaunch={onLaunch} onComments={onComments} registerPlayback={registerPlayback} client={client} context={context} captionPreferences={captionPreferences} captions={captions}/>}
       {(auth.status==='unavailable' || (context.kind==='space' && access.checking && !access.authorized)) &&
         <View style={[StyleSheet.absoluteFill,{backgroundColor:'#000',padding:20,gap:12}]}>
           <Message title={auth.status==='unavailable'?'Cannot verify access':'Checking access'} busy={auth.status!=='unavailable'}
@@ -99,7 +104,8 @@ export function FeedScreen({ context, preferences, sound, captionPreferences, ca
   </SafeAreaView>;
 }
 
-function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosticContext, restore, entry, onCreator, onLaunch, onComments, registerPlayback, client, context, captionPreferences, captions }: {
+function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosticContext, restore, entry, onCreator, onLaunch, onComments, registerPlayback, client, context, captionPreferences, captions, onPrepareLaunch, handoff, trace }: {
+  onPrepareLaunch?:(item:FeedVideoItem)=>void;handoff?:PlayerHandoff<NativePlayerPort>;trace?:NavigationTrace;
   store: FeedStore; snapshot: FeedSnapshot; muted: boolean; onToggleMute: () => void; eligible: boolean;
   diagnosticContext:{feedContext:string;authGeneration:number};
   restore?:FeedCheckpoint;entry?:LaunchEntry;onLaunch?:(item:FeedVideoItem)=>void;onComments?:(publicationId:number)=>void;onCreator?:(id:number)=>void;registerPlayback?:(handle:FeedPlaybackHandle)=>()=>void;
@@ -110,7 +116,7 @@ function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosti
   const list = useRef<FlatList<FeedVideoItem>>(null);
   const items = useRef(snapshot.items);
   items.current = snapshot.items;
-  const { coordinator, snapshot: playback } = useFeedPlayback(muted, eligible, diagnosticContext);
+  const { coordinator, snapshot: playback } = useFeedPlayback(muted, eligible, diagnosticContext,handoff,trace);
   const resources = useMemo(() => new TextResources(client, context, error => store.denyAccess(error)), [client, contextKey(context), store]);
   const textEligible = eligible && playback.appActive && playback.screenEligible && !playback.scrolling;
   const [storyExpanded, setStoryExpanded] = useState(false);
@@ -118,7 +124,7 @@ function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosti
   useLayoutEffect(() => { if (!textEligible) { resources.clear(); setStoryExpanded(false); } }, [resources, textEligible]);
   useEffect(() => resources.clear, [resources]);
   const initialSelection=useRef(false);
-  useLayoutEffect(()=>registerPlayback?.({capture:coordinator.capture,release:coordinator.dispose}),[coordinator,registerPlayback]);
+  useLayoutEffect(()=>registerPlayback?.({capture:coordinator.capture,release:coordinator.dispose,handOff:coordinator.handOff}),[coordinator,registerPlayback]);
   const paging = useMemo(() => new PagingController(
     () => coordinator.setScrolling(true),
     selected => {
@@ -154,8 +160,17 @@ function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosti
     paging.beginProgrammatic();
     list.current?.scrollToOffset({ offset: Math.min(index + 1, snapshot.items.length) * height, animated: true });
   };
+  const {snapshot:followAuth}=useAuth();
+  const followItem=snapshot.items[index];
+  useEffect(()=>{
+    if(context.kind!=='global' || !textEligible || !playback.hasFrame || !followItem?.productionUlid || !onPrepareLaunch)return;
+    const timer=setTimeout(()=>onPrepareLaunch(followItem),200);
+    return()=>clearTimeout(timer);
+  },[followItem?.publicationId,textEligible,playback.hasFrame,onPrepareLaunch]);
+  const showFollow=context.kind==='space' && ['group','channel'].includes(context.type) && followAuth.status==='authenticated' && !!followItem?.creator.id && !!onCreator;
+  const showRecognition=context.kind==='global' && followAuth.status==='authenticated' && !!followItem?.creator.id && !!onCreator;
   const controlCount=(snapshot.items[index]?.creator.id && onCreator?1:0)+(context.kind==='global' && onLaunch?1:0)+(context.kind==='space' && onComments?2:0)+(snapshot.items[index]?.hasCaptions?1:0)+1;
-  const controlHeight=Math.min(controlCount*52-8+(context.kind==='space' && onComments?40:0),Math.max(44,height-48));
+  const controlHeight=Math.min(controlCount*52-8+(context.kind==='space' && onComments?40:0)+(showFollow?44:0),Math.max(44,height-48));
   return (
     <View style={styles.screen} onLayout={event => setHeight(event.nativeEvent.layout.height)}>
       {height > 0 && <FlatList
@@ -200,8 +215,16 @@ function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosti
         visible={captions.ready && captions.enabled && textEligible && !storyExpanded && !playback.failed && !playback.restoring && !playback.restoreError}/>}
       {snapshot.items[index]?.playbackUrl && (
         <ScrollView style={[styles.mute,{height:controlHeight}]} contentContainerStyle={{gap:8}} showsVerticalScrollIndicator={false}>
-          {snapshot.items[index]?.creator.id && onCreator && <CreatorButton key={snapshot.items[index].publicationId} name={snapshot.items[index].creator.displayName}
+          {!showFollow && !showRecognition && snapshot.items[index]?.creator.id && onCreator && <CreatorButton key={snapshot.items[index].publicationId} name={snapshot.items[index].creator.displayName}
             avatarUrl={snapshot.items[index].creator.avatarUrl} disabled={!textEligible} onPress={()=>onCreator(snapshot.items[index].creator.id!)}/>}
+          {showRecognition && onCreator && <GlobalCreatorRecognition key={`recognition:${followItem.publicationId}:${followItem.creator.id}`}
+            publicationId={followItem.publicationId} creatorId={followItem.creator.id!} name={followItem.creator.displayName} avatarUrl={followItem.creator.avatarUrl}
+            onCreator={()=>onCreator(followItem.creator.id!)} eligible={textEligible && playback.publicationId===followItem.publicationId}/>}
+          {showFollow && context.kind==='space' && onCreator && <FeedFollow key={`follow:${followItem.publicationId}:${followItem.creator.id}`} name={followItem.creator.displayName}
+            avatarUrl={followItem.creator.avatarUrl} onCreator={()=>onCreator(followItem.creator.id!)}
+            proof={{spaceId:context.spaceId,publicationId:followItem.publicationId,creatorId:followItem.creator.id!,generation:followAuth.generation,visitId:snapshot.sessionId}}
+            eligible={textEligible && playback.publicationId===followItem.publicationId}
+            onDenied={error=>{if(error instanceof ApiError && [401,403].includes(error.status??0))store.denyAccess(error);}}/>}
           {context.kind==='global' && onLaunch && <IconButton icon="launch" label="Open spaces for this video" disabled={!textEligible || playback.publicationId!==snapshot.items[index].publicationId} onPress={()=>onLaunch(snapshot.items[index])}/>}
           {context.kind==='space' && onComments && <EngagementControls client={client} spaceId={context.spaceId} publicationId={snapshot.items[index].publicationId}
             eligible={textEligible && playback.publicationId===snapshot.items[index].publicationId}
