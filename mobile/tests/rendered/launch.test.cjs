@@ -13,7 +13,7 @@ async function setup(options={}){
  e.auth=new AuthStore('https://api.test',{login:async()=>session,validate:async()=>{e.validations=(e.validations??0)+1;return session;},revoke:async()=>{}},{load:async()=>null,save:async()=>{},clear:async()=>{}});
  await e.auth.restore();await e.auth.signIn('test@example.invalid','test');
  e.paths=[];e.targetMissing=false;e.sourceMissing=false;
- const video=(id,spaceId)=>({publicationId:id,spaceId,productionUlid:ulid,uploadId:1,playbackUrl:`https://media.test/${options.sharedMedia&&[100,205].includes(id)?'shared':id}`,posterUrl:null,creator:{id:2,displayName:'Creator',avatarUrl:null},hasStory:false,hasCaptions:!!options.captions,description:'Video',width:options.unknownSize?null:100,height:options.unknownSize?null:200,durationSeconds:10});
+ const video=(id,spaceId)=>({publicationId:id,spaceId,productionUlid:ulid,uploadId:1,playbackUrl:`https://media.test/${options.sharedMedia&&[100,205].includes(id)?'shared':id}`,posterUrl:options.poster?'https://media.test/poster.jpg':null,creator:{id:2,displayName:'Creator',avatarUrl:null},hasStory:false,hasCaptions:!!options.captions,description:'Video',width:options.unknownSize?null:100,height:options.unknownSize?null:200,durationSeconds:10});
  e.makeEntry=(space,pub)=>({context:{kind:'space',space:{...group,...space}},items:[pub,pub+1,pub+2].map(id=>video(id,space.id)),nextCursor:null,resume:{requestedPublicationId:pub,restoredPublicationId:pub,outcome:'restored'}});
  e.serverAccess=true;
  e.fetch=async url=>{
@@ -365,20 +365,47 @@ for(const paused of [false,true])test(`repeated sound-on Launch round trips isol
  }finally{await h.close();}
 });
 
-for(const preview of [false,true])test(`new-feed splash holds pixels/actions/audio through a pre-seek frame and reveals the same fresh view (diagnostics=${preview})`,async()=>{
+// Find the host wrapper above the splash rather than mistaking its black child
+// for a cover of the padded header strip. This assertion fails on build31.
+function entryCover(h){
+ const splash=h.root.root.findAllByType('View').find(n=>n.props.accessibilityViewIsModal===true&&visible(n));
+ if(!splash)return undefined;
+ let outer=splash.parent;while(outer&&outer.type!=='View')outer=outer.parent;return outer;
+}
+function assertWholeStageCover(h){
+ const cover=entryCover(h);assert.ok(cover,'feed entry cover');const style=flatten(cover.props.style);
+ assert.equal(style.backgroundColor,'#000','outer surface must paint the padded top strip black');
+ assert.deepEqual({position:style.position,top:style.top,bottom:style.bottom,left:style.left,right:style.right},
+  {position:'absolute',top:0,bottom:0,left:0,right:0});
+ assert.ok(style.paddingTop>0,'feedback stays below the floating header');
+ assert.ok(h.labels().includes('Open menu'));assert.ok(h.labels().some(label=>label.startsWith('Choose space.')));
+ return cover;
+}
+for(const preview of [false,true])for(const paused of [false,true])test(`new-feed splash covers poster and pre-seek frame through the header, with ${paused?'paused':'playing'} reveal (diagnostics=${preview})`,async()=>{
  let calls=0,complete,candidate;
  const entryReadiness={prepareAsync:(player,attempt,seconds)=>{if(++calls===1)return Promise.resolve(decoded(player,attempt,seconds));candidate=player;return new Promise(resolve=>{complete=()=>resolve(decoded(player,attempt,seconds));});},cancelAsync:async()=>{}};
- const h=await setup({preview,realAccess:true,soundOn:true,entryReadiness});
+ const h=await setup({preview,realAccess:true,soundOn:true,entryReadiness,poster:true,manualFrames:true});
  try{
-  await h.layout();const origin=h.selected();origin.currentTime=7;
+  await h.layout();const origin=h.selected();assertWholeStageCover(h);
+  await Test.act(async()=>h.e.frames.get(origin)());assert.equal(entryCover(h),undefined);
+  if(paused)await h.press('Pause video');origin.currentTime=7;
   await h.press('Open spaces for this video');await h.press('Open Launch group (group)');await h.layout();
   assert.equal(origin.released,true);assert.ok(complete);assert.ok(h.texts().includes('Loading Launch group…'));
+  assertWholeStageCover(h);
   assert.equal(h.labels().some(label=>['Like','Comments',"View Creator's profile",'Pause video'].includes(label)),false);
   assert.equal(h.e.players.some(p=>p.playing),false);assert.ok(h.e.players.filter(p=>!p.released).every(p=>p.muted));
+  assert.ok(h.root.root.findAllByType('Image').some(n=>n.props.source?.uri==='https://media.test/poster.jpg'));
   const view=h.root.root.findAllByType('VideoView').find(n=>n.props.player===candidate);assert.ok(view);
+  // An early view frame is insufficient: its timeline is not the native target.
+  await Test.act(async()=>{candidate.currentTime=0;h.e.frames.get(candidate)();});assertWholeStageCover(h);
+  const loads=candidate.loads,allocated=h.e.players.length;
   const reads=h.e.paths.length;await Test.act(async()=>complete());
-  assert.equal(h.texts().includes('Loading Launch group…'),false);assert.equal(candidate.playing,true);assert.equal(candidate.muted,false);assert.equal(candidate.currentTime,7);
+  assert.equal(entryCover(h),undefined);assert.equal(h.texts().includes('Loading Launch group…'),false);
+  assert.equal(candidate.playing,!paused);assert.equal(candidate.muted,paused);assert.equal(candidate.currentTime,7);
+  assert.equal(candidate.loads,loads);assert.equal(h.e.players.length,allocated);
   assert.equal(h.root.root.findAllByType('VideoView').find(n=>n.props.player===candidate),view);
+  const header=h.root.root.findAllByType('View').find(n=>n.props.testID==='feed-floating-header'&&visible(n));
+  assert.equal(flatten(header.props.style).backgroundColor,'rgba(0,0,0,0.35)');
   assert.equal(h.e.paths.filter(p=>p.includes('/spaces/12/feed')).length,0);assert.ok(h.e.paths.length>=reads);
   assert.equal(h.root.root.findAllByType('ActivityIndicator').length,0);
  }finally{await h.close();}
@@ -388,7 +415,7 @@ test('leaving a preparing feed cancels its native attempt; a late result cannot 
  const entryReadiness={prepareAsync:(player,attempt,seconds)=>{if(++calls!==2)return Promise.resolve(decoded(player,attempt,seconds));candidate=player;return new Promise(resolve=>{complete=()=>resolve(decoded(player,attempt,seconds));});},cancelAsync:async id=>{cancelled.push(id);}};
  const h=await setup({realAccess:true,entryReadiness,soundOn:true});
  try{
-  await h.layout();await h.press('Open spaces for this video');await h.press('Open Launch group (group)');await h.layout();assert.ok(h.texts().includes('Loading Launch group…'));
+  await h.layout();await h.press('Open spaces for this video');await h.press('Open Launch group (group)');await h.layout();assert.ok(h.texts().includes('Loading Launch group…'));assertWholeStageCover(h);
   await h.returnGlobal();await h.layout();const current=h.selected();assert.equal(candidate.released,true);assert.ok(cancelled.length);
   await Test.act(async()=>complete());assert.equal(h.selected(),current);assert.equal(current.playing,true);assert.equal(candidate.playing,false);assert.equal(h.e.players.filter(p=>p.playing).length,1);
  }finally{await h.close();}
@@ -398,7 +425,7 @@ test('native-entry failure keeps the exact Launch target required on Retry',asyn
  const h=await setup({realAccess:true,entryReadiness});
  try{
   await h.layout();await h.press('Open spaces for this video');await h.press('Open Launch group (group)');await h.layout();
-  assert.ok(h.texts().includes('Cannot load Launch group'));assert.equal(h.e.players.some(p=>p.playing),false);
+  assert.ok(h.texts().includes('Cannot load Launch group'));assert.equal(h.e.players.some(p=>p.playing),false);assertWholeStageCover(h);
   h.e.targetMissing=true;await h.press('Try again');await h.layout();
   assert.ok(h.texts().includes('Video unavailable in this space'));assert.equal(h.e.players.some(p=>p.playing),false);assert.ok(h.labels().includes('Choose another space'));
  }finally{await h.close();}
@@ -455,8 +482,22 @@ test('unknown presentation geometry terminates and retries into a valid size wit
  t.mock.timers.enable({apis:['setTimeout','setInterval']});
  const h=await setup({unknownSize:true,presentationSize:async()=>({width:0,height:0}),soundOn:true});
  try{
-  await h.layout();assert.equal(h.labels().includes('Open spaces for this video'),false);assert.equal(h.e.players.some(p=>p.playing),false);
-  await Test.act(async()=>t.mock.timers.tick(20000));assert.ok(h.texts().includes('Video preparation timed out. Try again.'));assert.ok(h.labels().includes('Try again'));
+  await h.layout();assert.equal(h.labels().includes('Open spaces for this video'),false);assert.equal(h.e.players.some(p=>p.playing),false);assertWholeStageCover(h);
+  await Test.act(async()=>t.mock.timers.tick(20000));assert.ok(h.texts().includes('Video preparation timed out. Try again.'));assert.ok(h.labels().includes('Try again'));assertWholeStageCover(h);
   h.e.presentationSize=async()=>({width:720,height:1280});await h.press('Try again');await h.layout();assert.ok(h.labels().includes('Open spaces for this video'));assert.equal(h.selected().playing,true);
  }finally{await h.close();t.mock.timers.reset();}
+});
+
+test('explicit Refresh keeps the full-stage surface while a fresh view prepares',async()=>{
+ let calls=0,complete,candidate;
+ const entryReadiness={prepareAsync:(player,attempt,seconds)=>{if(++calls===1)return Promise.resolve(decoded(player,attempt,seconds));candidate=player;return new Promise(resolve=>{complete=()=>resolve(decoded(player,attempt,seconds));});},cancelAsync:async()=>{}};
+ const h=await setup({realAccess:true,soundOn:true,poster:true,entryReadiness});
+ try{
+  await h.layout();const origin=h.selected();
+  await h.press('Open menu');await h.press('Refresh feed');await h.layout();
+  assertWholeStageCover(h);assert.equal(origin.released,true);assert.equal(h.e.players.some(p=>p.playing),false);
+  const view=h.root.root.findAllByType('VideoView').find(n=>n.props.player===candidate);assert.ok(view);
+  await Test.act(async()=>complete());assert.equal(entryCover(h),undefined);assert.equal(candidate.playing,true);assert.equal(candidate.currentTime,0);
+  assert.equal(h.root.root.findAllByType('VideoView').find(n=>n.props.player===candidate),view);
+ }finally{await h.close();}
 });

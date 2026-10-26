@@ -8,7 +8,8 @@ exports.useSafeAreaInsets = () => e.insets || {top:44,bottom:34,left:0,right:0};
 exports.Platform = { OS: 'ios' };
 exports.Keyboard = { dismiss: () => { e.keyboardDismissed = true; } };
 exports.useWindowDimensions = () => e.dimensions || { width: 375, height: 812, fontScale: 1 };
-exports.StyleSheet = { create: value => value, absoluteFill: {}, absoluteFillObject: {} };
+const absoluteFill = {position:'absolute',left:0,right:0,top:0,bottom:0};
+exports.StyleSheet = { create: value => value, absoluteFill, absoluteFillObject: absoluteFill };
 exports.Share = { share: async value => { e.shared = value; } };
 exports.Alert = { alert: (...args) => { e.alert = args; } };
 exports.FlatList = R.forwardRef((props, ref) => {

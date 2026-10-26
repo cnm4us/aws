@@ -163,5 +163,7 @@ No separate short-phone/large-text/VoiceOver, manual pause/playing continuity, f
 
 ## Resume Here
 
+- Next user-requested increment: [Plan180](plan_180.md), correcting the transparent top strip in feed loading covers while preserving this accepted panel and per-feed saved-place behavior. Plan180 is implemented and accepted on build32; it preserves build31 acceptance and does not authorize push.
+
 - Build31 is accepted for the named Global/other-feed creator/date/optional-story/profile/caption checks. A–D are Complete for this recorded milestone with explicit coverage limits. Public source remains identical to the verified signed artifact; no rebuild or repeated phone campaign is needed merely to record acceptance.
 - Accepted implementation is committed locally as `adeed1ecb502695e9aa61960258c0884800b261b`; this delivery record follows separately. No further product change is needed for this accepted scope. Push only when explicitly requested. Preserve phone sign-in, fixtures, build30 comparison and all predecessor/untested-case limits.

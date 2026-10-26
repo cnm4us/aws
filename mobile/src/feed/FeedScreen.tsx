@@ -336,7 +336,7 @@ function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosti
         </ScrollView>
       )}
       </View>
-      {covered&&<View style={[StyleSheet.absoluteFill,{paddingTop:headerHeight}]}><FeedLoadingSplash feedName={context.kind==='global'?'Global':context.name} error={entryState.error} onRetry={onRecover}/></View>}
+      {covered&&<View style={[StyleSheet.absoluteFill,{backgroundColor:'#000',paddingTop:headerHeight}]}><FeedLoadingSplash feedName={context.kind==='global'?'Global':context.name} error={entryState.error} onRetry={onRecover}/></View>}
       {context.kind==='space'&&!publicationAuthorized&&<View testID="feed-publication-mask" style={[StyleSheet.absoluteFill,{backgroundColor:'#000',paddingTop:headerHeight}]}>
         <Message title="Cannot verify video access" onRetry={()=>{void sessionAuth.access.check(context.spaceId);}}/>
       </View>}
