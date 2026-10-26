@@ -108,6 +108,8 @@ Evidence: `tests/runs/device/plan_180/build32-acceptance.json`. No separate nume
 
 ## Change Log
 
+- 2026-10-26 — Accepted build32 implementation committed locally as `243086e648c215fcd9e83494e91f9ebf30d90e2d`; this delivery record follows separately. A–C remain Complete with the recorded coverage limits. All148 staged public inputs match the accepted artifact; documentation retains16 baseline findings/zero new,80 local links resolve and staged whitespace passes. Root README reviewed against `agents/readme_maintenance.md`: no update needed for this visual cover correction; no API, build/start, environment, schema or operational workflow changed, and mobile README documents the behavior. Push remains unrequested.
+
 - 2026-10-26 — User explicitly requests a local commit after accepting both build32 check sets. Product source still matches the accepted signed artifact; commit checks cover source identity, documentation and whitespace. Push remains unrequested.
 
 - 2026-10-26 — User confirms both build32 physical check sets: whole-stage black loading/unified saved-position reveal with visible navigation, paused/playing state, clear return audio/silent loading and smooth swipes. A–C Complete for this internal milestone with recorded limits. Commit/push not requested.
@@ -124,15 +126,17 @@ Evidence: `tests/runs/device/plan_180/build32-acceptance.json`. No separate nume
 - Implementation checks now run: mobile234 unit/84 rendered/typecheck,8 focused cover cases, a four-case expected pre-fix regression failure, stamped preview export and archive inspection. Prior build31/backend evidence is preserved with its original scope; downloaded signed build32/source/API/native module/accepted-phone checks also pass; the subsequent user-confirmed visual/audio observations pass as recorded above; other physical cases remain unverified.
 - Planning evidence: `/dev/shm/plan180-docs-before.log` and `/dev/shm/plan180-docs-after.log`. Current implementation docs check in `/dev/shm/plan180-docs-implementation.log` retains16 baseline findings/zero new;80 local links resolve and whitespace passes. Public source remains unchanged after build32 submission. Implementation changes and evidence are recorded above.
 
+- Commit verification: all148 staged public inputs match accepted build32;80 local links resolve; documentation retains16 baseline findings and zero new; staged whitespace passes. Product suites were not repeated for this commit-only request because accepted source is unchanged. Root README needs no update for this visual-only correction; mobile README covers it.
+
 ## Open Risks / Deferred
 
 - A poster is plausible from source, but the phone observation does not establish poster versus decoded frame. The cover must conceal both; no extra diagnostic/fixture campaign is necessary merely to identify that image.
 - The signed-phone unified-cover/reveal observation is now accepted. Host renderer assertions remain structural evidence rather than a general native pixel API or exhaustive frame-by-frame composition measurement.
 - Safe-area/header padding must position feedback without changing opaque bounds. Larger names/text/viewport changes must not expose a seam or make header/Retry actions unreachable.
 - Frozen previews and fades remain deferred. Existing media readiness, first-frame versus physical display limitations, native static cause and predecessor quantitative/short-phone/VoiceOver/offline/nested/sign-out/cleanup gaps remain scoped.
-- Local accepted build31 implementation/records remain unpushed. Implementation, build32 and a local commit are explicitly authorized; push and fixture/session mutation are not requested for this increment.
+- Local accepted build31 implementation/records remain unpushed. Implementation and build32 are accepted and committed locally as `243086e`; push and fixture/session mutation are not requested for this increment.
 
 ## Resume Here
 
 - A–C are Complete for the accepted build32 milestone: whole-picture black loading and unified saved-position reveal, visible Space/Menu, paused/playing continuity, clear audio/silent loading and smooth swipes. Public source still matches the verified signed artifact. No rebuild or repeat phone campaign is needed merely to record acceptance.
-- The user requests a local commit of the accepted implementation; push is not requested for this increment. Preserve build31 comparison, phone sign-in/fixtures, predecessor evidence and the explicitly untested physical cases above.
+- Accepted implementation is committed locally as `243086e648c215fcd9e83494e91f9ebf30d90e2d`; delivery documentation follows separately. No further product change is required for this accepted scope. Push is not requested for this increment. Preserve build31 comparison, phone sign-in/fixtures, predecessor evidence and the explicitly untested physical cases above.
