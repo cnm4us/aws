@@ -138,6 +138,8 @@ No separate short-phone/large-text/VoiceOver, manual pause/playing continuity, f
 
 ## Change Log
 
+- `adeed1ecb502695e9aa61960258c0884800b261b` — Committed accepted build31 creator/date/optional-story implementation, additive native timestamp API, regressions and delivery docs locally at the user’s explicit request. Push was not requested/performed.
+
 - 2026-10-26 — User confirms the named build31 Global/other-feed panel/date/story/profile/caption checks. A–D Complete for this internal milestone with explicit untested physical cases; commit/push not requested.
 - 2026-10-26 — User subsequently authorized implementation. A–C host gates and D live API/export/archive gates pass for frozen build31; downloaded signed build31/source/API/signing verification passes, while physical acceptance remains open. No commit/push.
 - 2026-10-26 — Planning only, following user agreement on the unified creator/date/optional-story panel. Baseline `71aab2af88116d110e8da043e976bfbbc087f4b2` is pushed. No implementation commit for this plan.
@@ -148,7 +150,7 @@ No separate short-phone/large-text/VoiceOver, manual pause/playing continuity, f
 - Inspected current feed/card/story/caption/resource owners, serializer/feed/publication date writers, adapters and actual-component/backend contract tests. Current timestamp omission and upload-description fallback are source findings, not device measurements.
 - Planning commands: read-only `git status`, `rg` and file inspection. Before/after `npm run check:agents:docs` reports the same16 existing status findings and zero new findings. All77 local links across the changed continuity documents resolve; `git diff --check`, new-plan whitespace and A–D Pending status checks pass.
 - Implementation commands now run: `npm run test:viewer` (58 pass), `npm run build`, `npm --prefix mobile test` (234 pass), `npm --prefix mobile run test:ui` (81 pass), mobile typecheck,2 focused actual-feed cases, live HTTPS/DB date comparison, preview export and archive inspection. Build30 remains predecessor evidence; the final signed artifact also passes its recorded checks; the subsequent focused phone observations are accepted as recorded above; other physical cases remain unverified.
-- Planning evidence: `/dev/shm/plan179-docs-before.log` and `/dev/shm/plan179-docs-after.log`; that earlier planning turn changed documentation only. Implementation documentation check in `/dev/shm/plan179-docs-implementation.log` retains the same16 findings/zero new. All96 local links across changed docs resolve; whitespace passes. Implementation changes are described above; a local commit is now requested; no commit/push has yet been performed for this increment.
+- Planning evidence: `/dev/shm/plan179-docs-before.log` and `/dev/shm/plan179-docs-after.log`; that earlier planning turn changed documentation only. Implementation documentation check in `/dev/shm/plan179-docs-implementation.log` retains the same16 findings/zero new. All96 local links across changed docs resolve; whitespace passes. Implementation changes are described above; implementation is committed locally as `adeed1ecb502695e9aa61960258c0884800b261b`; push was not requested/performed. Root README was evaluated under its maintenance guide and updated for the confirmed panel/API behavior. Commit checks retain16 baseline documentation findings/zero new,112 valid local links, clean whitespace and all148 staged public inputs matching accepted build31.
 
 ## Open Risks / Deferred
 
@@ -162,4 +164,4 @@ No separate short-phone/large-text/VoiceOver, manual pause/playing continuity, f
 ## Resume Here
 
 - Build31 is accepted for the named Global/other-feed creator/date/optional-story/profile/caption checks. A–D are Complete for this recorded milestone with explicit coverage limits. Public source remains identical to the verified signed artifact; no rebuild or repeated phone campaign is needed merely to record acceptance.
-- The user now explicitly requests the local commit. Commit the accepted build31 implementation and record its SHA; push is not requested. Preserve phone sign-in, fixtures, build30 comparison and all predecessor/untested-case limits.
+- Accepted implementation is committed locally as `adeed1ecb502695e9aa61960258c0884800b261b`; this delivery record follows separately. No further product change is needed for this accepted scope. Push only when explicitly requested. Preserve phone sign-in, fixtures, build30 comparison and all predecessor/untested-case limits.
