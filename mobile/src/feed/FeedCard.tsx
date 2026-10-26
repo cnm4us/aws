@@ -4,14 +4,16 @@ import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { FeedVideoItem } from './types';
 import type { TextResources } from '../content/resources';
 import { StoryPanel } from '../content/StoryPanel';
+import type {feedGeometry} from './feedGeometry';
 
-export const FeedCard = memo(function FeedCard({ item, height, children, onCreator, resources, active = true, onStoryExpanded, onTextHeight }: {
+export const FeedCard = memo(function FeedCard({ item, height, children, onCreator, resources, active = true, onStoryExpanded, onTextHeight,geometry }: {
+  geometry?:ReturnType<typeof feedGeometry>;
   item: FeedVideoItem; height: number; children?: ReactNode; onCreator?:(id:number)=>void;
   resources?: TextResources; active?: boolean; onStoryExpanded?: (expanded: boolean) => void; onTextHeight?: (height: number) => void;
 }) {
   return (
     <View style={[styles.card, { height }]}>
-      {item.posterUrl && <Image source={{ uri: item.posterUrl }} resizeMode="contain" style={StyleSheet.absoluteFill} />}
+      {item.posterUrl && <Image source={{ uri: item.posterUrl }} resizeMode="contain" style={geometry?.knownSize?{position:'absolute',left:0,top:geometry.mediaTop,width:geometry.width,height:geometry.mediaHeight}:StyleSheet.absoluteFill} />}
       {children}
       <View style={styles.caption} pointerEvents="box-none" onLayout={event => onTextHeight?.(event.nativeEvent.layout.height)}>
         {item.creator.id && onCreator ? <Pressable onPress={()=>onCreator(item.creator.id!)} style={{minHeight:44,justifyContent:'center'}}

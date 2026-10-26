@@ -12,6 +12,14 @@ public final class ViewerReadinessModule: Module {
   public func definition() -> ModuleDefinition {
     Name("ViewerReadiness")
 
+    // Presentation geometry accounts for the item's displayed orientation.
+    // Reading it does not seek, attach an output or change playback ownership.
+    AsyncFunction("presentationSizeAsync") { (player: SharedRef<AVPlayer>) -> [String: Double] in
+      let size = player.ref.currentItem?.presentationSize ?? .zero
+      return ["width": size.width.isFinite ? Double(size.width) : 0,
+              "height": size.height.isFinite ? Double(size.height) : 0]
+    }.runOnQueue(.main)
+
     // ExpoVideo's internal VideoPlayer inherits this public cross-module type.
     // No registry IDs, reflection or changes to ExpoVideo are needed.
     AsyncFunction("prepareAsync") { (player: SharedRef<AVPlayer>, attempt: String, seconds: Double, promise: Promise) in

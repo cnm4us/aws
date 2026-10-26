@@ -352,6 +352,8 @@ User-approved fresh-player revision: `d457b46e-af26-41f9-9439-e6faee85ad7d`, ver
 
 ## Resume Here
 
+- Successor layout is explicitly approved and implemented in [Plan178](plan_178.md): A–E host/artifact work complete for build30; user qualitatively accepts the delivered increment and requests commit/push, with specific physical cases still unreported. Build29 implementation was committed/pushed as `cb2c93f`; remote main matched that commit. Plan178 does not close this plan’s outstanding evidence/cleanup limits; its authorized layout implementation preserves fresh-player ownership.
+
 - User accepts seamless within-feed scrolling and named loading feedback between feeds on build29 and explicitly requests commit/push. This is the accepted delivery checkpoint; retain remaining evidence limits without requiring another phone campaign for this commit.
 - A–E host/artifact work is complete. [Install build29](https://expo.dev/accounts/mbcollins2/projects/aws-video-feed-poc/builds/d457b46e-af26-41f9-9439-e6faee85ad7d) is verified, frozen and ready to install over the existing app. F is In Progress with qualitative loading/paging acceptance; broader evidence and predecessor closure remain open.
 - Loading/paging experience is accepted. No new numerical performance report, explicit audio confirmation or expanded edge-case evidence was supplied in this acceptance; keep those limits and predecessor gates recorded rather than inferring them. No diagnostic readiness rerun or full20-trip/40-forward campaign is requested for publication.

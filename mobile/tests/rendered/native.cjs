@@ -4,6 +4,7 @@ for (const name of ['View','Text','Pressable','ScrollView','ActivityIndicator','
   exports[name] = ({ children, ...props }) => R.createElement(name, props, children);
 }
 exports.SafeAreaView = exports.View;
+exports.useSafeAreaInsets = () => e.insets || {top:44,bottom:34,left:0,right:0};
 exports.Platform = { OS: 'ios' };
 exports.Keyboard = { dismiss: () => { e.keyboardDismissed = true; } };
 exports.useWindowDimensions = () => e.dimensions || { width: 375, height: 812, fontScale: 1 };
@@ -31,6 +32,7 @@ exports.VideoView = ({ player, ...props }) => {
 };
 const defaultReadiness={prepareAsync:async(player,attempt,seconds)=>{player.currentTime=seconds;return {attempt,kind:'target_decoded',targetSeconds:seconds,timelineSeconds:seconds,decodedFrameSeconds:seconds,seekCompletedMs:1,decodedFrameMs:2,width:720,height:1280,muted:player.muted,rate:player.playing?1:0};},cancelAsync:async()=>{}};
 exports.requireOptionalNativeModule = name => name==='ViewerReadiness'?{
+ presentationSizeAsync:player=>e.presentationSize?e.presentationSize(player):Promise.resolve(player.displaySize??{width:720,height:1280}),
  prepareAsync:(player,attempt,seconds)=>(attempt.startsWith('feed-entry-')?e.entryReadiness??defaultReadiness:e.readiness??defaultReadiness).prepareAsync(player,attempt,seconds),
  cancelAsync:attempt=>(attempt.startsWith('feed-entry-')?e.entryReadiness??defaultReadiness:e.readiness??defaultReadiness).cancelAsync(attempt)
 }:null;

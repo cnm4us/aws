@@ -1,7 +1,6 @@
 import { Image, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import type { FeedContext } from '../feed/context';
 import { IconButton } from './IconButton';
-import { Action } from './Message';
 
 const spaceIcons = {
   channel: require('../../assets/icons/channel.png'),
@@ -9,14 +8,15 @@ const spaceIcons = {
   personal: require('../../assets/icons/personal.png'),
 };
 
-export function FeedHeader({ context, onSpaces, onMenu, onBackProfile, onBackGlobal }: {
-  context: FeedContext; onSpaces: () => void; onMenu: () => void; onBackProfile?: () => void; onBackGlobal?: () => void;
+export function FeedHeader({ context, onSpaces, onMenu, onBackProfile }: {
+  context: FeedContext; onSpaces: () => void; onMenu: () => void; onBackProfile?: () => void;
 }) {
   const {width,fontScale}=useWindowDimensions();
   const stacked=width/fontScale<200;
   const name = context.kind === 'global' ? 'Global' : context.name;
   return <View style={styles.header}>
     <View style={[styles.row, stacked && styles.stacked]}>
+      {onBackProfile&&<Pressable accessibilityRole="button" accessibilityLabel="Back to profile" onPress={onBackProfile} style={styles.back}><Image source={require('../../assets/icons/chevron.png')} accessible={false} style={styles.backIcon}/></Pressable>}
       <Pressable accessibilityRole="button" accessibilityLabel={`Choose space. Current space: ${name}${context.kind === 'space' ? `. ${context.type}` : ''}`}
         onPress={onSpaces} style={[styles.space, stacked && styles.fullSpace]}>
         {context.kind === 'space' && <Image source={spaceIcons[context.type]} accessible={false} style={styles.typeIcon}/>}
@@ -27,11 +27,11 @@ export function FeedHeader({ context, onSpaces, onMenu, onBackProfile, onBackGlo
       </Pressable>
       <View style={stacked ? {alignSelf:'flex-end'} : undefined}><IconButton icon="menu" label="Open menu" onPress={onMenu} /></View>
     </View>
-    {onBackProfile ? <Action label="Back to profile" onPress={onBackProfile} /> : onBackGlobal && <Action label="Back to Global" onPress={onBackGlobal} />}
   </View>;
 }
 const styles = StyleSheet.create({
   header: { gap: 8 },
+  back:{width:44,height:44,alignItems:'center',justifyContent:'center'},backIcon:{width:24,height:24,transform:[{rotate:'90deg'}]},
   row: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
   stacked: { flexDirection: 'column-reverse', alignItems: 'stretch' },
   fullSpace: { flex: 0, width: '100%' },

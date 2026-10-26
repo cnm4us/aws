@@ -26,6 +26,7 @@ test('actual compact controls preserve enabled off state, action labels and cons
   const pressables = root.root.findAllByType('Pressable');
   await Test.act(async () => { pressables.forEach(node => node.props.onPress()); });
   assert.deepEqual([spaces, menu, back], [1, 1, 1]);
-  assert.match(pressables[0].props.accessibilityLabel, /Current space: Global/);
+  assert.ok(pressables.some(node=>/Current space: Global/.test(node.props.accessibilityLabel)));
+  assert.equal(pressables.some(node=>node.props.accessibilityLabel==='Back to Global'),false);
   await Test.act(async () => root.unmount());
 });

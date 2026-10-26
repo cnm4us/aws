@@ -147,9 +147,9 @@ test('Global recognizes a followed creator with yellow only; last contextual unf
  assert.equal(color(),'#777');assert.equal(h.labels().some(x=>/^Follow Creator/.test(x)),false);
  assert.ok(h.e.paths.filter(x=>x.path.endsWith('/creator-recognition')).every(x=>x.path.includes('/publications/100/')));
  await h.press('Pause video');await h.press('Open spaces for this video');await h.press('Open Group (group)');await h.layout();await h.press('Follow Creator 2 in Group');
- await h.press('Back to Global');await h.layout();assert.equal(color(),'#facc15');assert.equal(h.labels().some(x=>/^Follow Creator/.test(x)),false);assert.equal(h.player().playing,false);
+ await h.press('Choose space. Current space: Group. group');await h.press('Global');await h.layout();assert.equal(color(),'#facc15');assert.equal(h.labels().some(x=>/^Follow Creator/.test(x)),false);assert.equal(h.player().playing,false);
  await h.press("View Creator 2's profile");assert.equal(h.labels().some(x=>/Follow in/.test(x)),false);await h.back();await h.layout();assert.equal(color(),'#facc15');
- await h.press('Open spaces for this video');await h.press('Open Group (group)');await h.layout();await h.press("View Creator 2's profile");await h.press('Unfollow in Group');await h.back();await h.layout();await h.press('Back to Global');await h.layout();assert.equal(color(),'#777');
+ await h.press('Open spaces for this video');await h.press('Open Group (group)');await h.layout();await h.press("View Creator 2's profile");await h.press('Unfollow in Group');await h.back();await h.layout();await h.press('Choose space. Current space: Group. group');await h.press('Global');await h.layout();assert.equal(color(),'#777');
  assert.ok(h.e.paths.filter(x=>x.path.endsWith('/creator-recognition')).every(x=>x.method==='GET'));
 });
 test('Global recognition masks background, expiry, error and late selection while public playback remains usable',async t=>{

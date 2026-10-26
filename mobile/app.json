@@ -10,7 +10,7 @@
       "ios"
     ],
     "ios": {
-      "buildNumber": "29",
+      "buildNumber": "30",
       "supportsTablet": false,
       "bundleIdentifier": "com.bawebtech.videoviewer",
       "config": {

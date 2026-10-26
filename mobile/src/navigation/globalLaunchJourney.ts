@@ -30,7 +30,9 @@ export function validateLaunchEntry(page:FeedPage,entry:LaunchEntry):FeedPage {
   return page;
 }
 export function validateOriginProduction(page:FeedPage,origin:FeedCheckpoint & {productionUlid?:string|null}):FeedPage {
-  if(origin.productionUlid && page.resume?.outcome==='restored' && page.items.find(i=>i.publicationId===origin.publicationId)?.productionUlid!==origin.productionUlid)
+  const selected=page.items.find(i=>i.publicationId===origin.publicationId);
+  if(page.resume?.outcome==='restored' && (!selected||origin.productionUlid!==undefined&&origin.productionUlid!==null&&selected.productionUlid!==origin.productionUlid
+    ||origin.uploadId!==undefined&&selected?.uploadId!==origin.uploadId||origin.creatorId!==undefined&&selected?.creator.id!==origin.creatorId))
     return {...page,resume:{requestedPublicationId:origin.publicationId!,restoredPublicationId:null,outcome:'unavailable'}};
   return page;
 }

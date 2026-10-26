@@ -4,8 +4,10 @@ import { VideoView } from 'expo-video';
 import { Action } from '../ui/Message';
 import type { PlaybackCoordinator, PlaybackSnapshot } from './coordinator';
 import type { NativePlayerPort } from './useFeedPlayback';
+import type {feedGeometry} from '../feed/feedGeometry';
 
-export function VideoSurface({ coordinator, snapshot, posterUrl, onNext,onRetry }: {
+export function VideoSurface({ coordinator, snapshot, posterUrl, onNext,onRetry,geometry,headerHeight=0 }: {
+  geometry?:ReturnType<typeof feedGeometry>;headerHeight?:number;
   coordinator: PlaybackCoordinator<NativePlayerPort>;
   snapshot: PlaybackSnapshot<NativePlayerPort>;
   posterUrl: string | null;
@@ -24,27 +26,27 @@ export function VideoSurface({ coordinator, snapshot, posterUrl, onNext,onRetry 
   }, [snapshot.activation, snapshot.hasFrame, snapshot.playbackStarted, snapshot.failed, snapshot.restoring, snapshot.restoreError, eligible]);
 
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+    <View style={[StyleSheet.absoluteFill,{overflow:'hidden'}]} pointerEvents="box-none">
       {snapshot.player && <VideoView
         key={snapshot.activation}
-        style={StyleSheet.absoluteFill}
+        style={geometry?.knownSize?{position:'absolute',left:0,top:geometry.mediaTop,width:geometry.width,height:geometry.mediaHeight}:StyleSheet.absoluteFill}
         player={snapshot.player.native}
         contentFit="contain"
         nativeControls={false}
         allowsVideoFrameAnalysis={false}
         onFirstFrameRender={() => coordinator.firstFrame(snapshot.activation)}
       />}
-      {!snapshot.hasFrame && posterUrl && <Image source={{ uri: posterUrl }} resizeMode="contain" style={StyleSheet.absoluteFill} />}
+      {!snapshot.hasFrame && posterUrl && <Image source={{ uri: posterUrl }} resizeMode="contain" style={geometry?.knownSize?{position:'absolute',left:0,top:geometry.mediaTop,width:geometry.width,height:geometry.mediaHeight}:StyleSheet.absoluteFill} />}
       <Pressable style={StyleSheet.absoluteFill} onPress={()=>{const live=coordinator.getSnapshot();if(live.screenEligible&&live.appActive&&!live.scrolling)coordinator.togglePause();}}
         accessibilityRole="button" accessibilityLabel={snapshot.userPaused ? 'Play video' : 'Pause video'} />
-      {snapshot.restoreError ? <ScrollView style={styles.feedback} contentContainerStyle={styles.feedbackContent}>
+      {snapshot.restoreError ? <ScrollView style={[styles.feedback,{top:headerHeight}]} contentContainerStyle={styles.feedbackContent}>
         <Text style={styles.text}>{snapshot.restoreError}</Text>
         <Action label="Start from beginning" onPress={coordinator.retryRestore}/>
         <Action label="Next video" onPress={onNext}/>
       </ScrollView> : snapshot.restoring ? <View style={styles.center} pointerEvents="none">
         <View style={styles.progress}><Text style={styles.progressText}>{progressLabel}</Text></View>
       </View> : snapshot.failed ? (
-        <ScrollView style={styles.feedback} contentContainerStyle={styles.feedbackContent}>
+        <ScrollView style={[styles.feedback,{top:headerHeight}]} contentContainerStyle={styles.feedbackContent}>
           <Text style={styles.text}>Cannot play video</Text>
           <Action label="Retry" onPress={onRetry??(()=>{coordinator.recoverFailed();})} />
           <Action label="Next video" onPress={onNext} />

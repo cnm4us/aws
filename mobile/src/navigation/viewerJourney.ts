@@ -1,7 +1,7 @@
 import type { FeedContext } from '../feed/context';
 
 export type PlaybackCheckpoint={publicationId:number|null;positionSeconds:number;userPaused:boolean};
-export type FeedCheckpoint=PlaybackCheckpoint & {apiOrigin:string;authGeneration:number;journeyGeneration:number;context:FeedContext};
+export type FeedCheckpoint=PlaybackCheckpoint & {apiOrigin:string;authGeneration:number;journeyGeneration:number;context:FeedContext;uploadId?:number|null;productionUlid?:string|null;creatorId?:number|null};
 export type JourneySnapshot={generation:number;origin:FeedCheckpoint|null;creatorId:number|null;destinationActive:boolean};
 
 // One origin survives a bounded creator detour. No player, token, URL or feed

@@ -8,12 +8,12 @@ const creator={id:2,displayName:'Creator',avatarUrl:'https://avatar.test/creator
 const destination={space:{id:12,name:group.name,type:'group',description:'A community for thoughtful conversations and clear moderation.'},publicationId:205};
 function decoded(player,attempt,seconds){player.currentTime=seconds;return {attempt,kind:'target_decoded',targetSeconds:seconds,timelineSeconds:seconds,decodedFrameSeconds:seconds,seekCompletedMs:1,decodedFrameMs:2,width:720,height:1280,muted:player.muted,rate:player.playing?1:0};}
 async function setup(options={}){
- const {ViewerNavigator,AuthStore,PlaybackPreferences,CaptionPreferences,e}=await bundle(`export {ViewerNavigator} from './src/navigation/ViewerNavigator';export {AuthStore} from './src/auth/authStore';export {PlaybackPreferences} from './src/preferences/playbackPreferences';export {CaptionPreferences} from './src/preferences/captionPreferences';`,options.preview!==false,true,!!options.realAccess,{readiness:options.readiness,manualFrames:options.manualFrames,entryReadiness:options.entryReadiness});
+ const {ViewerNavigator,AuthStore,PlaybackPreferences,CaptionPreferences,e}=await bundle(`export {ViewerNavigator} from './src/navigation/ViewerNavigator';export {AuthStore} from './src/auth/authStore';export {PlaybackPreferences} from './src/preferences/playbackPreferences';export {CaptionPreferences} from './src/preferences/captionPreferences';`,options.preview!==false,true,!!options.realAccess,{readiness:options.readiness,manualFrames:options.manualFrames,entryReadiness:options.entryReadiness,presentationSize:options.presentationSize});
  const session={token:'test',expiresAt:'2030-01-01',viewer:{id:1,displayName:'Test'}};
  e.auth=new AuthStore('https://api.test',{login:async()=>session,validate:async()=>{e.validations=(e.validations??0)+1;return session;},revoke:async()=>{}},{load:async()=>null,save:async()=>{},clear:async()=>{}});
  await e.auth.restore();await e.auth.signIn('test@example.invalid','test');
  e.paths=[];e.targetMissing=false;e.sourceMissing=false;
- const video=(id,spaceId)=>({publicationId:id,spaceId,productionUlid:ulid,uploadId:1,playbackUrl:`https://media.test/${options.sharedMedia&&[100,205].includes(id)?'shared':id}`,posterUrl:null,creator:{id:2,displayName:'Creator',avatarUrl:null},hasStory:false,hasCaptions:!!options.captions,description:'Video',width:100,height:200,durationSeconds:10});
+ const video=(id,spaceId)=>({publicationId:id,spaceId,productionUlid:ulid,uploadId:1,playbackUrl:`https://media.test/${options.sharedMedia&&[100,205].includes(id)?'shared':id}`,posterUrl:null,creator:{id:2,displayName:'Creator',avatarUrl:null},hasStory:false,hasCaptions:!!options.captions,description:'Video',width:options.unknownSize?null:100,height:options.unknownSize?null:200,durationSeconds:10});
  e.makeEntry=(space,pub)=>({context:{kind:'space',space:{...group,...space}},items:[pub,pub+1,pub+2].map(id=>video(id,space.id)),nextCursor:null,resume:{requestedPublicationId:pub,restoredPublicationId:pub,outcome:'restored'}});
  e.serverAccess=true;
  e.fetch=async url=>{
@@ -21,7 +21,7 @@ async function setup(options={}){
   if(p.endsWith('/spaces/12')){data=e.sourceMissing?{error:'publication_not_found'}:{sourcePublicationId:100,productionUlid:ulid,creator,...destination};if(e.sourceMissing)status=404;}
   else if(p.endsWith('/publications/100/spaces')){data=e.sourceMissing?{error:'publication_not_found'}:{sourcePublicationId:100,productionUlid:ulid,creator,items:[destination],nextCursor:null};if(e.sourceMissing)status=404;}
   else if(p.includes('/creators/'))data={creator:{id:2,displayName:'Creator',handle:null,avatarUrl:null,bio:'Bio'},personalEntry:{state:'allowed',space:personal}};
-  else if(p==='/api/viewer/v1/me/spaces')data={personal,groups:[{...group,relationship:'member',subscribed:false}],channels:[]};
+  else if(p==='/api/viewer/v1/me/spaces')data={personal:{...personal,relationship:'owner',subscribed:false},groups:[{...group,relationship:'member',subscribed:false}],channels:[]};
   else if(e.denied&&p.includes('/spaces/12/feed')){status=403;data={error:'forbidden'};}
   else {
    const global=p.includes('/feed/global'),spaceId=global?90:p.includes('/spaces/12/')?12:9;
@@ -39,13 +39,14 @@ async function setup(options={}){
  const screen=()=>root.root.findAllByType('Screen').find(n=>n.props.focused);
  const buttons=()=>screen().findAllByType('Pressable').filter(visible);
  const press=async label=>{const b=buttons().find(n=>n.props.accessibilityLabel===label);assert.ok(b,`Missing ${label}`);await Test.act(async()=>b.props.onPress());};
- const layout=async(height=600)=>{await Test.act(async()=>{screen().findAllByType('View').filter(visible).find(n=>n.props.onLayout)?.props.onLayout({nativeEvent:{layout:{height}}});});};
+ const returnGlobal=async()=>{await press('Choose space. Current space: Launch group. group');await press('Global');};
+ const layout=async(height=600)=>{await Test.act(async()=>{screen().findAllByType('View').filter(visible).find(n=>n.props.onLayout)?.props.onLayout({nativeEvent:{layout:{height,width:e.dimensions?.width??375}}});});};
  const labels=()=>buttons().map(n=>n.props.accessibilityLabel);
  const texts=()=>screen().findAllByType('Text').map(n=>n.props.children);
  const back=async()=>{await Test.act(async()=>screen().props.navigation.goBack());};
  const selected=()=>screen().findAllByType('VideoView').filter(visible).find(n=>!n.props.player.released)?.props.player??e.players.find(p=>!p.released);
  const close=async()=>{await Test.act(async()=>root.unmount());assert.equal(e.auth.access.hasActiveJobs(),false);assert.equal(e.listeners.size,0);assert.equal(e.memoryListeners?.size??0,0);e.auth.dispose();assert.equal(e.players.some(p=>!p.released),false);assert.equal(e.players.some(p=>p.count()>0),false);};
- return {root,e,press,layout,labels,texts,back,selected,close,AuthStore,rerender:async()=>{await Test.act(async()=>root.update(R.createElement(App)));}};
+ return {root,e,press,returnGlobal,layout,labels,texts,back,selected,close,AuthStore,rerender:async()=>{await Test.act(async()=>root.update(R.createElement(App)));}};
 }
 test('readiness check through actual navigator holds a silent candidate behind the native modal and reuses its view at reveal',async()=>{
  let resolveNative,attempt,target,nativePlayer;
@@ -105,13 +106,13 @@ test('actual Launch router/loader: cancel, exact target/pause, nested Creator, R
  try{
   await layout();const original=selected();original.currentTime=7;await press('Pause video');
   await press('Open spaces for this video');assert.equal(e.players.some(p=>p.playing),false);await press('Close spaces');assert.equal(selected(),original);assert.equal(original.currentTime,7);assert.equal(original.playing,false);
-  await press('Open spaces for this video');await press('Open Launch group (group)');await layout();assert.ok(labels().includes('Back to Global'));assert.ok(!labels().includes('Open spaces for this video'));
+  await press('Open spaces for this video');await press('Open Launch group (group)');await layout();assert.ok(labels().includes('Choose space. Current space: Launch group. group'));assert.ok(!labels().includes('Open spaces for this video'));
   assert.equal(original.released,true);assert.equal(selected().currentTime,7);assert.equal(selected().playing,false);
   await press('Open menu');await press('Settings');await press('Done');assert.equal(selected().currentTime,7);assert.equal(selected().playing,false);
   await press("View Creator's profile");await press('View personal space');await layout();assert.ok(labels().includes('Back to profile'));await press('Back to profile');await h.back();await layout();
-  assert.equal(selected().currentTime,7);assert.equal(selected().playing,false);assert.ok(labels().includes('Back to Global'));
+  assert.equal(selected().currentTime,7);assert.equal(selected().playing,false);assert.ok(labels().includes('Choose space. Current space: Launch group. group'));
   await press('Open menu');await press('Refresh feed');await layout();assert.ok(e.paths.filter(p=>p.startsWith('/api/viewer/v1/spaces/12/feed')).at(-1).endsWith('limit=20'));
-  await press('Back to Global');await layout();assert.equal(selected().currentTime,7);assert.equal(selected().playing,false);assert.equal(e.navigationState.routes.filter(r=>r.name==='Feed').length,1);
+  await h.returnGlobal();await layout();assert.equal(selected().currentTime,7);assert.equal(selected().playing,false);assert.equal(e.navigationState.routes.filter(r=>r.name==='Feed').length,1);
   assert.ok(e.players.filter(p=>!p.released).length<=3);assert.ok(!labels().some(l=>['Like','Comments'].includes(l)));
  }finally{await h.close();}
 });
@@ -121,10 +122,10 @@ test('actual strict entry blocks fallback, Retry re-resolves, sign-out removes p
   await layout();e.targetMissing=true;await press('Open spaces for this video');await press('Open Launch group (group)');await layout();
   assert.ok(texts().includes('Cannot open space'));assert.equal(e.players.some(p=>p.playing),false);assert.ok(labels().includes('Close spaces'));
   const resolves=e.paths.filter(p=>p.includes('/spaces/12?include=entry')).length;e.targetMissing=false;await press('Try again');await press('Open Launch group (group)');await layout();assert.ok(e.paths.filter(p=>p.includes('/spaces/12?include=entry')).length>resolves);
-  assert.ok(labels().includes('Back to Global'));
-  await press('Open menu');await press('Sign out');await layout();assert.equal(labels().includes('Back to Global'),false);
+  assert.ok(labels().includes('Choose space. Current space: Launch group. group'));
+  await press('Open menu');await press('Sign out');await layout();assert.equal(labels().includes('Choose space. Current space: Launch group. group'),false);
   const before=e.paths.filter(p=>p.includes('/publications/')).length;await press('Open spaces for this video');assert.ok(labels().includes('Sign in'));
-  assert.equal(e.paths.filter(p=>p.includes('/publications/')).length,before);await press('Close spaces');assert.ok(!labels().includes('Back to Global'));
+  assert.equal(e.paths.filter(p=>p.includes('/publications/')).length,before);await press('Close spaces');assert.ok(!labels().includes('Choose space. Current space: Launch group. group'));
  }finally{await h.close();}
 });
 test('known unavailable Global source cannot resume from the mounted cache when chooser closes',async()=>{
@@ -146,19 +147,19 @@ test('late chooser resolution after identity reset cannot reopen the old protect
   await Test.act(async()=>{b.props.onPress();});assert.ok(finish);
   await Test.act(async()=>e.auth.signOut());await layout();
   await Test.act(async()=>finish());
-  assert.equal(e.navigationState.routes.some(r=>r.name==='LaunchSpaces'),false);assert.equal(labels().includes('Back to Global'),false);assert.ok(labels().includes('Open spaces for this video'));
+  assert.equal(e.navigationState.routes.some(r=>r.name==='LaunchSpaces'),false);assert.equal(labels().includes('Choose space. Current space: Launch group. group'),false);assert.ok(labels().includes('Open spaces for this video'));
  }finally{await h.close();}
 });
 
 test('API-origin replacement at the same auth generation clears a launched feed and both roots',async()=>{
  const h=await setup(),{e,press,layout,labels}=h;const old=e.auth;
  try{
-  await layout();await press('Open spaces for this video');await press('Open Launch group (group)');await layout();assert.ok(labels().includes('Back to Global'));
+  await layout();await press('Open spaces for this video');await press('Open Launch group (group)');await layout();assert.ok(labels().includes('Choose space. Current space: Launch group. group'));
   const session={token:'other',expiresAt:'2030-01-01',viewer:{id:1,displayName:'Other server'}};
   const next=new h.AuthStore('https://other.test',{login:async()=>session,validate:async()=>session,revoke:async()=>{}},{load:async()=>null,save:async()=>{},clear:async()=>{}});
   await next.restore();await next.signIn('other@example.invalid','test');assert.equal(next.getSnapshot().generation,old.getSnapshot().generation);
   e.auth=next;e.baseUrl='https://other.test';await h.rerender();await layout();
-  assert.ok(labels().includes('Choose space. Current space: Global'));assert.equal(labels().includes('Back to Global'),false);assert.equal(e.navigationState.routes.length,1);
+  assert.ok(labels().includes('Choose space. Current space: Global'));assert.equal(labels().includes('Choose space. Current space: Launch group. group'),false);assert.equal(e.navigationState.routes.length,1);
  }finally{old.dispose();await h.close();}
 });
 
@@ -169,7 +170,7 @@ test('actual four-action Global rail stays bounded and scrollable with short vid
    h.e.dimensions={width,height:480,fontScale};await h.rerender();await h.layout(140);
    const feed=h.root.root.findAllByType('Screen').find(n=>n.props.focused);
    const rail=feed.findAllByType('ScrollView').find(n=>flatten(n.props.style).position==='absolute');assert.ok(rail);
-   const style=flatten(rail.props.style);assert.equal(style.height,92);assert.equal(style.width,44);assert.equal(style.bottom,24);
+   const style=flatten(rail.props.style);assert.equal(style.height,44);assert.equal(style.width,44);assert.equal(style.bottom,24);
    const controls=rail.findAllByType('Pressable').filter(visible);assert.equal(controls.length,4);
    assert.deepEqual(controls.map(n=>n.props.accessibilityLabel),["View Creator's profile",'Open spaces for this video','Show captions','Mute']);
    for(const control of controls){const target=flatten(typeof control.props.style==='function'?control.props.style({pressed:false}):control.props.style);assert.equal(target.height,44);assert.equal(target.width,44);}
@@ -224,7 +225,7 @@ test("prepared Launch reuses authorized JSON and replaces every cross-feed nativ
   assert.equal(h.e.paths.filter(p=>p.includes('/spaces/12?include=entry')).length,1);
   const destination=h.selected();assert.notEqual(destination,original);assert.equal(original.released,true);assert.equal(original.muted,true);assert.equal(destination.currentTime,7);assert.equal(destination.playing,false);
   const globalReads=h.e.paths.filter(p=>p.startsWith('/api/viewer/v1/feed/global?')).length;
-  await h.press('Back to Global');await h.layout();
+  await h.returnGlobal();await h.layout();
   assert.equal(h.e.paths.filter(p=>p.startsWith('/api/viewer/v1/feed/global?')).length,globalReads+1);
   assert.ok(h.e.paths.includes('/api/viewer/v1/feed/global?limit=20&anchorPublicationId=100'));
   const returned=h.selected();assert.notEqual(returned,destination);assert.notEqual(returned,original);assert.equal(destination.released,true);assert.equal(returned.currentTime,7);assert.equal(returned.playing,false);
@@ -275,7 +276,7 @@ test("sound-on exact-media entry and Global return use fresh native owners at th
   await h.press('Open spaces for this video');assert.equal(original.playing,false);
   await h.press('Open Launch group (group)');await h.layout();const destination=h.selected();assert.notEqual(destination,original);assert.equal(original.released,true);assert.equal(original.muted,true);assert.equal(destination.currentTime,3);assert.equal(destination.playing,true);assert.equal(destination.muted,false);
   destination.currentTime=6;await h.press("View Creator's profile");assert.equal(destination.playing,false);await h.back();await h.layout();assert.equal(destination.currentTime,6);assert.equal(destination.playing,true);
-  destination.currentTime=8;await h.press('Back to Global');await h.layout();const returned=h.selected();assert.notEqual(returned,destination);assert.notEqual(returned,original);assert.equal(destination.released,true);assert.equal(returned.currentTime,3);assert.equal(returned.playing,true);assert.equal(returned.muted,false);
+  destination.currentTime=8;await h.returnGlobal();await h.layout();const returned=h.selected();assert.notEqual(returned,destination);assert.notEqual(returned,original);assert.equal(destination.released,true);assert.equal(returned.currentTime,3);assert.equal(returned.playing,true);assert.equal(returned.muted,false);
   assert.equal(h.e.players.filter(p=>p.playing).length,1);assert.ok(h.e.players.filter(p=>!p.released).length<=3);
  }finally{await h.close();}
 });
@@ -283,7 +284,7 @@ test('fresh Global return cannot restore a removed original public source',async
  const h=await setup({sharedMedia:true,realAccess:true});
  try{
   await h.layout();const original=h.selected();await h.press('Open spaces for this video');await h.press('Open Launch group (group)');await h.layout();
-  h.e.sourceMissing=true;await Test.act(async()=>h.e.auth.access.invalidatePublic(100));await h.press('Back to Global');await h.layout();
+  h.e.sourceMissing=true;await Test.act(async()=>h.e.auth.access.invalidatePublic(100));await h.returnGlobal();await h.layout();
   assert.ok(h.texts().includes('The original video is no longer available. Showing the current feed.'));assert.equal(original.released,true);assert.equal(original.playing,false);
   assert.ok(h.e.players.filter(p=>p.playing).length<=1);assert.ok(h.e.players.filter(p=>!p.released).length<=3);
  }finally{await h.close();}
@@ -295,7 +296,7 @@ test('warm Global return restores from the public page before a delayed revalida
   await h.layout();const original=h.selected();original.currentTime=4;await h.press('Pause video');
   await h.press('Open spaces for this video');await h.press('Open Launch group (group)');await h.layout();
   const fetch=h.e.fetch;h.e.fetch=async(url,...args)=>String(url).includes('/feed/global?')?new Promise(resolve=>{finish=()=>fetch(url,...args).then(resolve);}):fetch(url,...args);
-  await h.press('Back to Global');await h.layout();assert.ok(finish);const returned=h.selected();assert.notEqual(returned,original);assert.equal(original.released,true);
+  await h.returnGlobal();await h.layout();assert.ok(finish);const returned=h.selected();assert.notEqual(returned,original);assert.equal(original.released,true);
   assert.equal(returned.currentTime,4);assert.equal(returned.playing,false);assert.equal(h.texts().includes('Loading videos'),false);
   await Test.act(async()=>finish());assert.equal(h.selected(),returned);assert.equal(returned.playing,false);
  }finally{await h.close();}
@@ -312,7 +313,7 @@ test('feed replacement releases the complete origin pool before destination allo
   await Test.act(async()=>{list.props.onScrollBeginDrag();list.props.onMomentumScrollEnd({nativeEvent:{contentOffset:{y:600}}});});
   assert.equal(h.e.players.filter(p=>!p.released).length,3);assert.equal(h.e.players.filter(p=>p.playing).length,1);
   assert.equal(h.texts().includes('Loading Launch group…'),false);
-  await h.press('Back to Global');await h.layout();const returned=h.selected();
+  await h.returnGlobal();await h.layout();const returned=h.selected();
   assert.notEqual(returned,origin);assert.equal(returned.currentTime,5);assert.equal(returned.loads,1);assert.equal(returned.playing,true);
  }finally{await h.close();}
 });
@@ -325,7 +326,7 @@ test('opening and closing Launch preserves the mounted player; committing a feed
   assert.equal(h.selected(),origin);assert.equal(origin.loads,1);assert.equal(h.root.root.findAllByType('VideoView').find(n=>n.props.player===origin),view);
   await h.press('Open spaces for this video');await h.press('Open Launch group (group)');await h.layout();
   assert.equal(origin.released,true);
-  await h.press('Back to Global');await h.layout();assert.notEqual(h.selected(),origin);assert.equal(h.selected().currentTime,4);
+  await h.returnGlobal();await h.layout();assert.notEqual(h.selected(),origin);assert.equal(h.selected().currentTime,4);
  }finally{await h.close();}
 });
 test('queued controls from the released Global cannot change pause, sound or navigation',async()=>{
@@ -339,7 +340,7 @@ test('queued controls from the released Global cannot change pause, sound or nav
   await h.press('Open spaces for this video');await h.press('Open Launch group (group)');await h.layout();
   const reads=h.e.paths.length;await Test.act(async()=>{pause();mute();launch();});
   assert.equal(h.e.navigationState.routes.at(-1).name,'Feed');assert.equal(h.e.paths.length,reads);assert.equal(original.playing,false);assert.equal(original.muted,true);
-  await h.press('Back to Global');await h.layout();assert.notEqual(h.selected(),original);assert.equal(h.selected().playing,true);assert.equal(h.selected().muted,false);
+  await h.returnGlobal();await h.layout();assert.notEqual(h.selected(),original);assert.equal(h.selected().playing,true);assert.equal(h.selected().muted,false);
  }finally{await h.close();}
 });
 
@@ -356,7 +357,7 @@ for(const paused of [false,true])test(`repeated sound-on Launch round trips isol
    const destination=h.selected();assert.notEqual(destination,origin);assert.equal(origin.released,true);assert.equal(origin.count(),0);assert.equal(origin.playing,false);assert.equal(origin.muted,true);
    assert.equal(destination.currentTime,2+trip);assert.equal(destination.playing,!paused);assert.equal(destination.muted,paused);
    destination.currentTime=7;
-   await h.press('Back to Global');await h.layout();const returned=h.selected();
+   await h.returnGlobal();await h.layout();const returned=h.selected();
    assert.notEqual(returned,origin);assert.notEqual(returned,destination);assert.equal(destination.released,true);assert.equal(destination.count(),0);assert.equal(destination.playing,false);
    assert.equal(returned.currentTime,2+trip);assert.equal(returned.playing,!paused);assert.equal(returned.muted,paused);
    assert.equal(h.e.players.filter(p=>p.playing).length,paused?0:1);assert.ok(h.e.players.filter(p=>!p.released).length<=3);
@@ -388,7 +389,7 @@ test('leaving a preparing feed cancels its native attempt; a late result cannot 
  const h=await setup({realAccess:true,entryReadiness,soundOn:true});
  try{
   await h.layout();await h.press('Open spaces for this video');await h.press('Open Launch group (group)');await h.layout();assert.ok(h.texts().includes('Loading Launch group…'));
-  await h.press('Back to Global');await h.layout();const current=h.selected();assert.equal(candidate.released,true);assert.ok(cancelled.length);
+  await h.returnGlobal();await h.layout();const current=h.selected();assert.equal(candidate.released,true);assert.ok(cancelled.length);
   await Test.act(async()=>complete());assert.equal(h.selected(),current);assert.equal(current.playing,true);assert.equal(candidate.playing,false);assert.equal(h.e.players.filter(p=>p.playing).length,1);
  }finally{await h.close();}
 });
@@ -401,4 +402,61 @@ test('native-entry failure keeps the exact Launch target required on Retry',asyn
   h.e.targetMissing=true;await h.press('Try again');await h.layout();
   assert.ok(h.texts().includes('Video unavailable in this space'));assert.equal(h.e.players.some(p=>p.playing),false);assert.ok(h.labels().includes('Choose another space'));
  }finally{await h.close();}
+});
+
+test('full-width native presentation uses symmetric short-phone crop and the same bounds in Global and group',async()=>{
+ const h=await setup({soundOn:true});
+ try{
+  h.e.insets={top:0,bottom:0,left:0,right:0};await h.rerender();await h.layout(603);
+  const screen=()=>h.root.root.findAllByType('Screen').find(n=>n.props.focused);
+  const rect=()=>flatten(screen().findByType('VideoView').props.style);
+  const global=rect();assert.equal(global.width,375);assert.ok(Math.abs(global.height-666.666667)<.001);assert.ok(Math.abs(global.top+31.833333)<.001);
+  assert.equal(flatten(screen().findAllByType('View').find(n=>n.props.testID==='feed-navigation-reserve').props.style).height,64);
+  const header=screen().findAllByType('View').find(n=>n.props.testID==='feed-floating-header');assert.equal(flatten(header.props.style).position,'absolute');assert.equal(flatten(header.props.style).paddingTop,8);
+  const player=h.selected();player.currentTime=4;await h.press('Pause video');const loads=player.loads;
+  await h.layout(746);assert.equal(rect().top,0);assert.equal(h.selected(),player);assert.equal(player.loads,loads);assert.equal(player.currentTime,4);assert.equal(player.playing,false);
+  await h.press('Open spaces for this video');await h.press('Open Launch group (group)');await h.layout(603);assert.deepEqual(rect(),global);assert.equal(h.labels().includes('Back to Global'),false);
+  await h.returnGlobal();await h.layout(603);assert.deepEqual(rect(),global);assert.equal(h.selected().currentTime,4);assert.equal(h.selected().playing,false);
+ }finally{await h.close();}
+});
+test('Spaces has one80% overlay; Close/current selection preserve the player and menu revisits restore each feed',async()=>{
+ const h=await setup({soundOn:true});
+ try{
+  await h.layout();const original=h.selected();original.currentTime=4;
+  await h.press('Choose space. Current space: Global');
+  let screen=h.root.root.findAllByType('Screen').find(n=>n.props.focused);assert.equal(screen.props.options.presentation,'transparentModal');assert.equal(screen.props.options.headerShown,false);
+  const scrims=screen.findAllByType('View').filter(n=>flatten(n.props.style).backgroundColor==='rgba(0,0,0,0.8)');assert.equal(scrims.length,1);
+  const close=screen.findAllByType('Pressable').find(n=>n.props.accessibilityLabel==='Close space menu');for(let n=close;n&&n!==screen;n=n.parent)assert.notEqual(n.type,'ScrollView');
+  assert.equal(original.playing,false);assert.equal(original.muted,true);const loads=original.loads;
+  await h.press('Close space menu');assert.equal(h.selected(),original);assert.equal(original.loads,loads);assert.equal(original.playing,true);
+  await h.press('Choose space. Current space: Global');await h.press('✓ Global');assert.equal(h.selected(),original);assert.equal(original.loads,loads);assert.equal(original.currentTime,4);
+  await h.press('Open spaces for this video');await h.press('Open Launch group (group)');await h.layout();const groupPlayer=h.selected();groupPlayer.currentTime=8;await h.press('Pause video');
+  await h.returnGlobal();await h.layout();assert.equal(h.selected().currentTime,4);assert.equal(h.selected().playing,true);assert.equal(groupPlayer.released,true);
+  await h.press('Choose space. Current space: Global');await h.press('Launch group');await h.layout();assert.equal(h.selected().currentTime,8);assert.equal(h.selected().playing,false);
+  await h.returnGlobal();await h.layout();await h.press('Open spaces for this video');await h.press('Open Launch group (group)');await h.layout();assert.equal(h.selected().currentTime,4);assert.equal(h.selected().playing,true,'Explicit Launch overrides saved group intent');
+ }finally{await h.close();}
+});
+test('Spaces cancellation ignores late list results and covered publication denial is opaque',async()=>{
+ const h=await setup({realAccess:true,soundOn:true});
+ try{
+  await h.layout();const original=h.selected(),fetch=h.e.fetch;let finish;
+  h.e.fetch=(url,...args)=>new URL(url).pathname==='/api/viewer/v1/me/spaces'?new Promise(resolve=>{finish=async()=>resolve(await fetch(url,...args));}):fetch(url,...args);
+  await h.press('Choose space. Current space: Global');const screen=h.root.root.findAllByType('Screen').find(n=>n.props.focused);
+  const stale=screen.findAllByType('Pressable').find(n=>n.props.accessibilityLabel==='✓ Global').props.onPress;
+  await h.press('Close space menu');await Test.act(async()=>{stale();await finish();});assert.equal(h.e.navigationState.routes.at(-1).name,'Feed');assert.equal(h.selected(),original);assert.equal(original.playing,true);
+  h.e.fetch=fetch;await h.press('Open spaces for this video');await h.press('Open Launch group (group)');await h.layout();
+  await h.press('Choose space. Current space: Launch group. group');assert.equal(h.e.players.some(p=>p.playing),false);
+  await Test.act(async()=>h.e.auth.access.invalidate(12,205));
+  const underlying=h.root.root.findAllByType('Screen').find(n=>n.props.name==='Feed');
+  assert.ok(underlying.findAllByType('View').some(n=>n.props.testID==='feed-publication-mask'&&flatten(n.props.style).backgroundColor==='#000'));
+ }finally{await h.close();}
+});
+test('unknown presentation geometry terminates and retries into a valid size without hidden playback',async t=>{
+ t.mock.timers.enable({apis:['setTimeout','setInterval']});
+ const h=await setup({unknownSize:true,presentationSize:async()=>({width:0,height:0}),soundOn:true});
+ try{
+  await h.layout();assert.equal(h.labels().includes('Open spaces for this video'),false);assert.equal(h.e.players.some(p=>p.playing),false);
+  await Test.act(async()=>t.mock.timers.tick(20000));assert.ok(h.texts().includes('Video preparation timed out. Try again.'));assert.ok(h.labels().includes('Try again'));
+  h.e.presentationSize=async()=>({width:720,height:1280});await h.press('Try again');await h.layout();assert.ok(h.labels().includes('Open spaces for this video'));assert.equal(h.selected().playing,true);
+ }finally{await h.close();t.mock.timers.reset();}
 });

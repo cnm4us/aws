@@ -8,9 +8,9 @@ import { PlayerBudget } from './playerBudget';
 import type { NavigationTrace } from '../diagnostics/playbackDiagnostics';
 import type { PlayerHandoff } from './playerHandoff';
 import { createCaptionClock } from './captionClock';
-import { prepareReadinessEvidence,cancelReadinessEvidence } from './readinessEvidence';
+import { prepareReadinessEvidence,cancelReadinessEvidence,readPresentationSize } from './readinessEvidence';
 
-export interface NativePlayerPort extends PlayerPort { native: VideoPlayer; subscribeClock(listener: (seconds: number) => void): () => void }
+export interface NativePlayerPort extends PlayerPort { native: VideoPlayer; presentationSize():ReturnType<typeof readPresentationSize>;subscribeClock(listener: (seconds: number) => void): () => void }
 const playerBudget=new PlayerBudget(3);
 
 // Shared by the internal readiness check so it cannot bypass the app budget.
@@ -28,6 +28,7 @@ export function createNativePlayer(): NativePlayerPort {
   let entryAttempt:string|undefined;
   return {
     native,
+    presentationSize:()=>readPresentationSize(native),
     prepareEntry:(attempt,seconds)=>{entryAttempt=attempt;return prepareReadinessEvidence(native,attempt,seconds).finally(()=>{if(entryAttempt===attempt)entryAttempt=undefined;});},
     cancelEntry:attempt=>{if(entryAttempt===attempt)entryAttempt=undefined;cancelReadinessEvidence(attempt);},
     load: url => native.replaceAsync({ uri: url, contentType: 'hls' }),

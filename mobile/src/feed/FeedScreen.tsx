@@ -8,7 +8,9 @@ import { useViewerFeed } from './useViewerFeed';
 import type { FeedContext } from './context';
 import { contextKey } from './context';
 import { useAuth } from '../auth/useAuth';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {FEED_NAVIGATION_HEIGHT,feedGeometry} from './feedGeometry';
+import {useVideoSize} from '../playback/useVideoSize';
 import { useSpaceAccess,usePublicationAccess } from '../auth/useSpaceAccess';
 import type { FeedSnapshot, FeedStore } from './feedStore';
 import type { FeedVideoItem } from './types';
@@ -34,22 +36,26 @@ import { FeedFollow } from '../follows/FeedFollow';
 import { GlobalCreatorRecognition } from '../follows/GlobalCreatorRecognition';
 
 export type FeedCommands={revalidate?:(id:number|undefined)=>void;requestRefresh:()=>void;denyAccess?:(error:ApiError)=>void};
-export type FeedPlaybackHandle={entryFailed?:()=>boolean;retainOrigin?:()=>void;retryFailed?:()=>boolean;selectedId?:()=>number|null;capture:()=>PlaybackCheckpoint;release:()=>void;handOff:()=>PlayerHandoff<NativePlayerPort>|undefined};
+export type FeedPlaybackHandle={checkpoint?:()=> (PlaybackCheckpoint&{uploadId:number|null;productionUlid:string|null;creatorId:number|null})|undefined;entryFailed?:()=>boolean;retainOrigin?:()=>void;retryFailed?:()=>boolean;selectedId?:()=>number|null;capture:()=>PlaybackCheckpoint;release:()=>void;handOff:()=>PlayerHandoff<NativePlayerPort>|undefined};
 
 
-export function FeedScreen({ context, preferences, sound, captionPreferences, captions, focused, onSpaces, onMenu, onGlobal, onCreator, registerPlayback, registerCommands, restore, entry, onBackProfile, onBackGlobal, onLaunch, onRetryEntry, onChooseLaunch, onComments, onPrepareLaunch, handoff, trace, blocked=false }: {
+export function FeedScreen({ context, preferences, sound, captionPreferences, captions, focused, onSpaces, onMenu, onGlobal, onCreator, registerPlayback, registerCommands, restore, entry, onBackProfile, onLaunch, onRetryEntry, onChooseLaunch, onComments, onPrepareLaunch, handoff, trace, blocked=false,onForgetCheckpoint }: {
+  onForgetCheckpoint?:()=>void;
   onPrepareLaunch?:(item:FeedVideoItem)=>void;handoff?:PlayerHandoff<NativePlayerPort>;trace?:NavigationTrace;
   captionPreferences: CaptionPreferences; captions: ReturnType<CaptionPreferences['getSnapshot']>;
   context: FeedContext; preferences: PlaybackPreferences; sound: PlaybackPreferencesSnapshot; focused: boolean;
   onSpaces:()=>void;onMenu:()=>void;onGlobal:()=>void;
   registerCommands?:(handle:FeedCommands)=>()=>void;
   onCreator?:(id:number)=>void;registerPlayback?:(handle:FeedPlaybackHandle)=>()=>void;
-  restore?:FeedCheckpoint;entry?:LaunchEntry;onBackProfile?:()=>void;onBackGlobal?:()=>void;onLaunch?:(item:FeedVideoItem)=>void;
+  restore?:FeedCheckpoint;entry?:LaunchEntry;onBackProfile?:()=>void;onLaunch?:(item:FeedVideoItem)=>void;
   onRetryEntry?:()=>Promise<void>;onChooseLaunch?:()=>void;onComments?:(publicationId:number)=>void;blocked?:boolean;
 }) {
   const { store:identity, snapshot:auth,baseUrl }=useAuth();
+  const insets=useSafeAreaInsets();
+  const [headerHeight,setHeaderHeight]=useState(insets.top+76);
   const { store, snapshot, client,clearResume,setResumeAnchor,entryPending,initialAccess,revalidateAt,markEntryPresented } = useViewerFeed(context,restore,entry,trace);
   const access=useSpaceAccess(context,client,store,focused,initialAccess);
+  useEffect(()=>{if(snapshot.resume?.outcome==='unavailable')onForgetCheckpoint?.();},[snapshot.resume]);
   // Verified spaces stay eligible during bounded routine renewal. Entry/return,
   // failure and expiry still withhold authority through the access guard.
   const eligible=!blocked && focused && !snapshot.errorStatus && access.authorized
@@ -68,7 +74,7 @@ export function FeedScreen({ context, preferences, sound, captionPreferences, ca
   live.current.focused = focused;
   const refresh = (fromStart=false) => {
     const generation=auth.generation;
-    if(fromStart)clearResume();
+    if(fromStart){clearResume();onForgetCheckpoint?.();}
     if(live.current.mounted && live.current.focused && identity.getSnapshot().generation===generation)void store.refresh();
   };
   const recover=()=>recovery.run(async()=>{
@@ -102,38 +108,40 @@ export function FeedScreen({ context, preferences, sound, captionPreferences, ca
   useEffect(()=>{
     if(focused && pendingRefresh.current){pendingRefresh.current=false;refresh(true);}
   },[focused,store]);
-  return <SafeAreaView style={styles.screen} edges={['top','bottom']}>
-    <View style={styles.toolbar}>
-      <FeedHeader context={context} onSpaces={onSpaces} onMenu={onMenu} onBackProfile={onBackProfile} onBackGlobal={onBackGlobal}/>
-      {auth.status==='anonymous' && auth.message && <Text accessibilityRole="alert" style={{color:'#ffb4b4',fontSize:15}}>{auth.message}</Text>}
-      {snapshot.resume?.outcome==='unavailable' && <Text style={{color:'#c7c7ce'}}>The original video is no longer available. Showing the current feed.</Text>}
-    </View>
+  return <View style={styles.screen}>
     <View style={{flex:1}}>
-      {blocked ? <Message title="Video no longer available"/> : snapshot.initialLoading ? <FeedLoadingSplash feedName={context.kind==='global'?'Global':context.name}/> : snapshot.initialError ?
-        <View style={{flex:1}}><Message title={['launch_target_unavailable','publication_not_found'].includes(snapshot.errorCode??'')?'Video unavailable in this space':snapshot.errorStatus===403 || snapshot.errorStatus===404?'Access unavailable':'Cannot load the feed'}
+      {blocked ? <View style={{flex:1,paddingTop:headerHeight}}><Message title="Video no longer available"/></View> : snapshot.initialLoading ? <View style={{flex:1,paddingTop:headerHeight}}><FeedLoadingSplash feedName={context.kind==='global'?'Global':context.name}/></View> : snapshot.initialError ?
+        <View style={{flex:1,paddingTop:headerHeight}}><Message title={['launch_target_unavailable','publication_not_found'].includes(snapshot.errorCode??'')?'Video unavailable in this space':snapshot.errorStatus===403 || snapshot.errorStatus===404?'Access unavailable':'Cannot load the feed'}
           message={retryError??snapshot.initialError} busy={retrying} busyLabel="Retrying feed" onRetry={retrying?undefined:entryPending && onRetryEntry?()=>{void retryEntry();}:()=>{void recover();}}/>
           {entryPending && onChooseLaunch && <Action label="Choose another space" onPress={onChooseLaunch}/>}
           <View style={styles.headerActions}><Action label="Spaces" onPress={onSpaces}/><Action label="Global" onPress={onGlobal}/></View>
         </View> : <FeedSession key={snapshot.sessionId} store={store} snapshot={snapshot} muted={sound.muted}
           onToggleMute={()=>{if(live.current.mounted&&live.current.focused)preferences.toggleMute();}} visible={focused} eligible={!!eligible} diagnosticContext={{feedContext:contextKey(context),authGeneration:auth.generation}}
-          onEntryPresented={markEntryPresented} restore={recoveryRestore??restore} entry={recoveryRestore?undefined:entry} handoff={handoff} trace={trace} onPrepareLaunch={onPrepareLaunch} onCreator={onCreator} onLaunch={onLaunch} onComments={onComments} onRecover={()=>{void recover();}} registerPlayback={registerMedia} client={client} context={context} captionPreferences={captionPreferences} captions={captions}/>}
+          headerHeight={headerHeight} onEntryPresented={markEntryPresented} restore={recoveryRestore??restore} entry={recoveryRestore?undefined:entry} handoff={handoff} trace={trace} onPrepareLaunch={onPrepareLaunch} onCreator={onCreator} onLaunch={onLaunch} onComments={onComments} onRecover={()=>{void recover();}} registerPlayback={registerMedia} client={client} context={context} captionPreferences={captionPreferences} captions={captions}/>}
       {((context.kind==='space'&&auth.status==='unavailable'&&!access.authorized) || (context.kind==='space' && access.checking && !access.authorized)) &&
-        <View style={[StyleSheet.absoluteFill,{backgroundColor:'#000',padding:20,gap:12}]}>
+        <View style={[StyleSheet.absoluteFill,{backgroundColor:'#000',padding:20,paddingTop:headerHeight+12,gap:12}]}>
           <Message title={auth.status==='unavailable'?'Cannot verify access':'Checking access'} busy={auth.status!=='unavailable'}
             message={auth.status==='unavailable'?auth.message??undefined:undefined}
             onRetry={()=>{void recover();}}/>
           {auth.status==='unavailable' && <Action label="Browse Global" onPress={onGlobal}/>}
         </View>}
       {access.error && !access.checking && !snapshot.errorStatus && auth.status!=='unavailable' &&
-        <View style={[StyleSheet.absoluteFill,{backgroundColor:'#000',padding:20,gap:12}]}>
+        <View style={[StyleSheet.absoluteFill,{backgroundColor:'#000',padding:20,paddingTop:headerHeight+12,gap:12}]}>
           <Message title="Cannot verify access" message={access.error} onRetry={()=>{void recover();}}/>
           <Action label="Global" onPress={onGlobal}/><Action label="Spaces" onPress={onSpaces}/>
         </View>}
     </View>
-  </SafeAreaView>;
+    <View testID="feed-navigation-reserve" style={{height:FEED_NAVIGATION_HEIGHT+insets.bottom,backgroundColor:'#000'}} accessible={false}/>
+    <View testID="feed-floating-header" style={[styles.toolbar,{paddingTop:insets.top+8,paddingLeft:Math.max(16,insets.left),paddingRight:Math.max(16,insets.right)}]} onLayout={event=>setHeaderHeight(event.nativeEvent.layout.height)}>
+      <FeedHeader context={context} onSpaces={onSpaces} onMenu={onMenu} onBackProfile={onBackProfile}/>
+      {auth.status==='anonymous' && auth.message && <Text accessibilityRole="alert" style={{color:'#ffb4b4',fontSize:15}}>{auth.message}</Text>}
+      {snapshot.resume?.outcome==='unavailable' && <Text style={{color:'#c7c7ce'}}>The original video is no longer available. Showing the current feed.</Text>}
+    </View>
+  </View>;
 }
 
-function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosticContext, restore, entry, onCreator, onLaunch, onComments, registerPlayback, client, context, captionPreferences, captions, onPrepareLaunch, handoff, trace,visible,onRecover,onEntryPresented }: {
+function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosticContext, restore, entry, onCreator, onLaunch, onComments, registerPlayback, client, context, captionPreferences, captions, onPrepareLaunch, handoff, trace,visible,onRecover,onEntryPresented,headerHeight }: {
+  headerHeight:number;
   onEntryPresented?:()=>void;
   onRecover:()=>void;onPrepareLaunch?:(item:FeedVideoItem)=>void;handoff?:PlayerHandoff<NativePlayerPort>;trace?:NavigationTrace;
   store: FeedStore; snapshot: FeedSnapshot;visible:boolean; muted: boolean; onToggleMute: () => void; eligible: boolean;
@@ -142,7 +150,7 @@ function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosti
   client: ApiClient; context: FeedContext; captionPreferences: CaptionPreferences; captions: ReturnType<CaptionPreferences['getSnapshot']>;
 }) {
   const {snapshot:followAuth,store:sessionAuth}=useAuth();
-  const [height, setHeight] = useState(0);
+  const [layout,setLayout]=useState({width:0,height:0});const {width,height}=layout;
   const [selection,setSelection]=useState(()=>{const index=Math.max(0,snapshot.items.findIndex(item=>item.publicationId===snapshot.resume?.restoredPublicationId));return {index,id:snapshot.items[index]?.publicationId??null};});
   const retainedIndex=snapshot.items.findIndex(item=>item.publicationId===selection.id);
   const index=retainedIndex>=0?retainedIndex:selection.index;
@@ -154,6 +162,9 @@ function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosti
   const { coordinator, snapshot: playback } = useFeedPlayback(muted, eligible&&publicationAuthorized, diagnosticContext,handoff,trace);
   const resources = useMemo(() => new TextResources(client, context, error => store.denyAccess(error)), [client, contextKey(context), store]);
   const selectedItem=snapshot.items[index];
+  const sourceKey=selectedItem?itemKey(selectedItem):'empty';
+  const videoSize=useVideoSize(playback.player,sourceKey,selectedItem?.width&&selectedItem.height?{width:selectedItem.width,height:selectedItem.height}:null,playback.hasFrame,playback.status);
+  const geometry=feedGeometry(width,height,videoSize);
   const initialCheckpoint=useRef(entry&&snapshot.resume?.restoredPublicationId===entry.publicationId?entry:
     restore&&snapshot.resume?.restoredPublicationId===selectedItem?.publicationId?restore:{positionSeconds:0,userPaused:false});
   const liveEntry=useRef({item:selectedItem,enabled:false});
@@ -172,9 +183,9 @@ function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosti
   useLayoutEffect(()=>{
     entryGate.update({key:`${playback.activation}:${selectedItem?itemKey(selectedItem):'empty'}`,player:playback.player,
       seconds:initialCheckpoint.current.positionSeconds,duration:playback.player?.durationSeconds?.()??0,
-      sourceReady:playback.status==='readyToPlay'&&playback.sourceLoaded&&!playback.restoring,
+      sourceReady:playback.status==='readyToPlay'&&playback.sourceLoaded&&!playback.restoring&&!!videoSize,
       hasFrame:playback.hasFrame,failed:playback.failed,error:playback.restoreError,empty:!selectedItem?.playbackUrl,enabled:liveEntry.current.enabled});
-  },[entryGate,playback,selectedItem,visible,eligible,publicationAuthorized]);
+  },[entryGate,playback,selectedItem,visible,eligible,publicationAuthorized,videoSize?.width,videoSize?.height]);
   useLayoutEffect(()=>{if(entryState.phase==='ready'&&entryGate.present()){onEntryPresented?.();coordinator.presentEntry();}},[entryGate,entryState.phase,coordinator,onEntryPresented]);
   useEffect(()=>{if(entryState.phase==='failed')coordinator.failEntry();},[entryState.phase,coordinator]);
   useEffect(()=>()=>entryGate.dispose(),[entryGate]);
@@ -187,6 +198,9 @@ function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosti
   const lastSelectedItem=useRef<FeedVideoItem|undefined>(undefined);
   const initialSelection=useRef(false);
   useLayoutEffect(()=>registerPlayback?.({capture:()=>{const saved=coordinator.capture();return entryGate.getSnapshot().phase==='presented'?saved:{...saved,...initialCheckpoint.current};},
+    checkpoint:()=>{const item=items.current[index];if(!item||entryGate.getSnapshot().phase!=='presented'||coordinator.getSnapshot().failed||coordinator.getSnapshot().restoreError
+      ||(sessionAuth.access&&(context.kind==='global'?!sessionAuth.access.publicValid(item):!sessionAuth.access.canView(item))))return;
+      return {...coordinator.capture(),uploadId:item.uploadId,productionUlid:item.productionUlid,creatorId:item.creator.id};},
     release:()=>{entryGate.dispose();coordinator.dispose();},handOff:coordinator.handOff,entryFailed:()=>entryGate.getSnapshot().phase==='failed',
     retryFailed:()=>coordinator.recoverFailed(canLoad),selectedId:()=>coordinator.getSnapshot().publicationId,
     retainOrigin:()=>{if(context.kind==='global')sessionAuth?.globalFeed.save(snapshot.items,index,snapshot.nextCursor,sessionAuth.access);}}),[coordinator,entryGate,registerPlayback,index,snapshot.items,snapshot.nextCursor]);
@@ -251,9 +265,9 @@ function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosti
   const showFollow=context.kind==='space' && ['group','channel'].includes(context.type) && followAuth.status==='authenticated' && !!followItem?.creator.id && !!onCreator;
   const showRecognition=context.kind==='global' && followAuth.status==='authenticated' && !!followItem?.creator.id && !!onCreator;
   const controlCount=(snapshot.items[index]?.creator.id && onCreator?1:0)+(context.kind==='global' && onLaunch?1:0)+(context.kind==='space' && onComments?2:0)+(snapshot.items[index]?.hasCaptions?1:0)+1;
-  const controlHeight=Math.min(controlCount*52-8+(context.kind==='space' && onComments?40:0)+(showFollow?44:0),Math.max(44,height-48));
+  const controlHeight=Math.min(controlCount*52-8+(context.kind==='space' && onComments?40:0)+(showFollow?44:0),Math.max(44,height-headerHeight-48));
   return (
-    <View style={styles.screen} onLayout={event => setHeight(event.nativeEvent.layout.height)}>
+    <View testID="feed-stage" style={styles.screen} onLayout={event => setLayout(event.nativeEvent.layout)}>
       <View style={{flex:1}} pointerEvents={covered?'none':'auto'} accessibilityElementsHidden={covered} importantForAccessibility={covered?'no-hide-descendants':'auto'}>
       {height > 0 && <FlatList
         ref={list}
@@ -270,11 +284,11 @@ function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosti
         showsVerticalScrollIndicator={false}
         getItemLayout={(_data, itemIndex) => ({ length: height, offset: height * itemIndex, index: itemIndex })}
         renderItem={({ item, index: rowIndex }) => (
-          <FeedCard item={item} height={height} onCreator={rowIndex===index?onCreator:undefined}
+          <FeedCard item={item} height={height} geometry={rowIndex===index?geometry:feedGeometry(width,height,item.width&&item.height?{width:item.width,height:item.height}:null)} onCreator={rowIndex===index?onCreator:undefined}
             resources={resources} active={rowIndex===index && textEligible} onStoryExpanded={rowIndex===index?setStoryExpanded:undefined}
             onTextHeight={rowIndex===index?setTextHeight:undefined}>
             {rowIndex === index && item.publicationId === playback.publicationId && item.playbackUrl && (
-              <VideoSurface onRetry={onRecover} coordinator={coordinator} snapshot={playback} posterUrl={item.posterUrl} onNext={next} />
+              <VideoSurface geometry={geometry} headerHeight={headerHeight} onRetry={onRecover} coordinator={coordinator} snapshot={playback} posterUrl={item.posterUrl} onNext={next} />
             )}
             {rowIndex === index && !item.playbackUrl && (
               <View style={styles.unavailable}><Action label="Next video" onPress={next} /></View>
@@ -320,8 +334,8 @@ function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosti
         </ScrollView>
       )}
       </View>
-      {covered&&<View style={StyleSheet.absoluteFill}><FeedLoadingSplash feedName={context.kind==='global'?'Global':context.name} error={entryState.error} onRetry={onRecover}/></View>}
-      {context.kind==='space'&&!publicationAuthorized&&visible&&<View style={[StyleSheet.absoluteFill,{backgroundColor:'#000'}]}>
+      {covered&&<View style={[StyleSheet.absoluteFill,{paddingTop:headerHeight}]}><FeedLoadingSplash feedName={context.kind==='global'?'Global':context.name} error={entryState.error} onRetry={onRecover}/></View>}
+      {context.kind==='space'&&!publicationAuthorized&&<View testID="feed-publication-mask" style={[StyleSheet.absoluteFill,{backgroundColor:'#000',paddingTop:headerHeight}]}>
         <Message title="Cannot verify video access" onRetry={()=>{void sessionAuth.access.check(context.spaceId);}}/>
       </View>}
     </View>
@@ -342,7 +356,7 @@ export function FeedFooter({ snapshot, store }: { snapshot: FeedSnapshot; store:
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#000000' },
-  toolbar: { paddingHorizontal:16, paddingVertical:8, gap:8, backgroundColor:'#000' },
+  toolbar: { position:'absolute',top:0,left:0,right:0,paddingHorizontal:16,paddingVertical:8,gap:8,backgroundColor:'rgba(0,0,0,0.35)' },
   headerActions: { flexDirection: 'row', gap: 8, flexWrap:'wrap', justifyContent:'center', paddingBottom:4 },
   mute: { position: 'absolute', right: CONTROL_LANE.right, bottom: 24, gap: 8, width: CONTROL_LANE.width },
   unavailable: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center' },

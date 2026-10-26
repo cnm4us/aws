@@ -41,8 +41,9 @@ export function useViewerFeed(context:FeedContext,restore?:FeedCheckpoint,entry?
       if(!cursor)trace?.mark('feed_ready');
       return result;
     };
-    const cached=context.kind==='space'&&entry?.preparedPage?validateLaunchEntry(entry.preparedPage,entry)
+    let cached=context.kind==='space'&&entry?.preparedPage?validateLaunchEntry(entry.preparedPage,entry)
       :context.kind==='global'&&restore?.publicationId?auth.globalFeed.take(restore.publicationId,auth.access):undefined;
+    if(cached&&restore&&validateOriginProduction(cached,restore).resume?.outcome==='unavailable')cached=undefined;
     const initial=new InitialFeed(async signal=>{
       return load(null,signal);
     });

@@ -16,7 +16,7 @@ test('actual large-text layouts preserve scalable action labels and reachable sc
    assert.equal(title.findAllByType('Image').length,2); // type icon and chooser chevron
    const name=title.findByType('Text');assert.notEqual(name.props.allowFontScaling,false);assert.equal(name.props.numberOfLines,2);
    const back=root.root.findAllByType('Pressable').find(n=>n.props.accessibilityLabel==='Back to profile');
-   assert.ok(back);assert.equal(back.findByType('Text').props.numberOfLines,undefined);assert.notEqual(back.findByType('Text').props.allowFontScaling,false);
+   assert.ok(back);assert.equal(back.findByType('Image').props.accessible,false);assert.equal(flatten(back.findByType('Image').props.style).width,24);
    await Test.act(async()=>root.update(R.createElement(PlaybackSettings,{visible:true,onClose:()=>{},preferences:{},snapshot:{},captionPreferences:{},captions:{ready:true}})));
    assert.ok(root.root.findByType('ScrollView').findAllByType('Text').some(n=>n.props.children==='Playback settings'));
    const radio=root.root.findAllByType('Pressable').find(n=>n.props.accessibilityRole==='radio');
