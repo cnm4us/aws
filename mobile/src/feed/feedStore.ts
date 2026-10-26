@@ -27,7 +27,25 @@ export class FeedStore {
   private visitedCursors = new Set<string>();
   private emptyAdvances = 0;
 
-  constructor(private readonly loadPage: PageLoader, private readonly onFailure: (error:unknown)=>void = ()=>{}) {}
+  constructor(private readonly loadPage: PageLoader, private readonly onFailure: (error:unknown)=>void = ()=>{},seed?:FeedPage) {
+    if(seed)this.state={...this.state,...seed,sessionId:1,initialLoading:false};
+  }
+  reconcileItems=(items:FeedVideoItem[])=>{
+    const replacements=new Map(items.map(i=>[i.publicationId,i]));
+    if(this.state.items.some(i=>replacements.has(i.publicationId)))this.publish({items:this.state.items.map(i=>replacements.get(i.publicationId)??i)});
+  };
+  revalidate=async()=>{
+    if(this.request)return;const request={controller:new AbortController(),promise:undefined as Promise<void>|undefined};this.request=request;
+    try{const page=await this.loadPage(null,request.controller.signal);if(this.request!==request||request.controller.signal.aborted)return;
+      // Preserve a visible selected row/time. A missing origin is a real new feed.
+      const missing=page.resume?.outcome==='unavailable';
+      this.publish({items:page.items,nextCursor:page.nextCursor,resume:page.resume,
+        ...(missing?{sessionId:this.state.sessionId+1}:{}),initialError:null,moreError:null,errorStatus:null});
+    }catch(error){if(this.request!==request||request.controller.signal.aborted)return;
+      if(error instanceof ApiError&&[401,403,404].includes(error.status??0))this.denyAccess(error);
+      else this.publish({moreError:error instanceof Error?error.message:'Cannot refresh feed.'});
+    }finally{if(this.request===request)this.request=null;}
+  };
 
   getSnapshot = () => this.state;
   subscribe = (listener: () => void) => {

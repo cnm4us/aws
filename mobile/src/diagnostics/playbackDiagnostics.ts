@@ -22,12 +22,18 @@ export type PlaybackDiagnosticEvent = PlayerErrorDetails & {
   scrolling?: boolean;
   userPaused?: boolean;
   reason?: 'nonselected' | 'ineligible';
-  failureKind?: 'native_error' | 'source_load' | 'startup_timeout' | 'unavailable_media' | 'player_allocation' | 'position_restore';
+  failureKind?: 'native_error' | 'source_load' | 'startup_timeout' | 'unavailable_media' | 'player_allocation' | 'position_restore' | 'entry_readiness';
   allocationFailure?: 'budget_exhausted' | 'native_creation';
 };
 
-export type NavigationTrace={mark:(stage:'chooser_ready'|'destination_resolved'|'account_verified'|'feed_ready'|'restore_ready'|'first_frame')=>void;finish:(outcome:'ready'|'failed'|'interrupted')=>void};
-type NavigationRecord={id:number;kind:'launch'|'space'|'global_return';startedAtMs:number;stages:Partial<Record<'chooser_ready'|'destination_resolved'|'account_verified'|'feed_ready'|'restore_ready'|'first_frame',number>>;outcome:'pending'|'ready'|'failed'|'interrupted'};
+export type AccessDiagnostic={
+  event:'hit'|'miss'|'coalesced'|'renew_started'|'renew_succeeded'|'renew_failed'|'expired'|'denied'|'http'|'recovery_started'|'recovery_succeeded'|'recovery_failed';
+  scope:'identity'|'space'|'publication'|'public'|'entry'|'follow'|'comments'|'text'|'profile'|'recovery';
+  ageMs?:number;remainingMs?:number;durationMs?:number;httpStatus?:number;outcome?:'ok'|'failed'|'cancelled';
+};
+
+export type NavigationTrace={mark:(stage:'chooser_ready'|'destination_resolved'|'account_verified'|'feed_ready'|'restore_ready'|'first_frame'|'access_ready'|'cache_ready'|'retained_ready'|'entry_revealed')=>void;finish:(outcome:'ready'|'failed'|'interrupted')=>void};
+type NavigationRecord={id:number;kind:'launch'|'space'|'global_return';startedAtMs:number;stages:Partial<Record<'chooser_ready'|'destination_resolved'|'account_verified'|'feed_ready'|'restore_ready'|'first_frame'|'access_ready'|'cache_ready'|'retained_ready'|'entry_revealed',number>>;outcome:'pending'|'ready'|'failed'|'interrupted'};
 
 type EventRecord = PlaybackDiagnosticEvent & { atMs: number; session: number };
 type SourceLoad = { startedAtMs: number; replaceResolvedMs: number | null; readyMs: number | null };
@@ -53,6 +59,7 @@ export class PlaybackDiagnostics {
   private events: EventRecord[] = [];
   private navigation:NavigationRecord[]=[];
   private navigationSerial=0;
+  private accessRecords:Array<AccessDiagnostic & {atMs:number}>=[];private droppedAccessRecords=0;
   private transitions: Transition[] = [];
   private liveBySession = new Map<number, number>();
   private allocations = 0;
@@ -83,7 +90,7 @@ export class PlaybackDiagnostics {
   // Keep in-flight/preloaded source timings and current ownership. Events for the
   // old activation cannot manufacture a partial transition in the new epoch.
   reset() {
-    this.navigation=[];
+    this.navigation=[];this.accessRecords=[];this.droppedAccessRecords=0;
     this.events = []; this.transitions = []; this.issues = [];
     this.allocations = 0; this.releases = 0; this.unexpectedPlayback = 0;
     this.droppedEvents = 0; this.droppedTransitions = 0; this.droppedIssues = 0;
@@ -91,6 +98,18 @@ export class PlaybackDiagnostics {
     this.peakPlayers = this.carriedPlayers;
     this.selectedSessions = new Set([...this.selectedSessions].filter(session => this.liveBySession.has(session)));
     this.sampleStartedAtMs = this.clock(); this.resetCount++;
+  }
+
+  accessEvent(input:AccessDiagnostic) {
+    // Construct an allowlisted record. Never spread transport data or errors.
+    if(!['hit','miss','coalesced','renew_started','renew_succeeded','renew_failed','expired','denied','http','recovery_started','recovery_succeeded','recovery_failed'].includes(input.event)
+      ||!['identity','space','publication','public','entry','follow','comments','text','profile','recovery'].includes(input.scope))return;
+    const row:AccessDiagnostic & {atMs:number}={event:input.event,scope:input.scope,atMs:this.clock()};
+    if(input.outcome&&['ok','failed','cancelled'].includes(input.outcome))row.outcome=input.outcome;
+    for(const key of ['ageMs','remainingMs','durationMs','httpStatus'] as const){const value=input[key];
+      if(typeof value==='number'&&Number.isFinite(value)&&value>=0)row[key]=Math.min(value,key==='httpStatus'?599:86400000);
+    }
+    this.accessRecords.push(row);if(this.accessRecords.length>200){this.accessRecords.shift();this.droppedAccessRecords++;}
   }
 
   navigationStart(kind:NavigationRecord['kind']):NavigationTrace {
@@ -173,7 +192,7 @@ export class PlaybackDiagnostics {
       sample: { startedAtMs: this.sampleStartedAtMs, resetCount: this.resetCount },
       generatedAt: new Date().toISOString(),
       clock: 'monotonic milliseconds',
-      note: 'First frame measures presentation readiness. Review progress and playing evidence separately. Interrupted, incomplete, and failed transitions remain in the records. sourceLoad times start at the load request; replaceResolvedMs measures source replacement completion, not buffered readiness. Navigation stages are cumulative from the tap, before feed selection; first_frame can precede seek completion. Ready requires frame and completed restoration. Transfers move ownership without counting a new allocation.'
+      note: 'First frame measures view readiness and can precede restoration or reveal. Review progress and playing evidence separately. Interrupted, incomplete, and failed transitions remain in the records. sourceLoad times start at the load request; replaceResolvedMs measures source replacement completion, not buffered readiness. Navigation stages are cumulative from the tap, before feed selection; entry_revealed additionally requires source readiness, completed restoration and exact paused decoded-target evidence. Physical image/audio confirmation is separate. Transfers move ownership without counting a new allocation.'
         + (this.resetCount ? ' Reset retains carriedPlayers and active source timings; carriedPlayers + allocations - releases equals livePlayers. New timings start at the next selection.' : ''),
       resources: { allocations: this.allocations, releases: this.releases,
         ...(this.resetCount ? { carriedPlayers: this.carriedPlayers } : {}),
@@ -192,6 +211,7 @@ export class PlaybackDiagnostics {
         all: timings(framed.map(row => row.firstFrameMs!)),
         preparedFrames: timings(framed.filter(row => row.prepared).map(row => row.firstFrameMs!)),
         coldFrames: timings(framed.filter(row => !row.prepared).map(row => row.firstFrameMs!)) },
+      access:this.accessRecords.map(row=>({...row})),droppedAccessRecords:this.droppedAccessRecords,
       navigation:this.navigation.map(row=>({...row,stages:{...row.stages}})),
       droppedEvents: this.droppedEvents, droppedTransitions: this.droppedTransitions,
       transitions: this.transitions.map(row => ({ ...row, sourceLoad: row.sourceLoad ? { ...row.sourceLoad } : undefined })), events: this.events.map(row => ({ ...row })),
@@ -205,7 +225,7 @@ export class PlaybackDiagnostics {
       .sort((a, b) => (b.firstFrameMs ?? Infinity) - (a.firstFrameMs ?? Infinity));
     const recent = transitions.slice(-5), outliers = slow.slice(0, 5);
     const included = new Set([...recent, ...outliers].map(row => `${row.session}:${row.activation}`));
-    return { ...report, navigation:report.navigation.slice(-5),omittedNavigationDetails:Math.max(0,report.navigation.length-5),reportKind: 'compact',
+    return { ...report, access:report.access.slice(-10),omittedAccessDetails:Math.max(0,report.access.length-10),navigation:report.navigation.slice(-5),omittedNavigationDetails:Math.max(0,report.navigation.length-5),reportKind: 'compact',
       note: `${report.note} Compact export includes the latest five transitions and up to five slow/cold/incomplete normal transitions; use Share full report for the complete retained history.`,
       omittedTransitionDetails: transitions.length - included.size,
       omittedEventDetails: events.length,

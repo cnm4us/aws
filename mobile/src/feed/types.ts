@@ -1,3 +1,4 @@
+import type { AccessProof } from '../auth/accessProof';
 export type FeedVideoItem = {
   publicationId: number;
   uploadId: number | null;
@@ -15,5 +16,5 @@ export type FeedVideoItem = {
   durationSeconds: number | null;
 };
 
-export type FeedPage = { items: FeedVideoItem[]; nextCursor: string | null;
+export type FeedPage = { access?:AccessProof;items: FeedVideoItem[]; nextCursor: string | null;
   resume?: {requestedPublicationId:number;restoredPublicationId:number|null;outcome:'restored'|'unavailable'} };

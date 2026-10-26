@@ -9,7 +9,7 @@ export class FollowStore {
   this.verification=new VerifiedRefresh(async signal=>{
    const verifiedAt=now(),revision=this.revision;await verify(signal);
    return {value:{summary:await loadFollow(client,ctx,signal),revision},verifiedAt};
-  },{protected:true,now,onError:e=>{if(followDenied(e))this.denied(e);}});
+  },{protected:true,retainOnTransientError:true,now,onError:e=>{if(followDenied(e))this.denied(e);}});
   this.verification.subscribe(()=>{
    const v=this.verification.getSnapshot();
    if(!v.value){this.generation++;this.write?.abort();this.write=null;this.publish({summary:null,authorized:false,checking:v.checking,busy:false,error:v.error?.message??null});}

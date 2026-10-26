@@ -1,3 +1,4 @@
+import { ApiError } from '../api/client';
 export type Verified<T> = { value: T; verifiedAt: number };
 export type RefreshSnapshot<T> = { value: T | undefined; checking: boolean; error: Error | null };
 export const verificationClock = () => performance.now();
@@ -15,7 +16,7 @@ export class VerifiedRefresh<T> {
   private deadline: number | null = null;
   private listeners = new Set<() => void>();
   constructor(private readonly load: (signal: AbortSignal, force: boolean) => Promise<Verified<T>>,
-    private readonly options: { protected: boolean; now?: () => number; onError?: (error: Error) => void }) {}
+    private readonly options: { protected: boolean; retainOnTransientError?:boolean; now?: () => number; onError?: (error: Error) => void }) {}
   private now = () => (this.options.now ?? verificationClock)();
   getSnapshot = () => this.state;
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
@@ -70,7 +71,13 @@ export class VerifiedRefresh<T> {
         return true;
       } catch (error) {
         if (generation !== this.generation || !this.active || request.signal.aborted) return false;
-        this.fail(error instanceof Error ? error : new Error('Cannot verify access. Reconnect and try again.'));
+        const failure=error instanceof Error?error:new Error('Cannot verify access. Reconnect and try again.');
+        const definite=error instanceof ApiError&&[401,403,404].includes(error.status??0);
+        if(this.options.retainOnTransientError&&quiet&&this.state.value!==undefined&&!definite&&this.deadline!==null&&this.now()<this.deadline){
+          this.publish({...this.state,checking:false,error:null});
+          const retry=error instanceof ApiError?(error.retryAfterSeconds??0)*1000:0;
+          this.renewTimer=setTimeout(()=>{void this.refresh(true);},Math.max(5000,retry));
+        }else this.fail(failure);
         return false;
       } finally { if (this.pending === pending) this.pending = null; }
     })();

@@ -15,7 +15,9 @@ async function main() {
   const call = async (path: string, headers: any = {}) => {
     const r = await fetch(base + path, { headers }); eq(r.headers.get('cache-control'), 'no-store');
     const isVtt = r.headers.get('content-type')?.startsWith('text/vtt');
-    return { status: r.status, body: isVtt ? await r.text() : await r.json() as any };
+    // Compare legacy text content independently of expiring identity transport metadata.
+    const raw:any=isVtt?await r.text():await r.json();const responseBody:any=!isVtt&&raw&&typeof raw==='object'?(({access,...domain})=>domain)(raw):raw;
+    return { status:r.status,body:responseBody };
   };
   const space = (label: string, id: number) => `/api/viewer/v1/spaces/${f.spaces[label]}/publications/${id}`;
   try {

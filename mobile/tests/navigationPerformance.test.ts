@@ -29,7 +29,7 @@ test('exact media transfer keeps one selected native lease and accounts real all
  a.togglePause();const saved=a.capture(),lease=a.handOff();assert.ok(lease);assert.equal(budget.count,1);assert.equal(players[0].playing,false);
  const b=new PlaybackCoordinator(make,d.session(),false,lease);b.setAppActive(true);b.setScreenEligible(false);
  b.restoreAt([{...item(3),spaceId:4}],0,saved);await flush();
- assert.equal(players.length,2);assert.equal(players[0].loads,1);assert.equal(players[0].seeks,0);assert.equal(players[0].muted,false);assert.equal(players[0].playing,false);
+ assert.equal(players.length,2);assert.equal(players[0].loads,1);assert.equal(players[0].seeks,0);assert.equal(players[0].muted,true);assert.equal(players[0].playing,false);
  b.setScreenEligible(true);assert.equal(players[0].playing,false);b.togglePause();assert.equal(players[0].playing,true);
  lease.dispose();assert.equal(players[0].released,false);a.select(item(9));assert.equal(players.length,2);
  b.dispose();assert.equal(budget.count,0);const report=d.report();assert.equal(report.resources.allocations,2);assert.equal(report.resources.releases,2);assert.equal(report.resources.livePlayers,0);assert.ok(report.resources.peakPlayers<=3);

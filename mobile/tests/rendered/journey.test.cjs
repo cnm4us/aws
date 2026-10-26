@@ -10,9 +10,11 @@ test('actual navigator: Menu replacements, selector, Refresh, profile journey an
  const space={id:9,ulid:null,name:'Personal',slug:'personal',type:'personal',relationship:'owner',subscribed:false};
  e.client={getJson:async path=>path.includes('/creators/')?{creator:{id:2,displayName:'Creator',handle:null,avatarUrl:null,bio:'Bio'},personalEntry:{state:'allowed',space}}:{personal:space,groups:[],channels:[]}};
  const loads=[];
- e.feedFactory=(context,restore)=>new FeedStore(async()=>{loads.push(context.kind==='global'?'global':'space:'+context.spaceId);return {
-  items:[1,2,3].map(id=>({publicationId:id,playbackUrl:`https://media.test/${id}`,creator:{id:2,displayName:'Creator'},posterUrl:null,hasCaptions:false})),nextCursor:null,
-  ...(restore?{resume:{requestedPublicationId:restore.publicationId,restoredPublicationId:restore.publicationId,outcome:'restored'}}:{})};});
+ e.feedFactory=(context,restore)=>new FeedStore(async()=>{loads.push(context.kind==='global'?'global':'space:'+context.spaceId);
+  const items=[1,2,3].map(id=>({publicationId:id,spaceId:context.kind==='space'?context.spaceId:90,uploadId:null,productionUlid:null,playbackUrl:`https://media.test/${id}`,creator:{id:2,displayName:'Creator',avatarUrl:null},posterUrl:null,hasCaptions:false}));
+  if(context.kind==='space'){const ticket=e.auth.access.ticket();e.auth.access.seed({...ticket,viewerId:1,identityUntil:ticket.startedAt+60000,spaceId:context.spaceId,spaceUntil:ticket.startedAt+60000,publications:items.map(item=>({item,until:ticket.startedAt+60000})),publicIds:[]});}
+  if(context.kind==='global'){const ticket=e.auth.access.ticket();e.auth.access.seedPage({items,nextCursor:null,access:{...ticket,publications:[],publicIds:items.map(i=>i.publicationId),publicUntil:ticket.startedAt+60000}});}
+  return {items,nextCursor:null,...(restore?{resume:{requestedPublicationId:restore.publicationId,restoredPublicationId:restore.publicationId,outcome:'restored'}}:{})};});
  function App(){return R.createElement(ViewerNavigator,{preferences:prefs,sound:R.useSyncExternalStore(prefs.subscribe,prefs.getSnapshot),captionPreferences:cap,captions:R.useSyncExternalStore(cap.subscribe,cap.getSnapshot)});}
  let root;
  const screen=()=>root.root.findAllByType('Screen').find(n=>n.props.focused);

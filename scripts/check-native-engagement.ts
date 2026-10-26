@@ -17,7 +17,8 @@ async function main(){
  const request=async(p:string,headers:Record<string,string>={},method='GET',body?:unknown)=>{
   const r=await fetch(base+p,{method,headers:{...headers,...(body!==undefined?{'Content-Type':'application/json'}:{})},...(body!==undefined?{body:JSON.stringify(body)}:{})});
   if(p.startsWith('/api/viewer/'))eq(r.headers.get('cache-control'),'no-store');
-  return {status:r.status,body:await r.json() as any};
+  // Keep native/cookie domain comparisons independent of expiring access metadata.
+  const raw=await r.json() as any;const {access,...domain}=raw;const responseBody:any=domain;return {status:r.status,body:responseBody};
  };
  const login=async(label:string)=>{const r=await request('/api/native/v1/session',{},'POST',f.users[label]);eq(r.status,201);tokens.push(r.body.token);return {authorization:`Bearer ${r.body.token}`};};
  const [initial]:any=await db.query('SELECT id,likes_count,comments_count,comments_enabled,visible_in_space FROM space_publications WHERE id IN (?,?)',[pub,f.publications.channel]);

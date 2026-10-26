@@ -1,3 +1,4 @@
+import { accessMetadata } from '../features/native-sessions/access';
 import { Router, type Request, type Response } from 'express';
 import * as sessions from '../features/native-sessions/service';
 
@@ -10,7 +11,7 @@ export function sendViewerError(res: Response, error: unknown) {
 }
 export function createNativeSessionRouter(deps = sessions) {
   const router=Router();
-  router.use((_req,res,next)=>{res.set('Cache-Control','no-store');next();});
+  router.use((_req,res,next)=>{res.locals.accessStartedAt=Date.now();res.set('Cache-Control','no-store');next();});
   router.use((req,res,next)=>{
     try {
       if (!deps.nativeEnabled()) throw new sessions.ViewerApiError(503,'native_unavailable');
@@ -24,11 +25,12 @@ export function createNativeSessionRouter(deps = sessions) {
       if (typeof email!=='string' || typeof password!=='string' || email.length>254 || password.length>1024 || !email.trim() || !password)
         throw new sessions.ViewerApiError(400,'invalid_body');
       await deps.consumeLoginLimit(email.trim().toLowerCase(),deps.requestTransport(req).ip);
-      res.status(201).json(await deps.createNativeSession(email.trim().toLowerCase(),password));
+      const session=await deps.createNativeSession(email.trim().toLowerCase(),password);
+      res.status(201).json({...session,access:accessMetadata(res.locals.accessStartedAt,{...session,source:'native'})});
     } catch(e) { sendViewerError(res,e); }
   });
   router.get('/',async(req,res)=>{
-    try { const p=await deps.resolveNativeSession(deps.readBearer(req)!); res.json({viewer:p.viewer,expiresAt:p.expiresAt}); }
+    try { const p=await deps.resolveNativeSession(deps.readBearer(req)!); res.json({viewer:p.viewer,expiresAt:p.expiresAt,access:accessMetadata(res.locals.accessStartedAt,p)}); }
     catch(e) { sendViewerError(res,e); }
   });
   router.delete('/',async(req,res)=>{

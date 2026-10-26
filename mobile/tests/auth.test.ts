@@ -143,9 +143,7 @@ test('API errors preserve auth/rate-limit status without exposing arbitrary resp
   const client=createApiClient(origin,{fetchImpl:async()=>new Response(JSON.stringify({error:'rate_limited',secret:'never display'}),{status:429,headers:{'Retry-After':'30'}})});
   await assert.rejects(client.getJson('/api/viewer/v1/feed/global'),(e:unknown)=>e instanceof ApiError && e.retryAfterSeconds===30 && !e.message.includes('secret'));
 });
-test('protected feed owns routine account cadence without suppressing explicit or foreground validation',async()=>{
- let calls=0;const h=harness({validate:async()=>{calls++;return session;}},record);await h.auth.restore();
- const one=h.auth.claimRoutineValidation(),two=h.auth.claimRoutineValidation();await h.auth.validateRoutine();assert.equal(calls,1);
- await h.auth.validate();assert.equal(calls,2);one();one();await h.auth.validateRoutine();assert.equal(calls,2);
- two();await h.auth.validateRoutine();assert.equal(calls,3);h.auth.dispose();
+test('routine access ownership is centralized and explicit validation still coalesces',async()=>{
+ const h=harness({},record);await h.auth.restore();assert.equal(typeof (h.auth as any).claimRoutineValidation,'undefined');
+ const a=h.auth.validate(),b=h.auth.validate();assert.equal(a,b);await a;h.auth.dispose();
 });

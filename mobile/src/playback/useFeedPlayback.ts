@@ -8,11 +8,13 @@ import { PlayerBudget } from './playerBudget';
 import type { NavigationTrace } from '../diagnostics/playbackDiagnostics';
 import type { PlayerHandoff } from './playerHandoff';
 import { createCaptionClock } from './captionClock';
+import { prepareReadinessEvidence,cancelReadinessEvidence } from './readinessEvidence';
 
 export interface NativePlayerPort extends PlayerPort { native: VideoPlayer; subscribeClock(listener: (seconds: number) => void): () => void }
 const playerBudget=new PlayerBudget(3);
 
-function createNativePlayer(): NativePlayerPort {
+// Shared by the internal readiness check so it cannot bypass the app budget.
+export function createNativePlayer(): NativePlayerPort {
   const lease=playerBudget.acquire(()=>createVideoPlayer(null),player=>player.release());
   const native=lease.value;
   try {
@@ -23,8 +25,11 @@ function createNativePlayer(): NativePlayerPort {
   const diagnosticInterval = viewerBuildPolicy.diagnostics ? .25 : 0;
   native.timeUpdateEventInterval = diagnosticInterval;
   const clock = createCaptionClock(native, diagnosticInterval);
+  let entryAttempt:string|undefined;
   return {
     native,
+    prepareEntry:(attempt,seconds)=>{entryAttempt=attempt;return prepareReadinessEvidence(native,attempt,seconds).finally(()=>{if(entryAttempt===attempt)entryAttempt=undefined;});},
+    cancelEntry:attempt=>{if(entryAttempt===attempt)entryAttempt=undefined;cancelReadinessEvidence(attempt);},
     load: url => native.replaceAsync({ uri: url, contentType: 'hls' }),
     play: () => native.play(),
     pause: () => native.pause(),
@@ -58,7 +63,7 @@ function createNativePlayer(): NativePlayerPort {
       const subscription = native.addListener('timeUpdate', ({ currentTime }) => listener(currentTime));
       return () => subscription.remove();
     } : undefined,
-    release: () => { clock.dispose(); lease.release(); },
+    release: () => {if(entryAttempt)cancelReadinessEvidence(entryAttempt);entryAttempt=undefined;clock.dispose();lease.release();},
   };
   } catch(error) {lease.release();throw error;}
 }
@@ -66,7 +71,7 @@ function createNativePlayer(): NativePlayerPort {
 export function useFeedPlayback(muted: boolean, eligible = true, context?:{feedContext:string;authGeneration:number},handoff?:PlayerHandoff<NativePlayerPort>,trace?:NavigationTrace) {
   const {coordinator,diagnostic} = useMemo(() => {
     const diagnostic=playbackDiagnostics?.session();
-    return {coordinator:new PlaybackCoordinator(createNativePlayer,diagnostic,muted,handoff,trace),diagnostic};
+    return {coordinator:new PlaybackCoordinator(createNativePlayer,diagnostic,muted,handoff,trace,true),diagnostic};
   }, []);
   const snapshot = useSyncExternalStore(coordinator.subscribe, coordinator.getSnapshot);
   useEffect(()=>{if(context)diagnostic?.({type:'context',...context});},[coordinator]);

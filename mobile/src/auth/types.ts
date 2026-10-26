@@ -1,5 +1,6 @@
+import type { AccessProof } from './accessProof';
 export type Viewer = { id: number; displayName: string | null };
-export type NativeSession = { token: string; expiresAt: string; viewer: Viewer };
+export type NativeSession = { confirmation?:AccessProof; token: string; expiresAt: string; viewer: Viewer };
 export type StoredSession = { version: 1; origin: string; token: string; expiresAt: string };
 export interface SessionStorage {
   load(): Promise<StoredSession | null>;

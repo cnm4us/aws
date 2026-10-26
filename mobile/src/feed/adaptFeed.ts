@@ -1,3 +1,4 @@
+import { adaptAccess } from '../auth/accessProof';
 import { ApiError } from '../api/client';
 import type { FeedPage, FeedVideoItem } from './types';
 import type { FeedContext } from './context';
@@ -91,7 +92,7 @@ export function adaptViewerFeedPage(value: unknown, expected: FeedContext, ancho
     if(!resume || resume.requestedPublicationId!==anchor || !['restored','unavailable'].includes(String(resume.outcome))
       || (resume.outcome==='restored' ? resume.restoredPublicationId!==anchor || !items.some(i=>i.publicationId===anchor) : resume.restoredPublicationId!==null))
       throw new ApiError('The server returned an unexpected return position. Please try again.');
-    return {items,nextCursor:page.nextCursor || null,resume:{requestedPublicationId:anchor,restoredPublicationId:resume.restoredPublicationId as number|null,outcome:resume.outcome as 'restored'|'unavailable'}};
+    return {...(adaptAccess(value,items,expected)?{access:adaptAccess(value,items,expected)}:{}),items,nextCursor:page.nextCursor || null,resume:{requestedPublicationId:anchor,restoredPublicationId:resume.restoredPublicationId as number|null,outcome:resume.outcome as 'restored'|'unavailable'}};
   }
-  return {items,nextCursor:page.nextCursor || null};
+  return {...(adaptAccess(value,items,expected)?{access:adaptAccess(value,items,expected)}:{}),items,nextCursor:page.nextCursor || null};
 }

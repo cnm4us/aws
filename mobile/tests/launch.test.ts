@@ -60,3 +60,21 @@ test('source creator mismatch in a fresh destination resolve masks old chooser d
  let missing=0;const store=new LaunchStore({getJson:async path=>path.includes('?')?page:{...resolved,creator:{...creator,id:3}}},100,ulid,()=>{},()=>missing++,2);
  await store.refresh();assert.equal(store.getSnapshot().creator?.id,2);assert.equal(await store.enter(12),null);assert.equal(missing,1);assert.equal(store.getSnapshot().creator,null);assert.deepEqual(store.getSnapshot().items,[]);
 });
+
+test('combined entry preparation is bounded, coalesces the tapped request and cannot enter after close',async()=>{
+ const destinations=[12,13,14].map(id=>({...destination,space:{...destination.space,id},publicationId:205+id-12}));
+ const gates=new Map<number,{resolve:(v:unknown)=>void;signal?:AbortSignal}>(),paths:string[]=[];
+ const client={getJson:async(path:string,signal?:AbortSignal)=>{
+  paths.push(path);if(!path.includes('include=entry'))return {...page,items:destinations};
+  const id=Number(/spaces\/(\d+)/.exec(path)![1]);return new Promise(r=>gates.set(id,{resolve:r,signal}));
+ }};
+ const entry=(id:number)=>{const pub=205+id-12;return {...resolved,space:{...destination.space,id},publicationId:pub,entry:{context:{kind:'space',space:{id}},
+  items:[{publicationId:pub,spaceId:id,uploadId:1,productionUlid:ulid,playbackUrl:'https://media.test/shared',creator:{id:2,displayName:'Creator',avatarUrl:null}}],nextCursor:null,
+  resume:{requestedPublicationId:pub,restoredPublicationId:pub,outcome:'restored'}}};};
+ const store=new LaunchStore(client,100,ulid,()=>{},undefined,2,()=>true);await store.refresh();store.prepareEntries([12,13,14]);
+ assert.equal(gates.size,2);const pending=store.enter(12);assert.equal(paths.filter(p=>p.includes('/12?')).length,1);
+ gates.get(12)!.resolve(entry(12));assert.equal((await pending)?.entry?.items[0].publicationId,205);
+ await store.enter(12);assert.equal(paths.filter(p=>p.includes('/12?')).length,1);
+ const next=store.enter(14);assert.equal(gates.get(13)!.signal?.aborted,false); // Oldest completed entry is evicted first.
+ store.cancel();gates.get(14)!.resolve(entry(14));assert.equal(await next,null);store.clear();
+});

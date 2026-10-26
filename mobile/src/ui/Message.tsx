@@ -1,4 +1,4 @@
-import { ActivityIndicator, Pressable, StyleSheet, Text, ScrollView, View } from 'react-native';
+import { Pressable, StyleSheet, Text, ScrollView, View } from 'react-native';
 
 export function Action({ label, onPress, disabled = false }: { label: string; onPress: () => void; disabled?: boolean }) {
   return (
@@ -9,12 +9,12 @@ export function Action({ label, onPress, disabled = false }: { label: string; on
   );
 }
 
-export function Message({ title, message, busy, onRetry, scrollable = true }: {
-  title: string; message?: string; busy?: boolean; onRetry?: () => void; scrollable?: boolean;
+export function Message({ title, message, busy, busyLabel, onRetry, scrollable = true }: {
+  title: string; message?: string; busy?: boolean; busyLabel?: string; onRetry?: () => void; scrollable?: boolean;
 }) {
   const content = <>
-      {busy && <ActivityIndicator color="#ffffff" size="large" />}
-      <Text style={styles.title} accessibilityRole="header">{title}</Text>
+      <Text style={styles.title} accessibilityRole="header" accessibilityState={busy?{busy:true}:undefined}>{title}</Text>
+      {busy && busyLabel && <Text style={styles.body}>{busyLabel}</Text>}
       {message && <Text style={styles.body}>{message}</Text>}
       {onRetry && <Action label="Try again" onPress={onRetry} />}
   </>;

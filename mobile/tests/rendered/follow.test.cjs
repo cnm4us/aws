@@ -1,5 +1,5 @@
 const assert=require('node:assert/strict'),test=require('node:test');
-const {bundle,React:R,Test,flatten}=require('./harness.cjs');
+const {bundle,React:R,Test,flatten,visible}=require('./harness.cjs');
 async function setup(t,otherCreator=false){
  t.mock.timers.enable({apis:['setTimeout','setInterval']});let now=0;t.mock.method(performance,'now',()=>now);
  const {ViewerNavigator,AuthStore,PlaybackPreferences,CaptionPreferences,e}=await bundle(`export {ViewerNavigator} from './src/navigation/ViewerNavigator';export {AuthStore} from './src/auth/authStore';export {PlaybackPreferences} from './src/preferences/playbackPreferences';export {CaptionPreferences} from './src/preferences/captionPreferences';`,true,true,true);
@@ -7,6 +7,8 @@ async function setup(t,otherCreator=false){
  e.auth=new AuthStore('https://api.test',{login:async()=>session,validate:async()=>{e.validations++;return session;},revoke:async()=>{}},{load:async()=>null,save:async()=>{},clear:async()=>{}});e.validations=0;await e.auth.restore();await e.auth.signIn('test@example.invalid','test');
  const space=id=>({id,name:id===12?'Group':id===13?'Channel':'Personal',type:id===12?'group':id===13?'channel':'personal',ulid:null,slug:`space-${id}`,relationship:'member',subscribed:false});
  e.paths=[];e.follows={};e.writes=0;e.globalOtherCreator=otherCreator;
+ e.makeEntry=(s,pub)=>({context:{kind:'space',space:s},items:[pub,pub+1,pub+2].map(id=>({publicationId:id,spaceId:s.id,productionUlid:null,uploadId:1,playbackUrl:`https://media.test/${id}`,posterUrl:null,creator:{id:2,displayName:'Creator 2',avatarUrl:null},hasStory:false,hasCaptions:false})),nextCursor:null,resume:{requestedPublicationId:pub,restoredPublicationId:pub,outcome:'restored'}});
+ e.serverAccess=true;
  e.fetch=async(url,options={})=>{
   const u=new URL(url),p=u.pathname,method=options.method||'GET';e.paths.push({path:p,method});let data,status=200;
   const response=()=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json'}});
@@ -37,10 +39,10 @@ async function setup(t,otherCreator=false){
  const prefs=new PlaybackPreferences({getItem:async()=>null,setItem:async()=>{}}),captions=new CaptionPreferences({getItem:async()=>null,setItem:async()=>{}});await prefs.hydrate();await captions.hydrate();let root;
  function App(){return R.createElement(ViewerNavigator,{preferences:prefs,sound:R.useSyncExternalStore(prefs.subscribe,prefs.getSnapshot),captionPreferences:captions,captions:R.useSyncExternalStore(captions.subscribe,captions.getSnapshot)});}
  await Test.act(async()=>{root=Test.create(R.createElement(App));});
- const screen=()=>root.root.findAllByType('Screen').find(n=>n.props.focused),buttons=()=>screen().findAllByType('Pressable'),labels=()=>buttons().map(n=>n.props.accessibilityLabel),texts=()=>screen().findAllByType('Text').map(n=>n.props.children).flat();
+ const screen=()=>root.root.findAllByType('Screen').find(n=>n.props.focused),buttons=()=>screen().findAllByType('Pressable').filter(visible),labels=()=>buttons().map(n=>n.props.accessibilityLabel),texts=()=>screen().findAllByType('Text').map(n=>n.props.children).flat();
  const press=async label=>{const button=buttons().find(n=>typeof label==='string'?n.props.accessibilityLabel===label:label.test(n.props.accessibilityLabel));assert.ok(button,String(label));assert.ok(!button.props.disabled,`${label} disabled`);await Test.act(async()=>button.props.onPress());};
  const back=async()=>{await Test.act(async()=>screen().props.navigation.goBack());};
- const layout=async()=>{await Test.act(async()=>screen().findAllByType('View').find(n=>n.props.onLayout)?.props.onLayout({nativeEvent:{layout:{height:600}}}));};
+ const layout=async()=>{await Test.act(async()=>screen().findAllByType('View').filter(visible).find(n=>n.props.onLayout)?.props.onLayout({nativeEvent:{layout:{height:600}}}));};
  const enter=async(name='Group')=>{await layout();await press(/Choose space/);await press(name);await layout();};
  const app=async status=>{await Test.act(async()=>{e.state=status;e.listeners.forEach(fn=>fn(status));});};
  const tick=async ms=>{now+=ms;await Test.act(async()=>t.mock.timers.tick(ms));};
@@ -66,7 +68,7 @@ test('actual nested Launch/group Creator/personal visit never inherits the outer
 });
 test('actual Follow owns quiet renewal and masks contextual fields on background/denial while public identity stays',async t=>{
  const h=await setup(t);await h.enter();await h.press("View Creator 2's profile");const before=h.e.validations,feedReads=h.e.paths.filter(p=>p.path.endsWith('/feed')).length;
- await h.tick(45_000);assert.ok(h.labels().includes('Follow in Group'));assert.equal(h.e.validations,before+1);assert.equal(h.e.paths.filter(p=>p.path.endsWith('/feed')).length,feedReads);
+ await h.tick(45_000);assert.ok(h.labels().includes('Follow in Group'));assert.equal(h.e.validations,before);assert.equal(h.e.paths.filter(p=>p.path.endsWith('/feed')).length,feedReads);
  await h.app('background');assert.equal(h.labels().some(x=>/Follow in/.test(x)),false);assert.equal(h.e.players.some(p=>p.playing),false);
  await h.app('active');assert.ok(h.labels().includes('Follow in Group'));h.e.denied=true;await h.tick(45_000);assert.equal(h.labels().some(x=>/Follow in/.test(x)),false);assert.ok(h.texts().includes('Public bio'));assert.equal(h.e.auth.getSnapshot().status,'authenticated');
  h.e.denied=false;await h.press('Refresh Follow status');assert.ok(h.labels().includes('Follow in Group'));
@@ -100,7 +102,7 @@ test('selected feed Follow updates here, profile and revisit without changing pl
 });
 test('feed Follow shares account renewal owner and masks background or expired selected proof',async t=>{
  const h=await setup(t);await h.enter();const before=h.e.validations;
- await h.tick(45_000);assert.equal(h.e.validations,before+1);assert.ok(h.labels().includes('Follow Creator 2 in Group'));
+ await h.tick(45_000);assert.equal(h.e.validations,before);assert.ok(h.labels().includes('Follow Creator 2 in Group'));
  await h.app('background');assert.equal(h.labels().includes('Follow Creator 2 in Group'),false);assert.equal(h.e.players.some(p=>p.playing),false);
  await h.app('active');assert.ok(h.labels().includes('Follow Creator 2 in Group'));
  h.e.holdRead=true;await h.tick(45_000);assert.ok(h.labels().includes('Follow Creator 2 in Group'));

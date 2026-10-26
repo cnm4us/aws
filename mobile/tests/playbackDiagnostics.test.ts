@@ -256,3 +256,12 @@ test('transferring ownership ends the old live source timing while retaining its
  old({type:'selection',publicationId:1,activation:2});
  const report=d.report();assert.deepEqual(report.transitions[0].sourceLoad,{startedAtMs:0,replaceResolvedMs:10,readyMs:20});assert.equal(report.transitions[1].sourceLoad,undefined);assert.equal(report.resources.allocations,1);assert.equal(report.resources.releases,0);assert.equal(report.resources.livePlayers,1);assert.equal(report.resources.peakPlayers,1);
 });
+
+test('access diagnostics are bounded, numeric and allowlisted without tokens or URLs',()=>{
+ const d=new PlaybackDiagnostics(()=>10);
+ for(let n=0;n<205;n++)d.accessEvent({event:'http',scope:'publication',durationMs:n,httpStatus:503,token:'private-token',url:'https://private.invalid',members:['private']} as any);
+ const report=d.report();assert.equal(report.access.length,200);assert.equal(report.droppedAccessRecords,5);
+ assert.equal(JSON.stringify(report).includes('private'),false);assert.equal(d.shareReport().access.length,10);assert.equal(d.shareReport().omittedAccessDetails,190);
+ const snapshot=report.access[0].durationMs;report.access[0].durationMs=999;assert.equal(d.report().access[0].durationMs,snapshot);
+ d.reset();assert.equal(d.report().access.length,0);assert.equal(d.report().droppedAccessRecords,0);
+});

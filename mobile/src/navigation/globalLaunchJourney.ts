@@ -3,7 +3,7 @@ import type { LaunchResolved } from '../spaces/launchApi';
 import type { FeedContext } from '../feed/context';
 import type { FeedPage } from '../feed/types';
 import { ApiError } from '../api/client';
-export type LaunchEntry={publicationId:number;productionUlid:string|null;positionSeconds:number;userPaused:boolean;spaceId:number;creatorId?:number};
+export type LaunchEntry={preparedPage?:FeedPage;publicationId:number;productionUlid:string|null;positionSeconds:number;userPaused:boolean;spaceId:number;creatorId?:number};
 export type LaunchOrigin=FeedCheckpoint & {productionUlid:string|null;creatorId?:number|null};
 export class GlobalLaunchJourney {
   private state={generation:0,origin:null as LaunchOrigin|null,destination:null as LaunchResolved|null,sourceUnavailable:false};
@@ -16,7 +16,7 @@ export class GlobalLaunchJourney {
     const origin=this.state.origin;
     if(!origin || generation!==this.state.generation || origin.publicationId!==result.sourcePublicationId || origin.productionUlid!==null && origin.productionUlid!==result.productionUlid || origin.creatorId!==undefined && origin.creatorId!==result.creator.id)return null;
     this.publish({destination:result});
-    return {context:{kind:'space',spaceId:result.space.id,name:result.space.name,type:result.space.type},entry:{publicationId:result.publicationId,productionUlid:result.productionUlid,spaceId:result.space.id,creatorId:result.creator.id,
+    return {context:{kind:'space',spaceId:result.space.id,name:result.space.name,type:result.space.type},entry:{...(result.entry?{preparedPage:result.entry}:{}),publicationId:result.publicationId,productionUlid:result.productionUlid,spaceId:result.space.id,creatorId:result.creator.id,
       positionSeconds:origin.productionUlid!==null && origin.productionUlid===result.productionUlid?origin.positionSeconds:0,userPaused:origin.userPaused}};
   };
   missing=(generation:number)=>{if(generation===this.state.generation)this.publish({sourceUnavailable:true});};

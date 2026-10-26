@@ -1,5 +1,5 @@
 import { useLayoutEffect, useMemo, useState, useSyncExternalStore } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { TextResources } from './resources';
 import { VerifiedRefresh } from '../auth/verifiedRefresh';
 
@@ -31,7 +31,7 @@ export function StoryPanel({ publicationId, preview, resources, active, height, 
     </Pressable>
     {expanded ? <ScrollView style={{ maxHeight: Math.max(80, height * .45) }} nestedScrollEnabled
       onTouchStart={event => event.stopPropagation()}>
-      {state.busy ? <ActivityIndicator color="#fff" accessibilityLabel="Loading story" /> : state.error ?
+      {state.busy ? <View style={styles.loading}><Text style={styles.text}>Loading story</Text></View> : state.error ?
         <View><Text style={styles.text} accessibilityRole="alert">{state.error}</Text>
           <Pressable accessibilityRole="button" accessibilityLabel="Retry story" onPress={() => setAttempt(n => n + 1)} style={styles.button}><Text style={styles.action}>Retry story</Text></Pressable></View> :
         <Text style={styles.text} selectable>{state.text?.trim() ? state.text : 'No story.'}</Text>}
@@ -42,5 +42,6 @@ const styles = StyleSheet.create({
   panel: { gap: 4, backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 12, paddingHorizontal: 10, paddingBottom: 8 },
   button: { minHeight: 44, paddingVertical: 8, justifyContent: 'center' },
   action: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  loading: { alignItems: 'center', gap: 8, paddingVertical: 8 },
   text: { color: '#fff', fontSize: 16, lineHeight: 23 },
 });

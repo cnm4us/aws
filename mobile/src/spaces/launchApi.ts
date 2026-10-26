@@ -1,8 +1,11 @@
+import { adaptViewerFeedPage } from '../feed/adaptFeed';
+import { stampResponse,responseEvidence } from '../auth/accessProof';
+import type { FeedPage } from '../feed/types';
 import { ApiError, type ApiClient } from '../api/client';
 export type LaunchCreator={id:number;displayName:string;avatarUrl:string|null;bio:string|null};
 export type LaunchDestination={space:{id:number;name:string;type:'group'|'channel';description:string|null};publicationId:number};
 export type LaunchPage={sourcePublicationId:number;productionUlid:string|null;creator:LaunchCreator;items:LaunchDestination[];nextCursor:string|null};
-export type LaunchResolved=Omit<LaunchPage,'items'|'nextCursor'> & LaunchDestination;
+export type LaunchResolved=Omit<LaunchPage,'items'|'nextCursor'> & LaunchDestination & {entry?:FeedPage};
 const object=(v:unknown):Record<string,unknown>|null=>v!==null && typeof v==='object' && !Array.isArray(v)?v as Record<string,unknown>:null;
 const id=(v:unknown):v is number=>typeof v==='number' && Number.isSafeInteger(v) && v>0;
 const invalid=()=>new ApiError('The server returned unexpected space destinations. Please try again.');
@@ -35,13 +38,20 @@ export function adaptLaunchPage(value:unknown,expectedId:number,ulid:string|null
 }
 export function adaptLaunchResolved(value:unknown,expectedId:number,ulid:string|null,spaceId:number,creatorId?:number|null):LaunchResolved {
   const v=object(value);if(!v)throw invalid();const d=destination(v);
-  if(d.space.id!==spaceId)throw invalid();return {...source(v,expectedId,ulid,creatorId),...d};
+  if(d.space.id!==spaceId)throw invalid();
+  let entry:FeedPage|undefined;
+  if(v.entry!==undefined){const ticket=responseEvidence(value);if(ticket)stampResponse(v.entry,ticket);
+    entry=adaptViewerFeedPage(v.entry,{kind:'space',spaceId,name:d.space.name,type:d.space.type},d.publicationId);
+    const item=entry.items.find(i=>i.publicationId===d.publicationId);
+    if(!item||item.productionUlid!==v.productionUlid||item.creator.id!==object(v.creator)?.id)throw invalid();
+  }
+  return {...source(v,expectedId,ulid,creatorId),...d,...(entry?{entry}:{})};
 }
 export const launchPath=(sourceId:number)=>`/api/viewer/v1/feed/global/publications/${sourceId}/spaces`;
 export async function fetchLaunchPage(client:Pick<ApiClient,'getJson'>,sourceId:number,ulid:string|null,signal:AbortSignal,cursor:string|null=null,creatorId?:number|null) {
   const query=new URLSearchParams({limit:'20'});if(cursor)query.set('cursor',cursor);
   return adaptLaunchPage(await client.getJson(`${launchPath(sourceId)}?${query}`,signal),sourceId,ulid,creatorId);
 }
-export async function resolveLaunch(client:Pick<ApiClient,'getJson'>,sourceId:number,ulid:string|null,spaceId:number,signal?:AbortSignal,creatorId?:number|null) {
-  return adaptLaunchResolved(await client.getJson(`${launchPath(sourceId)}/${spaceId}`,signal),sourceId,ulid,spaceId,creatorId);
+export async function resolveLaunch(client:Pick<ApiClient,'getJson'>,sourceId:number,ulid:string|null,spaceId:number,signal?:AbortSignal,creatorId?:number|null,includeEntry=false) {
+  return adaptLaunchResolved(await client.getJson(`${launchPath(sourceId)}/${spaceId}${includeEntry?'?include=entry':''}`,signal),sourceId,ulid,spaceId,creatorId);
 }

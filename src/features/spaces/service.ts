@@ -72,21 +72,34 @@ export async function getMySpaces(userId: number) {
   return { personal, global, groups, channels }
 }
 
-export async function canViewSpaceFeed(space: SpaceRow, userId: number, db: Queryable = getPool()): Promise<boolean> {
-  const banned = await repo.isBannedFromSpace(space.id, userId, db)
-  if (banned) return false
+// One policy for ordinary checks and reusable viewer confirmations. Deadlines
+// are optional so legacy callers do not acquire additional lease-only SQL work.
+async function spaceViewDecision(space: SpaceRow, userId: number, db: Queryable, timed: boolean) {
+  const denied = { allowed: false, validUntil: 0, publicationValidUntil: 0 }
+  if (await repo.isBannedFromSpace(space.id, userId, db)) return denied
   const checker = await resolveChecker(userId, db)
-  const siteAdmin = await can(userId, PERM.VIDEO_DELETE_ANY, { checker })
-  if (siteAdmin) return true
-  if (space.owner_user_id != null && space.owner_user_id === userId) return true
-  if (await isMember(db, space.id, userId)) return true
-  // Personal content requires explicit authority. Public flags and following /
-  // subscription relationships are not invitations into someone's personal space.
-  if (space.type === 'personal') return false
-  const settings = parseSettings(space)
-  if (settingsAllowPublicView(settings)) return true
-  if (await repo.hasActiveSubscription(space.id, userId, db)) return true
-  return false
+  const privileged = await can(userId, PERM.VIDEO_DELETE_ANY, { checker })
+    || space.owner_user_id === userId || await isMember(db, space.id, userId)
+  const publicView = space.type !== 'personal' && settingsAllowPublicView(parseSettings(space))
+  if (!privileged && space.type === 'personal') return denied
+  if (!privileged && !publicView && !await repo.hasActiveSubscription(space.id, userId, db)) return denied
+  if (!timed) return { allowed: true, validUntil: Infinity, publicationValidUntil: Infinity }
+  const validUntil = await repo.nextBanStart(space.id, userId, db)
+  if (privileged) return { allowed: true, validUntil, publicationValidUntil: validUntil }
+  const subscriptionUntil = await repo.subscriptionValidUntil(space.id, userId, db)
+  // Public nonmembers can read public rows, but members-only rows may rely on
+  // a subscription. Expiry must bound that publication proof too.
+  return { allowed: true, validUntil: publicView ? validUntil : Math.min(validUntil, subscriptionUntil),
+    publicationValidUntil: Math.min(validUntil, subscriptionUntil) }
+}
+export async function canViewSpaceFeed(space: SpaceRow, userId: number, db: Queryable = getPool()): Promise<boolean> {
+  return (await spaceViewDecision(space, userId, db, false)).allowed
+}
+export async function confirmedSpaceView(spaceId: number, userId: number, db: Queryable = getPool()) {
+  const space = await loadSpaceOrThrow(spaceId, db)
+  const decision = await spaceViewDecision(space, userId, db, true)
+  if (!decision.allowed) throw new ForbiddenError('forbidden')
+  return { space, ...decision }
 }
 
 // Helper: load a space or throw a domain error with legacy code for route shape compatibility

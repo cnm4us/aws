@@ -1,5 +1,7 @@
 # Native component checks
 
+Plan177 uses controlled source/first-frame/native target evidence for production entry and its diagnostic comparison. Actual navigator tests cover named opaque splashes, silence/hidden controls before reveal, diagnostics enabled/disabled, stable destination VideoView identity at reveal, fresh native pools on actual feed changes, scalar paused/playing returns, full3-player within-feed windows, exact Launch target validation through failed Retry, stale evidence and listener/watch cleanup. Launch → Close preserves the original player. These ports do not establish physical iOS rendering or audible quality; accepted build27/28 readiness evidence and final fresh-player phone acceptance remain separate gates. Full current suites pass227 unit/71 rendered tests.
+
 Run from `mobile/` with the pinned Node version and installed lockfile:
 
 ```sh
@@ -33,3 +35,6 @@ The avatar Follow revision checks gray/yellow/green precedence, plus-only feed w
 Global recognition additionally exercises yellow/no plus after contextual Follow, gray after the last contextual Unfollow and return, profile entry without a Global Follow card, selected-only read requests, neutral background/expiry/error, ignored late creator response, continued public playback and anonymous/personal absence. These remain controlled native-port cases; signed-phone color/return observation is separate.
 
 The navigation-performance revision runs the actual feed loader together with the access hook: one selected-source prepared Launch list, one initial account/feed authorization, exact-media player transfer with manual pause/time retained, fresh Global return, protected denial and background during a pending entry. Different media still loads normally. Native AVPlayer reattachment/frame presentation and measured phone latency require the signed build23 observation; controlled ports establish ownership and request counts.
+
+
+Plan176 suites opt into fake-server `access` envelopes through `e.serverAccess` while retaining actual client adapters, AuthStore, shared manager, feed stores and native coordinator. Separate real SQL/mounted API checks qualify that protocol. Protected renewal tests cover45s renewal,60s expiry/hung cancellation, transient grace, scoped denial, background masking, unconfirmed neighbor loading, optional captions, actual failed-source saved-session recovery and source replacement with manual-pause/time preservation. Comments tests bound draft retention to the original deadline; navigation tests delay Global revalidation to prove retained presentation precedes the response. None of these controlled ports establishes physical iPhone latency or native-memory performance.

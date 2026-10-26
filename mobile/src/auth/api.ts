@@ -1,3 +1,4 @@
+import { adaptAccess } from './accessProof';
 import { createApiClient, ApiError } from '../api/client';
 import type { NativeSession, NativeSessionApi, Viewer } from './types';
 
@@ -6,7 +7,7 @@ function identity(value: unknown) {
   if (!data?.viewer || !Number.isSafeInteger(data.viewer.id) || data.viewer.id<=0 ||
     !(typeof data.viewer.displayName==='string' || data.viewer.displayName===null) ||
     typeof data.expiresAt!=='string' || !Number.isFinite(Date.parse(data.expiresAt))) throw new ApiError('The server returned an invalid session.');
-  return {expiresAt:data.expiresAt,viewer:{id:data.viewer.id,displayName:data.viewer.displayName}};
+  return {confirmation:adaptAccess(value),expiresAt:data.expiresAt,viewer:{id:data.viewer.id,displayName:data.viewer.displayName}};
 }
 export function createNativeSessionApi(baseUrl: string, fetchImpl?: typeof fetch): NativeSessionApi {
   const client=(token?: string)=>createApiClient(baseUrl,{fetchImpl,getHeaders:():Record<string,string>=>token?{Authorization:`Bearer ${token}`}:{}});

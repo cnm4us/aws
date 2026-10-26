@@ -4,7 +4,7 @@ Status: Active
 
 Created: 2026-10-24
 
-Implementation and the subsequent revision are authorized. A–D are Complete for the build16 baseline; R1–R3 are Complete for revised-source host/API/browser gates. R4–R5 are Complete for the avatar plus/gray-yellow-green and Global yellow-recognition host/API/browser revisions. R6 navigation optimization is implemented and host/signed-artifact qualified; build23 focused phone qualification is pending. E is In Progress: build17 functional sequences and build18 outlines/usability accepted; build20 contextual colors accepted as stated; build21 signed artifact verified and focused Global recognition phone sequence accepted; remaining E checks pending; F Pending. Earlier build16 observations do not qualify revised UI. User requested a checkpoint commit on2026-10-25 before planning shared background access renewal; commit preparation in progress, no push requested.
+Implementation and the subsequent revision are authorized. A–D are Complete for the build16 baseline; R1–R3 are Complete for revised-source host/API/browser gates. R4–R5 are Complete for the avatar plus/gray-yellow-green and Global yellow-recognition host/API/browser revisions. R6 navigation optimization is implemented and host/signed-artifact qualified; build23 focused phone qualification is pending. E is In Progress: build17 functional sequences and build18 outlines/usability accepted; build20 contextual colors accepted as stated; build21 signed artifact verified and focused Global recognition phone sequence accepted; remaining E checks pending; F Pending. Earlier build16 observations do not qualify revised UI. User requested a checkpoint commit on2026-10-25 before planning shared background access renewal; checkpoint committed as `407fe73`; not pushed. Plan176 shared-access/navigation implementation now passes host gates; its build24 signed artifact is verified, phone qualification pending. E/F remain open.
 
 ## Feature Reference
 
@@ -361,6 +361,8 @@ Acceptance: a permitted discovery path explains and resolves the actual space re
 Immediate UI revision assumes no new dependency, credential scope, relationship schema, feed ranking or media-delivery change. Actual entry-workflow/provider/schema choices require the follow-on inventory. This documentation revision is limited to this plan, index and roadmap; previously implemented product files remain untouched.
 
 ## Change Log
+
+- `407fe73` — 2026-10-25 checkpoint: contextual Follow/recognition, Launch introductions/overlay, native navigation reuse, tests and build23 investigation committed. Precommit source identity matches verified build23; whitespace checks pass and agent-doc findings remain the known baseline. E/F phone performance/recovery/sign-out/scoped cleanup remain open. Next: investigate and draft [Plan176](plan_176.md); no new access-cache implementation or push.
 - 2026-10-25 — User requested a checkpoint commit of current Plan175 implementation/investigation before a new detailed access-renewal plan. E/F remain open; build23 phone timing is not accepted. No new access-cache implementation or push authorized by this checkpoint.
 
 - 2026-10-24 — User authorized avatar plus/gray-yellow-green Follow revision. R4 In Progress; E/F remain open. Add caller-owned elsewhere boolean within existing authorized summary, plus-only feed mutation and profile Unfollow. No commit/push requested.
@@ -464,6 +466,10 @@ Immediate UI revision assumes no new dependency, credential scope, relationship 
 - Keep earlier cold186/freeze uncertainty, upgrade-audio uncertainty and physical-versus-controlled/large-text/VoiceOver/native-memory/public-release limits. A passing build or sample does not erase them.
 
 ## Resume Here
+
+- Successor implementation is active in [Plan176](plan_176.md): A–E Complete/F In Progress; shared confirmations/navigation/recovery host-qualified, build24 signed artifact verified. Continue release/phone work there; do not repeat obsolete build23 timing checks or the explicitly deferred offline/nested phone sequence. Preserve current phone session128 and exact restored fixture state.
+
+- Current checkpoint: `407fe73`, committed at user request; not pushed. Plan176 owns the proposed shared background access-confirmation design. Keep Plan175 E/F open and preserve current fixture session128. Historical no-commit/build-validation statements below describe earlier checkpoints; build23 version and remaining waits are observed, performance acceptance is not complete.
 
 - Build23 user follow-up: immediate Launch overlay but only marginal navigation improvement; Checking access/Loading videos still jarring. Morning buffering/unavailable + saved-sign-in retry + logout/login recovery reported. Read-only logs/session audit show old105 unexpired and later explicitly revoked; current128 active, preserve it. Controlled probe reproduces successful account retry leaving failed media unavailable until video Retry; phone root cause unproven. Full report/time/context requested; session/navigation follow-up above is current priority. No product-source change/new signed build in this investigation.
 

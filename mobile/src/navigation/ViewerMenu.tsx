@@ -6,8 +6,8 @@ import { Action } from '../ui/Message';
 import { playbackDiagnostics } from '../diagnostics/development';
 import { sharePlaybackDiagnostics } from '../diagnostics/share';
 
-export function ViewerMenu({ onAccount, onSettings, onClose, onRefresh }: {
-  onAccount: () => void; onSettings: () => void; onClose: () => void; onRefresh?: () => void;
+export function ViewerMenu({ onAccount, onSettings, onClose, onRefresh, onReadiness }: {
+  onAccount: () => void; onSettings: () => void; onClose: () => void; onRefresh?: () => void; onReadiness?: () => void;
 }) {
   const { store, snapshot } = useAuth();
   const { mode, busy, canSignOut } = accountPresentation(snapshot);
@@ -21,6 +21,7 @@ export function ViewerMenu({ onAccount, onSettings, onClose, onRefresh }: {
       <Action label="Settings" onPress={onSettings}/>
       {onRefresh && <Action label="Refresh feed" disabled={busy} onPress={onRefresh}/>}
       {playbackDiagnostics && <Action label="Playback diagnostics" onPress={sharePlaybackDiagnostics}/>}
+      {playbackDiagnostics && onReadiness && <Action label="Feed readiness check" onPress={onReadiness}/>}
       {snapshot.message && <Text style={styles.message} accessibilityRole="alert">{snapshot.message}</Text>}
       <Action label="Close menu" onPress={onClose}/>
     </ScrollView>

@@ -75,14 +75,15 @@ export async function revokeNativeSession(token: string) {
 }
 export async function resolveViewer(req: Request, required: boolean): Promise<Principal | null> {
   const token=readBearer(req,false);
-  if (token) { requireNativeTransport(req); return resolveNativeSession(token); }
+  if (token) { requireNativeTransport(req); const p=await resolveNativeSession(token);if(req.res)req.res.locals.viewerPrincipal=p;return p; }
   if (hasSid(req)) {
     if(req.sessionParseFailed) throw new ViewerApiError(503,'service_unavailable');
     if (!req.user || !req.session) throw new ViewerApiError(401,'unauthorized');
     const [rows] = await getPool().query('SELECT id,display_name FROM users WHERE id=? AND deleted_at IS NULL',[req.user.id]);
     const row=(rows as any[])[0];
     if (!row) throw new ViewerApiError(401,'unauthorized');
-    return {source:'cookie',viewer:{id:Number(row.id),displayName:row.display_name ? String(row.display_name):null}};
+    const p:Principal={source:'cookie',viewer:{id:Number(row.id),displayName:row.display_name ? String(row.display_name):null}};
+    if(req.res)req.res.locals.viewerPrincipal=p;return p;
   }
   if (required) throw new ViewerApiError(401,'unauthorized');
   return null;

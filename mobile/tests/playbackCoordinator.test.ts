@@ -71,6 +71,18 @@ function setup() {
   coordinator.setAppActive(true);
   return { coordinator, players };
 }
+test('a fresh feed cannot unmute or play from a first frame alone; reveal preserves pause and ordinary swipes',async()=>{
+ const players:FakePlayer[]=[],stages:string[]=[],outcomes:string[]=[];
+ const c=new PlaybackCoordinator(()=>{const p=new FakePlayer();players.push(p);return p;},undefined,false,undefined,
+  {mark:stage=>stages.push(stage),finish:outcome=>outcomes.push(outcome)},true);
+ c.setAppActive(true);c.selectAt([item(1),item(2),item(3)],0);players[0].ready();await Promise.resolve();
+ c.firstFrame(c.getSnapshot().activation);assert.equal(c.getSnapshot().sourceLoaded,true);assert.ok(players.every(p=>p.muted&&!p.playing));assert.equal(outcomes.length,0);
+ c.togglePause();c.presentEntry();assert.equal(players[0].playing,false);assert.equal(c.getSnapshot().userPaused,true);
+ c.togglePause();assert.equal(players[0].playing,true);assert.equal(players[0].muted,false);
+ players[1].ready();c.setScrolling(true);c.selectAt([item(1),item(2),item(3)],1);c.setScrolling(false);
+ assert.equal(c.getSnapshot().entryPresented,true);assert.equal(players[1].playing,true);assert.equal(players.filter(p=>p.playing).length,1);
+ assert.deepEqual(stages,['first_frame','entry_revealed']);assert.deepEqual(outcomes,['ready']);c.dispose();
+});
 
 test('screen blur or validation suppression releases neighbors and preserves manual pause on return',()=>{
   const players:FakePlayer[]=[];const c=new PlaybackCoordinator(()=>{const p=new FakePlayer();players.push(p);return p;});
@@ -329,7 +341,23 @@ test('momentum cancels the drag fallback and selects the final flung-to item', (
   paging.endMomentum(500);
   assert.deepEqual(selections, [5]);
 });
-
+test('initial FlatList anchoring and layout offsets cannot navigate or interrupt restoration',()=>{
+ const {paging,selections,flush,moving}=pagingSetup();
+ paging.scroll(100);paging.scroll(0);flush();assert.deepEqual(selections,[]);assert.equal(moving(),0);
+ paging.beginProgrammatic();paging.scroll(700);flush();assert.deepEqual(selections,[7]);
+ paging.scroll(800);flush();assert.deepEqual(selections,[7]);
+ paging.endMomentum(800);assert.deepEqual(selections,[7]);
+ paging.beginDrag();paging.scroll(900);paging.suspend();paging.endMomentum(900);flush();assert.deepEqual(selections,[7]);
+});
+test('an asynchronous play arriving after the next drag stays muted and is stopped with its issue retained',()=>{
+ const players:FakePlayer[]=[],diagnostics=new PlaybackDiagnostics();
+ const c=new PlaybackCoordinator(()=>{const p=new FakePlayer();players.push(p);return p;},diagnostics.session(),false);
+ c.setAppActive(true);c.select(item(1));const p=players[0];p.ready();assert.equal(p.muted,false);
+ c.setScrolling(true);assert.equal(p.muted,true);assert.equal(p.playing,false);
+ p.playing=true;p.playingListeners.forEach(fn=>fn(true));assert.equal(p.playing,false);assert.equal(p.muted,true);
+ assert.equal(diagnostics.report().resources.unexpectedPlayback,1);
+ c.setScrolling(false);assert.equal(p.playing,true);assert.equal(p.muted,false);c.dispose();
+});
 test('paging teardown cancels callbacks and bounds footer/overscroll selection', () => {
   const { paging, selections, flush } = pagingSetup();
   paging.endDrag(100); paging.dispose(); flush();

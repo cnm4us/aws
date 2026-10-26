@@ -46,6 +46,7 @@ test('ambiguous Follow failure requires read reconciliation and never resends on
 });
 for(const status of [401,403,404,503])test(`Follow failure ${status} masks contextual state with scoped denial`,async t=>{
  const h=fixture(t);h.store.setActive(true);await flush();h.client.getJson=async()=>{throw new ApiError('Unavailable',status);};await h.advance(45_000);
+ if(status===503){assert.equal(h.store.getSnapshot().authorized,true);await h.advance(15_000);}
  assert.equal(h.store.getSnapshot().authorized,false);assert.equal(h.store.getSnapshot().summary,null);assert.equal(h.counts().denied,status===503?0:1);
 });
 test('background/refocus requires fresh proof and self summary never writes',async t=>{

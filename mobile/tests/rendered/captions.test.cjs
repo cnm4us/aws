@@ -16,7 +16,7 @@ test('caption notice waits while cues, errors and retry remain immediate; stale 
     await Test.act(async () => root ? root.update(R.createElement(CaptionLayer, props)) : root = Test.create(R.createElement(CaptionLayer, props)));
   };
   const tick = async ms => { await Test.act(async () => t.mock.timers.tick(ms)); };
-  const loading = () => root.root.findAllByType('ActivityIndicator').length;
+  const loading = () => root.root.findAllByType('Text').filter(node => node.props.children === 'Loading captions').length;
   const texts = () => root.root.findAllByType('Text').map(node => node.props.children);
   try {
     await render({}); assert.equal(loading(), 0);
@@ -36,7 +36,7 @@ test('caption notice waits while cues, errors and retry remain immediate; stale 
     await Test.act(async () => requests[2].resolve(vtt('Retried cue')));
     assert.ok(texts().includes('Retried cue'));
 
-    // Hidden/replaced requests cannot show a late cue or start an old spinner.
+    // Hidden/replaced requests cannot show a late cue or an old loading notice.
     await render({ publicationId: 3 }); await tick(100);
     await render({ visible: false }); assert.equal(requests[3].signal.aborted, true);
     await tick(300); assert.equal(root.toJSON(), null); assert.equal(subscriptions, 0);

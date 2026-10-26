@@ -11,6 +11,7 @@ import { LaunchStore } from './launchStore';
 import type { LaunchPreparation } from './launchPreparation';
 import type { NavigationTrace } from '../diagnostics/playbackDiagnostics';
 import { playbackDiagnostics } from '../diagnostics/development';
+import { FeedLoadingBar } from '../ui/FeedLoadingBar';
 
 function CreatorIntroduction({creator}:{creator:LaunchCreator}) {
   const [failed,setFailed]=useState(false);
@@ -32,6 +33,7 @@ export function LaunchSpacesScreen({sourceId,productionUlid,creatorId,onEnter,on
   const state=useSyncExternalStore(store.subscribe,store.getSnapshot),signedIn=snapshot.status==='authenticated';
   const [appActive,setAppActive]=useState(AppState.currentState==='active');
   const [publicCreator,setPublicCreator]=useState<LaunchCreator|null>(null),[profileError,setProfileError]=useState(false),[revision,setRevision]=useState(0);
+  const [targetName,setTargetName]=useState('feed');
   useEffect(()=>{
     const sub=AppState.addEventListener('change',status=>setAppActive(status==='active'));
     return()=>sub.remove();
@@ -40,6 +42,7 @@ export function LaunchSpacesScreen({sourceId,productionUlid,creatorId,onEnter,on
     if(!focused||!signedIn||!appActive)return;
     void store.ensureFresh();return()=>store.cancel();
   },[store,focused,signedIn,appActive]);
+  useEffect(()=>{if(focused&&signedIn&&appActive&&!state.loading)store.prepareEntries(state.items.slice(0,2).map(i=>i.space.id));},[store,focused,signedIn,appActive,state.items,state.loading]);
   useEffect(()=>{if(state.sourceUnavailable)onSourceUnavailable();},[state.sourceUnavailable]);
   useEffect(()=>{if(focused&&!state.loading&&(state.creator||state.error)){trace?.mark('chooser_ready');trace?.finish(state.error?'failed':'ready');}},[focused,state.loading,state.creator,state.error,trace]);
   useEffect(()=>{
@@ -56,9 +59,11 @@ export function LaunchSpacesScreen({sourceId,productionUlid,creatorId,onEnter,on
     return()=>request.abort();
   },[client,creatorId,sourceId,focused,signedIn,appActive,snapshot.status,revision]);
   const enter=async(id:number)=>{
+    if(state.entering)return;
+    setTargetName(state.items.find(item=>item.space.id===id)?.space.name??'feed');
     const timing=playbackDiagnostics?.navigationStart('space');onEntryTrace?.(timing);
     const result=await store.enter(id);
-    if(result)timing?.mark('destination_resolved');else timing?.finish('failed');
+    if(result){timing?.mark('destination_resolved');if(result.entry)timing?.mark('access_ready');}else timing?.finish('failed');
     if(result&&auth.getSnapshot().generation===generation&&AppState.currentState==='active')onEnter(result);
   };
   const masked=!focused||!appActive||state.sourceUnavailable||snapshot.status==='unavailable';
@@ -86,7 +91,7 @@ export function LaunchSpacesScreen({sourceId,productionUlid,creatorId,onEnter,on
               <Action label={`Open ${item.space.name} (${item.space.type})`} disabled={state.entering||state.loadingMore}
                 onPress={()=>{void enter(item.space.id);}}/>
             </View>)}
-            {state.entering&&<Message scrollable={false} title="Checking space access" busy/>}
+            {state.entering&&<FeedLoadingBar label={`Loading ${targetName}…`}/>}
             {state.nextCursor&&<Action label={state.loadingMore?'Loading more spaces…':'Load more spaces'} disabled={state.loadingMore||state.entering} onPress={()=>{void store.more();}}/>}
           </>}
         </>}

@@ -8,11 +8,12 @@ async function setup(t) {
  const space={id:12,ulid:null,name:'Test group',type:'group',slug:'test-group',relationship:'member',subscribed:false};
  e.paths=[];e.liked=false;e.comments=[];e.denied=false;e.postCalls=0;
  const summary=()=>({count:e.comments.length,hasCommentedByMe:e.comments.length>0,canComment:!e.disabled,disabledReason:e.disabled?'comments_disabled':null});
+ e.serverAccess=true;
  e.fetch=async(url,options={})=>{
   const u=new URL(url),p=u.pathname;e.paths.push({path:p+u.search,method:options.method||'GET'});let data,status=200;
   const ctx={spaceId:12,publicationId:200};
   if(p==='/api/viewer/v1/me/spaces')data={personal:null,groups:[space],channels:[]};
-  else if(p.endsWith('/engagement')){data=e.denied?{error:'forbidden'}:{...ctx,likes:{count:e.liked?1:0,likedByMe:e.liked},comments:summary()};if(e.denied)status=403;
+  else if(p.endsWith('/engagement')){data=e.denied?{error:'forbidden'}:{...ctx,likes:{count:e.liked?1:0,likedByMe:e.liked},comments:summary()};if(e.denied)status=403;if(e.offline){status=503;data={error:'service_unavailable'};}
    if(e.holdEngagement)return new Promise(r=>{e.finishEngagement=()=>r(new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json'}}));});}
   else if(p.endsWith('/like')){e.liked=options.method==='POST';data={...ctx,likes:{count:e.liked?1:0,likedByMe:e.liked}};if(e.holdLike)return new Promise(r=>{e.finishLike=()=>r(new Response(JSON.stringify(data),{headers:{'Content-Type':'application/json'}}));});}
   else if(p.endsWith('/comments')){
@@ -25,6 +26,7 @@ async function setup(t) {
    const global=p.includes('/feed/global'),spaceId=global?90:12;
    data={context:global?{kind:'global'}:{kind:'space',space},items:[global?100:200,global?101:201,global?102:202].map(id=>({publicationId:id,spaceId,productionUlid:null,uploadId:1,playbackUrl:`https://media.test/${id}`,posterUrl:null,creator:{id:2,displayName:'Creator',avatarUrl:null},hasStory:false,hasCaptions:false,description:'Video',width:100,height:200,durationSeconds:10})),nextCursor:null};
   }
+  const anchor=Number(u.searchParams.get('anchorPublicationId'));if(anchor&&data.items&&data.context)data.resume={requestedPublicationId:anchor,restoredPublicationId:anchor,outcome:'restored'};
   return new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json'}});
  };
  const prefs=new PlaybackPreferences({getItem:async()=>null,setItem:async()=>{}}),captions=new CaptionPreferences({getItem:async()=>null,setItem:async()=>{}});await prefs.hydrate();await captions.hydrate();let root;
@@ -58,7 +60,7 @@ test('actual Comments verification owns renewal, preserves a draft quietly, clea
  const h=await setup(t);await h.enter();await h.press(/^Comments,/);await h.draft('Private draft');
  const feedReads=()=>h.e.paths.filter(x=>x.path.startsWith('/api/viewer/v1/spaces/12/feed')).length,before=feedReads(),validations=h.e.validations;
  await h.press(/Sort comments\. Current order:/);assert.equal(h.screen().findAllByType('Modal').length,1);
- await h.tick(45_000);assert.equal(h.screen().findByType('TextInput').props.value,'Private draft');assert.equal(feedReads(),before);assert.equal(h.e.validations,validations+1);
+ await h.tick(45_000);assert.equal(h.screen().findByType('TextInput').props.value,'Private draft');assert.equal(feedReads(),before);assert.equal(h.e.validations,validations);
  assert.equal(h.screen().findAllByType('Modal').length,1);
  await h.app('background');assert.equal(h.screen().findAllByType('TextInput').length,0);assert.equal(h.e.players.some(p=>p.playing),false);
  assert.equal(h.screen().findAllByType('Modal').length,0);
@@ -139,4 +141,11 @@ test('centered Comments selector shows count for Newest and Oldest for oldest, w
  h.e.holdPost=true;await h.press('Send comment');const trigger=h.screen().findAllByType('Pressable').find(n=>/Sort comments\. Current order:/.test(n.props.accessibilityLabel));assert.equal(trigger.props.disabled,true);
  await Test.act(async()=>h.e.finishPost());await h.press(/Sort comments\. Current order:/);await Test.act(async()=>h.e.auth.signOut());
  assert.equal(h.e.navigationState.routes.some(r=>r.name==='Comments'),false);assert.equal(h.root.root.findAllByType('Modal').length,0);
+});
+
+test('transient Comments renewal keeps the draft only through the original60s deadline',async t=>{
+ const h=await setup(t);await h.enter();await h.press(/^Comments,/);await h.draft('Bounded private draft');
+ h.e.offline=true;await h.tick(45000);assert.equal(h.screen().findByType('TextInput').props.value,'Bounded private draft');
+ await h.tick(15000);assert.equal(h.screen().findAllByType('TextInput').length,0);assert.equal(h.e.postCalls,0);
+ h.e.offline=false;await h.press('Try again');assert.equal(h.screen().findByType('TextInput').props.value,'');assert.equal(h.e.postCalls,0);
 });

@@ -13,6 +13,7 @@ const scheduleDefault: Schedule = callback => {
 export class PagingController {
   private dragging = false;
   private momentum = false;
+  private programmatic = false;
   private offset = 0;
   private height = 0;
   private lastIndex = 0;
@@ -25,17 +26,25 @@ export class PagingController {
   private cancel() { this.cancelPending?.(); this.cancelPending = null; }
   private commit() {
     this.cancel();
+    this.programmatic = false;
     this.settled(settledIndex(this.offset, this.height, this.lastIndex));
   }
   private afterScroll() { this.cancel(); this.cancelPending = this.schedule(() => this.commit()); }
-  beginDrag = () => { this.cancel(); this.dragging = true; this.momentum = false; this.moving(); };
+  beginDrag = () => { this.cancel(); this.dragging = true; this.momentum = false; this.programmatic = false; this.moving(); };
   scroll = (offset: number) => {
+    // FlatList emits offsets during initial anchoring and layout. They are not
+    // navigation: only a user gesture or an explicit scroll may select a row.
+    if (!this.dragging && !this.momentum && !this.programmatic) return;
     this.offset = offset;
     if (!this.dragging && !this.momentum) this.afterScroll();
   };
   endDrag = (offset: number) => { this.offset = offset; this.dragging = false; this.afterScroll(); };
   beginMomentum = () => { this.cancel(); this.momentum = true; this.moving(); };
-  endMomentum = (offset: number) => { this.offset = offset; this.momentum = false; this.dragging = false; this.commit(); };
-  beginProgrammatic = () => { this.moving(); this.afterScroll(); };
-  dispose = () => this.cancel();
+  endMomentum = (offset: number) => {
+    if(!this.dragging&&!this.momentum&&!this.programmatic)return;
+    this.offset = offset; this.momentum = false; this.dragging = false; this.commit();
+  };
+  beginProgrammatic = () => { this.programmatic = true; this.moving(); this.afterScroll(); };
+  suspend = () => {this.cancel();this.dragging=false;this.momentum=false;this.programmatic=false;};
+  dispose = this.suspend;
 }

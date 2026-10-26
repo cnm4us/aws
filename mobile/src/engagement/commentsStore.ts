@@ -8,7 +8,7 @@ export class CommentsStore {
  private verification:VerifiedRefresh<Engagement>;
  constructor(private readonly client:ApiClient,private readonly ctx:EngagementContext,verify:(signal:AbortSignal)=>Promise<void>,private readonly denied:(error:Error)=>void,now=verificationClock){
   this.verification=new VerifiedRefresh(async signal=>{const verifiedAt=now();await verify(signal);return {value:await loadEngagement(client,ctx,signal),verifiedAt};},
-   {protected:true,now,onError:error=>{if(accessDenied(error))this.denied(error);}});
+   {protected:true,retainOnTransientError:true,now,onError:error=>{if(accessDenied(error))this.denied(error);}});
   this.verification.subscribe(()=>{
    const v=this.verification.getSnapshot(),wasAuthorized=this.state.authorized;
    if(!v.value){this.cancelWork();this.publish({authorized:false,checking:v.checking,summary:null,items:[],posted:null,nextCursor:null,draft:'',uncertain:false,reconciled:false,error:v.error?.message??null});}

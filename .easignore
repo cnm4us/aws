@@ -18,6 +18,7 @@
 !/mobile/App.tsx
 !/mobile/src
 !/mobile/assets
+!/mobile/modules
 !/mobile/scripts
 /mobile/scripts/*
 !/mobile/scripts/preview-build.cjs

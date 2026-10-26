@@ -9,7 +9,6 @@ import type { FollowProof } from './api';
 export function CreatorFollow({proof,onDenied}:{proof:FollowProof;onDenied?:(e:Error)=>void}) {
  const {auth,client,generation}=useViewerClient(),focused=useIsFocused(),denied=useRef(onDenied);denied.current=onDenied;
  const store=useMemo(()=>new FollowStore(client,proof,async signal=>{
-  if(!await auth.validate())throw new ApiError('Cannot verify sign-in. Reconnect and try again.');
   if(signal.aborted || auth.getSnapshot().generation!==generation)throw new Error('Cancelled');
  },e=>{if(auth.getSnapshot().generation!==generation)return;if(e instanceof ApiError&&e.status===401)void auth.invalidate(generation);else denied.current?.(e);}),
  [client,auth,generation,proof.spaceId,proof.publicationId,proof.creatorId,proof.generation,proof.visitId]);
@@ -17,14 +16,12 @@ export function CreatorFollow({proof,onDenied}:{proof:FollowProof;onDenied?:(e:E
  // Account lifecycle rerenders through useViewerClient; app events also mask synchronously.
  const status=auth.getSnapshot().status;
  useEffect(()=>{
-  let release:(()=>void)|undefined;
   const update=()=>{
    const active=focused&&proof.generation===generation&&auth.getSnapshot().status==='authenticated'&&AppState.currentState==='active';
-   if(active&&!release)release=auth.claimRoutineValidation();else if(!active){release?.();release=undefined;}
    store.setActive(active);
   };
   update();const sub=AppState.addEventListener('change',update),unsubscribe=auth.subscribe(update);
-  return()=>{sub.remove();unsubscribe();release?.();store.setActive(false);};
+  return()=>{sub.remove();unsubscribe();store.setActive(false);};
  },[auth,store,focused,generation,proof.generation]);
  useEffect(()=>()=>store.dispose(),[store]);
  const summary=state.authorized&&focused&&proof.generation===generation&&status==='authenticated'&&AppState.currentState==='active'?state.summary:null;

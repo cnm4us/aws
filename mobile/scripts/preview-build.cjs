@@ -10,6 +10,8 @@ const hash = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
 function identify(directory = root) {
   const files = [];
   const walk = relative => {
+    if (relative.split('/').some(name => /^\.env(?:\.|$)/.test(name) || /^(?:credentials\.json|node_modules|\.expo)$/.test(name) || /\.(?:p8|p12|pem|key|jks|mobileprovision)$/.test(name)))
+      throw Error('Private or generated file found inside public build inputs');
     const target = path.join(directory, relative), stat = fs.lstatSync(target);
     if (stat.isSymbolicLink()) throw Error('Build inputs must not be symbolic links');
     if (stat.isDirectory()) {
@@ -17,7 +19,7 @@ function identify(directory = root) {
     } else if (stat.isFile() && relative !== stampPath) files.push(relative);
   };
   for (const name of fs.readdirSync(directory).sort()) {
-    if (['.nvmrc', 'package.json', 'package-lock.json', 'app.json', 'eas.json', 'tsconfig.json', 'index.ts', 'App.tsx', 'src', 'assets'].includes(name)
+    if (['.nvmrc', 'package.json', 'package-lock.json', 'app.json', 'eas.json', 'tsconfig.json', 'index.ts', 'App.tsx', 'src', 'assets', 'modules'].includes(name)
       || /^(app|babel|metro|react-native)\.config\.[cm]?[jt]s$/.test(name)) walk(name);
   }
   walk('scripts/preview-build.cjs');
@@ -37,7 +39,13 @@ function run(action) {
       throw Error('Preview source identity is stale. Run npm run prepare:preview before EAS upload.');
     }
   } else {
-    fs.writeFileSync(path.join(root, stampPath), JSON.stringify(identity, null, 2) + '\n');
+    // Readers (Metro/typecheck/tests) must never observe a truncated JSON stamp.
+    // The temporary file is beside the app root, outside the public input roots.
+    const temporary = path.join(root, `.buildIdentity-${process.pid}.tmp`);
+    try {
+      fs.writeFileSync(temporary, JSON.stringify(identity, null, 2) + '\n');
+      fs.renameSync(temporary, path.join(root, stampPath));
+    } finally { fs.rmSync(temporary, { force: true }); }
   }
   console.log(JSON.stringify({ ...identity, inputFiles: inputs.length }));
   if (action === 'build' || action === 'export') {

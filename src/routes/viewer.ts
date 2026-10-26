@@ -1,3 +1,4 @@
+import { accessMetadata, playbackIds } from '../features/native-sessions/access';
 import { createFollowRouter } from '../features/follows/router';
 import { createGlobalRecognitionRouter } from '../features/follows/globalRecognition';
 import { engagement } from '../features/engagement/service';
@@ -15,7 +16,13 @@ import { viewerText, textId, type TextContext } from '../features/publications/v
 
 export function createViewerRouter(engagementDeps = { resolveViewer, engagement }) {
   const router=Router();
-  router.use((_req,res,next)=>{res.set('Cache-Control','no-store');next();});
+  router.use((_req,res,next)=>{
+    res.locals.accessStartedAt=Date.now();res.set('Cache-Control','no-store');
+    const json=res.json.bind(res);
+    res.json=body=>json(res.statusCode>=200&&res.statusCode<300&&body&&typeof body==='object'&&!body.access&&res.locals.viewerPrincipal
+      ?{...body,access:accessMetadata(res.locals.accessStartedAt,res.locals.viewerPrincipal)}:body);
+    next();
+  });
   router.use(createFollowRouter());
   router.use(createGlobalRecognitionRouter());
   for (const scope of ['global', 'space'] as const) {
@@ -43,10 +50,20 @@ export function createViewerRouter(engagementDeps = { resolveViewer, engagement 
     try {
       const principal=(await resolveViewer(req,true))!;
       const publicationId=launchId(req.params.publicationId);
-      if(resolve && Object.keys(req.query).length)throw new ViewerApiError(400,'invalid_query');
+      const includeEntry=resolve && req.query.include==='entry';
+      if(resolve && (Object.keys(req.query).length>(includeEntry?1:0)))throw new ViewerApiError(400,'invalid_query');
       const result=resolve?await viewerLaunch.resolve(publicationId,launchId((req.params as Record<string,string>).spaceId),principal.viewer.id,controller.signal)
         :await viewerLaunch.list(publicationId,principal.viewer.id,req.query,controller.signal);
-      if(!controller.signal.aborted)res.json(result);
+      let entry;
+      if(includeEntry) {
+        const target=result as Awaited<ReturnType<typeof viewerLaunch.resolve>>;
+        entry=await confirmedPage(target.space.id,principal,res.locals.accessStartedAt,{limit:20,cursor:undefined,anchorPublicationId:target.publicationId});
+        const again=await viewerLaunch.resolve(publicationId,target.space.id,principal.viewer.id,controller.signal);
+        const selected=entry.items.find(i=>i.publicationId===target.publicationId);
+        if(again.publicationId!==target.publicationId || !selected || selected.productionUlid!==target.productionUlid || selected.creator.id!==target.creator.id)
+          throw new ViewerApiError(404,'launch_target_unavailable');
+      }
+      if(!controller.signal.aborted)res.json({...result,...(entry?{entry}:{})});
     }catch(e){if(!controller.signal.aborted)sendViewerError(res,e);}
     finally{res.off('close',cancel);}
   });
@@ -64,7 +81,8 @@ export function createViewerRouter(engagementDeps = { resolveViewer, engagement 
       const query=parseViewerQuery(req.query);
       const load=(selection:Parameters<typeof feeds.getGlobalFeed>[0])=>feeds.getGlobalFeed({...selection,userId:principal?.viewer.id});
       const data=query.anchorPublicationId ? await aroundPublication(load,query.anchorPublicationId,query.limit) : await load(query);
-      res.json({...await serializeViewerFeedWithCreators(data,{kind:'global'}),...('resume' in data?{resume:data.resume}:{})});
+      const page=await serializeViewerFeedWithCreators(data,{kind:'global'});
+      res.json({...page,...('resume' in data?{resume:data.resume}:{}),access:accessMetadata(res.locals.accessStartedAt,principal,page.items,undefined,true)});
     }catch(e){sendViewerError(res,e);}
   });
   router.get('/me/spaces',async(req,res)=>{
@@ -82,12 +100,19 @@ export function createViewerRouter(engagementDeps = { resolveViewer, engagement 
       const id=Number(req.params.id);
       if (!/^[1-9]\d*$/.test(req.params.id) || !Number.isSafeInteger(id)) throw new ViewerApiError(400,'invalid_query');
       const query=parseViewerQuery(req.query);
-      await spaces.assertCanViewSpaceFeed(id,p.viewer.id);
-      const s=await spaces.loadSpaceOrThrow(id);
-      const load=(selection:Omit<Parameters<typeof feeds.getSpaceFeed>[1],'userId'>)=>feeds.getSpaceFeed(id,{...selection,userId:p.viewer.id});
-      const data=query.anchorPublicationId ? await aroundPublication(load,query.anchorPublicationId,query.limit) : await load(query);
-      res.json({...await serializeViewerFeedWithCreators(data,{kind:'space',space:{id:s.id,ulid:s.ulid || null,name:s.name || '',slug:s.slug || '',type:s.type}}),
-        ...('resume' in data?{resume:data.resume}:{})});
+      res.json(await confirmedPage(id,p,res.locals.accessStartedAt,query));
+    }catch(e){sendViewerError(res,e);}
+  });
+  router.get('/spaces/:id/playback-access',async(req,res)=>{
+    try {
+      const p=(await resolveViewer(req,true))!, id=positiveId(req.params.id), ids=playbackIds(req.query);
+      const decision=await spaces.confirmedSpaceView(id,p.viewer.id);
+      const pages=await Promise.all(ids.map(publicationId=>feeds.getSpaceFeed(id,{publicationId,userId:p.viewer.id,limit:1})));
+      const data={items:pages.flatMap(page=>page.items),nextCursor:null};
+      const page=await serializeViewerFeedWithCreators(data,{kind:'space',space:{...decision.space}});
+      const membersOnlyIds=new Set(data.items.filter(i=>i.publication.visibility==='members').map(i=>i.publication.id));
+      res.json({...page,unavailable:ids.filter(id=>!page.items.some(i=>i.publicationId===id)),
+        access:accessMetadata(res.locals.accessStartedAt,p,page.items,{spaceId:id,...decision,membersOnlyIds})});
     }catch(e){sendViewerError(res,e);}
   });
   const engagementPrefix='/spaces/:spaceId/publications/:publicationId';
@@ -109,4 +134,14 @@ export function createViewerRouter(engagementDeps = { resolveViewer, engagement 
     });
   }
   return router;
+}
+
+async function confirmedPage(id:number, p:NonNullable<Awaited<ReturnType<typeof resolveViewer>>>, startedAt:number,
+  query:ReturnType<typeof parseViewerQuery>) {
+  const decision=await spaces.confirmedSpaceView(id,p.viewer.id),s=decision.space;
+  const load=(selection:Omit<Parameters<typeof feeds.getSpaceFeed>[1],'userId'>)=>feeds.getSpaceFeed(id,{...selection,userId:p.viewer.id});
+  const data=query.anchorPublicationId ? await aroundPublication(load,query.anchorPublicationId,query.limit) : await load(query);
+  const page=await serializeViewerFeedWithCreators(data,{kind:'space',space:{id:s.id,ulid:s.ulid || null,name:s.name || '',slug:s.slug || '',type:s.type}});
+  const membersOnlyIds=new Set(data.items.filter(i=>i.publication.visibility==='members').map(i=>i.publication.id));
+  return {...page,...('resume' in data?{resume:data.resume}:{}),access:accessMetadata(startedAt,p,page.items,{spaceId:id,...decision,membersOnlyIds})};
 }

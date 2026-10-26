@@ -1,9 +1,13 @@
+import type { AccessDiagnostic } from '../diagnostics/playbackDiagnostics';
+import { GlobalFeedMemory } from '../feed/globalFeedMemory';
+import { AccessManager } from './accessManager';
+import { adaptIdentity } from './accessProof';
 import { ApiError } from '../api/client';
 import type { NativeSessionApi, SessionStorage, StoredSession, Viewer } from './types';
 
 export type AuthSnapshot = {
   status:'restoring'|'anonymous'|'signingIn'|'authenticated'|'unavailable'|'signingOut';
-  generation:number; viewer:Viewer|null; validating:boolean; message:string|null; hasSavedSession:boolean;
+  generation:number; recoveryRevision?:number; viewer:Viewer|null; validating:boolean; message:string|null; hasSavedSession:boolean;
 };
 export class AuthStore {
   private state: AuthSnapshot={status:'restoring',generation:0,viewer:null,validating:false,message:null,hasSavedSession:false};
@@ -12,14 +16,21 @@ export class AuthStore {
   private request: AbortController|null=null;
   private writes: Promise<unknown>=Promise.resolve();
   private validation: Promise<boolean>|null=null;
-  private routineOwners=new Set<object>();
-  constructor(private readonly origin:string,private readonly api:NativeSessionApi,private readonly storage:SessionStorage) {}
+  readonly globalFeed=new GlobalFeedMemory();
+  readonly access=new AccessManager(()=>this.state.viewer?.id??null,{
+    onDiagnostic:event=>this.recordDiagnostic(event),
+    onIdentity:id=>{if(this.state.viewer?.id===id&&this.state.status==='unavailable')this.publish({status:'authenticated',message:null});},
+    onDenied:e=>{if(e.status===401)void this.invalidate(this.state.generation);},
+  });
+  observeResponse=(value:unknown,generation:number)=>{if(this.state.generation!==generation)return;this.access.seed(adaptIdentity(value));};
+  constructor(private readonly origin:string,private readonly api:NativeSessionApi,private readonly storage:SessionStorage,private diagnostic?:(event:AccessDiagnostic)=>void) {}
+  recordDiagnostic=(event:AccessDiagnostic)=>this.diagnostic?.(event);
   getSnapshot=()=>this.state;
   subscribe=(fn:()=>void)=>{this.listeners.add(fn);return()=>{this.listeners.delete(fn);};};
   private publish(patch:Partial<AuthSnapshot>) {this.state={...this.state,...patch};this.listeners.forEach(fn=>fn());}
   private write<T>(job:()=>Promise<T>):Promise<T> {const next=this.writes.then(job);this.writes=next.catch(()=>{});return next;}
   private next(status:AuthSnapshot['status']) {
-    this.request?.abort();this.request=new AbortController();this.validation=null;
+    this.request?.abort();this.request=new AbortController();this.validation=null;this.access.clear();this.globalFeed.clear();
     const generation=this.state.generation+1;
     this.publish({generation,status,viewer:null,validating:false,message:null});
     return {generation,signal:this.request.signal};
@@ -28,11 +39,8 @@ export class AuthStore {
   // Keep a stable transport for an already-mounted, hidden feed during retryable validation failure.
   credentialFor=(generation:number)=>this.state.generation===generation && this.state.viewer
     && ['authenticated','unavailable'].includes(this.state.status) ? this.credential?.token : undefined;
-  retryValidation=()=>this.credential ? this.validate() : this.restore();
-  // An active protected feed renews account + space together on its own clock.
-  // The provider keeps its fallback cadence for Global and non-feed screens.
-  claimRoutineValidation=()=>{const owner={};this.routineOwners.add(owner);return()=>{this.routineOwners.delete(owner);};};
-  validateRoutine=()=>this.routineOwners.size ? Promise.resolve(false) : this.validate();
+  retryValidation=async()=>{if(this.credential)await this.validate();else await this.restore();
+    const ok=this.state.status==='authenticated';if(ok)this.publish({recoveryRevision:(this.state.recoveryRevision??0)+1});return ok;};
   restore=async()=>{
     const {generation}=this.next('restoring');
     try {
@@ -67,6 +75,7 @@ export class AuthStore {
       if(this.state.generation!==generation){void this.api.revoke(session.token).catch(()=>{});return;}
       this.credential=record;
       this.publish({status:'authenticated',viewer:session.viewer,hasSavedSession:true,validating:false,message:null});
+      this.access.seed(session.confirmation?{...session.confirmation,epoch:this.access.epoch()}:undefined);
     }catch(e){if(this.state.generation===generation)this.publish({status:'anonymous',hasSavedSession:e instanceof ApiError && e.code==='storage',message:e instanceof Error?e.message:'Sign-in failed. Try again.'});}
   };
   cancelSignIn=()=>{if(this.state.status==='signingIn'){
@@ -77,20 +86,21 @@ export class AuthStore {
     if(this.validation)return this.validation;
     const record=this.credential,generation=this.state.generation;
     if(!record)return Promise.resolve(false);
-    const controller=new AbortController();this.request=controller;this.publish({validating:true});
+    const controller=new AbortController();this.request=controller;this.publish({validating:true});const startedAt=performance.now();let httpStatus:number|undefined,outcome:'ok'|'failed'|'cancelled'='failed';
     let pending!:Promise<boolean>;
     pending=(async()=>{
       await Promise.resolve();
       try {
-        const result=await this.api.validate(record.token,controller.signal);
+        const result=await this.api.validate(record.token,controller.signal);httpStatus=200;
         if(this.state.generation!==generation || this.credential!==record)return false;
-        this.publish({status:'authenticated',viewer:result.viewer,validating:false,message:null});return true;
+        this.publish({status:'authenticated',viewer:result.viewer,validating:false,message:null});this.access.seed(result.confirmation?{...result.confirmation,epoch:this.access.epoch()}:undefined);outcome='ok';return true;
       }catch(e){
+        httpStatus=e instanceof ApiError?e.status:undefined;
         if(this.state.generation!==generation)return false;
         if(e instanceof ApiError && e.status===401) await this.invalidate(generation);
-        else this.publish({status:'unavailable',validating:false,message:'Cannot verify access. Reconnect and try again.'});
+        else this.publish({status:this.access.identityValid()?'authenticated':'unavailable',validating:false,message:'Cannot verify access. Reconnect and try again.'});
         return false;
-      }finally {if(this.validation===pending)this.validation=null;}
+      }finally {this.recordDiagnostic({event:'http',scope:'identity',httpStatus,durationMs:performance.now()-startedAt,outcome:controller.signal.aborted?'cancelled':outcome});if(this.validation===pending)this.validation=null;}
     })();
     this.validation=pending;return pending;
   };
@@ -109,5 +119,5 @@ export class AuthStore {
     this.publish({status:'anonymous',hasSavedSession:!durable,message:durable?null:'Could not remove saved sign-in. Retry sign-out before closing the app.'});
     if(old){try{await this.api.revoke(old.token);}catch{if(this.state.generation===generation && durable)this.publish({message:'Signed out on this phone. The server could not be reached to revoke the session.'});}}
   };
-  dispose=()=>{this.request?.abort();this.routineOwners.clear();this.state={...this.state,generation:this.state.generation+1};this.listeners.clear();};
+  dispose=()=>{this.request?.abort();this.access.dispose();this.globalFeed.clear();this.state={...this.state,generation:this.state.generation+1};this.listeners.clear();};
 }

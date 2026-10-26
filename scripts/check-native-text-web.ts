@@ -1,3 +1,4 @@
+import { getPool } from '../src/db';
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
@@ -13,9 +14,12 @@ async function main() {
     await page.goto(base + '/login'); await page.fill('#email', f.users.a.email); await page.fill('#password', f.users.a.password);
     await page.locator('button[type="submit"]').click(); await page.waitForURL(url => url.pathname === '/');
     eq((await (await page.request.get(base + '/api/me')).json()).userId, f.users.a.id);
-    await page.getByRole('button', { name: 'Open menu', exact: true }).click();
+    // Pin the exact owned production rather than assume feed ordering still
+    // puts the first fixture on screen after later fixture runs.
+    const [rows]:any=await getPool().query('SELECT s.slug,p.ulid FROM spaces s JOIN productions p ON p.id=? WHERE s.id=?',[f.publications[0].productionId,f.spaces.origin]);
+    assert.equal(rows.length,1);
     const feedResponse = page.waitForResponse(r => new URL(r.url()).pathname === `/api/spaces/${f.spaces.origin}/feed`);
-    await page.getByRole('button', { name: 'Text test origin', exact: false }).click(); eq((await feedResponse).status(), 200);
+    await page.goto(base+`/groups/${rows[0].slug}?pin=${encodeURIComponent(rows[0].ulid)}`);eq((await feedResponse).status(),200);
     const publicationId = f.publications[0].origin;
     const storyRead = page.waitForResponse(r => new URL(r.url()).pathname === `/api/publications/${publicationId}/story`);
     await page.getByRole('button', { name: 'Expand story', exact: true }).first().click();
@@ -34,6 +38,6 @@ async function main() {
     eq((await (await page.request.get(base + '/api/me')).json()).userId, null);
     const result = { browserTextRegression: 'passed', checks, scope: 'actual web login/space/story expansion and collapse, legacy VTT request and CC state, cookie viewer-text read/logout; no frontend code change' };
     fs.writeFileSync(run + '/summary.json', JSON.stringify(result, null, 2)); console.log(JSON.stringify(result));
-  } finally { await page.request.get(base + '/logout'); await context.close(); await browser.close(); }
+  } finally { await page.request.get(base + '/logout'); await context.close(); await browser.close();await getPool().end(); }
 }
 main().catch(e => { console.error(e.message); process.exitCode = 1; });

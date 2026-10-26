@@ -1,3 +1,4 @@
+import { playbackDiagnostics } from '../diagnostics/development';
 import { createContext, useContext, useEffect, useMemo, useSyncExternalStore, type ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
@@ -14,13 +15,15 @@ export function AuthProvider({baseUrl,children}:{baseUrl:string;children:ReactNo
     getItem:key=>SecureStore.getItemAsync(key),
     setItem:(key,value)=>SecureStore.setItemAsync(key,value,{keychainAccessible:SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY}),
     removeItem:key=>SecureStore.deleteItemAsync(key),
-  },AsyncStorage,baseUrl)),[baseUrl]);
+  },AsyncStorage,baseUrl),event=>playbackDiagnostics?.accessEvent(event)),[baseUrl]);
   const snapshot=useSyncExternalStore(store.subscribe,store.getSnapshot);
   useEffect(()=>{void store.restore();return store.dispose;},[store]);
   useEffect(()=>{
-    const validate=()=>{if(['authenticated','unavailable'].includes(store.getSnapshot().status))void store.validate();};
-    const sub=AppState.addEventListener('change',state=>{if(state==='active')validate();});
-    const timer=setInterval(()=>{if(AppState.currentState==='active' && store.getSnapshot().status==='authenticated')void store.validateRoutine();},60_000);
+    const validate=()=>{if(['authenticated','unavailable'].includes(store.getSnapshot().status)
+      && !store.access.hasActiveJobs() && !store.access.hasPendingReads() && store.access.identityDue())void store.validate();};
+    const sub=AppState.addEventListener('change',state=>{store.access.setActive(state==='active');if(state==='active')validate();});
+    store.access.setActive(AppState.currentState==='active');
+    const timer=setInterval(()=>{if(AppState.currentState==='active')validate();},5000);
     return()=>{sub.remove();clearInterval(timer);};
   },[store]);
   return <Context.Provider value={{store,snapshot,baseUrl}}>{children}</Context.Provider>;

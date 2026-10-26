@@ -1,14 +1,15 @@
 import type { ApiClient } from '../api/client';
 import type { FeedVideoItem } from '../feed/types';
+import type { LaunchResolved } from './launchApi';
 import { LaunchStore } from './launchStore';
 
 // Exactly one selected source, scoped to a navigator's API/account generation.
 export class LaunchPreparation {
   private current:LaunchStore|null=null;
-  constructor(private client:Pick<ApiClient,'getJson'>,private unauthorized:()=>void){}
+  constructor(private client:Pick<ApiClient,'getJson'>,private unauthorized:()=>void,private acceptEntry?:(result:LaunchResolved)=>boolean){}
   get=(sourceId:number,productionUlid:string|null,creatorId:number|null)=>{
     if(this.current?.sourceId!==sourceId || this.current.productionUlid!==productionUlid || this.current.creatorId!==creatorId){
-      this.clear();this.current=new LaunchStore(this.client,sourceId,productionUlid,this.unauthorized,undefined,creatorId);
+      this.clear();this.current=new LaunchStore(this.client,sourceId,productionUlid,this.unauthorized,undefined,creatorId,this.acceptEntry);
     }
     return this.current;
   };

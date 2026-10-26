@@ -3,9 +3,12 @@ import type { NavigationTrace, PlaybackDiagnosticEvent } from '../diagnostics/pl
 import { playerErrorDetails } from './playerError';
 import { PlayerBudgetError } from './playerBudget';
 import { PlayerHandoff } from './playerHandoff';
+import type { NativeReadinessEvidence } from './readinessEvidence';
 
 export type PlaybackStatus = 'idle' | 'loading' | 'readyToPlay' | 'error';
 export interface PlayerPort {
+  prepareEntry?(attempt:string,seconds:number):Promise<NativeReadinessEvidence>;
+  cancelEntry?(attempt:string):void;
   load(url: string): Promise<void>;
   play(): void;
   pause(): void;
@@ -24,6 +27,8 @@ export interface PlayerPort {
 }
 
 export type PlaybackSnapshot<P> = {
+  entryPresented:boolean;
+  sourceLoaded:boolean;
   publicationId: number | null;
   activation: number;
   player: P | null;
@@ -49,8 +54,15 @@ type Entry<P> = {
 };
 
 // Owns at most previous/current/next. Only the selected entry may play.
+function sameSource(a:FeedVideoItem|undefined|null,b:FeedVideoItem|undefined|null) {
+  if(!a||!b)return !a&&!b;
+  return a.publicationId===b.publicationId&&a.playbackUrl===b.playbackUrl&&a.uploadId===b.uploadId
+    &&a.productionUlid===b.productionUlid&&a.creator.id===b.creator.id;
+}
+
 export class PlaybackCoordinator<P extends PlayerPort> {
   private state: PlaybackSnapshot<P> = {
+    entryPresented:true,sourceLoaded:false,
     publicationId: null, activation: 0, player: null, status: 'idle', hasFrame: false, playbackStarted: false,
     failed: false, userPaused: false, muted: true, appActive: false, scrolling: false,
     livePlayers: 0, prepared: false, screenEligible:true, restoring:false, restoreError:null,
@@ -66,8 +78,8 @@ export class PlaybackCoordinator<P extends PlayerPort> {
   private pendingRestore: { publicationId:number; seconds:number; userPaused:boolean; started:boolean; journeyGeneration?:number; timer?:ReturnType<typeof setTimeout> } | null = null;
 
   constructor(private readonly createPlayer: () => P,
-    private readonly diagnostic: (event: PlaybackDiagnosticEvent) => void = () => {}, initialMuted = true, private handoff?:PlayerHandoff<P>,private trace?:NavigationTrace) {
-    this.state = { ...this.state, muted: initialMuted };
+    private readonly diagnostic: (event: PlaybackDiagnosticEvent) => void = () => {}, initialMuted = true, private handoff?:PlayerHandoff<P>,private trace?:NavigationTrace,requireEntryReadiness=false) {
+    this.state = { ...this.state, muted: initialMuted,entryPresented:!requireEntryReadiness };
   }
 
   getSnapshot = () => this.state;
@@ -87,7 +99,7 @@ export class PlaybackCoordinator<P extends PlayerPort> {
     return this.owns(entry) && this.state.player === entry.player && this.item?.publicationId === entry.item.publicationId;
   }
   private eligible() {
-    return this.state.appActive && this.state.screenEligible && !this.state.scrolling && !this.state.userPaused && !this.state.failed
+    return this.state.entryPresented && this.state.appActive && this.state.screenEligible && !this.state.scrolling && !this.state.userPaused && !this.state.failed
       && !this.state.restoring && !this.state.restoreError;
   }
   private current() { return this.item ? this.entries.get(this.item.publicationId) : undefined; }
@@ -104,6 +116,7 @@ export class PlaybackCoordinator<P extends PlayerPort> {
     if (!this.owns(entry)) return;
     this.entries.delete(entry.item.publicationId);
     entry.unsubscribe();
+    entry.player.setMuted(true);
     entry.player.pause();
     entry.player.release();
     this.diagnostic({ type: 'release', publicationId: entry.item.publicationId, livePlayers: this.entries.size });
@@ -114,7 +127,9 @@ export class PlaybackCoordinator<P extends PlayerPort> {
     this.watchStartup();
     for (const entry of this.entries.values()) {
       const active = this.isActive(entry);
-      entry.player.setMuted(active ? this.state.muted : true);
+      // Mute before cancelling play intent. Native playingChange may arrive
+      // after a new drag/cover has already made a queued play ineligible.
+      entry.player.setMuted(active && this.eligible() ? this.state.muted : true);
       // iOS also reports loading while seeking/rebuffering. Pausing then cancels
       // playback intent and can strand the selected source waiting for readiness.
       // Once replaceAsync resolves, queue the selected player's play intent and
@@ -159,6 +174,7 @@ export class PlaybackCoordinator<P extends PlayerPort> {
       status: entry?.status ?? (this.item?.playbackUrl ? 'error' : 'idle'),
       failed: entry?.failed ?? Boolean(this.item?.playbackUrl),
       livePlayers: this.entries.size,
+      sourceLoaded:!!entry?.loadResolved,
     });
     this.applyRestore();
     this.reconcile();
@@ -175,7 +191,7 @@ export class PlaybackCoordinator<P extends PlayerPort> {
     const finish=(error?:unknown)=>{
       if(this.disposed || this.pendingRestore!==pending || !this.isActive(entry))return;
       this.clearRestore();
-      if(!error){this.trace?.mark('restore_ready');if(this.state.hasFrame)this.trace?.finish('ready');}else this.trace?.finish('failed');
+      if(!error){this.trace?.mark('restore_ready');if(this.state.hasFrame&&this.state.entryPresented)this.trace?.finish('ready');}else this.trace?.finish('failed');
       this.publish({restoring:false,restoreError:error?'Cannot restore playback position. Try again or start from the beginning.':null});
       let delta:number|undefined;
       try{const time=entry.player.currentTime?.();if(time!==undefined && Number.isFinite(time))delta=Math.abs(time-pending.seconds);}catch{}
@@ -201,10 +217,10 @@ export class PlaybackCoordinator<P extends PlayerPort> {
     return {publicationId:this.state.publicationId,positionSeconds:Number.isFinite(seconds)?Math.max(0,seconds):0,userPaused};
   };
 
-  restoreAt = (items:FeedVideoItem[],index:number,restore:{positionSeconds:number;userPaused:boolean;journeyGeneration?:number}) => {
+  restoreAt = (items:FeedVideoItem[],index:number,restore:{positionSeconds:number;userPaused:boolean;journeyGeneration?:number},canLoad?:(item:FeedVideoItem)=>boolean) => {
     const item=items[index];if(!item || this.disposed)return;
     this.clearRestore();
-    if(!item.playbackUrl){this.publish({restoring:false,restoreError:null});this.selectAt(items,index);this.publish({userPaused:restore.userPaused});return;}
+    if(!item.playbackUrl){this.publish({restoring:false,restoreError:null});this.selectAt(items,index,canLoad);this.publish({userPaused:restore.userPaused});return;}
     const seconds=Number.isFinite(restore.positionSeconds)?Math.max(0,restore.positionSeconds):0;
     this.pendingRestore={publicationId:item.publicationId,seconds,userPaused:restore.userPaused,started:false,journeyGeneration:restore.journeyGeneration};
     const pending=this.pendingRestore;
@@ -215,7 +231,7 @@ export class PlaybackCoordinator<P extends PlayerPort> {
       this.diagnostic({type:'error',publicationId:pending.publicationId,activation:this.state.activation,failureKind:'position_restore'});
     },10_000);
     this.publish({restoring:true,restoreError:null,userPaused:restore.userPaused});
-    this.selectAt(items,index);
+    this.selectAt(items,index,canLoad);
     this.publish({userPaused:restore.userPaused});
     this.applyRestore();
   };
@@ -272,6 +288,7 @@ export class PlaybackCoordinator<P extends PlayerPort> {
         if (playing && (!this.isActive(entry) || !this.eligible())) {
           const actuallyPlaying = player.isPlaying?.() ?? true;
           entry.playRequested = false;
+          player.setMuted(true);
           player.pause();
           if (actuallyPlaying) this.diagnostic({ type: 'unexpected_playback', publicationId: item.publicationId,
             activation: this.state.activation, selectedPublicationId: this.state.publicationId,
@@ -321,7 +338,7 @@ export class PlaybackCoordinator<P extends PlayerPort> {
     const desiredIds = new Map(allowed.map(item => [item.publicationId, item]));
     // Trim before allocation, including during a multi-item fling or source retry.
     for (const entry of [...this.entries.values()]) {
-      if (desiredIds.get(entry.item.publicationId)?.playbackUrl !== entry.item.playbackUrl) this.drop(entry);
+      if (!sameSource(desiredIds.get(entry.item.publicationId),entry.item)) this.drop(entry);
     }
     const active = this.current();
     for (const item of allowed) {
@@ -341,13 +358,13 @@ export class PlaybackCoordinator<P extends PlayerPort> {
     }
     if(!this.pendingRestore && (this.state.publicationId!==item?.publicationId || force))this.publish({restoring:false,restoreError:null});
     this.desired = [...new Map(desired.map(row => [row.publicationId, row])).values()].slice(0, 3);
-    if (!force && this.item?.publicationId === item?.publicationId && this.item?.playbackUrl === item?.playbackUrl) {
+    if (!force && sameSource(this.item,item)) {
       this.fillWindow();
       return;
     }
     for (const entry of this.entries.values()) { this.requestPlayback(entry, false); entry.player.setMuted(true); }
     const existing = item ? this.entries.get(item.publicationId) : undefined;
-    const reusable = existing?.item.playbackUrl === item?.playbackUrl ? existing : undefined;
+    const reusable = sameSource(existing?.item,item) ? existing : undefined;
     const bufferedSeconds = reusable?.player.bufferedSeconds?.() ?? 0;
     // Revisited videos seek to zero; classify them conservatively as cold.
     const prepared = !force && Boolean(reusable && !reusable.selectedBefore && !reusable.failed &&
@@ -372,9 +389,9 @@ export class PlaybackCoordinator<P extends PlayerPort> {
   select = (item: FeedVideoItem | null, force = false) => {
     this.activate(item, item ? [item] : [], force);
   };
-  selectAt = (items: FeedVideoItem[], index: number) => {
+  selectAt = (items: FeedVideoItem[], index: number,canLoad?:(item:FeedVideoItem)=>boolean) => {
     const item = items[index] ?? null;
-    const desired = item ? [item, items[index + 1], items[index - 1]].filter((row): row is FeedVideoItem => Boolean(row)) : [];
+    const desired = item ? [item, items[index + 1], items[index - 1]].filter((row): row is FeedVideoItem => Boolean(row)&&(!canLoad||canLoad(row))) : [];
     this.activate(item, desired);
   };
   setAppActive = (appActive: boolean) => {
@@ -411,7 +428,7 @@ export class PlaybackCoordinator<P extends PlayerPort> {
     if (this.disposed) return;
     if (this.state.activation === activation && !this.state.hasFrame && this.state.player) {
       this.publish({ hasFrame: true });
-      this.trace?.mark('first_frame');if(!this.state.restoring)this.trace?.finish('ready');
+      this.trace?.mark('first_frame');if(!this.state.restoring&&this.state.entryPresented)this.trace?.finish('ready');
       this.watchStartup();
       this.diagnostic({ type: 'first_frame', publicationId: this.state.publicationId, activation });
     }
@@ -424,6 +441,18 @@ export class PlaybackCoordinator<P extends PlayerPort> {
     this.publish({ failed: true, status: 'error' });
     this.diagnostic({ type: 'error', publicationId: this.state.publicationId, activation, failureKind: 'startup_timeout' });
     this.reconcile();
+  };
+  presentEntry = () => {if(this.disposed||this.state.entryPresented)return;this.publish({entryPresented:true});this.trace?.mark('entry_revealed');this.trace?.finish('ready');this.reconcile();};
+  failEntry = () => {
+    if(this.disposed||this.state.entryPresented||this.state.failed)return;
+    const entry=this.current();if(entry){entry.failed=true;entry.status='error';}
+    this.publish({failed:true,status:'error'});this.trace?.finish('failed');
+    this.diagnostic({type:'error',publicationId:this.state.publicationId,activation:this.state.activation,failureKind:'entry_readiness'});this.reconcile();
+  };
+  recoverFailed = (canLoad?:(item:FeedVideoItem)=>boolean) => {
+    if(this.disposed||!this.state.failed||!this.item)return false;
+    const wasEligible=this.state.screenEligible,restore=this.capture(),items=this.desired.filter(i=>!canLoad||canLoad(i));
+    this.activate(this.item,items,true);this.restoreAt(items,0,restore,canLoad);this.setScreenEligible(wasEligible);return true;
   };
   retry = () => { this.activate(this.item, this.desired, true); };
   handOff = ():PlayerHandoff<P>|undefined => {

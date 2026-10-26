@@ -2,7 +2,7 @@ const assert=require('node:assert/strict');
 const test=require('node:test');
 const {bundle,React:R,Test}=require('./harness.cjs');
 
-for(const preview of [false,true])test(`account validation keeps public Global video/captions steady and blocks on errors (internal=${preview})`,async t=>{
+for(const preview of [false,true])test(`account validation keeps public Global video/captions usable through transient errors (internal=${preview})`,async t=>{
  t.mock.timers.enable({apis:['setTimeout','setInterval']});t.after(()=>t.mock.timers.reset());
  for(const context of [{kind:'global'}]){
   const {FeedScreen,FeedStore,CaptionPreferences,AuthStore,ApiError,e}=await bundle(`export {FeedScreen} from './src/feed/FeedScreen';export {FeedStore} from './src/feed/feedStore';export {CaptionPreferences} from './src/preferences/captionPreferences';export {AuthStore} from './src/auth/authStore';export {ApiError} from './src/api/client';`,preview);
@@ -12,6 +12,7 @@ for(const preview of [false,true])test(`account validation keeps public Global v
   await e.auth.restore();await e.auth.signIn('test@example.invalid','test');
   const items=[1,2,3].map(id=>({publicationId:id,playbackUrl:`https://media.test/${id}`,posterUrl:null,creator:{id:2,displayName:'Creator',avatarUrl:null},hasStory:false,hasCaptions:true}));
   e.feed=new FeedStore(async()=>({items,nextCursor:null}));await e.feed.refresh();
+  e.auth.access.seedPage({items,nextCursor:null,access:{...e.auth.access.ticket(),publications:[],publicIds:items.map(i=>i.publicationId),publicUntil:e.auth.access.now()+60000}});
   e.client={getText:async()=>{captionLoads++;return 'WEBVTT\n\n00:02.000 --> 00:04.000\nVisible caption';}};
   const captions=new CaptionPreferences({getItem:async()=>null,setItem:async()=>{}});await captions.hydrate();await captions.setEnabled(true);
   let props={context,preferences:{toggleMute:()=>{}},sound:{muted:false},captionPreferences:captions,captions:captions.getSnapshot(),focused:true,onSpaces:()=>{},onMenu:()=>{},onGlobal:()=>{}};
@@ -42,8 +43,8 @@ for(const preview of [false,true])test(`account validation keeps public Global v
    }
    let pending;await Test.act(async()=>{pending=e.auth.validate();await Promise.resolve();});
    await Test.act(async()=>{rejectValidation(new ApiError('Temporary connection failure',503));assert.equal(await pending,false);});
-   assert.equal(e.auth.getSnapshot().status,'unavailable');assert.ok(texts().includes('Cannot verify access'));assert.ok(!texts().includes('Visible caption'));assert.equal(e.players.some(p=>p.playing),false);
-   await Test.act(async()=>{pending=e.auth.validate();await Promise.resolve();});assert.equal(player.playing,false);
+   assert.equal(e.auth.getSnapshot().status,'unavailable');assert.ok(!texts().includes('Cannot verify access'));assert.ok(texts().includes('Visible caption'));assert.equal(player.playing,true);
+   await Test.act(async()=>{pending=e.auth.validate();await Promise.resolve();});assert.equal(player.playing,true);
    await Test.act(async()=>{resolveValidation(session);assert.equal(await pending,true);});assert.equal(player.playing,true);assert.ok(texts().includes('Visible caption'));assert.equal(validationCalls,4);
   }finally{if(root)await Test.act(async()=>root.unmount());e.auth.dispose();}
   assert.equal(e.players.some(p=>!p.released),false);

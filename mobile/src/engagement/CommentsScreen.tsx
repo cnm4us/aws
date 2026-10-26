@@ -17,19 +17,16 @@ export function CommentsScreen({spaceId,publicationId,generation:visitGeneration
  const {width,fontScale}=useWindowDimensions();
  const denied=useRef(onDenied);denied.current=onDenied;
  const store=useMemo(()=>new CommentsStore(client,{spaceId,publicationId},async signal=>{
-  if(!await auth.validate())throw new ApiError('Cannot verify sign-in. Reconnect and try again.');
   if(signal.aborted||auth.getSnapshot().generation!==generation)throw new Error('Cancelled');
  },error=>{if(auth.getSnapshot().generation===generation){if(error instanceof ApiError&&error.status===401)void auth.invalidate(generation);else denied.current(error);}}),[auth,client,spaceId,publicationId,generation]);
  const state=useSyncExternalStore(store.subscribe,store.getSnapshot);
  useEffect(()=>{
-  let release:(()=>void)|undefined;
   const update=()=>{
    const active=focused&&visitGeneration===generation&&AppState.currentState==='active'&&auth.getSnapshot().status==='authenticated';
-   if(active&&!release)release=auth.claimRoutineValidation();else if(!active){release?.();release=undefined;}
    store.setActive(active);
   };
   update();const sub=AppState.addEventListener('change',update),unsubscribe=auth.subscribe(update);
-  return()=>{sub.remove();unsubscribe();release?.();store.setActive(false);};
+  return()=>{sub.remove();unsubscribe();store.setActive(false);};
  },[auth,store,focused,visitGeneration,generation]);
  useEffect(()=>()=>store.dispose(),[store]);
  const close=()=>{Keyboard.dismiss();onClose();};

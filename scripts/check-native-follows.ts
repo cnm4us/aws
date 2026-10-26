@@ -20,7 +20,8 @@ async function main(){
  const request=async(path:string,headers:Record<string,string>={},method='GET',body?:unknown)=>{
   const r=await fetch(base+path,{method,headers:{...headers,...(body!==undefined?{'Content-Type':'application/json'}:{})},...(body!==undefined?{body:JSON.stringify(body)}:{})});
   if(path.includes('/creator-recognition')||path.includes('/creator-follow')||/\/users\/\d+\/follow/.test(path))eq(r.headers.get('cache-control'),'no-store');
-  return {status:r.status,body:r.status===204?null:await r.json() as any};
+  // Access transport metadata is qualified in check-native-access; keep these legacy domain assertions exact.
+  const raw=r.status===204?null:await r.json() as any;const responseBody:any=raw&&typeof raw==='object'?(({access,...domain})=>domain)(raw):raw;return {status:r.status,body:responseBody};
  };
  const recognition=`/api/viewer/v1/feed/global/publications/${f.introductionSource.publicationId}/creator-recognition`;
  const path=(pub=p,space=s)=>`/api/viewer/v1/spaces/${space}/publications/${pub}/creator-follow`;

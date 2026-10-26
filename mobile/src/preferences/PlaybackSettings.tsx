@@ -1,4 +1,4 @@
-import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Action } from '../ui/Message';
 import type { CaptionPreferences } from './captionPreferences';
@@ -35,7 +35,7 @@ export function PlaybackSettings({ visible, onClose, preferences, snapshot, capt
             ))}
           </View>
           <Text style={styles.body}>Applies the next time you open the app. Use the sound button to change sound while browsing.</Text>
-          {snapshot.saving && <View style={styles.saving}><ActivityIndicator color="#ffffff" /><Text style={styles.body}>Saving…</Text></View>}
+          {snapshot.saving && <View style={styles.saving}><Text style={[styles.body,{flexShrink:1}]}>Saving sound preference</Text></View>}
           {snapshot.error && <Text style={styles.error} accessibilityRole="alert">{snapshot.error}</Text>}
           <Text style={styles.label}>Captions</Text>
           <View style={[styles.choices, stacked && styles.stacked]} accessibilityRole="radiogroup">

@@ -97,3 +97,18 @@ export async function isBannedFromSpace(spaceId: number, userId: number, conn?: 
     return (rows as any[]).length > 0
   }
 }
+
+// Milliseconds from SQL avoid interpreting MySQL datetime strings in the host TZ.
+export async function nextBanStart(spaceId: number, userId: number, conn?: DB): Promise<number> {
+  const [rows] = await db(conn).query(`SELECT UNIX_TIMESTAMP(MIN(starts_at))*1000 AS boundary FROM suspensions
+    WHERE user_id=? AND kind='ban' AND starts_at>NOW() AND (ends_at IS NULL OR ends_at>=starts_at)
+      AND (target_type='site' OR (target_type='space' AND target_id=?))`, [userId, spaceId])
+  return (rows as any[])[0]?.boundary == null ? Infinity : Number((rows as any[])[0].boundary)
+}
+export async function subscriptionValidUntil(spaceId: number, userId: number, conn?: DB): Promise<number> {
+  const [rows] = await db(conn).query(`SELECT COUNT(*) AS total, SUM(ended_at IS NULL) AS indefinite,
+    UNIX_TIMESTAMP(MAX(ended_at))*1000 AS boundary FROM space_subscriptions
+    WHERE user_id=? AND space_id=? AND status='active' AND (ended_at IS NULL OR ended_at>NOW())`, [userId, spaceId])
+  const row = (rows as any[])[0]
+  return !Number(row?.total) ? 0 : Number(row.indefinite) ? Infinity : Number(row.boundary)
+}

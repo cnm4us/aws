@@ -1,3 +1,4 @@
+import { stampResponse,type RequestEvidence } from '../auth/accessProof';
 export class ApiError extends Error {
   constructor(message: string, readonly status?: number, readonly code?: string, readonly retryAfterSeconds?: number) {
     super(message);
@@ -8,6 +9,11 @@ export class ApiError extends Error {
 type ClientOptions = {
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
+  ticket?:()=>RequestEvidence;
+  onResponse?:(value:unknown)=>void;
+  onError?:(error:ApiError,path:string)=>void;
+  onRequest?:(path:string)=>(()=>void);
+  onComplete?:(path:string,status:number|undefined,elapsedMs:number,outcome:'ok'|'failed'|'cancelled')=>void;
   getHeaders?: () => Record<string, string>;
 };
 
@@ -48,11 +54,14 @@ export function createApiClient(baseUrl: string, options: ClientOptions = {}) {
       if (!path.startsWith('/') || path.startsWith('//') || /[\\\s]/.test(path) || new URL(`${baseUrl}${path}`).origin !== new URL(baseUrl).origin) {
         throw new ApiError('API paths must be relative to the configured server.');
       }
+      const ticket=options.ticket?.()??{startedAt:performance.now(),wallStartedAt:Date.now(),epoch:0};
       const headers = { Accept: text ? 'text/vtt' : 'application/json', ...options.getHeaders?.() } as Record<string,string>;
       if (Object.keys(headers).some(k=>k.toLowerCase()==='authorization') && !/^\/api\/(native|viewer)\/v1\//.test(path)) {
         throw new ApiError('Credentials are only available to the viewing API.');
       }
+      const finishRequest=options.onRequest?.(path);
       const controller = new AbortController();
+      let responseStatus:number|undefined,completed=false;
       let timedOut = false;
       const cancel = () => controller.abort();
       signal?.addEventListener('abort', cancel, { once: true });
@@ -70,6 +79,7 @@ export function createApiClient(baseUrl: string, options: ClientOptions = {}) {
           body: body === undefined ? undefined : JSON.stringify(body),
           signal: controller.signal,
         });
+        responseStatus=response.status;
         if (response.redirected || (response.url && new URL(response.url).origin !== new URL(baseUrl).origin)) {
           throw new ApiError('The server redirected this request. Check your connection.');
         }
@@ -99,16 +109,16 @@ export function createApiClient(baseUrl: string, options: ClientOptions = {}) {
           throw new ApiError(safeCode ? messages[safeCode] : 'The request could not be completed. Please try again.', response.status,
             safeCode, Number.isFinite(retry) && retry>0 ? retry : undefined);
         }
-        if (response.status === 204) return null;
+        if (response.status === 204){completed=true;return null;}
         if (text) {
           if (!/^text\/vtt(?:;|$)/i.test(response.headers.get('content-type') || '')) {
             await response.body?.cancel().catch(() => {});
             throw new ApiError('The server returned unexpected captions.');
           }
-          return await readBoundedText(response, 1024 * 1024, controller.signal);
+          const value=await readBoundedText(response, 1024 * 1024, controller.signal);completed=true;return value;
         }
         try {
-          return await response.json();
+          const value=await response.json();if(controller.signal.aborted)throw new Error('Cancelled');stampResponse(value,ticket);options.onResponse?.(value);completed=true;return value;
         } catch {
           if (controller.signal.aborted) throw new Error('Cancelled');
           throw new ApiError('The server returned an unreadable feed. Please try again.');
@@ -120,10 +130,10 @@ export function createApiClient(baseUrl: string, options: ClientOptions = {}) {
           throw cancelled;
         }
         if (timedOut) throw new ApiError('The connection timed out. Please try again.');
-        if (error instanceof ApiError) throw error;
+        if (error instanceof ApiError){options.onError?.(error,path);throw error;}
         throw new ApiError('Cannot reach the server. Check your connection and try again.');
       } finally {
-        clearTimeout(timer);
+        options.onComplete?.(path,responseStatus,Math.max(0,performance.now()-ticket.startedAt),signal?.aborted&&!timedOut?'cancelled':completed?'ok':'failed');finishRequest?.();clearTimeout(timer);
         signal?.removeEventListener('abort', cancel);
       }
     };

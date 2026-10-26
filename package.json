@@ -109,7 +109,8 @@
     "viewer:check:follows:web": "ts-node scripts/check-native-follows-web.ts",
     "viewer:fixtures:launch-introductions": "ts-node scripts/native-launch-introduction-fixtures.ts",
     "viewer:check:launch-introductions": "ts-node scripts/check-native-launch-introductions.ts",
-    "viewer:check:launch-introductions:web": "ts-node scripts/check-native-launch-introductions-web.ts"
+    "viewer:check:launch-introductions:web": "ts-node scripts/check-native-launch-introductions-web.ts",
+    "viewer:check:access": "ts-node scripts/check-native-access.ts"
   },
   "dependencies": {
     "@aws-sdk/client-mediaconvert": "^3.645.0",

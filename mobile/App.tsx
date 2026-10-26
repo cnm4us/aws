@@ -6,6 +6,7 @@ import { ViewerNavigator } from './src/navigation/ViewerNavigator';
 import { AuthProvider } from './src/auth/useAuth';
 import { Message } from './src/ui/Message';
 import { usePlaybackPreferences } from './src/preferences/usePlaybackPreferences';
+import { FeedLoadingSplash } from './src/ui/FeedLoadingSplash';
 
 export default function App() {
   const environment = useMemo(() => readEnvironment(), []);
@@ -17,7 +18,7 @@ export default function App() {
           <AuthProvider baseUrl={environment.value.apiBaseUrl}>
             <ViewerNavigator preferences={preferences} sound={sound} captionPreferences={captionPreferences} captions={captions}/>
           </AuthProvider>
-        ) : <Message title="Loading preferences" busy />) : (
+        ) : <FeedLoadingSplash feedName="Global"/>) : (
           <Message title="Configure your connection" message={environment.message} />
         )}
     </SafeAreaProvider>

@@ -1,6 +1,6 @@
 import { CONTROL_LANE } from '../ui/IconButton';
 import { useLayoutEffect, useMemo, useState, useSyncExternalStore } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { TextResources } from './resources';
 import { cueAt } from './vtt';
 import { VerifiedRefresh } from '../auth/verifiedRefresh';
@@ -46,7 +46,7 @@ export function CaptionLayer({ resources, publicationId, duration, player, visib
   }, [visible, player, state.cues, paused]);
   if (!visible) return null;
   return <View style={[styles.position, { bottom }]} pointerEvents="box-none">
-    {state.loading ? (loadingNotice ? <View style={styles.pill} pointerEvents="none"><ActivityIndicator color="#fff" accessibilityLabel="Loading captions" /></View> : null) :
+    {state.loading ? (loadingNotice ? <View style={styles.pill} pointerEvents="none"><Text style={styles.text}>Loading captions</Text></View> : null) :
       state.error ? <View style={styles.pill}>
         <Text style={styles.text}>{state.error}</Text>
         <Pressable style={styles.retry} accessibilityRole="button" accessibilityLabel="Retry captions" onPress={() => setAttempt(n => n + 1)}>
@@ -57,7 +57,7 @@ export function CaptionLayer({ resources, publicationId, duration, player, visib
 }
 const styles = StyleSheet.create({
   position: { position: 'absolute', left: 16, right: CONTROL_LANE.textRight, alignItems: 'center' },
-  pill: { maxWidth: '100%', backgroundColor: 'rgba(0,0,0,0.7)', borderRadius: 12, padding: 10 },
+  pill: { maxWidth: '100%', backgroundColor: 'rgba(0,0,0,0.7)', borderRadius: 12, padding: 10, gap: 8 },
   text: { color: '#fff', fontSize: 17, lineHeight: 24, textAlign: 'center' },
   retry: { minHeight: 44, justifyContent: 'center' },
 });
