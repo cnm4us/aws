@@ -272,6 +272,8 @@ On2026-10-26 the user accepted the delivered layout increment with “Looks good
 
 ## Resume Here
 
+- Implementation committed/pushed as `71aab2af88116d110e8da043e976bfbbc087f4b2`; remote main and a clean working tree were verified. The next user-requested planning increment is [Plan179](plan_179.md), unifying creator/date and optional story. It does not close the unchecked physical cases here.
+
 - The build30 increment is qualitatively accepted and authorized for commit/push. A–E host/artifact work passes. [Install build30](https://expo.dev/accounts/mbcollins2/projects/aws-video-feed-poc/builds/2ff9a4f7-dad3-4f9b-aff3-05b2a837775c) is verified; retain the unchecked F cases as coverage limits unless specific observations are later supplied.
 - The proposed first increment reserves the bottom area and preserves existing navigation features; the five future destinations are not silently included. Footer reserve starts at64 points plus bottom inset for review.
 - Preserve build29, existing fresh-player/readiness behavior, fixtures and phone sign-in. Commit/push is explicitly requested for this increment. A taller registered iPhone cannot by itself qualify shorter-phone physical crop; retain that coverage limit and use suitable simulator/device evidence when available.

@@ -9,7 +9,7 @@ import { LaunchPreparation } from '../src/spaces/launchPreparation';
 import type { FeedVideoItem } from '../src/feed/types';
 const production='01ARZ3NDEKTSV4RRFFQ69G5FAV';
 const item=(publicationId:number):FeedVideoItem=>({publicationId,productionUlid:production,uploadId:1,spaceId:1,playbackUrl:'https://media.test/same',posterUrl:null,
- creator:{id:2,displayName:'Creator',avatarUrl:null},description:null,width:null,height:null,durationSeconds:20});
+ creator:{id:2,displayName:'Creator',avatarUrl:null},publishedAt:null,description:null,width:null,height:null,durationSeconds:20});
 const flush=()=>new Promise(resolve=>setImmediate(resolve));
 class Player implements PlayerPort {
  playing=false;muted=true;released=false;seconds=7;loads=0;seeks=0;

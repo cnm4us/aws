@@ -10,7 +10,7 @@ import type { FeedVideoItem } from '../src/feed/types';
 const videos: FeedVideoItem[] = Array.from({ length: 40 }, (_, index) => ({
   publicationId: index + 1, playbackUrl: `https://media.test/${index}.m3u8`,
   uploadId: null, productionUlid: null, spaceId: 1, posterUrl: null,
-  creator: { id: 1, displayName: 'Creator', avatarUrl: null }, description: null,
+  creator: { id: 1, displayName: 'Creator', avatarUrl: null }, publishedAt:null,description: null,
   width: null, height: null, durationSeconds: null,
 }));
 

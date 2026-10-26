@@ -26,8 +26,13 @@ for (const preview of [false, true]) test(`actual feed: controls, captions, resi
     await press('Show captions'); await render({captions:captions.getSnapshot()});
     await Test.act(async()=>{first.currentTime=2.2;first.emit('timeUpdate',{currentTime:2.2});}); assert.ok(texts().includes('Second full sentence'));
     await press('Pause video'); assert.equal(first.playing,false);
+    const allocated=e.players.length, beforeLoads=first.loads;
     await press('Expand story'); assert.ok(texts().includes('Full story')); assert.equal(texts().includes('Second full sentence'),false);
+    const body=root.root.findAllByType('ScrollView').find(n=>n.props.testID==='publication-story-body');
+    await Test.act(async()=>body.props.onTouchStart({stopPropagation(){}}));assert.equal(root.root.findByType('FlatList').props.scrollEnabled,false);
+    await Test.act(async()=>body.props.onTouchEnd());assert.equal(root.root.findByType('FlatList').props.scrollEnabled,true);
     await press('Collapse story'); assert.ok(texts().includes('Second full sentence')); assert.equal(first.playing,false);
+    assert.equal(first.currentTime,2.2);assert.equal(e.players.length,allocated);assert.equal(first.loads,beforeLoads);
     await Test.act(async()=>{layout(480);}); await Test.act(async()=>{await new Promise(r=>setTimeout(r,180));});
     assert.equal(first.currentTime,2.2); assert.equal(first.playing,false); assert.ok(e.scrolls.length);
     await render({focused:false}); assert.equal(e.players.some(p=>p.playing),false); assert.equal(texts().includes('Second full sentence'),false);

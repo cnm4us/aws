@@ -8,7 +8,7 @@ import { adaptViewerFeedPage } from '../src/feed/adaptFeed';
 import { FeedStore } from '../src/feed/feedStore';
 
 const item:FeedVideoItem={publicationId:9,uploadId:1,productionUlid:'same',spaceId:1,playbackUrl:'https://media.test/video.m3u8',posterUrl:null,
-  creator:{id:2,displayName:'Creator',avatarUrl:null},description:null,width:null,height:null,durationSeconds:30};
+  creator:{id:2,displayName:'Creator',avatarUrl:null},publishedAt:null,description:null,width:null,height:null,durationSeconds:30};
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 class Player implements PlayerPort {
   seconds=8;playing=false;released=false;seeks:number[]=[];

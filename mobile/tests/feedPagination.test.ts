@@ -7,7 +7,7 @@ import { fetchGlobalFeed } from '../src/api/feed';
 function item(id: number): FeedVideoItem {
   return { publicationId: id, uploadId: 1, productionUlid: null, spaceId: 1,
     playbackUrl: `https://example.com/${id}.m3u8`, posterUrl: null,
-    creator: { id: 1, displayName: 'Creator', avatarUrl: null }, description: null,
+    creator: { id: 1, displayName: 'Creator', avatarUrl: null }, publishedAt:null,description: null,
     width: null, height: null, durationSeconds: null };
 }
 function deferred<T>() {

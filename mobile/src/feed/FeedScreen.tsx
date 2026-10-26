@@ -191,8 +191,9 @@ function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosti
   useEffect(()=>()=>entryGate.dispose(),[entryGate]);
   const textEligible = eligible && publicationAuthorized && playback.entryPresented && playback.appActive && playback.screenEligible && !playback.scrolling;
   const [storyExpanded, setStoryExpanded] = useState(false);
+  const [storyInteracting, setStoryInteracting] = useState(false);
   const [textHeight, setTextHeight] = useState(0);
-  useLayoutEffect(() => { if (!textEligible) { resources.clear(); setStoryExpanded(false); } }, [resources, textEligible]);
+  useLayoutEffect(() => { if (!textEligible) { resources.clear(); setStoryExpanded(false); setStoryInteracting(false); } }, [resources, textEligible]);
   useEffect(() => resources.clear, [resources]);
   const canLoad=(item:FeedVideoItem)=>context.kind!=='space'||!sessionAuth?.access||sessionAuth.access.canView(item);
   const lastSelectedItem=useRef<FeedVideoItem|undefined>(undefined);
@@ -275,7 +276,7 @@ function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosti
         extraData={{ index, playback, height, textEligible }}
         keyExtractor={item => String(item.publicationId)}
         pagingEnabled
-        scrollEnabled={!covered}
+        scrollEnabled={!covered && !storyInteracting}
         initialNumToRender={2}
         initialScrollIndex={index}
         maxToRenderPerBatch={3}
@@ -284,8 +285,9 @@ function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosti
         showsVerticalScrollIndicator={false}
         getItemLayout={(_data, itemIndex) => ({ length: height, offset: height * itemIndex, index: itemIndex })}
         renderItem={({ item, index: rowIndex }) => (
-          <FeedCard item={item} height={height} geometry={rowIndex===index?geometry:feedGeometry(width,height,item.width&&item.height?{width:item.width,height:item.height}:null)} onCreator={rowIndex===index?onCreator:undefined}
+          <FeedCard item={item} height={height} headerHeight={headerHeight} geometry={rowIndex===index?geometry:feedGeometry(width,height,item.width&&item.height?{width:item.width,height:item.height}:null)} onCreator={rowIndex===index?onCreator:undefined}
             resources={resources} active={rowIndex===index && textEligible} onStoryExpanded={rowIndex===index?setStoryExpanded:undefined}
+            onStoryInteracting={rowIndex===index?setStoryInteracting:undefined}
             onTextHeight={rowIndex===index?setTextHeight:undefined}>
             {rowIndex === index && item.publicationId === playback.publicationId && item.playbackUrl && (
               <VideoSurface geometry={geometry} headerHeight={headerHeight} onRetry={onRecover} coordinator={coordinator} snapshot={playback} posterUrl={item.posterUrl} onNext={next} />

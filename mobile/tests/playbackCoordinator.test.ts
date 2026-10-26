@@ -10,7 +10,7 @@ import { PlayerBudget } from '../src/playback/playerBudget';
 function item(publicationId: number): FeedVideoItem {
   return { publicationId, playbackUrl: `https://example.com/${publicationId}.m3u8`,
     uploadId: 1, productionUlid: null, spaceId: 1, posterUrl: null,
-    creator: { id: 1, displayName: 'Creator', avatarUrl: null }, description: null,
+    creator: { id: 1, displayName: 'Creator', avatarUrl: null }, publishedAt:null,description: null,
     width: null, height: null, durationSeconds: null };
 }
 

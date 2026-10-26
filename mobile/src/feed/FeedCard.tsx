@@ -1,29 +1,26 @@
 import { CONTROL_LANE } from '../ui/IconButton';
-import { memo, type ReactNode } from 'react';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { memo, useState, type ReactNode } from 'react';
+import { Image, StyleSheet, Text, View } from 'react-native';
 import type { FeedVideoItem } from './types';
 import type { TextResources } from '../content/resources';
-import { StoryPanel } from '../content/StoryPanel';
+import { PublicationPanel } from '../content/StoryPanel';
 import type {feedGeometry} from './feedGeometry';
 
-export const FeedCard = memo(function FeedCard({ item, height, children, onCreator, resources, active = true, onStoryExpanded, onTextHeight,geometry }: {
+export const FeedCard = memo(function FeedCard({ item, height, headerHeight, children, onCreator, resources, active = true, onStoryExpanded, onStoryInteracting, onTextHeight,geometry }: {
   geometry?:ReturnType<typeof feedGeometry>;
-  item: FeedVideoItem; height: number; children?: ReactNode; onCreator?:(id:number)=>void;
+  item: FeedVideoItem; height: number; headerHeight?:number; children?: ReactNode; onCreator?:(id:number)=>void;
+  onStoryInteracting?: (interacting: boolean) => void;
   resources?: TextResources; active?: boolean; onStoryExpanded?: (expanded: boolean) => void; onTextHeight?: (height: number) => void;
 }) {
+  const [noticeHeight, setNoticeHeight] = useState(0);
   return (
     <View style={[styles.card, { height }]}>
       {item.posterUrl && <Image source={{ uri: item.posterUrl }} resizeMode="contain" style={geometry?.knownSize?{position:'absolute',left:0,top:geometry.mediaTop,width:geometry.width,height:geometry.mediaHeight}:StyleSheet.absoluteFill} />}
       {children}
       <View style={styles.caption} pointerEvents="box-none" onLayout={event => onTextHeight?.(event.nativeEvent.layout.height)}>
-        {item.creator.id && onCreator ? <Pressable onPress={()=>onCreator(item.creator.id!)} style={{minHeight:44,justifyContent:'center'}}
-          accessibilityRole="button" accessibilityLabel={`View ${item.creator.displayName}'s profile`}>
-          <Text style={styles.creator}>{item.creator.displayName}</Text>
-        </Pressable> : <Text style={styles.creator}>{item.creator.displayName}</Text>}
-        {item.hasStory && resources && onStoryExpanded ? <StoryPanel publicationId={item.publicationId} preview={item.storyPreview ?? null}
-          resources={resources} active={active} height={height} onExpanded={onStoryExpanded}/> :
-          !item.hasStory && item.description && <Text pointerEvents="none" style={styles.description} numberOfLines={3}>{item.description}</Text>}
-        {!item.playbackUrl && <Text style={styles.description}>This video is unavailable. Swipe to continue.</Text>}
+        <PublicationPanel item={item} resources={resources} active={active} height={height} headerHeight={(headerHeight??0)+(!item.playbackUrl?noticeHeight:0)}
+          onCreator={onCreator} onExpanded={onStoryExpanded} onInteracting={onStoryInteracting}/>
+        {!item.playbackUrl && <Text style={styles.description} onLayout={event=>setNoticeHeight(event.nativeEvent.layout.height+8)}>This video is unavailable. Swipe to continue.</Text>}
       </View>
     </View>
   );
@@ -32,6 +29,5 @@ export const FeedCard = memo(function FeedCard({ item, height, children, onCreat
 const styles = StyleSheet.create({
   card: { backgroundColor: '#000000', overflow: 'hidden' },
   caption: { position: 'absolute', left: 20, right: CONTROL_LANE.textRight, bottom: 28 },
-  creator: { color: '#ffffff', fontSize: 18, fontWeight: '700', textShadowColor: '#000000', textShadowRadius: 8 },
   description: { color: '#ffffff', fontSize: 15, lineHeight: 21, marginTop: 8, textShadowColor: '#000000', textShadowRadius: 8 },
 });

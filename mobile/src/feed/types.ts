@@ -1,6 +1,7 @@
 import type { AccessProof } from '../auth/accessProof';
 export type FeedVideoItem = {
   publicationId: number;
+  publishedAt: string | null;
   uploadId: number | null;
   productionUlid: string | null;
   spaceId: number | null;

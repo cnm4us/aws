@@ -2,6 +2,7 @@ import { adaptAccess } from '../auth/accessProof';
 import { ApiError } from '../api/client';
 import type { FeedPage, FeedVideoItem } from './types';
 import type { FeedContext } from './context';
+import { publicationTime } from '../content/publicationTime';
 
 function record(value: unknown): Record<string, unknown> | null {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -51,6 +52,7 @@ export function adaptFeedPage(value: unknown): FeedPage {
       : upload?.orientation === 'landscape' ? upload.poster_landscape_cdn : null;
     items.push({
       publicationId,
+      publishedAt: publicationTime(publication?.published_at, true),
       uploadId: id(upload?.id),
       productionUlid: text(publication?.production_ulid, 26),
       spaceId: id(publication?.space_id),
@@ -81,7 +83,7 @@ export function adaptViewerFeedPage(value: unknown, expected: FeedContext, ancho
     const row=record(value),publicationId=id(row?.publicationId);if(!row || !publicationId || seen.has(publicationId))continue;
     if(expected.kind==='space' && row.spaceId!==expected.spaceId)throw new ApiError('The feed context changed. Please try again.');
     seen.add(publicationId);const creator=record(row.creator);
-    items.push({publicationId,uploadId:id(row.uploadId),spaceId:id(row.spaceId),productionUlid:text(row.productionUlid,26),
+    items.push({publicationId,publishedAt:publicationTime(row.publishedAt),uploadId:id(row.uploadId),spaceId:id(row.spaceId),productionUlid:text(row.productionUlid,26),
       playbackUrl:httpsUrl(row.playbackUrl),posterUrl:httpsUrl(row.posterUrl),
       creator:{id:id(creator?.id),displayName:text(creator?.displayName,120)??'Creator',avatarUrl:httpsUrl(creator?.avatarUrl)},
       hasStory:row.hasStory===true,storyPreview:text(row.storyPreview,200),hasCaptions:row.hasCaptions===true,

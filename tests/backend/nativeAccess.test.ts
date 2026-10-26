@@ -44,7 +44,10 @@ async function mounted(run:(url:string,calls:string[])=>Promise<void>) {
 test('mounted feed and selected probes carry only checked rows; denial cannot mint grants',async()=>mounted(async(base,calls)=>{
  const r=await fetch(`${base}/spaces/7/feed?limit=20`),page=await r.json() as any;
  assert.equal(r.status,200);assert.equal(r.headers.get('cache-control'),'no-store');assert.equal(page.access.spaceView.spaceId,7);assert.equal(page.access.publicationViews[0].publicationId,11);
- assert.equal(calls.filter(c=>c==='identity').length,1);
+ assert.equal(page.items[0].publishedAt,'2026-01-01T00:00:00.000Z');
+ const anchored=await (await fetch(`${base}/spaces/7/feed?anchorPublicationId=11`)).json() as any;
+ assert.equal(anchored.items[0].publishedAt,page.items[0].publishedAt);
+ assert.equal(calls.filter(c=>c==='identity').length,2);
  const probe=await (await fetch(`${base}/spaces/7/playback-access?publicationIds=11,12`)).json() as any;
  assert.deepEqual(probe.unavailable,[12]);assert.deepEqual(probe.access.publicationViews.map((x:any)=>x.publicationId),[11]);
  assert.equal((await fetch(`${base}/spaces/8/feed`)).status,403);
@@ -55,11 +58,13 @@ test('combined Launch opt-in preserves legacy shape and rejects unsupported quer
  const legacy=await (await fetch(path)).json() as any;assert.equal(legacy.entry,undefined);
  const response=await fetch(`${path}?include=entry`),body=await response.json() as any;
  assert.equal(response.status,200);assert.equal(body.entry.resume.outcome,'restored');assert.equal(body.entry.items[0].publicationId,11);assert.equal(body.entry.access.identity.viewerId,9);
+ assert.equal(body.entry.items[0].publishedAt,'2026-01-01T00:00:00.000Z');
  assert.equal((await fetch(`${path}?include=bad`)).status,400);assert.equal((await fetch(`${path}?include=entry&extra=1`)).status,400);
 }));
 test('Global public proof is independent of sign-in and carries no membership/configuration',async()=>mounted(async(base)=>{
  const a=await (await fetch(`${base}/feed/global`)).json() as any,b=await (await fetch(`${base}/feed/global`,{headers:{authorization:'Bearer valid'}})).json() as any;
  assert.deepEqual(a.items,b.items);assert.equal(a.access.identity,undefined);assert.equal(b.access.identity.viewerId,9);
+ assert.equal(a.items[0].publishedAt,'2026-01-01T00:00:00.000Z');
  assert.deepEqual(a.access.publicView.publicationIds,b.access.publicView.publicationIds);assert.equal(a.access.spaceView,undefined);
  assert.equal(JSON.stringify(a).includes('expiresAt'),false);
 }));

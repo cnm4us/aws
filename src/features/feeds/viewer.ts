@@ -1,6 +1,7 @@
 import type { GlobalFeedItem, FeedResponse } from './types';
 import { ViewerApiError } from '../native-sessions/service';
 import { loadCreators } from '../profiles/viewer';
+import { publicationTime } from '../../core/publicationTime';
 
 const id = (value: unknown) => Number.isSafeInteger(Number(value)) && Number(value)>0 ? Number(value) : null;
 const number = (value: unknown) => value !== null && value !== undefined && Number.isFinite(Number(value)) && Number(value)>=0 ? Number(value) : null;
@@ -10,7 +11,7 @@ function url(value: unknown): string | null {
 }
 export function serializeViewerVideo(item: GlobalFeedItem) {
   const p=item.publication,u=item.upload || {},owner=item.owner;
-  return { publicationId:id(p.id),uploadId:id(p.upload_id),productionUlid:p.production_ulid || null,spaceId:id(p.space_id),
+  return { publicationId:id(p.id),publishedAt:publicationTime(p.published_at),uploadId:id(p.upload_id),productionUlid:p.production_ulid || null,spaceId:id(p.space_id),
     playbackUrl:url(u.cdn_master),posterUrl:url(u.poster_cdn),
     creator:{id:id(owner?.id),displayName:owner?.displayName?.trim() || null,avatarUrl:null},
     description:typeof u.description==='string' ? u.description : null,
