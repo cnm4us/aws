@@ -9,5 +9,5 @@ export function CreatorButton({name,avatarUrl,onPress,disabled,followState,acces
   </Pressable>;
 }
 const styles=StyleSheet.create({button:{height:44,width:44,borderRadius:22,borderWidth:1,borderColor:'#777',backgroundColor:'rgba(24,24,28,0.25)',alignItems:'center',justifyContent:'center'},
-  here:{borderColor:'#4ade80'},elsewhere:{borderColor:'#facc15'},
+  here:{borderColor:'#4ade80',borderWidth:2},elsewhere:{borderColor:'#facc15',borderWidth:2},
   avatar:{height:40,width:40,borderRadius:20},fallback:{height:24,width:24}});

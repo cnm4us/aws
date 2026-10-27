@@ -138,5 +138,7 @@ Evidence: `tests/runs/device/plan_180/build32-acceptance.json`. No separate nume
 
 ## Resume Here
 
+- Successor planning: [Plan181](plan_181.md) covers stable contextual Follow spacing, silent checks and thicker green/yellow avatar borders. Planning only; build32 acceptance remains unchanged. Implementation `243086e` and delivery `905695b` were subsequently pushed to `origin/main`; remote head verified at `905695b60249236b7d370680b7d23b5c59ce25fe`.
+
 - A–C are Complete for the accepted build32 milestone: whole-picture black loading and unified saved-position reveal, visible Space/Menu, paused/playing continuity, clear audio/silent loading and smooth swipes. Public source still matches the verified signed artifact. No rebuild or repeat phone campaign is needed merely to record acceptance.
 - Accepted implementation is committed locally as `243086e648c215fcd9e83494e91f9ebf30d90e2d`; delivery documentation follows separately. No further product change is required for this accepted scope. Push is not requested for this increment. Preserve build31 comparison, phone sign-in/fixtures, predecessor evidence and the explicitly untested physical cases above.

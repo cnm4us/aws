@@ -1,12 +1,12 @@
 const assert=require('node:assert/strict'),test=require('node:test');
 const {bundle,React:R,Test,flatten,visible}=require('./harness.cjs');
-async function setup(t,otherCreator=false){
+async function setup(t,otherCreator=false,uiOptions={}){
  t.mock.timers.enable({apis:['setTimeout','setInterval']});let now=0;t.mock.method(performance,'now',()=>now);
  const {ViewerNavigator,AuthStore,PlaybackPreferences,CaptionPreferences,e}=await bundle(`export {ViewerNavigator} from './src/navigation/ViewerNavigator';export {AuthStore} from './src/auth/authStore';export {PlaybackPreferences} from './src/preferences/playbackPreferences';export {CaptionPreferences} from './src/preferences/captionPreferences';`,true,true,true);
  const session={token:'test',expiresAt:'2030-01-01',viewer:{id:1,displayName:'Viewer'}};
  e.auth=new AuthStore('https://api.test',{login:async()=>session,validate:async()=>{e.validations++;return session;},revoke:async()=>{}},{load:async()=>null,save:async()=>{},clear:async()=>{}});e.validations=0;await e.auth.restore();await e.auth.signIn('test@example.invalid','test');
  const space=id=>({id,name:id===12?'Group':id===13?'Channel':'Personal',type:id===12?'group':id===13?'channel':'personal',ulid:null,slug:`space-${id}`,relationship:'member',subscribed:false});
- e.paths=[];e.follows={};e.writes=0;e.globalOtherCreator=otherCreator;
+ e.paths=[];e.follows={};e.writes=0;e.globalOtherCreator=otherCreator;e.dimensions=uiOptions.dimensions;
  e.makeEntry=(s,pub)=>({context:{kind:'space',space:s},items:[pub,pub+1,pub+2].map(id=>({publicationId:id,spaceId:s.id,productionUlid:null,uploadId:1,playbackUrl:`https://media.test/${id}`,posterUrl:null,creator:{id:2,displayName:'Creator 2',avatarUrl:null},hasStory:false,hasCaptions:false})),nextCursor:null,resume:{requestedPublicationId:pub,restoredPublicationId:pub,outcome:'restored'}});
  e.serverAccess=true;
  e.fetch=async(url,options={})=>{
@@ -23,7 +23,7 @@ async function setup(t,otherCreator=false){
    if(e.holdRecognition)return new Promise(r=>{e.finishRecognition=()=>r(response());});
   }
   else if(p.endsWith('/creator-follow')){
-   const id=Number(p.split('/')[5]),pub=Number(p.split('/')[7]),creator=e.self?1:2,key=`${id}:${creator}`;
+   const id=Number(p.split('/')[5]),pub=Number(p.split('/')[7]),creator=e.self?1:uiOptions.alternateCreators&&pub%2===1?3:2,key=`${id}:${creator}`;
    if(method!=='GET'){e.writes++;e.follows[key]=method==='POST';}
    data={space:{id,name:space(id).name,type:space(id).type},publicationId:pub,creatorId:creator,following:!!e.follows[key],followingElsewhere:!e.self&&Object.entries(e.follows).some(([other,value])=>value&&other!==key&&other.endsWith(`:${creator}`)),followersCount:e.follows[key]?6:5,canFollow:!e.self,disabledReason:e.self?'self':null};
    if(e.denied){status=403;data={error:'forbidden'};}
@@ -32,7 +32,7 @@ async function setup(t,otherCreator=false){
    if(e.holdWrite&&method!=='GET')return new Promise(r=>{e.finishWrite=()=>r(response());});
   }else if(p.endsWith('/engagement')){const id=Number(p.split('/')[5]),pub=Number(p.split('/')[7]);data={spaceId:id,publicationId:pub,likes:{count:0,likedByMe:false},comments:{count:0,hasCommentedByMe:false,canComment:true,disabledReason:null}};}
   else {const id=p.includes('/feed/global')?90:Number(p.split('/')[5]),pub=id===90?100:id===12?200:id===13?400:300,creator=id===20?3:e.self?1:2;
-   data={context:id===90?{kind:'global'}:{kind:'space',space:space(id)},items:[0,1,2].map(n=>({publicationId:pub+n,spaceId:id,productionUlid:null,uploadId:1,playbackUrl:`https://media.test/${pub+n}`,posterUrl:null,creator:{id:id===90&&e.globalOtherCreator&&n===1?3:creator,displayName:`Creator ${id===90&&e.globalOtherCreator&&n===1?3:creator}`,avatarUrl:null},hasStory:false,hasCaptions:false,description:'Video',width:100,height:200,durationSeconds:10})),nextCursor:null};}
+   data={context:id===90?{kind:'global'}:{kind:'space',space:space(id)},items:[0,1,2].map(n=>({publicationId:pub+n,spaceId:id,productionUlid:null,uploadId:1,playbackUrl:`https://media.test/${pub+n}`,posterUrl:null,creator:{id:(id===90&&e.globalOtherCreator||id!==90&&uiOptions.alternateCreators)&&n===1?3:creator,displayName:`Creator ${(id===90&&e.globalOtherCreator||id!==90&&uiOptions.alternateCreators)&&n===1?3:creator}`,avatarUrl:null},hasStory:false,hasCaptions:!!uiOptions.captions,description:'Video',width:100,height:200,durationSeconds:10})),nextCursor:null};}
   const anchor=Number(u.searchParams.get('anchorPublicationId'));if(anchor)data.resume={requestedPublicationId:anchor,restoredPublicationId:anchor,outcome:'restored'};
   return response();
  };
@@ -42,7 +42,7 @@ async function setup(t,otherCreator=false){
  const screen=()=>root.root.findAllByType('Screen').find(n=>n.props.focused),buttons=()=>screen().findAllByType('Pressable').filter(visible),labels=()=>buttons().map(n=>n.props.accessibilityLabel),texts=()=>screen().findAllByType('Text').map(n=>n.props.children).flat();
  const press=async label=>{const button=buttons().find(n=>typeof label==='string'?n.props.accessibilityLabel===label:label.test(n.props.accessibilityLabel));assert.ok(button,String(label));assert.ok(!button.props.disabled,`${label} disabled`);await Test.act(async()=>button.props.onPress());};
  const back=async()=>{await Test.act(async()=>screen().props.navigation.goBack());};
- const layout=async()=>{await Test.act(async()=>screen().findAllByType('View').filter(visible).find(n=>n.props.onLayout)?.props.onLayout({nativeEvent:{layout:{height:600}}}));};
+ const layout=async()=>{await Test.act(async()=>screen().findAllByType('View').filter(visible).find(n=>n.props.onLayout)?.props.onLayout({nativeEvent:{layout:{height:uiOptions.height??600}}}));};
  const enter=async(name='Group')=>{await layout();await press(/Choose space/);await press(name);await layout();};
  const app=async status=>{await Test.act(async()=>{e.state=status;e.listeners.forEach(fn=>fn(status));});};
  const tick=async ms=>{now+=ms;await Test.act(async()=>t.mock.timers.tick(ms));};
@@ -126,16 +126,16 @@ test('uncertain feed Follow reconciles by read; pending profile navigation canno
 test('avatar plus and gray/yellow/green reflect exact-space Follow, profile unfollow and masked lifecycle states',async t=>{
  const h=await setup(t);await h.enter();
  const avatar=()=>h.buttons().find(n=>n.props.accessibilityLabel==="View Creator 2's profile"&&n.props.accessibilityHint);
- const color=()=>flatten(avatar().props.style).borderColor;
+ const color=()=>{const style=flatten(avatar().props.style);assert.equal(style.borderWidth,style.borderColor==='#777'?1:2);assert.equal(style.width,44);assert.equal(style.height,44);return style.borderColor;};
  const plus=()=>h.buttons().find(n=>/^Follow Creator 2 in /.test(n.props.accessibilityLabel));
  assert.equal(color(),'#777');assert.ok(plus());assert.equal(flatten(plus().props.style).height,44);
- assert.equal(h.texts().includes('Follow here'),false);
+ assert.equal(h.texts().includes('Follow here'),false);const fixed=stableFollowLayout(h).geometry;
  await h.press('Follow Creator 2 in Group');assert.equal(color(),'#4ade80');assert.equal(plus(),undefined);
  await h.enter('Channel');assert.equal(color(),'#facc15');assert.ok(plus());assert.match(avatar().props.accessibilityHint,/another space, not yet in Channel/);
  await h.press('Follow Creator 2 in Channel');assert.equal(color(),'#4ade80');assert.equal(plus(),undefined);
  await h.press("View Creator 2's profile");await h.press('Unfollow in Channel');await h.back();await h.layout();assert.equal(color(),'#facc15');assert.ok(plus());
- await h.app('background');assert.equal(color(),'#777');assert.equal(plus(),undefined);await h.app('active');assert.equal(color(),'#facc15');
- h.e.holdRead=true;await h.tick(45_000);assert.equal(color(),'#facc15');await h.tick(15_000);assert.equal(color(),'#777');
+ await h.app('background');assert.equal(color(),'#777');assert.equal(plus(),undefined);assert.deepEqual(emptyFollowSlot(h).geometry,fixed);await h.app('active');assert.equal(color(),'#facc15');assert.deepEqual(stableFollowLayout(h).geometry,fixed);
+ h.e.holdRead=true;await h.tick(45_000);assert.equal(color(),'#facc15');assert.ok(plus());assert.deepEqual(stableFollowLayout(h).geometry,fixed);await h.tick(15_000);assert.equal(color(),'#777');assert.deepEqual(stableFollowLayout(h).geometry,fixed);
  await Test.act(async()=>h.e.finishRead());assert.equal(color(),'#777');h.e.holdRead=false;await h.press('Refresh Follow status for Creator 2');assert.equal(color(),'#facc15');
  h.e.denied=true;await h.tick(45_000);assert.equal(h.labels().some(x=>/^Follow Creator/.test(x)),false);assert.equal(h.e.players.some(p=>p.playing),false);
 });
@@ -143,7 +143,7 @@ test('avatar plus and gray/yellow/green reflect exact-space Follow, profile unfo
 test('Global recognizes a followed creator with yellow only; last contextual unfollow clears it on return',async t=>{
  const h=await setup(t);await h.layout();
  const avatar=()=>h.buttons().find(n=>n.props.accessibilityLabel==="View Creator 2's profile"&&n.props.accessibilityHint);
- const color=()=>flatten(avatar().props.style).borderColor;
+ const color=()=>{const style=flatten(avatar().props.style);assert.equal(style.borderWidth,style.borderColor==='#777'?1:2);assert.equal(style.width,44);assert.equal(style.height,44);return style.borderColor;};
  assert.equal(color(),'#777');assert.equal(h.labels().some(x=>/^Follow Creator/.test(x)),false);
  assert.ok(h.e.paths.filter(x=>x.path.endsWith('/creator-recognition')).every(x=>x.path.includes('/publications/100/')));
  await h.press('Pause video');await h.press('Open spaces for this video');await h.press('Open Group (group)');await h.layout();await h.press('Follow Creator 2 in Group');
@@ -155,7 +155,7 @@ test('Global recognizes a followed creator with yellow only; last contextual unf
 test('Global recognition masks background, expiry, error and late selection while public playback remains usable',async t=>{
  const h=await setup(t,true);h.e.follows['12:2']=true;await h.layout();
  const avatar=()=>h.buttons().find(n=>n.props.accessibilityLabel==="View Creator 2's profile"&&n.props.accessibilityHint);
- const color=()=>flatten(avatar().props.style).borderColor;
+ const color=()=>{const style=flatten(avatar().props.style);assert.equal(style.borderWidth,style.borderColor==='#777'?1:2);assert.equal(style.width,44);assert.equal(style.height,44);return style.borderColor;};
  await h.tick(45_000);assert.equal(color(),'#facc15');
  await h.app('background');assert.equal(color(),'#777');await h.app('active');assert.equal(color(),'#facc15');
  h.e.holdRecognition=true;await h.tick(45_000);assert.equal(color(),'#facc15');await h.tick(15_000);assert.equal(color(),'#777');
@@ -166,4 +166,92 @@ test('Global recognition masks background, expiry, error and late selection whil
  h.e.offline=true;await h.tick(45_000);assert.ok(h.labels().includes('Pause video'));assert.equal(h.e.auth.getSnapshot().status,'authenticated');assert.equal(h.e.writes,0);
  await Test.act(async()=>h.e.auth.signOut());await h.layout();assert.equal(h.e.navigationState.routes.at(-1).name,'Feed');assert.equal(h.labels().some(x=>/^Follow Creator/.test(x)),false);
  const anonReads=h.e.paths.filter(x=>x.path.endsWith('/creator-recognition')).length;await h.tick(45_000);assert.equal(h.e.paths.filter(x=>x.path.endsWith('/creator-recognition')).length,anonReads);
+});
+
+function feedAvatar(h){return h.buttons().find(n=>/^View Creator \d+'s profile$/.test(n.props.accessibilityLabel)&&n.props.accessibilityHint);}
+function hostParent(node){let parent=node.parent;while(parent&&typeof parent.type!=='string')parent=parent.parent;return parent;}
+function stableFollowLayout(h){
+ const avatar=feedAvatar(h),group=hostParent(avatar),style=flatten(group.props.style);
+ assert.equal(style.height,88,'avatar and reserved Follow slot must keep the same total height');
+ assert.equal(style.flexShrink,0,'the group must not shrink in a constrained lane');
+ const slot=group.findAllByType('View').find(n=>n!==group&&hostParent(n)===group);
+ assert.ok(slot,'permanent Follow slot');assert.equal(flatten(slot.props.style).height,44);
+ assert.equal(slot.props.accessible,false,'empty space is not an accessibility stop');
+ const lane=hostParent(group);assert.equal(lane.type,'ScrollView');
+ const gap=flatten(lane.props.contentContainerStyle).gap;assert.equal(gap,8);
+ const like=h.buttons().find(n=>/^Like(?:,|$)/.test(n.props.accessibilityLabel));assert.ok(like);
+ let parent=like;while(parent&&hostParent(parent)!==lane)parent=hostParent(parent);
+ assert.ok(parent,'Like remains in the same control lane');
+ const laneStyle=flatten(lane.props.style);
+ return {group,slot,geometry:{groupHeight:style.height,slotHeight:44,avatarToLike:style.height+gap,laneHeight:laneStyle.height,bottom:laneStyle.bottom}};
+}
+function emptyFollowSlot(h){
+ const result=stableFollowLayout(h);
+ assert.equal(result.slot.findAllByType('Pressable').length,0);
+ assert.equal(result.slot.findAllByType('Text').length,0);
+ assert.equal(result.slot.findAllByType('ActivityIndicator').length,0);
+ assert.equal(flatten(result.slot.props.style).backgroundColor,undefined);
+ return result;
+}
+for(const outcome of ['available','here','elsewhere','self'])test(`Follow status resolves to ${outcome} in a fixed slot without moving the control lane`,async t=>{
+ const h=await setup(t,false,{height:outcome==='self'?260:600,dimensions:{width:320,height:568,fontScale:1.8},captions:outcome==='self'});
+ if(outcome==='here')h.e.follows['12:2']=true;
+ if(outcome==='elsewhere')h.e.follows['13:2']=true;
+ if(outcome==='self')h.e.self=true;
+ h.e.holdRead=true;await h.enter();const before=emptyFollowSlot(h);
+ if(outcome==='self')assert.ok(h.labels().some(label=>/^(Show|Hide) captions$/.test(label)),'constrained lane includes the CC control');
+ const player=h.player();player.currentTime=4;await h.press('Pause video');
+ const players=h.e.players.length,loads=h.e.players.map(p=>p.loads),reads=h.e.paths.length;
+ await Test.act(async()=>h.e.finishRead());
+ const after=stableFollowLayout(h);assert.equal(after.group,before.group);assert.equal(after.slot,before.slot);assert.deepEqual(after.geometry,before.geometry);
+ assert.equal(after.slot.findAllByType('Pressable').length,['available','elsewhere'].includes(outcome)?1:0);
+ assert.equal(flatten(feedAvatar(h).props.style).borderColor,outcome==='here'?'#4ade80':outcome==='elsewhere'?'#facc15':'#777');
+ assert.equal(h.player(),player);assert.equal(player.currentTime,4);assert.equal(player.playing,false);
+ assert.equal(h.e.players.length,players);assert.deepEqual(h.e.players.map(p=>p.loads),loads);assert.equal(h.e.paths.length,reads);
+});
+test('initial Follow verification is silent through swipes and ignores late publication results',async t=>{
+ const h=await setup(t,false,{alternateCreators:true});h.e.holdRead=true;await h.enter();
+ assert.equal(h.texts().includes('…'),false,'initial verification must not display a dots badge');
+ assert.equal(h.labels().some(x=>/Checking Follow status/.test(x)),false,'no hidden or disabled checking button');
+ const initial=emptyFollowSlot(h),late=h.e.finishRead;assert.ok(h.player().playing);
+ const list=h.screen().findByType('FlatList');
+ await Test.act(async()=>{list.props.onScrollBeginDrag();list.props.onScroll({nativeEvent:{contentOffset:{y:600}}});list.props.onMomentumScrollEnd({nativeEvent:{contentOffset:{y:600}}});});
+ const selected=emptyFollowSlot(h),finish=h.e.finishRead;
+ assert.notEqual(finish,late);assert.deepEqual(selected.geometry,initial.geometry);
+ await Test.act(async()=>late());emptyFollowSlot(h);assert.equal(h.labels().some(x=>/^Follow Creator/.test(x)),false);
+ await Test.act(async()=>finish());assert.ok(h.labels().includes('Follow Creator 3 in Group'));assert.deepEqual(stableFollowLayout(h).geometry,initial.geometry);assert.equal(h.e.writes,0);
+});
+test('Follow tap feedback, success and profile unfollow retain the fixed avatar slot',async t=>{
+ const h=await setup(t);await h.enter();const before=stableFollowLayout(h);
+ h.e.holdWrite=true;const stale=h.buttons().find(n=>n.props.accessibilityLabel==='Follow Creator 2 in Group').props.onPress;
+ await h.press('Follow Creator 2 in Group');const pending=stableFollowLayout(h);
+ assert.deepEqual(pending.geometry,before.geometry);assert.ok(pending.slot.findAllByType('Text').some(n=>n.props.children==='…'));
+ const button=pending.slot.findByType('Pressable');assert.equal(button.props.disabled,true);assert.equal(button.props.accessibilityState.busy,true);
+ await Test.act(async()=>stale());assert.equal(h.e.writes,1);
+ await Test.act(async()=>h.e.finishWrite());assert.deepEqual(emptyFollowSlot(h).geometry,before.geometry);
+ assert.equal(flatten(feedAvatar(h).props.style).borderWidth,2);
+ h.e.holdWrite=false;await h.press("View Creator 2's profile");await h.press('Unfollow in Group');await h.back();await h.layout();
+ assert.ok(h.labels().includes('Follow Creator 2 in Group'));assert.deepEqual(stableFollowLayout(h).geometry,before.geometry);
+});
+test('uncertain Follow retry reads silently in the same reserved slot',async t=>{
+ const h=await setup(t);await h.enter();const before=stableFollowLayout(h).geometry;
+ h.e.offline=true;await h.press('Follow Creator 2 in Group');const writes=h.e.writes;
+ assert.ok(h.labels().includes('Refresh Follow status for Creator 2'));assert.deepEqual(stableFollowLayout(h).geometry,before);
+ h.e.offline=false;h.e.holdRead=true;await h.press('Refresh Follow status for Creator 2');emptyFollowSlot(h);
+ assert.equal(h.texts().includes('…'),false);assert.equal(h.e.writes,writes);
+ await Test.act(async()=>h.e.finishRead());assert.deepEqual(emptyFollowSlot(h).geometry,before);assert.equal(h.e.writes,writes);
+});
+test('shared relationship rings double without resizing avatar images or fallback',async()=>{
+ const {CreatorButton}=await bundle(`export {CreatorButton} from './src/ui/CreatorButton';`);let root;
+ try{
+  for(const followState of [undefined,'here','elsewhere']){
+   const props={name:'Creator',avatarUrl:'https://media.test/avatar.jpg',onPress(){},followState};
+   await Test.act(async()=>{if(root)root.update(R.createElement(CreatorButton,props));else root=Test.create(R.createElement(CreatorButton,props));});
+   const style=flatten(root.root.findByType('Pressable').props.style),image=root.root.findByType('Image');
+   assert.equal(style.borderWidth,followState?2:1);assert.deepEqual([style.width,style.height,style.borderRadius],[44,44,22]);
+   assert.deepEqual([image.props.style.width,image.props.style.height,image.props.style.borderRadius],[40,40,20]);
+   await Test.act(async()=>image.props.onError());assert.deepEqual([root.root.findByType('Image').props.style.width,root.root.findByType('Image').props.style.height],[24,24]);
+   await Test.act(async()=>root.update(R.createElement(CreatorButton,{...props,avatarUrl:null})));
+  }
+ }finally{if(root)await Test.act(async()=>root.unmount());}
 });
