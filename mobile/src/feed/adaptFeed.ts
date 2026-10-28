@@ -82,11 +82,12 @@ export function adaptViewerFeedPage(value: unknown, expected: FeedContext, ancho
   for(const value of page.items) {
     const row=record(value),publicationId=id(row?.publicationId);if(!row || !publicationId || seen.has(publicationId))continue;
     if(expected.kind==='space' && row.spaceId!==expected.spaceId)throw new ApiError('The feed context changed. Please try again.');
+    if(row.reportedByMe!==undefined && typeof row.reportedByMe!=='boolean')throw new ApiError('The server returned unexpected report status. Please try again.');
     seen.add(publicationId);const creator=record(row.creator);
     items.push({publicationId,publishedAt:publicationTime(row.publishedAt),uploadId:id(row.uploadId),spaceId:id(row.spaceId),productionUlid:text(row.productionUlid,26),
       playbackUrl:httpsUrl(row.playbackUrl),posterUrl:httpsUrl(row.posterUrl),
       creator:{id:id(creator?.id),displayName:text(creator?.displayName,120)??'Creator',avatarUrl:httpsUrl(creator?.avatarUrl)},
-      hasStory:row.hasStory===true,storyPreview:text(row.storyPreview,200),hasCaptions:row.hasCaptions===true,
+      reportedByMe:row.reportedByMe===true,hasStory:row.hasStory===true,storyPreview:text(row.storyPreview,200),hasCaptions:row.hasCaptions===true,
       description:text(row.description,2000),width:positiveNumber(row.width),height:positiveNumber(row.height),durationSeconds:positiveNumber(row.durationSeconds)});
   }
   if(anchor!==undefined) {

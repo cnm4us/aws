@@ -499,8 +499,7 @@ export async function insertSpacePublicationReport(input: {
   userFacingGroupLabelAtSubmit?: string | null
   reportedStartSeconds?: number | null
   reportedEndSeconds?: number | null
-}): Promise<number> {
-  const db = getPool()
+}, db: DbLike = getPool()): Promise<number> {
   const [result] = await db.query(
     `INSERT INTO space_publication_reports
       (space_publication_id, space_id, production_id, reporter_user_id, rule_id, rule_version_id, rule_scope_at_submit, user_facing_rule_id, user_facing_rule_label_at_submit, user_facing_group_key_at_submit, user_facing_group_label_at_submit, reported_start_seconds, reported_end_seconds)

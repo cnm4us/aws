@@ -18,7 +18,7 @@ export function useViewerClient() {
       if(auth.getSnapshot().generation!==generation)return;
       if(error.status===401)void auth.invalidate(generation);
       else {const match=/\/spaces\/(\d+)(?:\/publications\/(\d+))?/.exec(path);
-        if(match&&(error.status===403&&!['comments_disabled','comment_forbidden','cannot_follow_self'].includes(error.code??'')||error.status===404&&!['captions_not_found'].includes(error.code??'')))
+        if(match&&(error.status===403&&!['comments_disabled','comment_forbidden','cannot_follow_self'].includes(error.code??'')||error.status===404&&!['captions_not_found','report_rule_unavailable'].includes(error.code??'')))
           auth.access.invalidate(Number(match[1]),['publication_not_found','creator_not_found'].includes(error.code??'')?Number(match[2])||undefined:undefined);
       }
     },

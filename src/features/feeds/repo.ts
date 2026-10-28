@@ -15,14 +15,14 @@ function addSelection(where: string[], params: any[], opts: FeedSelection) {
     params.push(opts.newerThan.ts, opts.newerThan.ts, opts.newerThan.id);
   }
 }
-export async function listGlobalFeedRows(opts: FeedSelection) {
-  const db = getPool()
+export async function listGlobalFeedRows(opts: FeedSelection, db: Queryable = getPool()) {
   const params: any[] = []
   const userId = opts.userId ?? null
   // First params are for liked_by_me / commented_by_me / reported_by_me EXISTS() subqueries
   params.push(userId, userId, userId)
   const where: string[] = [
     'sp.visible_in_global = 1',
+    "EXISTS (SELECT 1 FROM spaces global_destination WHERE global_destination.id = sp.space_id AND global_destination.slug IN ('global','global-feed'))",
     "sp.visibility <> 'members'",
     "sp.status = 'published'",
     'sp.published_at IS NOT NULL',
@@ -123,6 +123,7 @@ export async function getGlobalFeedPinnedRowByProductionUlid(
   const params: any[] = [userId, userId, userId, String(opts.productionUlid)]
   const where: string[] = [
     'sp.visible_in_global = 1',
+    "EXISTS (SELECT 1 FROM spaces global_destination WHERE global_destination.id = sp.space_id AND global_destination.slug IN ('global','global-feed'))",
     "sp.visibility <> 'members'",
     "sp.status = 'published'",
     'sp.published_at IS NOT NULL',

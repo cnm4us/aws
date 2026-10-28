@@ -7,7 +7,7 @@ test('viewer serialization explicitly excludes emails, storage, jobs, and modera
   const v=serializeViewerVideo({publication:{id:5,upload_id:3,space_id:8,production_ulid:'production',requested_by:9,distribution_flags:{secret:'x'}},
     owner:{id:4,email:'private@example.invalid',displayName:null},upload:{cdn_master:'https://media.example/video.m3u8',poster_cdn:'https://media.example/poster.jpg',
       s3_key:'private',mediaconvert_job_id:'private',original_filename:'private',description:'Caption',duration_seconds:4}} as any);
-  assert.deepEqual(Object.keys(v).sort(),['publicationId','publishedAt','uploadId','spaceId','productionUlid','playbackUrl','posterUrl','creator','description','width','height','durationSeconds','hasStory','storyPreview','hasCaptions'].sort());
+  assert.deepEqual(Object.keys(v).sort(),['publicationId','publishedAt','reportedByMe','uploadId','spaceId','productionUlid','playbackUrl','posterUrl','creator','description','width','height','durationSeconds','hasStory','storyPreview','hasCaptions'].sort());
   assert.deepEqual(v.creator,{id:4,displayName:null,avatarUrl:null});
   assert.equal(JSON.stringify(v).includes('private'),false);
 });

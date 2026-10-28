@@ -6,6 +6,7 @@ const icons = {
   soundOn: require('../../assets/icons/speaker-on.png'),
   soundOff: require('../../assets/icons/speaker-off.png'),
   menu: require('../../assets/icons/menu.png'),
+  stopwatch: require('../../assets/icons/stopwatch.png'),
 };
 
 export function IconButton({ icon, label, onPress, selected, disabled = false }: {

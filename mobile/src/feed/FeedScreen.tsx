@@ -1,3 +1,5 @@
+import { ReportButton } from '../reporting/ReportButton';
+import type { ReportMemory } from '../reporting/reportMemory';
 import { itemKey } from '../auth/accessProof';
 import { RecoveryCoordinator } from './recoveryCoordinator';
 import { useCallback,useEffect, useLayoutEffect, useMemo, useRef, useState,useSyncExternalStore } from 'react';
@@ -39,7 +41,7 @@ export type FeedCommands={revalidate?:(id:number|undefined)=>void;requestRefresh
 export type FeedPlaybackHandle={checkpoint?:()=> (PlaybackCheckpoint&{uploadId:number|null;productionUlid:string|null;creatorId:number|null})|undefined;entryFailed?:()=>boolean;retainOrigin?:()=>void;retryFailed?:()=>boolean;selectedId?:()=>number|null;capture:()=>PlaybackCheckpoint;release:()=>void;handOff:()=>PlayerHandoff<NativePlayerPort>|undefined};
 
 
-export function FeedScreen({ context, preferences, sound, captionPreferences, captions, focused, onSpaces, onMenu, onGlobal, onCreator, registerPlayback, registerCommands, restore, entry, onBackProfile, onLaunch, onRetryEntry, onChooseLaunch, onComments, onPrepareLaunch, handoff, trace, blocked=false,onForgetCheckpoint }: {
+export function FeedScreen({ context, preferences, sound, captionPreferences, captions, focused, onSpaces, onMenu, onGlobal, onCreator, registerPlayback, registerCommands, restore, entry, onBackProfile, onLaunch, onRetryEntry, onChooseLaunch, onComments, onReport, reportMemory, onPrepareLaunch, handoff, trace, blocked=false,onForgetCheckpoint }: {
   onForgetCheckpoint?:()=>void;
   onPrepareLaunch?:(item:FeedVideoItem)=>void;handoff?:PlayerHandoff<NativePlayerPort>;trace?:NavigationTrace;
   captionPreferences: CaptionPreferences; captions: ReturnType<CaptionPreferences['getSnapshot']>;
@@ -48,7 +50,7 @@ export function FeedScreen({ context, preferences, sound, captionPreferences, ca
   registerCommands?:(handle:FeedCommands)=>()=>void;
   onCreator?:(id:number)=>void;registerPlayback?:(handle:FeedPlaybackHandle)=>()=>void;
   restore?:FeedCheckpoint;entry?:LaunchEntry;onBackProfile?:()=>void;onLaunch?:(item:FeedVideoItem)=>void;
-  onRetryEntry?:()=>Promise<void>;onChooseLaunch?:()=>void;onComments?:(publicationId:number)=>void;blocked?:boolean;
+  onRetryEntry?:()=>Promise<void>;onChooseLaunch?:()=>void;onComments?:(publicationId:number)=>void;onReport?:(publicationId:number)=>void;reportMemory?:ReportMemory;blocked?:boolean;
 }) {
   const { store:identity, snapshot:auth,baseUrl }=useAuth();
   const insets=useSafeAreaInsets();
@@ -117,7 +119,7 @@ export function FeedScreen({ context, preferences, sound, captionPreferences, ca
           <View style={styles.headerActions}><Action label="Spaces" onPress={onSpaces}/><Action label="Global" onPress={onGlobal}/></View>
         </View> : <FeedSession key={snapshot.sessionId} store={store} snapshot={snapshot} muted={sound.muted}
           onToggleMute={()=>{if(live.current.mounted&&live.current.focused)preferences.toggleMute();}} visible={focused} eligible={!!eligible} diagnosticContext={{feedContext:contextKey(context),authGeneration:auth.generation}}
-          headerHeight={headerHeight} onEntryPresented={markEntryPresented} restore={recoveryRestore??restore} entry={recoveryRestore?undefined:entry} handoff={handoff} trace={trace} onPrepareLaunch={onPrepareLaunch} onCreator={onCreator} onLaunch={onLaunch} onComments={onComments} onRecover={()=>{void recover();}} registerPlayback={registerMedia} client={client} context={context} captionPreferences={captionPreferences} captions={captions}/>}
+          headerHeight={headerHeight} onEntryPresented={markEntryPresented} restore={recoveryRestore??restore} entry={recoveryRestore?undefined:entry} handoff={handoff} trace={trace} onPrepareLaunch={onPrepareLaunch} onCreator={onCreator} onLaunch={onLaunch} onComments={onComments} onReport={onReport} reportMemory={reportMemory} onRecover={()=>{void recover();}} registerPlayback={registerMedia} client={client} context={context} captionPreferences={captionPreferences} captions={captions}/>}
       {((context.kind==='space'&&auth.status==='unavailable'&&!access.authorized) || (context.kind==='space' && access.checking && !access.authorized)) &&
         <View style={[StyleSheet.absoluteFill,{backgroundColor:'#000',padding:20,paddingTop:headerHeight+12,gap:12}]}>
           <Message title={auth.status==='unavailable'?'Cannot verify access':'Checking access'} busy={auth.status!=='unavailable'}
@@ -140,13 +142,13 @@ export function FeedScreen({ context, preferences, sound, captionPreferences, ca
   </View>;
 }
 
-function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosticContext, restore, entry, onCreator, onLaunch, onComments, registerPlayback, client, context, captionPreferences, captions, onPrepareLaunch, handoff, trace,visible,onRecover,onEntryPresented,headerHeight }: {
+function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosticContext, restore, entry, onCreator, onLaunch, onComments, onReport, reportMemory, registerPlayback, client, context, captionPreferences, captions, onPrepareLaunch, handoff, trace,visible,onRecover,onEntryPresented,headerHeight }: {
   headerHeight:number;
   onEntryPresented?:()=>void;
   onRecover:()=>void;onPrepareLaunch?:(item:FeedVideoItem)=>void;handoff?:PlayerHandoff<NativePlayerPort>;trace?:NavigationTrace;
   store: FeedStore; snapshot: FeedSnapshot;visible:boolean; muted: boolean; onToggleMute: () => void; eligible: boolean;
   diagnosticContext:{feedContext:string;authGeneration:number};
-  restore?:FeedCheckpoint;entry?:LaunchEntry;onLaunch?:(item:FeedVideoItem)=>void;onComments?:(publicationId:number)=>void;onCreator?:(id:number)=>void;registerPlayback?:(handle:FeedPlaybackHandle)=>()=>void;
+  restore?:FeedCheckpoint;entry?:LaunchEntry;onLaunch?:(item:FeedVideoItem)=>void;onComments?:(publicationId:number)=>void;onReport?:(publicationId:number)=>void;reportMemory?:ReportMemory;onCreator?:(id:number)=>void;registerPlayback?:(handle:FeedPlaybackHandle)=>()=>void;
   client: ApiClient; context: FeedContext; captionPreferences: CaptionPreferences; captions: ReturnType<CaptionPreferences['getSnapshot']>;
 }) {
   const {snapshot:followAuth,store:sessionAuth}=useAuth();
@@ -265,8 +267,8 @@ function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosti
   },[followItem?.publicationId,textEligible,playback.hasFrame,onPrepareLaunch]);
   const showFollow=context.kind==='space' && ['group','channel'].includes(context.type) && followAuth.status==='authenticated' && !!followItem?.creator.id && !!onCreator;
   const showRecognition=context.kind==='global' && followAuth.status==='authenticated' && !!followItem?.creator.id && !!onCreator;
-  const controlCount=(snapshot.items[index]?.creator.id && onCreator?1:0)+(context.kind==='global' && onLaunch?1:0)+(context.kind==='space' && onComments?2:0)+(snapshot.items[index]?.hasCaptions?1:0)+1;
-  const controlHeight=Math.min(controlCount*52-8+(context.kind==='space' && onComments?40:0)+(showFollow?44:0),Math.max(44,height-headerHeight-48));
+  const controlCount=(snapshot.items[index]?.creator.id && onCreator?1:0)+(context.kind==='global' && onLaunch?1:0)+(context.kind==='space' && onComments?2:0)+(snapshot.items[index]?.hasCaptions?1:0)+(onReport&&reportMemory?1:0)+1;
+  const controlHeight=Math.min(controlCount*52-8+(context.kind==='space' && onComments?40:0)+(showFollow?44:0)+(onReport&&reportMemory?20:0),Math.max(44,height-headerHeight-48));
   return (
     <View testID="feed-stage" style={styles.screen} onLayout={event => setLayout(event.nativeEvent.layout)}>
       <View style={{flex:1}} pointerEvents={covered?'none':'auto'} accessibilityElementsHidden={covered} importantForAccessibility={covered?'no-hide-descendants':'auto'}>
@@ -331,6 +333,8 @@ function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosti
           {snapshot.items[index]?.hasCaptions && <IconButton icon="cc"
             label={captions.enabled ? 'Hide captions' : 'Show captions'} selected={captions.enabled}
             disabled={!captions.ready} onPress={() => { if(canInteract.current)void captionPreferences.toggle(); }} />}
+          {onReport&&reportMemory&&<ReportButton key={`report:${followItem.publicationId}`} publicationId={followItem.publicationId} reportedByMe={followItem.reportedByMe===true}
+            memory={reportMemory} eligible={textEligible&&playback.publicationId===followItem.publicationId} onPress={()=>onReport(followItem.publicationId)}/>}
           <IconButton icon={muted ? 'soundOff' : 'soundOn'} label={muted ? 'Unmute' : 'Mute'}
             selected={!muted} onPress={onToggleMute} />
         </ScrollView>

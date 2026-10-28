@@ -9,6 +9,7 @@ export type FeedVideoItem = {
   posterUrl: string | null;
   creator: { id: number | null; displayName: string; avatarUrl: string | null };
   description: string | null;
+  reportedByMe?: boolean;
   hasStory?: boolean;
   storyPreview?: string | null;
   hasCaptions?: boolean;

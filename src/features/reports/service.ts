@@ -1,5 +1,5 @@
 import { DomainError } from '../../core/errors'
-import { getPool } from '../../db'
+import { getPool, type Queryable } from '../../db'
 import { can } from '../../security/permissions'
 import { PERM } from '../../security/perm'
 import * as moderationV2Repo from '../moderation-v2/repo'
@@ -70,10 +70,16 @@ export async function getUserFacingReportingOptionsForPublication(publicationId:
 
   await spacesSvc.assertCanViewSpaceFeed(pub.space_id, userId)
 
+  return getAuthorizedReportingOptions(pub, userId)
+}
+
+// Call only after exact publication authority has been established by the transport.
+export async function getAuthorizedReportingOptions(pub: NonNullable<Awaited<ReturnType<typeof repo.getPublishedPublicationSummary>>>, userId: number, db?: Queryable) {
+  const publicationId = pub.id
   const [existingReport, initialGroupRows, allGroupRows] = await Promise.all([
-    repo.getUserPublicationReport(publicationId, userId),
-    repo.listInitialUserFacingGroupsForSpace(pub.space_id, 'authenticated'),
-    repo.listAllActiveUserFacingGroups('authenticated'),
+    repo.getUserPublicationReport(publicationId, userId, db),
+    repo.listInitialUserFacingGroupsForSpace(pub.space_id, 'authenticated', db),
+    repo.listAllActiveUserFacingGroups('authenticated', db),
   ])
 
   const buildUserFacingGroups = (rows: any[]) => {
@@ -251,16 +257,17 @@ export async function getUserFacingReportingOptionsForPublicationLegacyShape(pub
   }
 }
 
-export async function submitPublicationReport(
-  publicationId: number,
-  userId: number,
-  input: {
-    ruleId?: number | null
-    userFacingRuleId?: number | null
-    reportedStartSeconds?: number | null
-    reportedEndSeconds?: number | null
-  }
-) {
+export type ReportInput = { ruleId?: number | null; userFacingRuleId?: number | null; reportedStartSeconds?: number | null; reportedEndSeconds?: number | null }
+export async function submitPublicationReport(publicationId: number, userId: number, input: ReportInput) {
+  const pub = await repo.getPublishedPublicationSummary(publicationId)
+  if (!pub) throw new DomainError('publication_not_found', 'publication_not_found', 404)
+  await spacesSvc.assertCanViewSpaceFeed(pub.space_id, userId)
+  const result = await submitAuthorizedPublicationReport(pub, userId, input)
+  return { ok: result.ok, reportId: result.reportId }
+}
+
+export async function submitAuthorizedPublicationReport(pub: NonNullable<Awaited<ReturnType<typeof repo.getPublishedPublicationSummary>>>, userId: number, input: ReportInput, db?: Queryable) {
+  const publicationId = pub.id
   const rawRuleId = input?.ruleId == null ? null : Number(input.ruleId)
   const rawUserFacingRuleId = input?.userFacingRuleId == null ? null : Number(input.userFacingRuleId)
   const ruleId = rawRuleId != null && Number.isFinite(rawRuleId) && rawRuleId > 0 ? Math.round(rawRuleId) : null
@@ -272,10 +279,6 @@ export async function submitPublicationReport(
     throw new DomainError('missing_rule_reference', 'missing_rule_reference', 400)
   }
 
-  const pub = await repo.getPublishedPublicationSummary(publicationId)
-  if (!pub) throw new DomainError('publication_not_found', 'publication_not_found', 404)
-
-  await spacesSvc.assertCanViewSpaceFeed(pub.space_id, userId)
   const reportedStartSeconds = normalizeReportedSeconds(input?.reportedStartSeconds ?? null, pub.upload_duration_seconds ?? null)
   const reportedEndSeconds = normalizeReportedSeconds(input?.reportedEndSeconds ?? null, pub.upload_duration_seconds ?? null)
   if (reportedStartSeconds != null && reportedEndSeconds != null && reportedEndSeconds < reportedStartSeconds) {
@@ -291,17 +294,17 @@ export async function submitPublicationReport(
       spaceId: pub.space_id,
       userFacingRuleId,
       ruleId,
-      viewerState: 'authenticated',
+      viewerState: 'authenticated', db,
     })
     if (!resolvedRule) throw new DomainError('rule_not_allowed', 'rule_not_allowed', 400)
-    resolvedUserFacingSummary = await repo.getUserFacingReasonSummary(userFacingRuleId)
+    resolvedUserFacingSummary = await repo.getUserFacingReasonSummary(userFacingRuleId, db)
   } else if (ruleId != null) {
-    resolvedRule = await repo.getReportableRuleForSpace(pub.space_id, ruleId, 'authenticated')
+    resolvedRule = await repo.getReportableRuleForSpace(pub.space_id, ruleId, 'authenticated', db)
     if (!resolvedRule) throw new DomainError('rule_not_allowed', 'rule_not_allowed', 400)
     const visibleReason = await repo.getVisibleUserFacingReasonForRule({
       spaceId: pub.space_id,
       ruleId,
-      viewerState: 'authenticated',
+      viewerState: 'authenticated', db,
     })
     if (visibleReason) {
       resolvedUserFacingSummary = {
@@ -315,16 +318,18 @@ export async function submitPublicationReport(
     resolvedRule = await repo.resolveDefaultMappedRuleForUserFacingReason({
       spaceId: pub.space_id,
       userFacingRuleId: userFacingRuleId as number,
-      viewerState: 'authenticated',
+      viewerState: 'authenticated', db,
     })
     if (!resolvedRule) throw new DomainError('no_resolvable_rule', 'no_resolvable_rule', 400)
-    resolvedUserFacingSummary = await repo.getUserFacingReasonSummary(userFacingRuleId as number)
+    resolvedUserFacingSummary = await repo.getUserFacingReasonSummary(userFacingRuleId as number, db)
     if (!resolvedUserFacingSummary) throw new DomainError('invalid_user_facing_rule_id', 'invalid_user_facing_rule_id', 400)
   }
 
+  if (userFacingRuleId != null && !resolvedUserFacingSummary) throw new DomainError('invalid_user_facing_rule_id', 'invalid_user_facing_rule_id', 400)
+
   try {
     const ruleScopeAtSubmit: repo.ReportScope =
-      pub.space_slug === 'global-feed' ? 'global' : 'space_culture'
+      ['global', 'global-feed'].includes(String(pub.space_slug).toLowerCase()) ? 'global' : 'space_culture'
     const reportId = await repo.insertSpacePublicationReport({
       spacePublicationId: publicationId,
       spaceId: pub.space_id,
@@ -339,8 +344,8 @@ export async function submitPublicationReport(
       userFacingGroupLabelAtSubmit: resolvedUserFacingSummary?.group_label ?? null,
       reportedStartSeconds,
       reportedEndSeconds,
-    })
-    return { ok: true, reportId }
+    }, db)
+    return { ok: true, reportId, reportedStartSeconds, reportedEndSeconds, ruleId: resolvedRule.rule_id, userFacingRuleId: resolvedUserFacingSummary?.id ?? null }
   } catch (err: any) {
     if (String(err?.code || '') === 'ER_DUP_ENTRY') {
       throw new DomainError('already_reported', 'already_reported', 409)

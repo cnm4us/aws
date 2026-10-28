@@ -1,3 +1,6 @@
+import { ReportScreen } from '../reporting/ReportScreen';
+import { ReportMemory } from '../reporting/reportMemory';
+import type { ReportTarget } from '../reporting/api';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { NavigationContainer, DarkTheme, useIsFocused } from '@react-navigation/native';
 import { createNativeStackNavigator, type NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -32,7 +35,7 @@ import { CommentsScreen } from '../engagement/CommentsScreen';
 import { IconButton } from '../ui/IconButton';
 import { ReadinessCheckScreen, ReadinessCheckCover, type NativeReadinessProbe } from '../playback/ReadinessCheckScreen';
 
-type Routes={Feed:undefined;ReadinessCheck:undefined;ReadinessCover:undefined;Comments:{spaceId:number;publicationId:number;generation:number;feedKey:string};LaunchSpaces:{sourceId:number;productionUlid:string|null;creatorId:number|null;generation:number};Menu:{source:'feed'|'profile';feedKey?:string};Spaces:undefined;Account:undefined;Settings:undefined;CreatorProfile:{creatorId:number;journeyGeneration:number;followProof?:FollowProof}};
+type Routes={Feed:undefined;Report:{target:ReportTarget;generation:number;feedKey:string;capturedSeconds:number};ReadinessCheck:undefined;ReadinessCover:undefined;Comments:{spaceId:number;publicationId:number;generation:number;feedKey:string};LaunchSpaces:{sourceId:number;productionUlid:string|null;creatorId:number|null;generation:number};Menu:{source:'feed'|'profile';feedKey?:string};Spaces:undefined;Account:undefined;Settings:undefined;CreatorProfile:{creatorId:number;journeyGeneration:number;followProof?:FollowProof}};
 const Stack=createNativeStackNavigator<Routes>();
 type FeedVisit={identityKey:string;generation:number;context:FeedContext;visitId:number;restore?:FeedCheckpoint;entry?:LaunchEntry;trace?:NavigationTrace};
 type Props={preferences:PlaybackPreferences;sound:PlaybackPreferencesSnapshot;captionPreferences:CaptionPreferences;captions:ReturnType<CaptionPreferences['getSnapshot']>};
@@ -54,6 +57,8 @@ export function ViewerNavigator({preferences,sound,captionPreferences,captions}:
   const prepareLaunch=useCallback((item:FeedVideoItem)=>{
     if(auth.getSnapshot().generation===snapshot.generation && auth.getSnapshot().status==='authenticated' && AppState.currentState==='active')resources.preparation.prepare(item);
   },[resources,auth,snapshot.generation]);
+  const reportMemory=useMemo(()=>new ReportMemory(),[auth,baseUrl,snapshot.generation]);
+  useEffect(()=>{const sub=AppState.addEventListener('change',state=>{if(state!=='active')reportMemory.clearDrafts();});return()=>{sub.remove();reportMemory.clear();};},[reportMemory]);
   const checkpoints=useMemo(()=>new FeedCheckpoints(baseUrl,snapshot.generation),[auth,baseUrl,snapshot.generation]);
   const launch=useMemo(()=>new GlobalLaunchJourney(),[baseUrl,snapshot.generation]);
   const launchVisit=useSyncExternalStore(launch.subscribe,launch.getSnapshot);
@@ -118,6 +123,13 @@ export function ViewerNavigator({preferences,sound,captionPreferences,captions}:
       <Stack.Screen name="Feed" options={{headerShown:false}}>
         {props=><FeedRoute {...props} key={`${snapshot.generation}:${current.visitId}`} visitId={current.visitId} context={context} select={select} preferences={preferences} sound={sound} captionPreferences={captionPreferences} captions={captions}
           onForgetCheckpoint={()=>{if(isCurrent()&&liveFeedKey.current===feedKey)checkpoints.clear(context);}} restore={current.restore} entry={current.entry} trace={current.trace} onPrepareLaunch={prepareLaunch} blocked={context.kind==='global' && launchVisit.sourceUnavailable} registerPlayback={registerPlayback} registerCommands={registerCommands} feedKey={feedKey}
+          reportMemory={reportMemory}
+          onReport={publicationId=>{
+            if(!isCurrent()||!props.navigation.isFocused())return;
+            const saved=playback.current?.capture();if(!saved||saved.publicationId!==publicationId)return;
+            const target:ReportTarget={context:context.kind==='global'?{kind:'global'}:{kind:'space',spaceId:context.spaceId},publicationId};
+            props.navigation.navigate('Report',{target,generation:snapshot.generation,feedKey,capturedSeconds:saved.positionSeconds});
+          }}
           onComments={publicationId=>{
             if(!isCurrent() || !props.navigation.isFocused() || context.kind!=='space' || auth.getSnapshot().status!=='authenticated')return;
             if(playback.current?.capture().publicationId!==publicationId)return;
@@ -166,6 +178,12 @@ export function ViewerNavigator({preferences,sound,captionPreferences,captions}:
             journey.backToProfile();transition(origin.context,origin);
             props.navigation.navigate('CreatorProfile',{creatorId,journeyGeneration:journey.getSnapshot().generation,followProof:profileFollow.current});
           }:undefined}/>}
+      </Stack.Screen>
+      <Stack.Screen name="Report" options={{headerShown:false,presentation:'transparentModal',animation:'fade',gestureEnabled:false,contentStyle:{backgroundColor:'transparent'}}}>{({navigation,route})=><ReportScreen key={`${route.params.feedKey}:${route.params.target.publicationId}`}
+        {...route.params} memory={reportMemory}
+        onClose={()=>{if(navigation.isFocused())navigation.goBack();}}
+        onSignIn={()=>{if(isCurrent()&&navigation.isFocused()){reportMemory.clearDrafts();navigation.replace('Account');}}}
+        onDenied={error=>{if(isCurrent()&&liveFeedKey.current===route.params.feedKey&&error instanceof ApiError){if(route.params.target.context.kind==='global'){auth.globalFeed.clear();auth.access.invalidatePublic(route.params.target.publicationId);}commands.current?.denyAccess?.(error);}}}/>}
       </Stack.Screen>
       <Stack.Screen name="Comments" options={{headerShown:false,presentation:'transparentModal',animation:'fade',gestureEnabled:false,contentStyle:{backgroundColor:'transparent'}}}>{({navigation,route})=><CommentsScreen key={route.params.feedKey}
         {...route.params} onClose={()=>{if(navigation.isFocused())navigation.goBack();}}
@@ -220,10 +238,10 @@ export function ViewerNavigator({preferences,sound,captionPreferences,captions}:
     </Stack.Navigator>
   </NavigationContainer>;
 }
-function FeedRoute({navigation,context,select,preferences,sound,captionPreferences,captions,restore,onCreator,onBackProfile,onLaunch,onComments,onRetryEntry,onChooseLaunch,entry,blocked,registerPlayback,registerCommands,feedKey,onPrepareLaunch,trace,visitId,onForgetCheckpoint}:NativeStackScreenProps<Routes,'Feed'> & Props & {
+function FeedRoute({navigation,context,select,preferences,sound,captionPreferences,captions,restore,onCreator,onBackProfile,onLaunch,onComments,onReport,reportMemory,onRetryEntry,onChooseLaunch,entry,blocked,registerPlayback,registerCommands,feedKey,onPrepareLaunch,trace,visitId,onForgetCheckpoint}:NativeStackScreenProps<Routes,'Feed'> & Props & {
   visitId:number;onForgetCheckpoint:()=>void;
   onPrepareLaunch?:(item:FeedVideoItem)=>void;trace?:NavigationTrace;
-  context:FeedContext;select:(c:FeedContext)=>void;restore?:FeedCheckpoint;entry?:LaunchEntry;blocked?:boolean;onLaunch:(item:FeedVideoItem)=>void;onComments:(publicationId:number)=>void;onRetryEntry:()=>Promise<void>;onChooseLaunch:()=>void;onCreator:(id:number)=>void;onBackProfile?:()=>void;
+  context:FeedContext;select:(c:FeedContext)=>void;restore?:FeedCheckpoint;entry?:LaunchEntry;blocked?:boolean;onLaunch:(item:FeedVideoItem)=>void;onComments:(publicationId:number)=>void;onReport:(publicationId:number)=>void;reportMemory:ReportMemory;onRetryEntry:()=>Promise<void>;onChooseLaunch:()=>void;onCreator:(id:number)=>void;onBackProfile?:()=>void;
   registerPlayback:(visitId:number,handle:FeedPlaybackHandle)=>()=>void;registerCommands:(visitId:number,handle:FeedCommands)=>()=>void;feedKey:string;
 }) {
   const focused=useIsFocused();const {store:auth,snapshot}=useAuth();
@@ -237,7 +255,7 @@ function FeedRoute({navigation,context,select,preferences,sound,captionPreferenc
     <Message title="Cannot verify sign-in" message={snapshot.message??undefined} onRetry={()=>{void auth.retryValidation();}}/>
     <Action label="Browse Global" onPress={goGlobal}/><Action label="Account" onPress={()=>navigation.navigate('Account')}/>
   </View>;
-  return <View style={{position:'absolute',top:0,left:0,right:0,bottom:0}} pointerEvents={focused?'auto':'none'} accessibilityElementsHidden={!focused} importantForAccessibility={focused?'auto':'no-hide-descendants'}><FeedScreen context={context} preferences={preferences} sound={sound} captionPreferences={captionPreferences} captions={captions} focused={focused} restore={restore} entry={entry} trace={trace} onPrepareLaunch={onPrepareLaunch} blocked={blocked} onForgetCheckpoint={onForgetCheckpoint} onLaunch={guard(onLaunch)} onComments={guard(onComments)} onRetryEntry={onRetryEntry} onChooseLaunch={onChooseLaunch}
+  return <View style={{position:'absolute',top:0,left:0,right:0,bottom:0}} pointerEvents={focused?'auto':'none'} accessibilityElementsHidden={!focused} importantForAccessibility={focused?'auto':'no-hide-descendants'}><FeedScreen context={context} preferences={preferences} sound={sound} captionPreferences={captionPreferences} captions={captions} focused={focused} restore={restore} entry={entry} trace={trace} onPrepareLaunch={onPrepareLaunch} blocked={blocked} onForgetCheckpoint={onForgetCheckpoint} onLaunch={guard(onLaunch)} onComments={guard(onComments)} onReport={guard(onReport)} reportMemory={reportMemory} onRetryEntry={onRetryEntry} onChooseLaunch={onChooseLaunch}
     onCreator={guard(onCreator)} onBackProfile={onBackProfile?guard(onBackProfile):undefined} registerPlayback={registerMedia} registerCommands={registerActions}
     onSpaces={()=>{if(liveRole.current&&navigation.isFocused())navigation.navigate('Spaces');}} onMenu={()=>{if(liveRole.current&&navigation.isFocused())navigation.navigate('Menu',{source:'feed',feedKey});}} onGlobal={goGlobal}/></View>;
 }

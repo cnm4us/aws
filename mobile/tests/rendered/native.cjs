@@ -3,9 +3,20 @@ const R = global.__viewerUi.React, e = global.__viewerUi;
 for (const name of ['View','Text','Pressable','ScrollView','ActivityIndicator','Image','Modal','KeyboardAvoidingView','TextInput']) {
   exports[name] = ({ children, ...props }) => R.createElement(name, props, children);
 }
+// Native handles and scrolling for report focus/Back integration checks.
+for (const name of ['View','Text','Pressable','ScrollView']) {
+ exports[name] = R.forwardRef(({children,...props},ref)=>{
+  const handle=R.useRef(null);if(handle.current===null)handle.current=++e.nextNativeHandle|| (e.nextNativeHandle=1);
+  (e.nativeHandles??=new Map()).set(handle.current,props.accessibilityLabel??props.testID??children);
+  R.useImperativeHandle(ref,()=>({nativeHandle:handle.current,scrollTo:value=>e.scrolls.push({target:props.testID,...value})}));
+  return R.createElement(name,props,children);
+ });
+}
+exports.findNodeHandle=node=>node?.nativeHandle??null;
 exports.SafeAreaView = exports.View;
 exports.useSafeAreaInsets = () => e.insets || {top:44,bottom:34,left:0,right:0};
 exports.Platform = { OS: 'ios' };
+exports.Linking = {openURL:async url=>{e.openedUrl=url;}};
 exports.Keyboard = { dismiss: () => { e.keyboardDismissed = true; } };
 exports.useWindowDimensions = () => e.dimensions || { width: 375, height: 812, fontScale: 1 };
 const absoluteFill = {position:'absolute',left:0,right:0,top:0,bottom:0};
@@ -38,6 +49,7 @@ exports.requireOptionalNativeModule = name => name==='ViewerReadiness'?{
  cancelAsync:attempt=>(attempt.startsWith('feed-entry-')?e.entryReadiness??defaultReadiness:e.readiness??defaultReadiness).cancelAsync(attempt)
 }:null;
 exports.AccessibilityInfo = {
+  setAccessibilityFocus:handle=>{e.focusedAccessibilityHandle=handle;e.focusedAccessibilityLabel=e.nativeHandles?.get(handle);},
   isReduceMotionEnabled:async()=>true,
   addEventListener:()=>({remove:()=>{}}),
 };

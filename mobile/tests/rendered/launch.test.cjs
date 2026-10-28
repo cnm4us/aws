@@ -163,7 +163,7 @@ test('API-origin replacement at the same auth generation clears a launched feed 
  }finally{old.dispose();await h.close();}
 });
 
-test('actual four-action Global rail stays bounded and scrollable with short video height and large text',async()=>{
+test('actual five-action Global rail stays bounded and scrollable with short video height and large text',async()=>{
  const h=await setup({captions:true});
  try{
   for(const width of [320,375])for(const fontScale of [1,1.5,3.1]){
@@ -171,9 +171,9 @@ test('actual four-action Global rail stays bounded and scrollable with short vid
    const feed=h.root.root.findAllByType('Screen').find(n=>n.props.focused);
    const rail=feed.findAllByType('ScrollView').find(n=>flatten(n.props.style).position==='absolute');assert.ok(rail);
    const style=flatten(rail.props.style);assert.equal(style.height,44);assert.equal(style.width,44);assert.equal(style.bottom,24);
-   const controls=rail.findAllByType('Pressable').filter(visible);assert.equal(controls.length,4);
-   assert.deepEqual(controls.map(n=>n.props.accessibilityLabel),["View Creator's profile",'Open spaces for this video','Show captions','Mute']);
-   for(const control of controls){const target=flatten(typeof control.props.style==='function'?control.props.style({pressed:false}):control.props.style);assert.equal(target.height,44);assert.equal(target.width,44);}
+   const controls=rail.findAllByType('Pressable').filter(visible);assert.equal(controls.length,5);
+   assert.deepEqual(controls.map(n=>n.props.accessibilityLabel),["View Creator's profile",'Open spaces for this video','Show captions','Report video','Mute']);
+   for(const control of controls){const target=flatten(typeof control.props.style==='function'?control.props.style({pressed:false}):control.props.style);assert.equal(target.height??target.minHeight,control.props.accessibilityLabel==='Report video'?64:44);assert.equal(target.width,44);}
    await h.press('Open spaces for this video');
    const chooser=h.root.root.findAllByType('Screen').find(n=>n.props.focused);
    assert.ok(chooser.findAllByType('View').some(n=>flatten(n.props.style).alignItems==='flex-end'&&n.findAllByType('Pressable').some(b=>b.props.accessibilityLabel==='Close spaces')));

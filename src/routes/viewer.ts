@@ -1,3 +1,4 @@
+import { createReportingRouter } from '../features/reports/viewer';
 import { accessMetadata, playbackIds } from '../features/native-sessions/access';
 import { createFollowRouter } from '../features/follows/router';
 import { createGlobalRecognitionRouter } from '../features/follows/globalRecognition';
@@ -23,6 +24,7 @@ export function createViewerRouter(engagementDeps = { resolveViewer, engagement 
       ?{...body,access:accessMetadata(res.locals.accessStartedAt,res.locals.viewerPrincipal)}:body);
     next();
   });
+  router.use(createReportingRouter());
   router.use(createFollowRouter());
   router.use(createGlobalRecognitionRouter());
   for (const scope of ['global', 'space'] as const) {

@@ -85,8 +85,17 @@ export function createApiClient(baseUrl: string, options: ClientOptions = {}) {
         }
         if (!response.ok) {
           let code: string | undefined;
-          try { const data = await response.json(); if (typeof data?.error === 'string') code = data.error; } catch {}
+          try { const data = path.includes('/report') ? JSON.parse(await readBoundedText(response, 65536, controller.signal)) : await response.json(); if (typeof data?.error === 'string') code = data.error; } catch {}
           const messages: Record<string,string> = {
+            invalid_report: 'Check the reporting reason and try again.',
+            already_reported: 'A report has already been sent for this video.',
+            rule_not_allowed: 'This reason has changed. Refresh the reporting choices.',
+            no_resolvable_rule: 'This reason is currently unavailable. Choose another reason.',
+            invalid_user_facing_rule_id: 'This reason is currently unavailable. Refresh the reporting choices.',
+            invalid_reported_time_seconds: 'Enter a valid reporting time.',
+            invalid_report_time_range: 'Check the start and end times.',
+            report_rule_unavailable: 'This rule explanation is currently unavailable.',
+            reporting_unavailable: 'Cannot load reporting information. Please try again.',
             cannot_follow_self: 'You cannot follow yourself.',
             creator_not_found: 'This creator is unavailable in this space.',
             comments_disabled: 'New comments are disabled for this video.',
@@ -118,10 +127,10 @@ export function createApiClient(baseUrl: string, options: ClientOptions = {}) {
           const value=await readBoundedText(response, 1024 * 1024, controller.signal);completed=true;return value;
         }
         try {
-          const value=await response.json();if(controller.signal.aborted)throw new Error('Cancelled');stampResponse(value,ticket);options.onResponse?.(value);completed=true;return value;
+          const value=path.includes('/report') ? JSON.parse(await readBoundedText(response, 1024 * 1024, controller.signal)) : await response.json();if(controller.signal.aborted)throw new Error('Cancelled');stampResponse(value,ticket);options.onResponse?.(value);completed=true;return value;
         } catch {
           if (controller.signal.aborted) throw new Error('Cancelled');
-          throw new ApiError('The server returned an unreadable feed. Please try again.');
+          throw new ApiError(path.includes('/report') ? 'The server returned unreadable reporting information. Please try again.' : 'The server returned an unreadable feed. Please try again.');
         }
       } catch (error) {
         if (signal?.aborted) {
