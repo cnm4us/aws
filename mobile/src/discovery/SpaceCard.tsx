@@ -1,18 +1,18 @@
 import {Image,Pressable,StyleSheet,Text,View} from 'react-native';
 import type {SpaceCard as Card} from './api';
 
-export function SpaceCard({space,baseUrl,width,largeText=false,saving=false,error,aboutRef,onOpen,onAbout,onSave}:{
-  space:Card;baseUrl:string;width:number;largeText?:boolean;saving?:boolean;error?:string;
+export function SpaceCard({collectionLabels=false,space,baseUrl,width,largeText=false,saving=false,error,aboutRef,onOpen,onAbout,onSave}:{
+  space:Card;collectionLabels?:boolean;baseUrl:string;width:number;largeText?:boolean;saving?:boolean;error?:string;
   aboutRef?:(node:View|null)=>void;onOpen:()=>void;onAbout:()=>void;onSave:()=>void;
 }) {
-  const name=space.type==='personal'?'My Space':space.name;
+  const name=space.type==='personal'&&!collectionLabels?'My Space':space.name;
   return <View testID={`space-card-${space.id}`} style={[styles.card,{width}]}>
     <Pressable accessibilityRole="button" accessibilityLabel={name} accessibilityHint="Opens this space" onPress={onOpen} style={styles.primary}>
       {space.artworkUrl?<Image source={{uri:baseUrl+space.artworkUrl}} style={styles.artwork} accessible={false} resizeMode="cover"/>:
         <View style={styles.artwork}><Text style={styles.initial} accessible={false}>{name.slice(0,1)}</Text></View>}
       <Text style={styles.title} numberOfLines={largeText?undefined:2}>{name}</Text>
     </Pressable>
-    <View style={styles.metadata}><Text style={styles.kind}>{space.global?'Public feed':space.type==='personal'?'My Space':space.type==='group'?'Group':'Channel'}</Text>
+    <View style={styles.metadata}><View style={{flexDirection:'row',alignItems:'center',gap:6,flexShrink:1}}>{!space.global&&['group','channel'].includes(space.type)&&<Image source={space.type==='group'?require('../../assets/icons/group.png'):require('../../assets/icons/channel.png')} style={{width:20,height:20}} accessible={false}/>}<Text style={styles.kind}>{space.global?'Public feed':space.type==='personal'?(collectionLabels?'Personal space':'My Space'):space.type==='group'?'Group':'Channel'}</Text></View>
       <Pressable accessibilityRole="button" accessibilityLabel={`Open ${name}`} onPress={onOpen} style={styles.iconButton}>
         <Image source={require('../../assets/icons/launch.png')} style={styles.launch} accessible={false}/>
       </Pressable>
@@ -21,7 +21,7 @@ export function SpaceCard({space,baseUrl,width,largeText=false,saving=false,erro
     {!!space.description&&<Text style={styles.description} numberOfLines={largeText?undefined:3}>{space.description}</Text>}
     <View style={styles.footer}>
       <Pressable ref={aboutRef} accessibilityRole="button" accessibilityLabel={`About and rules for ${name}`} onPress={onAbout} style={styles.about}><Text style={styles.aboutText}>About & Rules</Text></Pressable>
-      {!space.global&&space.type!=='personal'&&<Pressable accessibilityRole="checkbox" accessibilityLabel={`Save ${name} to Your Spaces`}
+      {!space.global&&space.type!=='personal'&&<Pressable accessibilityRole="checkbox" accessibilityLabel={`Save ${name} to ${collectionLabels?(space.type==='group'?'Your Groups':'Your Channels'):'Your Spaces'}`}
         accessibilityState={{checked:space.saved,disabled:saving,busy:saving}} disabled={saving} onPress={onSave} style={[styles.iconButton,saving&&{opacity:.5}]}>
         <View style={[styles.checkbox,space.saved&&styles.checked]}><Text accessible={false} style={styles.checkmark}>{space.saved?'✓':''}</Text></View>
       </Pressable>}

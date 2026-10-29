@@ -31,7 +31,7 @@ test('Home owns no feed player; acknowledgment precedes entry, and Home return r
   assert.equal(screen().findAllByType('Pressable').find(n=>n.props.accessibilityLabel==='Enter space').props.disabled,true);
   await press('I’ve read the space rules');await press('Enter space');assert.equal(screen().props.name,'Feed');assert.equal(writes.filter(p=>p.endsWith('/accept')).length,1);await layout();
   const player=e.players.find(p=>p.playing);assert.ok(player,JSON.stringify({players:e.players.map(p=>({released:p.released,playing:p.playing,time:p.currentTime})),routes:e.navigationState.routes.map(r=>r.name),texts:screen().findAllByType('Text').map(n=>n.props.children)}));player.currentTime=7;await press('Pause video');
-  await press('Home');assert.equal(screen().props.name,'Home');assert.ok(e.players.every(p=>p.released));assert.ok(stored);assert.equal(stored.positionSeconds,7);assert.equal(stored.userPaused,true);
+  await press('Open menu');await press('Home');assert.equal(screen().props.name,'Home');assert.ok(e.players.every(p=>p.released));assert.ok(stored);assert.equal(stored.positionSeconds,7);assert.equal(stored.userPaused,true);
   await press('About and rules for Global');assert.equal(screen().props.name,'SpaceEntry');assert.ok(e.players.every(p=>p.released));assert.equal(writes.filter(p=>p.endsWith('/accept')).length,1);await press('Back');
   await press('Global');assert.equal(screen().props.name,'Feed');await layout();assert.equal(restores.at(-1).positionSeconds,7);assert.equal(restores.at(-1).userPaused,true);assert.ok(e.players.filter(p=>!p.released).every(p=>!p.playing));
  }finally{if(root)await Test.act(async()=>root.unmount());}

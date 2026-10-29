@@ -12,7 +12,7 @@ export type FeedSnapshot = {
   autoPaused: boolean;
   errorStatus: number | null;
   errorCode?: string;
-  resume?: FeedPage['resume'];
+  resume?: FeedPage['resume'];reviewRequired?:FeedPage['reviewRequired'];
 };
 
 export type PageLoader = (cursor: string | null, signal: AbortSignal) => Promise<FeedPage>;
@@ -117,7 +117,7 @@ export class FeedStore {
           nextCursor: repeatedCursor ? cursor : page.nextCursor,
           moreError: repeatedCursor ? 'The feed could not advance. Try again.' : null,
           autoPaused: repeatedCursor || this.emptyAdvances >= 2,
-          ...(initial?{resume:page.resume}:{}),
+          ...(initial?{resume:page.resume,reviewRequired:page.reviewRequired}:{reviewRequired:Array.from(new Map([...(this.state.reviewRequired??[]),...(page.reviewRequired??[])].map(r=>[r.id,r])).values())}),
         });
       } catch (error) {
         if (this.request !== request || request.controller.signal.aborted) return;

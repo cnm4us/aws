@@ -4,6 +4,7 @@ const { StackRouter, CommonActions, StackActions } = require('@react-navigation/
 const Focus = R.createContext(true);
 exports.useIsFocused = () => R.useContext(Focus);
 exports.DarkTheme = {};
+exports.CommonActions=CommonActions;
 exports.NavigationContainer = ({ children, onStateChange }) => { e.stateChanged = onStateChange; return children; };
 const Screen = () => null, Group = () => null;
 function Body({ screens,initialRouteName }) {
@@ -13,9 +14,11 @@ function Body({ screens,initialRouteName }) {
   const live = R.useRef(state); live.current = state;
   const dispatch = action => {
     const next = router.getStateForAction(live.current, action, options);
-    if (next) { live.current = next; setState(next); }
+    if (next) { const hydrated=router.getRehydratedState(next,options); live.current = hydrated; setState(hydrated); }
   };
   const nav = route => ({
+    getState:()=>live.current,
+    dispatch,
     isFocused: () => live.current.routes[live.current.index]?.key === route.key,
     canGoBack: () => live.current.index > 0,
     navigate: (name, params) => dispatch({ ...CommonActions.navigate(name, params), source: route.key }),

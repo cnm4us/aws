@@ -1,5 +1,5 @@
 import { ApiError, type ApiClient } from '../api/client';
-import type { FeedContext } from '../feed/context';
+import type { SourceContext as FeedContext } from '../feed/context';
 import { parseVtt, type Cue } from './vtt';
 import { verificationClock, type Verified } from '../auth/verifiedRefresh';
 

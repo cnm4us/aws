@@ -32,11 +32,14 @@ export function createDiscoveryRouter() {
     if(Object.keys(req.query).some(k=>!['genre','type','cursor','limit'].includes(k))||Object.values(req.query).some(v=>typeof v!=='string'))throw new ViewerApiError(400,'invalid_query');
     return discovery.directory(id,req.query as any);
   });
-  read('/discovery/saved',true,(_req,id)=>discovery.saved(id!));
-  read('/discovery/recent',true,async(_req,id)=>({items:await discovery.recent(id!)}));
+  read('/discovery/saved',true,(req,id)=>{
+    if(Object.keys(req.query).some(k=>!['type','cursor','limit'].includes(k))||Object.values(req.query).some(v=>typeof v!=='string'))throw new ViewerApiError(400,'invalid_query');
+    return Object.keys(req.query).length?discovery.savedDirectory(id!,req.query):discovery.saved(id!);
+  });
+  read('/discovery/recent',true,async(_req,id)=>({items:await discovery.recent(id!),recentFeeds:await discovery.recentFeeds(id!)}));
   router.delete('/discovery/recent',async(req,res)=>{
     try {const principal=(await resolveViewer(req,true))!;
-      const {getPool}=await import('../../db');await getPool().query('DELETE FROM viewer_recent_spaces WHERE user_id=?',[principal.viewer.id]);res.json({ok:true});
+      const {getPool}=await import('../../db');await getPool().query('DELETE FROM viewer_recent_spaces WHERE user_id=?',[principal.viewer.id]);await getPool().query('DELETE FROM viewer_feed_checkpoints WHERE user_id=?',[principal.viewer.id]);res.json({ok:true});
     }catch(e){sendViewerError(res,e);}
   });
   read('/discovery/spaces/:key/entry',false,(req,id)=>discovery.entry(req.params.key,id,entryReceipt(req)));

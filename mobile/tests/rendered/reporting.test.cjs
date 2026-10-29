@@ -53,6 +53,22 @@ test('Global flag does not prefetch, owns a stable row and opens one silent reta
  await h.press('Show all reasons');assert.ok(h.labels().includes('More about Other rule'));await h.edit('start','0:05');await h.press('Close report');await h.layout();assert.equal(h.selected(),player);assert.equal(player.currentTime,7);assert.equal(player.playing,true);
  await h.press('Report video');assert.equal(h.screen().findAllByType('TextInput')[0].props.value,'0:05');
 });
+test('Menu Close revalidates report authority and restores times, reasons, rule section and scroll without sending',async t=>{
+ const h=await setup(t);await h.layout();const player=h.selected();player.currentTime=7;await h.press('Report video');
+ await h.edit('start','0:02');await h.edit('end','0:08');await h.press('Show all reasons');await h.press('More about Safe rule');await h.press('Rule section: Long Description');await h.press('Allowed Examples');
+ const body=()=>h.screen().findAllByType('ScrollView').find(n=>n.props.testID==='report-rule-body');
+ await Test.act(async()=>body().props.onScroll({nativeEvent:{contentOffset:{y:260}}}));
+ const reportKey=h.e.navigationState.routes.at(-1).key,reads=h.e.paths.filter(p=>p.path.includes('/reporting/')).length;
+ await h.press('Open menu');assert.equal(h.screen().props.name,'Menu');assert.equal(player.playing,false);assert.equal(h.root.root.findAllByType('Modal').length,0);assert.ok(!h.labels().includes('Refresh feed'));
+ await h.press('Close menu');assert.equal(h.e.navigationState.routes.at(-1).key,reportKey);assert.ok(h.labels().includes('Rule section: Allowed Examples'));assert.ok(JSON.stringify(h.texts()).includes('Allowed example'));assert.ok(h.e.paths.filter(p=>p.path.includes('/reporting/')).length>reads);
+ await Test.act(async()=>body().props.onContentSizeChange(375,1800));assert.ok(h.e.scrolls.some(s=>s.target==='report-rule-body'&&s.y===260));
+ await h.press('Back to reporting reasons');assert.deepEqual(h.screen().findAllByType('TextInput').map(n=>n.props.value),['0:02','0:08']);assert.ok(h.labels().includes('More about Other rule'));assert.equal(h.e.posts,0);
+ await h.press('Open menu');await h.press('Account');assert.equal(h.screen().props.name,'Account');assert.ok(!h.e.navigationState.routes.some(r=>['Menu','Report'].includes(r.name)));await h.press('Back');await h.layout();assert.equal(h.screen().props.name,'Feed');assert.equal(h.selected(),player);assert.equal(player.currentTime,7);
+});
+test('a rule removed while Menu covers Report returns to current reasons without stale detail or a write',async t=>{
+ const h=await setup(t);await h.layout();await h.press('Report video');await h.edit('start','0:02');await h.press('More about Safe rule');await h.press('Open menu');h.e.hideRules=true;await h.press('Close menu');
+ assert.ok(JSON.stringify(h.texts()).includes('This rule is currently unavailable'));assert.ok(!h.labels().includes('Submit report'));assert.deepEqual(h.screen().findAllByType('TextInput').map(n=>n.props.value),['0:02','']);assert.equal(h.e.posts,0);
+});
 test('mapped rule explanations, editable times and explicit submission yield Sent without cross-publication bleed',async t=>{
  const h=await setup(t);await h.layout();const player=h.selected();player.currentTime=7;
  await h.press('Report video');await h.edit('start','0:00');await h.press('Use flagged time for End');await h.press('More about Safe rule');assert.ok(JSON.stringify(h.texts()).includes('Full explanation'));
@@ -71,7 +87,7 @@ test('optional explanation404 leaves reporting/feed usable, and late read cannot
  h.e.holdRead=true;await h.press('Report video');const backdrop=h.screen().findAllByType('View').find(n=>n.props.accessibilityViewIsModal);assert.equal(flatten(backdrop.props.style).backgroundColor,'#000');await h.press('Close report');await h.layout();await Test.act(async()=>h.e.finishRead());assert.ok(!h.labels().includes('Close report'));assert.ok(h.selected().playing);
 });
 test('pending submission Close/account replacement never navigates or repeats a report',async t=>{
- const h=await setup(t);await h.layout();await h.press('Report video');await h.press('More about Safe rule');h.e.holdPost=true;await h.press('Submit report');assert.equal(h.e.posts,1);await h.press('Back to reporting reasons');for(const field of ['Start','End'])assert.equal(h.screen().findAllByType('Pressable').find(n=>n.props.accessibilityLabel===`Use flagged time for ${field}`).props.disabled,true);await h.press('Close report');await h.layout();await Test.act(async()=>h.e.finishPost());assert.equal(h.e.posts,1);assert.ok(!h.labels().includes('Close report'));
+ const h=await setup(t);await h.layout();await h.press('Report video');await h.press('More about Safe rule');h.e.holdPost=true;await h.press('Submit report');assert.equal(h.e.posts,1);assert.equal(h.screen().findAllByType('Pressable').find(n=>n.props.accessibilityLabel==='Open menu').props.disabled,true);await h.press('Back to reporting reasons');for(const field of ['Start','End'])assert.equal(h.screen().findAllByType('Pressable').find(n=>n.props.accessibilityLabel===`Use flagged time for ${field}`).props.disabled,true);await h.press('Close report');await h.layout();await Test.act(async()=>h.e.finishPost());assert.equal(h.e.posts,1);assert.ok(!h.labels().includes('Close report'));
  await h.press('Report video');assert.ok(h.texts().includes('Your report was sent.'));await Test.act(async()=>h.e.auth.signOut());assert.equal(h.e.navigationState.routes.some(r=>r.name==='Report'),false);
 });
 test('anonymous Global prompts for sign-in without loading reasons or carrying submit intent',async t=>{
@@ -82,7 +98,7 @@ test('rule Back restores times, Show all, bounded scroll and originating More fo
  const h=await setup(t);await h.layout();const player=h.selected();player.currentTime=7;await h.press('Report video');await h.press('Show all reasons');await h.edit('start','0:02');
  const list=()=>h.screen().findAllByType('ScrollView').find(n=>n.props.testID==='report-reasons-list');
  await Test.act(async()=>{list().props.onLayout({nativeEvent:{layout:{height:600}}});list().props.onContentSizeChange(375,1600);list().props.onScroll({nativeEvent:{contentOffset:{y:460}}});});
- await h.press('More about Safe rule');assert.equal(h.e.focusedAccessibilityLabel,'Safe rule');assert.equal(h.screen().findAllByType('TextInput').length,0);assert.ok(!h.labels().includes('Close report'));assert.equal(h.root.root.findAllByType('Modal').length,0);
+ await h.press('More about Safe rule');assert.equal(h.e.focusedAccessibilityLabel,'Safe rule');assert.equal(h.screen().findAllByType('TextInput').length,0);assert.ok(h.labels().includes('Close report'));assert.equal(h.root.root.findAllByType('Modal').length,0);
  const footer=h.screen().findAllByType('View').find(n=>n.props.testID==='report-rule-footer');for(let n=footer.parent;n;n=n.parent)assert.notEqual(n.type,'ScrollView');
  await h.press('Rule section: Long Description');assert.equal(h.screen().findAllByType('Pressable').find(n=>n.props.accessibilityLabel==='Submit report').props.disabled,true);await h.press('Cancel section selection');
  await h.press('Back to reporting reasons');await Test.act(async()=>{list().props.onLayout({nativeEvent:{layout:{height:600}}});list().props.onContentSizeChange(375,1600);});

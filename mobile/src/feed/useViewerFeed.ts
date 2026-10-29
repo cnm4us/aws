@@ -4,7 +4,7 @@ import { useEffect, useMemo, useSyncExternalStore } from 'react';
 import { createApiClient, ApiError } from '../api/client';
 import { fetchViewerFeed } from '../api/feed';
 import { useAuth, nativeFetch } from '../auth/useAuth';
-import { contextKey, type FeedContext } from './context';
+import { contextKey,isAggregate, type FeedContext } from './context';
 import { FeedStore } from './feedStore';
 import { InitialFeed } from './initialFeed';
 import type { NavigationTrace } from '../diagnostics/playbackDiagnostics';
@@ -37,6 +37,7 @@ export function useViewerFeed(context:FeedContext,restore?:FeedCheckpoint,entry?
       if(signal.aborted || auth.getSnapshot().generation!==generation)throw Error('Cancelled');
       if(!cursor && resumeAnchor.entryPending && entry)validateLaunchEntry(page,entry);
       const result=!cursor && restore?validateOriginProduction(page,restore):page;
+      if(isAggregate(context)&&result.resume?.outcome==='unavailable')throw new ApiError('The saved video is no longer available in this feed. Choose Start from current feed to continue.',409,'resume_unavailable');
       if(context.kind==='global'&&restore?.publicationId&&result.resume?.outcome==='unavailable'){auth.globalFeed.clear();auth.access.invalidatePublic(restore.publicationId);}
       auth.access.seedPage(result);
       if(!cursor)trace?.mark('feed_ready');

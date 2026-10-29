@@ -4,6 +4,10 @@ import type { Queryable } from '../../db';
 /** Additive only. Existing relationship, culture and publication tables are untouched. */
 export async function ensureDiscoverySchema(db: Queryable) {
   const tables = [
+    `viewer_feed_checkpoints (user_id BIGINT UNSIGNED NOT NULL, feed_kind ENUM('following','creations') NOT NULL,
+      revision BIGINT UNSIGNED NOT NULL DEFAULT 1,publication_id BIGINT UNSIGNED NOT NULL,production_ulid CHAR(26) NOT NULL,
+      space_id BIGINT UNSIGNED NOT NULL,position_seconds DOUBLE NOT NULL DEFAULT 0,user_paused TINYINT NOT NULL DEFAULT 0,
+      visited_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),PRIMARY KEY(user_id,feed_kind))`,
     `discovery_state (id TINYINT UNSIGNED PRIMARY KEY, root_home TINYINT NOT NULL DEFAULT 0,
       native_home TINYINT NOT NULL DEFAULT 0, receipt_secret BINARY(32) NOT NULL)`,
     `discovery_genres (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, slug VARCHAR(80) NOT NULL UNIQUE,
@@ -30,6 +34,8 @@ export async function ensureDiscoverySchema(db: Queryable) {
       PRIMARY KEY (user_id, space_id), KEY idx_viewer_recent (user_id, visited_at, space_id))`,
   ];
   for (const definition of tables) await db.query(`CREATE TABLE IF NOT EXISTS ${definition} ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+  const [menuColumns]:any=await db.query("SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='discovery_state' AND COLUMN_NAME='native_destinations'");
+  if(!menuColumns.length)try{await db.query('ALTER TABLE discovery_state ADD COLUMN native_destinations TINYINT NOT NULL DEFAULT 0');}catch(error){if((error as {code?:string}).code!=='ER_DUP_FIELDNAME')throw error;}
   const [precision]:any=await db.query("SELECT DATETIME_PRECISION AS value FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='viewer_recent_spaces' AND COLUMN_NAME='visited_at'");
   if(Number(precision[0]?.value)!==3)await db.query('ALTER TABLE viewer_recent_spaces MODIFY visited_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)');
   await db.query('INSERT IGNORE INTO discovery_state (id,receipt_secret) VALUES (1,?)', [randomBytes(32)]);

@@ -10,7 +10,7 @@ import {ApiError} from '../api/client';
 import {Action,Message} from '../ui/Message';
 import {IconButton} from '../ui/IconButton';
 
-export function SpacesScreen({selected,onSelect,onSignIn,onClose}:{selected:FeedContext;onSelect:(c:FeedContext)=>void;onSignIn:()=>void;onClose:()=>void}){
+export function SpacesScreen({selected,onSelect,onSignIn,onClose,onMenu}:{selected:FeedContext;onSelect:(c:FeedContext)=>void;onSignIn:()=>void;onMenu?:()=>void;onClose:()=>void}){
   const {snapshot}=useAuth();const {client,auth,generation}=useViewerClient();const focused=useIsFocused();
   const [active,setActive]=useState(AppState.currentState==='active');
   const [data,setData]=useState<MySpaces|null>(null),[error,setError]=useState<string|null>(null),[revision,setRevision]=useState(0);
@@ -38,7 +38,7 @@ export function SpacesScreen({selected,onSelect,onSignIn,onClose}:{selected:Feed
     </View>;
   };
   return <SafeAreaView accessibilityViewIsModal style={[styles.screen,{backgroundColor:masked?'#000':'rgba(0,0,0,0.8)'}]} edges={['top','bottom','left','right']}>
-    <View style={styles.header}><IconButton icon="close" label="Close space menu" onPress={()=>{if(focused)onClose();}}/><Text accessibilityRole="header" style={styles.heading}>Spaces</Text></View>
+    <View style={styles.header}><View style={{flexDirection:'row',justifyContent:'space-between'}}><IconButton icon="close" label="Close space menu" onPress={()=>{if(focused)onClose();}}/>{onMenu&&<IconButton icon="menu" label="Open menu" onPress={onMenu}/>}</View><Text accessibilityRole="header" style={styles.heading}>Spaces</Text></View>
     <ScrollView contentContainerStyle={styles.content}>
       {masked?<Message scrollable={false} title="Checking access"/>:<>
         <Action label={selected.kind==='global'?'✓ Global':'Global'} onPress={()=>select({kind:'global'})}/>
@@ -54,4 +54,4 @@ export function SpacesScreen({selected,onSelect,onSignIn,onClose}:{selected:Feed
     </ScrollView>
   </SafeAreaView>;
 }
-const styles=StyleSheet.create({screen:{flex:1},header:{padding:16,gap:8,alignItems:'flex-end'},content:{padding:20,gap:16},heading:{color:'#fff',fontSize:22,fontWeight:'700'},detail:{color:'#c7c7ce',fontSize:15},entry:{gap:6}});
+const styles=StyleSheet.create({screen:{flex:1},header:{padding:16,gap:8},content:{padding:20,gap:16},heading:{color:'#fff',fontSize:22,fontWeight:'700'},detail:{color:'#c7c7ce',fontSize:15},entry:{gap:6}});

@@ -24,6 +24,8 @@ export function CreatorFollow({proof,onDenied}:{proof:FollowProof;onDenied?:(e:E
   return()=>{sub.remove();unsubscribe();store.setActive(false);};
  },[auth,store,focused,generation,proof.generation]);
  useEffect(()=>()=>store.dispose(),[store]);
+ const previous=useRef<boolean|undefined>(undefined);
+ useEffect(()=>{const following=state.authorized?state.summary?.following:undefined;if(following===false&&previous.current===true)auth.access.invalidateAggregate('following',proof.spaceId,proof.creatorId);if(following!==undefined)previous.current=following;},[state.authorized,state.summary,auth,proof.spaceId,proof.creatorId]);
  const summary=state.authorized&&focused&&proof.generation===generation&&status==='authenticated'&&AppState.currentState==='active'?state.summary:null;
  return <View style={styles.card}>
   {summary?<>

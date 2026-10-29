@@ -1,27 +1,27 @@
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Action } from '../ui/Message';
+import {ViewerHeader} from '../ui/ViewerHeader';
+import {useIsFocused} from '@react-navigation/native';
 import type { CaptionPreferences } from './captionPreferences';
 import type { PlaybackPreferences, PlaybackPreferencesSnapshot } from './playbackPreferences';
 
-export function PlaybackSettings({ visible, onClose, preferences, snapshot, captionPreferences, captions }: {
+export function PlaybackSettings({ visible, onClose, onMenu, preferences, snapshot, captionPreferences, captions }: {
   captionPreferences: CaptionPreferences; captions: ReturnType<CaptionPreferences['getSnapshot']>;
   visible: boolean;
-  onClose: () => void;
+  onClose: () => void; onMenu?:()=>void;
   preferences: PlaybackPreferences;
   snapshot: PlaybackPreferencesSnapshot;
 }) {
   const { width, fontScale } = useWindowDimensions();
   const stacked = width / fontScale < 280;
+  const focused=useIsFocused();
+  if(!visible||!focused)return <View style={{flex:1,backgroundColor:'#000'}}/>;
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.backdrop}>
         <SafeAreaView edges={['bottom']} style={styles.panel} accessibilityViewIsModal>
-          <ScrollView style={{flexShrink:1}} contentContainerStyle={{gap:20}}>
-          <View style={[styles.header, stacked && styles.stacked]}>
-            <Text style={styles.title} accessibilityRole="header">Playback settings</Text>
-            <Action label="Done" onPress={onClose} />
-          </View>
+          <ViewerHeader title="Playback settings" onMenu={onMenu} onBack={onClose} backLabel="Done"/>
+          <ScrollView style={{flexShrink:1}} contentContainerStyle={{gap:20,padding:24}}>
           <Text style={styles.label}>Start videos</Text>
           <View style={[styles.choices, stacked && styles.stacked]} accessibilityRole="radiogroup">
             {[false, true].map(muted => (
@@ -51,13 +51,12 @@ export function PlaybackSettings({ visible, onClose, preferences, snapshot, capt
           </ScrollView>
         </SafeAreaView>
       </View>
-    </Modal>
   );
 }
 
 const styles = StyleSheet.create({
   backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.65)' },
-  panel: { maxHeight: '90%', backgroundColor: '#18181c', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, gap: 20 },
+  panel: { maxHeight: '90%', backgroundColor: '#18181c', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 0, gap: 0 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   title: { color: '#ffffff', fontSize: 22, fontWeight: '700', flexShrink: 1 },
   label: { color: '#ffffff', fontSize: 18, fontWeight: '600' },

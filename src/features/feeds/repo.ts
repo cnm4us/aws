@@ -6,9 +6,10 @@ import { getPool, type Queryable } from '../../db'
 
 export type FeedSelection = {
   cursorPublishedAt?: string | null; cursorId?: number | null; limit: number; userId?: number | null;
-  publicationId?: number; newerThan?: { ts: string; id: number }; ascending?: boolean;
+  publicationId?: number; publicationIds?:number[]; newerThan?: { ts: string; id: number }; ascending?: boolean;
 };
 function addSelection(where: string[], params: any[], opts: FeedSelection) {
+  if(opts.publicationIds){where.push('sp.id IN (?)');params.push(opts.publicationIds);}
   if (opts.publicationId !== undefined) { where.push('sp.id = ?'); params.push(opts.publicationId); }
   if (opts.newerThan) {
     where.push('(sp.published_at > ? OR (sp.published_at = ? AND sp.id > ?))');

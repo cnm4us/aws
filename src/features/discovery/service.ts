@@ -14,8 +14,8 @@ const rows=async(db:Db,sql:string,args:any[]=[])=>{const [value]=await db.query(
 export const positiveId=(v:unknown)=>{const n=Number(v);if(!/^[1-9]\d*$/.test(String(v))||!Number.isSafeInteger(n))throw new ViewerApiError(400,'invalid_query');return n;};
 const parse=(v:any)=>{try{return typeof v==='string'?JSON.parse(v):v||{};}catch{return {};}};
 export async function config(db:Db=getPool()) {
-  const [state]=await rows(db,'SELECT root_home,native_home FROM discovery_state WHERE id=1');
-  return {schemaVersion:1,homeEnabled:!!state?.root_home,nativeHomeEnabled:!!state?.native_home};
+  const [state]=await rows(db,'SELECT root_home,native_home,native_destinations FROM discovery_state WHERE id=1');
+  return {schemaVersion:1,homeEnabled:!!state?.root_home,nativeHomeEnabled:!!state?.native_home,nativeDestinationsEnabled:!!state?.native_destinations};
 }
 export async function resolveSpace(key:string,userId:number|null,db:Db=getPool()) {
   let value:any;
@@ -75,7 +75,7 @@ export async function home(userId:number|null,db:Db=getPool()) {
   }
   const global=await resolveSpace('global',userId,db);
   return {...await config(db),global:card({...global.space,...global.listing},userId,true),genres:sections,
-    recent:userId?await recent(userId,db):[],signedIn:!!userId};
+    recent:userId?await recent(userId,db):[],recentFeeds:userId?await recentFeeds(userId,db):[],signedIn:!!userId};
 }
 export async function publicPolicy(key:string,userId:number|null,db:Db=getPool()) {
   const resolved=await resolveSpace(key,userId,db),id=resolved.space.id;
@@ -162,6 +162,23 @@ export async function saved(userId:number) {
   const allowed=[];
   for(const row of data)if(row.id!==mine.global?.id&&row.type!=='personal'&&await spaces.canViewSpaceFeed(row,userId,db))allowed.push(card(row,userId));
   return {schemaVersion:1,global:mine.global?card({...mine.global,artwork_url:fixedArtwork.get(Number(mine.global.id))},userId,true):null,personal:mine.personal?card({...mine.personal,artwork_url:fixedArtwork.get(Number(mine.personal.id))},userId):null,items:allowed};
+}
+/** Typed saved pages retain the legacy unfiltered saved() contract above. */
+export async function savedDirectory(userId:number,query:{type?:unknown;cursor?:unknown;limit?:unknown},db:Db=getPool()) {
+  if(!['group','channel'].includes(String(query.type)))throw new ViewerApiError(400,'invalid_query');
+  const type=query.type as 'group'|'channel',limit=query.limit===undefined?20:positiveId(query.limit);if(limit>50)throw new ViewerApiError(400,'invalid_query');
+  let after:{time:string;id:number}|null=null;
+  if(query.cursor!==undefined){try{const text=String(query.cursor);if(!text.startsWith(type+':')||text.length>250)throw Error();const c=JSON.parse(Buffer.from(text.slice(type.length+1),'base64url').toString());if(!/^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/.test(c.time)||!Number.isSafeInteger(c.id)||c.id<=0)throw Error();const parsed=Date.parse(c.time.replace(' ','T')+'Z');if(!Number.isFinite(parsed)||new Date(parsed).toISOString().slice(0,19).replace('T',' ')!==c.time)throw Error();after=c;}catch{throw new ViewerApiError(400,'invalid_query');}}
+  await migrateSaved(userId);const global=await spaceRepo.findGlobalSpaceCandidate(db),items:SpaceCard[]=[];let scanned=0,more=true;
+  while(items.length<limit&&scanned<500&&more){
+    const tail=after?' AND (v.updated_at<? OR (v.updated_at=? AND s.id<?))':'';
+    const data=await rows(db,`SELECT s.*,d.artwork_url,DATE_FORMAT(v.updated_at,'%Y-%m-%d %H:%i:%s') AS saved_at,1 AS saved FROM viewer_saved_spaces v JOIN spaces s ON s.id=v.space_id
+      LEFT JOIN discovery_spaces d ON d.space_id=s.id WHERE v.user_id=? AND v.removed=0 AND s.type=? AND s.id<>? ${tail}
+      ORDER BY v.updated_at DESC,s.id DESC LIMIT 50`,[userId,type,global?.id||0,...(after?[after.time,after.time,after.id]:[])]);
+    more=data.length===50;
+    for(let index=0;index<data.length;index++){const row=data[index];after={time:String(row.saved_at),id:Number(row.id)};scanned++;if(await spaces.canViewSpaceFeed(row,userId,db))items.push(card(row,userId));if(items.length===limit){more=index<data.length-1||more;break;}}
+  }
+  return {schemaVersion:1,items,nextCursor:more&&after?`${type}:${Buffer.from(JSON.stringify(after)).toString('base64url')}`:null,genre:null};
 }
 export async function save(key:string,userId:number,remove:boolean) {
   const {space,global}=await resolveSpace(key,userId);
@@ -280,4 +297,8 @@ export async function updateConfig(userId:number,body:any) {
   if(typeof body?.homeEnabled!=='boolean'||typeof body?.nativeHomeEnabled!=='boolean')throw new ViewerApiError(400,'invalid_body');
   await getPool().query('UPDATE discovery_state SET root_home=?,native_home=? WHERE id=1',[body.homeEnabled?1:0,body.nativeHomeEnabled?1:0]);
   return config();
+}
+
+export async function recentFeeds(userId:number,db:Db=getPool()) {
+ return (await rows(db,"SELECT feed_kind,UNIX_TIMESTAMP(visited_at)*1000 AS visitedAt FROM viewer_feed_checkpoints WHERE user_id=? AND visited_at>NOW()-INTERVAL 90 DAY ORDER BY visited_at DESC LIMIT 2",[userId])).map(row=>({kind:row.feed_kind,visitedAt:Number(row.visitedAt)}));
 }

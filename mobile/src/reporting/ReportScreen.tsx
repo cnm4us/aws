@@ -13,8 +13,8 @@ import {formatReportTime,type ReportTarget,type ReportBlock} from './api';
 import {reportCards,type ReportCard} from './reportPresentation';
 import {RuleSectionMenu,focusReportControl,type RuleSection} from './RuleSectionMenu';
 
-export function ReportScreen({target,generation:visitGeneration,feedKey,capturedSeconds,memory,onClose,onDenied,onSignIn}:{
- target:ReportTarget;generation:number;feedKey:string;capturedSeconds:number;memory:ReportMemory;onClose:()=>void;onDenied:(e:Error)=>void;onSignIn:()=>void;
+export function ReportScreen({target,generation:visitGeneration,feedKey,capturedSeconds,memory,onClose,onDenied,onSignIn,onMenu}:{
+ target:ReportTarget;generation:number;feedKey:string;capturedSeconds:number;memory:ReportMemory;onClose:()=>void;onDenied:(e:Error)=>void;onSignIn:()=>void;onMenu?:()=>void;
 }) {
  const {snapshot,baseUrl}=useAuth(),{auth,client,generation}=useViewerClient(),focused=useIsFocused();
  const callbacks=useRef({onDenied,onClose});callbacks.current={onDenied,onClose};
@@ -22,8 +22,10 @@ export function ReportScreen({target,generation:visitGeneration,feedKey,captured
   if(auth.getSnapshot().generation===generation){if(e instanceof ApiError&&e.status===401)void auth.invalidate(generation);else callbacks.current.onDenied(e);}
  },()=>{AccessibilityInfo.announceForAccessibility?.('Report sent.');callbacks.current.onClose();}),[auth,client,generation,feedKey,target.publicationId,target.context.kind,target.context.kind==='space'?target.context.spaceId:0,memory]);
  const state=useSyncExternalStore(store.subscribe,store.getSnapshot);
+ const menuReturn=useRef<{selected:{groupId:number;ruleId:number}|null;section:RuleSection;ruleOffset:number}|null>(null),menuRestoring=useRef(false),ruleOffset=useRef(0),ruleRestore=useRef<number|null>(null);
+ const liveFocus=useRef(focused);liveFocus.current=focused;
  useEffect(()=>{
-  const update=()=>{const background=AppState.currentState!=='active';if(background)memory.clearDrafts();
+  const update=()=>{const background=AppState.currentState!=='active';if(background){memory.clearDrafts();menuReturn.current=null;menuRestoring.current=false;ruleRestore.current=null;}
    store.setActive(focused&&visitGeneration===generation&&!background&&auth.getSnapshot().status==='authenticated');};
   update();const sub=AppState.addEventListener('change',update),unsubscribe=auth.subscribe(update);
   return()=>{sub.remove();unsubscribe();store.setActive(false);};
@@ -33,19 +35,34 @@ export function ReportScreen({target,generation:visitGeneration,feedKey,captured
  const blocked=!state.authorized||snapshot.status!=='authenticated'||!focused||visitGeneration!==generation||AppState.currentState!=='active';
  const {options,draft,detail,selected}=state,own=options?.myReport;
  const selectedKey=selected?`${selected.groupId}:${selected.ruleId}`:null;
- const [section,setSection]=useState<RuleSection>('description'),[menuOpen,setMenuOpen]=useState(false),[linkError,setLinkError]=useState<string|null>(null);
+ const [section,setSection]=useState<RuleSection>('description'),[menuOpen,setMenuOpen]=useState(false),[linkError,setLinkError]=useState<string|null>(null),[menuNotice,setMenuNotice]=useState<string|null>(null);
  const list=useRef<ScrollView>(null),ruleScroll=useRef<ScrollView>(null),heading=useRef<View>(null),more=useRef(new Map<string,View>());
  const listState=useRef({offset:0,content:0,height:0,restore:false,contentReady:false,focusKey:null as string|null});
- useEffect(()=>{setSection('description');setMenuOpen(false);setLinkError(null);if(selectedKey&&!blocked)focusReportControl(heading.current);},[selectedKey,blocked]);
- useEffect(()=>{if(blocked){listState.current={offset:0,content:0,height:0,restore:false,contentReady:false,focusKey:null};more.current.clear();}},[blocked]);
+ useEffect(()=>{if(menuReturn.current)return;setSection('description');setMenuOpen(false);setLinkError(null);if(selectedKey&&!blocked)focusReportControl(heading.current);},[selectedKey,blocked]);
+ useEffect(()=>{if(blocked&&!menuReturn.current){listState.current={offset:0,content:0,height:0,restore:false,contentReady:false,focusKey:null};more.current.clear();}},[blocked]);
  useEffect(()=>{if(state.sending)setMenuOpen(false);},[state.sending]);
- useEffect(()=>{ruleScroll.current?.scrollTo({y:0,animated:false});setLinkError(null);},[section,detail?.version,selectedKey]);
+ useEffect(()=>{if(menuReturn.current||ruleRestore.current!==null)return;ruleOffset.current=0;ruleScroll.current?.scrollTo({y:0,animated:false});setLinkError(null);},[section,detail?.version,selectedKey]);
  const restoreList=()=>{
   const saved=listState.current;if(!saved.restore||!saved.contentReady||!saved.height||!list.current)return;
   const y=Math.max(0,Math.min(saved.offset,saved.content-saved.height));saved.restore=false;saved.offset=y;
   list.current.scrollTo({y,animated:false});focusReportControl(saved.focusKey?more.current.get(saved.focusKey)??heading.current:heading.current);
  };
- const openRule=(groupId:number,ruleId:number,key:string)=>{Keyboard.dismiss();listState.current.focusKey=key;void store.detail(groupId,ruleId);};
+ const openMenu=()=>{if(!onMenu||!focused||state.sending)return;Keyboard.dismiss();setMenuOpen(false);
+  menuReturn.current={selected:state.selected?{groupId:state.selected.groupId,ruleId:state.selected.ruleId}:null,section,ruleOffset:ruleOffset.current};onMenu();};
+ useEffect(()=>{
+  const bookmark=menuReturn.current;if(!bookmark||!focused||blocked||state.checking||menuRestoring.current)return;
+  menuRestoring.current=true;
+  void (async()=>{const mapped=!bookmark.selected||state.options?.groups.some(g=>g.id===bookmark.selected!.groupId&&g.rules.some(r=>r.id===bookmark.selected!.ruleId));
+   if(bookmark.selected&&mapped)await store.detail(bookmark.selected.groupId,bookmark.selected.ruleId);
+   if(menuReturn.current!==bookmark||!liveFocus.current||AppState.currentState!=='active'||auth.getSnapshot().generation!==generation)return;
+   setMenuNotice(mapped?null:'This rule is currently unavailable. Explore another reason.');
+   setSection(bookmark.section);ruleRestore.current=bookmark.selected&&mapped?bookmark.ruleOffset:null;
+   listState.current.restore=true;listState.current.contentReady=false;
+   menuReturn.current=null;menuRestoring.current=false;
+  })();
+ },[focused,blocked,state.checking,state.options,store,auth,generation]);
+ const restoreRule=()=>{if(ruleRestore.current!==null&&!blocked&&detail){const y=ruleRestore.current;ruleRestore.current=null;ruleScroll.current?.scrollTo({y,animated:false});focusReportControl(heading.current);}};
+ const openRule=(groupId:number,ruleId:number,key:string)=>{Keyboard.dismiss();setMenuNotice(null);listState.current.focusKey=key;void store.detail(groupId,ruleId);};
  const back=()=>{Keyboard.dismiss();setMenuOpen(false);listState.current.restore=true;listState.current.contentReady=false;store.back();};
  const close=()=>{Keyboard.dismiss();setMenuOpen(false);onClose();};
  const open=async(href:string)=>{try{const url=new URL(href,baseUrl);if(url.protocol!=='https:'||url.username||url.password)return;await Linking.openURL(url.toString());}catch{setLinkError('Cannot open this link.');}};
@@ -58,13 +75,13 @@ export function ReportScreen({target,generation:visitGeneration,feedKey,captured
  return <SafeAreaView accessibilityViewIsModal style={[styles.screen,blocked&&!anonymous?styles.blocked:styles.scrim]} edges={['top','bottom']}>
   <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS==='ios'?'padding':undefined}>
    <View style={styles.header}>
-    <View style={styles.close}>{selected&&!blocked?<Pressable accessibilityRole="button" accessibilityLabel="Back to reporting reasons" onPress={back} style={styles.back}><Text style={styles.backText}>Back</Text></Pressable>:<IconButton icon="close" label="Close report" onPress={close}/>}</View>
+    <View style={[styles.close,{flexDirection:'row',justifyContent:'space-between',gap:12}]}>{selected&&!blocked?<Pressable accessibilityRole="button" accessibilityLabel="Back to reporting reasons" onPress={back} style={styles.back}><Text style={styles.backText}>Back</Text></Pressable>:<IconButton icon="close" label="Close report" onPress={close}/>}<View style={{flexDirection:'row',gap:8}}>{selected&&<IconButton icon="close" label="Close report" onPress={close}/>} {onMenu&&<IconButton icon="menu" label="Open menu" disabled={state.sending} onPress={openMenu}/>}</View></View>
     {selected&&!blocked?<ScrollView style={styles.headerTitle}><Text ref={heading} accessibilityRole="header" style={styles.title}>{detail?.title??selected.title}</Text></ScrollView>:<Text ref={heading} accessibilityRole="header" style={styles.title}>{own?'Report sent':'Report video'}</Text>}
    </View>
    {anonymous?<ScrollView contentContainerStyle={styles.content}><Text style={styles.heading}>Sign in to report</Text><Text style={styles.text}>Sign in to send a report about this video.</Text><Action label="Sign in" onPress={onSignIn}/></ScrollView>:
     blocked?<Message title={state.checking?'Loading reporting choices':snapshot.status==='unavailable'?'Cannot verify sign-in':'Reporting unavailable'} message={state.error??undefined} busy={state.checking} onRetry={state.checking?undefined:()=>{if(snapshot.status==='unavailable')void auth.retryValidation();else store.retry();}}/>:
     selected?<>
-     <ScrollView ref={ruleScroll} testID="report-rule-body" style={styles.screen} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+     <ScrollView ref={ruleScroll} testID="report-rule-body" contentOffset={{x:0,y:ruleRestore.current??ruleOffset.current}} onScroll={event=>{ruleOffset.current=event.nativeEvent.contentOffset.y;}} scrollEventThrottle={100} onContentSizeChange={restoreRule} style={styles.screen} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
       {state.loadingDetail&&<Text style={styles.text}>Loading explanation…</Text>}
       {detail?<>
        <RuleSectionMenu value={section} open={menuOpen} disabled={state.sending} onOpen={setMenuOpen} onSelect={value=>{setSection(value);setMenuOpen(false);}}/>
@@ -82,7 +99,7 @@ export function ReportScreen({target,generation:visitGeneration,feedKey,captured
       scrollEventThrottle={16} onScroll={event=>{if(!store.getSnapshot().selected&&store.getSnapshot().authorized)listState.current.offset=event.nativeEvent.contentOffset.y;}}
       onLayout={event=>{listState.current.height=event.nativeEvent.layout.height;restoreList();}}
       onContentSizeChange={(_width,height)=>{listState.current.content=height;listState.current.contentReady=true;restoreList();}}>
-     {errorText&&<Text accessibilityRole="alert" style={styles.error}>{errorText}</Text>}{uncertain}
+     {menuNotice&&<Text accessibilityRole="alert" style={styles.error}>{menuNotice}</Text>}{errorText&&<Text accessibilityRole="alert" style={styles.error}>{errorText}</Text>}{uncertain}
      {state.sending&&<View style={styles.section}><Text accessibilityRole="alert" style={styles.text}>Sending report…</Text><Text style={styles.meta}>{segment}</Text></View>}
      {own?<View style={styles.section}>
       <Text style={styles.text}>Your report was sent.</Text><Text style={styles.heading}>{own.userFacingRuleLabel??own.ruleTitle??'Reported reason'}</Text>

@@ -1,3 +1,4 @@
+import {contextName} from '../feed/context';
 import { Image, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import type { FeedContext } from '../feed/context';
 import { IconButton } from './IconButton';
@@ -13,7 +14,7 @@ export function FeedHeader({ context, onSpaces, onMenu, onBackProfile }: {
 }) {
   const {width,fontScale}=useWindowDimensions();
   const stacked=width/fontScale<200;
-  const name = context.kind === 'global' ? 'Global' : context.name;
+  const name = contextName(context);
   return <View style={styles.header}>
     <View style={[styles.row, stacked && styles.stacked]}>
       {onBackProfile&&<Pressable accessibilityRole="button" accessibilityLabel="Back to profile" onPress={onBackProfile} style={styles.back}><Image source={require('../../assets/icons/chevron.png')} accessible={false} style={styles.backIcon}/></Pressable>}

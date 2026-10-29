@@ -26,15 +26,15 @@ export function adaptEntry(raw:unknown):Entry {
 export type Directory={items:SpaceCard[];nextCursor:string|null;genre:{slug:string;name:string}|null};
 export function adaptDirectory(raw:unknown):Directory {
   const v=raw as Directory;if(!v)return fail();
-  return {items:list(v.items,adaptCard),nextCursor:v.nextCursor===null||v.nextCursor===undefined?null:text(v.nextCursor,20),genre:v.genre?{slug:text(v.genre.slug,80),name:text(v.genre.name,100)}:null};
+  return {items:list(v.items,adaptCard),nextCursor:v.nextCursor===null||v.nextCursor===undefined?null:text(v.nextCursor,250),genre:v.genre?{slug:text(v.genre.slug,80),name:text(v.genre.name,100)}:null};
 }
 export function toContext(space:SpaceCard):FeedContext{return space.global?{kind:'global'}:{kind:'space',spaceId:space.id,name:space.name,type:space.type};}
-export function contextEntryKey(context:FeedContext):string {return context.kind==='global'?'global':String(context.spaceId);}
+export function contextEntryKey(context:FeedContext):string {return context.kind==='space'?String(context.spaceId):context.kind;}
 export async function getEntry(client:Pick<ApiClient,'getJson'>,key:string,signal?:AbortSignal){return adaptEntry(await client.getJson(`${discoveryPrefix}/spaces/${encodeURIComponent(key)}/entry`,signal));}
-export type ResumeState={revision:number;outcome:'new'|'restored'|'unavailable';checkpoint:{publicationId:number;productionUlid:string;positionSeconds:number;userPaused:boolean}|null};
+export type ResumeState={revision:number;outcome:'new'|'restored'|'unavailable';checkpoint:{publicationId:number;productionUlid:string;positionSeconds:number;userPaused:boolean;spaceId?:number}|null};
 export function adaptResume(raw:unknown):ResumeState {
   const v=raw as ResumeState;if(!v||!Number.isSafeInteger(v.revision)||v.revision<0||!['new','restored','unavailable'].includes(v.outcome))return fail();
   const c=v.checkpoint;
   if(c&&(!Number.isFinite(c.positionSeconds)||c.positionSeconds<0||c.positionSeconds>86400*30||!/^[0-9A-HJKMNP-TV-Z]{26}$/i.test(c.productionUlid)))return fail();
-  return {revision:v.revision,outcome:v.outcome,checkpoint:c?{publicationId:id(c.publicationId),productionUlid:c.productionUlid,positionSeconds:c.positionSeconds,userPaused:flag(c.userPaused)}:null};
+  return {revision:v.revision,outcome:v.outcome,checkpoint:c?{publicationId:id(c.publicationId),productionUlid:c.productionUlid,positionSeconds:c.positionSeconds,userPaused:flag(c.userPaused),...(c.spaceId!==undefined?{spaceId:id(c.spaceId)}:{})}:null};
 }

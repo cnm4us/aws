@@ -8,7 +8,7 @@ export class FeedCheckpoints{
   save(checkpoint:SavedFeedCheckpoint){
     if(checkpoint.apiOrigin!==this.apiOrigin||checkpoint.authGeneration!==this.authGeneration||!checkpoint.publicationId||!Number.isFinite(checkpoint.positionSeconds))return;
     const key=contextKey(checkpoint.context);this.entries.delete(key);
-    const context:FeedContext=checkpoint.context.kind==='global'?{kind:'global'}:{kind:'space',spaceId:checkpoint.context.spaceId,name:checkpoint.context.name,type:checkpoint.context.type};
+    const context:FeedContext=checkpoint.context.kind==='space'?{kind:'space',spaceId:checkpoint.context.spaceId,name:checkpoint.context.name,type:checkpoint.context.type}:{kind:checkpoint.context.kind};
     this.entries.set(key,{context,apiOrigin:this.apiOrigin,authGeneration:this.authGeneration,journeyGeneration:checkpoint.journeyGeneration,
       publicationId:checkpoint.publicationId,positionSeconds:Math.max(0,checkpoint.positionSeconds),userPaused:checkpoint.userPaused,
       uploadId:checkpoint.uploadId,productionUlid:checkpoint.productionUlid,creatorId:checkpoint.creatorId});

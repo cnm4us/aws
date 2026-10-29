@@ -1,3 +1,4 @@
+import {createAggregateRouter} from '../features/aggregate-feeds/router';
 import { requireEntry } from '../features/discovery/service';
 import { entryReceipt } from '../features/discovery/router';
 import { createDiscoveryRouter } from '../features/discovery/router';
@@ -28,6 +29,7 @@ export function createViewerRouter(engagementDeps = { resolveViewer, engagement 
     next();
   });
   router.use(createDiscoveryRouter());
+  router.use(createAggregateRouter());
   router.use(createReportingRouter());
   router.use(createFollowRouter());
   router.use(createGlobalRecognitionRouter());

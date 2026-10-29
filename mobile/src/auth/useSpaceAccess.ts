@@ -1,3 +1,5 @@
+import {useAggregateAccess} from './useAggregateAccess';
+import {isAggregate} from '../feed/context';
 import { useEffect,useLayoutEffect,useSyncExternalStore } from 'react';
 import { AppState } from 'react-native';
 import type { ApiClient } from '../api/client';
@@ -28,6 +30,7 @@ export function useSpaceAccess(context:FeedContext,_client:ApiClient,feed:FeedSt
 export function usePublicationAccess(context:FeedContext,client:ApiClient,feed:FeedStore,visible:boolean,items:FeedVideoItem[]) {
  const {store:auth,snapshot}=useAuth(),manager=auth.access;
  useSyncExternalStore(manager.subscribe,manager.getSnapshot);
+ const aggregateAuthorized=useAggregateAccess(context,client,feed,visible,items);
  const key=items.map(itemKey).join('|'),spaceId=context.kind==='space'?context.spaceId:0;
  useLayoutEffect(()=>{
   if(!spaceId||!visible||!snapshot.viewer||!items.length)return;
@@ -47,5 +50,6 @@ export function usePublicationAccess(context:FeedContext,client:ApiClient,feed:F
   update();const sub=AppState.addEventListener('change',update);
   return()=>{sub.remove();release?.();};
  },[manager,spaceId,client,visible,snapshot.generation,!!snapshot.viewer,key,feed]);
+ if(isAggregate(context))return aggregateAuthorized;
  return !spaceId||AppState.currentState==='active'&&(!items[0]||manager.canView(items[0]));
 }

@@ -44,6 +44,12 @@ async function setup(t) {
  t.after(async()=>{await Test.act(async()=>root.unmount());e.auth.dispose();t.mock.timers.reset();assert.equal(e.players.some(p=>!p.released),false);});
  return {e,root,screen,labels,press,layout,selected,texts,draft,tick,app,enter};
 }
+test('Comments draft survives Menu Close after verification, clears on real background and never sends implicitly',async t=>{
+ const h=await setup(t);await h.enter();const player=h.selected();player.currentTime=4;await h.press(/^Comments,/);await h.draft('Unsent comment');const key=h.e.navigationState.routes.at(-1).key;
+ await h.press('Open menu');assert.equal(h.screen().props.name,'Menu');assert.equal(player.playing,false);await h.press('Close menu');assert.equal(h.e.navigationState.routes.at(-1).key,key);assert.equal(h.screen().findByType('TextInput').props.value,'Unsent comment');assert.equal(h.e.postCalls,0);
+ await h.press('Open menu');await h.app('background');await h.app('active');await h.press('Close menu');assert.equal(h.screen().findByType('TextInput').props.value,'');assert.equal(h.e.postCalls,0);
+ await h.press('Close comments');await h.layout();assert.equal(h.selected(),player);assert.equal(player.currentTime,4);assert.equal(player.playing,true);
+});
 test('actual rail/router: Global never fetches engagement; Like confirms without pausing; Comments restores paused/playing position',async t=>{
  const h=await setup(t);await h.layout();assert.equal(h.e.paths.some(x=>x.path.endsWith('/engagement')),false);assert.equal(h.labels().some(x=>/^Like|^Comments/.test(x)),false);
  await h.enter();const player=h.selected();player.currentTime=4;

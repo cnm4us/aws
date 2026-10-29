@@ -24,10 +24,10 @@ function CreatorIntroduction({creator}:{creator:LaunchCreator}) {
     {!!creator.bio&&<Text style={styles.text}>{creator.bio}</Text>}
   </View>;
 }
-export function LaunchSpacesScreen({sourceId,productionUlid,creatorId,onEnter,onClose,onSignIn,onSourceUnavailable,preparation,trace,onEntryTrace,onChoose}:{
+export function LaunchSpacesScreen({sourceId,productionUlid,creatorId,onEnter,onClose,onSignIn,onSourceUnavailable,preparation,trace,onEntryTrace,onChoose,onMenu}:{
   onChoose?:(destination:LaunchDestination)=>void;
   preparation?:LaunchPreparation;trace?:NavigationTrace;onEntryTrace?:(trace:NavigationTrace|undefined)=>void;
-  sourceId:number;productionUlid:string|null;creatorId:number|null;onEnter:(entry:LaunchResolved)=>void;onClose:()=>void;onSignIn:()=>void;onSourceUnavailable:()=>void;
+  onMenu?:()=>void;sourceId:number;productionUlid:string|null;creatorId:number|null;onEnter:(entry:LaunchResolved)=>void;onClose:()=>void;onSignIn:()=>void;onSourceUnavailable:()=>void;
 }) {
   const {snapshot}=useAuth(),{client,auth,generation}=useViewerClient(),focused=useIsFocused();
   const store=useMemo(()=>preparation?.get(sourceId,productionUlid,creatorId)??new LaunchStore(client,sourceId,productionUlid,()=>{void auth.invalidate(generation);},undefined,creatorId),[client,sourceId,productionUlid,creatorId,generation,preparation]);
@@ -71,7 +71,7 @@ export function LaunchSpacesScreen({sourceId,productionUlid,creatorId,onEnter,on
   const masked=!focused||!appActive||state.sourceUnavailable||snapshot.status==='unavailable';
   const creator=signedIn?state.creator:publicCreator;
   return <SafeAreaView accessibilityViewIsModal style={[styles.screen,masked?styles.opaque:styles.scrim]} edges={['top','bottom']}>
-    <View style={styles.header}><View style={styles.closeRow}><IconButton icon="close" label="Close spaces" onPress={onClose}/></View>
+    <View style={styles.header}><View style={[styles.closeRow,{flexDirection:'row',justifyContent:'space-between'}]}><IconButton icon="close" label="Close spaces" onPress={onClose}/>{onMenu&&<IconButton icon="menu" label="Open menu" onPress={onMenu}/>}</View>
       <Text accessibilityRole="header" style={styles.title}>Open in a space</Text>
     </View>
     <ScrollView contentContainerStyle={styles.content}>

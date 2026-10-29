@@ -9,8 +9,9 @@ export class ResumeWriter {
   private pending=new Map<string,DurableCheckpoint>();
   private disposed=false;
   constructor(private client:Pick<ApiClient,'getJson'|'postJson'>,private valid:()=>boolean){}
+  private path=(key:string)=>['following','creations'].includes(key)?`/api/viewer/v1/me/feed-checkpoints/${key}`: `${discoveryPrefix}/spaces/${encodeURIComponent(key)}`;
   async read(key:string,signal?:AbortSignal) {
-    const result=adaptResume(await this.client.getJson(`${discoveryPrefix}/spaces/${encodeURIComponent(key)}/resume`,signal));
+    const result=adaptResume(await this.client.getJson(['following','creations'].includes(key)?this.path(key):`${this.path(key)}/resume`,signal));
     if(this.valid()&&!this.disposed)this.revisions.set(key,result.revision);
     return result;
   }
@@ -26,7 +27,7 @@ export class ResumeWriter {
     if(!this.valid()||this.disposed)return;
     const checkpoint=this.pending.get(key);this.pending.delete(key);if(!checkpoint)return;
     try {
-      const result=await this.client.postJson(`${discoveryPrefix}/spaces/${encodeURIComponent(key)}/visit`,{revision:this.revisions.get(key),checkpoint}) as {revision:number};
+      const result=await this.client.postJson(['following','creations'].includes(key)?this.path(key):`${this.path(key)}/visit`,{revision:this.revisions.get(key),checkpoint}) as {revision:number};
       if(this.valid()&&!this.disposed&&Number.isSafeInteger(result.revision))this.revisions.set(key,result.revision);
     }catch(e) {
       this.pending.delete(key);

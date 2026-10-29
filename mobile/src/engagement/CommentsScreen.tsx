@@ -10,8 +10,8 @@ import { IconButton } from '../ui/IconButton';
 import { CommentsStore } from './commentsStore';
 import { CommentOrderSelector } from './CommentOrderSelector';
 import type { Comment } from './api';
-export function CommentsScreen({spaceId,publicationId,generation:visitGeneration,onClose,onDenied}:{
- spaceId:number;publicationId:number;generation:number;onClose:()=>void;onDenied:(error:Error)=>void;
+export function CommentsScreen({spaceId,publicationId,generation:visitGeneration,onClose,onDenied,onMenu}:{
+ spaceId:number;publicationId:number;generation:number;onClose:()=>void;onDenied:(error:Error)=>void;onMenu?:()=>void;
 }) {
  const {snapshot}=useAuth(),{auth,client,generation}=useViewerClient(),focused=useIsFocused();
  const {width,fontScale}=useWindowDimensions();
@@ -20,8 +20,10 @@ export function CommentsScreen({spaceId,publicationId,generation:visitGeneration
   if(signal.aborted||auth.getSnapshot().generation!==generation)throw new Error('Cancelled');
  },error=>{if(auth.getSnapshot().generation===generation){if(error instanceof ApiError&&error.status===401)void auth.invalidate(generation);else denied.current(error);}}),[auth,client,spaceId,publicationId,generation]);
  const state=useSyncExternalStore(store.subscribe,store.getSnapshot);
+ const menuDraft=useRef<string|null>(null);
  useEffect(()=>{
   const update=()=>{
+   if(AppState.currentState!=='active')menuDraft.current=null;
    const active=focused&&visitGeneration===generation&&AppState.currentState==='active'&&auth.getSnapshot().status==='authenticated';
    store.setActive(active);
   };
@@ -29,6 +31,7 @@ export function CommentsScreen({spaceId,publicationId,generation:visitGeneration
   return()=>{sub.remove();unsubscribe();store.setActive(false);};
  },[auth,store,focused,visitGeneration,generation]);
  useEffect(()=>()=>store.dispose(),[store]);
+ useEffect(()=>{if(focused&&state.authorized&&menuDraft.current!==null&&AppState.currentState==='active'&&auth.getSnapshot().generation===generation){const draft=menuDraft.current;menuDraft.current=null;store.setDraft(draft);}},[focused,state.authorized,store,auth,generation]);
  const close=()=>{Keyboard.dismiss();onClose();};
  const retry=()=>{if(snapshot.status==='unavailable')void auth.retryValidation();else store.retry();};
  const renderComment=({item}:{item:Comment})=><View style={styles.comment}><Text style={styles.author}>{item.author.displayName}{item.isMine?' (you)':''}</Text><Text selectable style={styles.text}>{item.body}</Text><Text style={styles.meta}>{new Date(item.createdAt.replace(' ','T')+(/(?:Z|[+-]\d\d:\d\d)$/.test(item.createdAt)?'':'Z')).toLocaleString()}</Text></View>;
@@ -36,7 +39,7 @@ export function CommentsScreen({spaceId,publicationId,generation:visitGeneration
  return <SafeAreaView accessibilityViewIsModal style={[styles.screen,blocked?styles.blocked:styles.scrim]} edges={['top','bottom']}>
   <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS==='ios'?'padding':undefined}>
    <View style={styles.header}>
-    <View style={styles.closeRow}><IconButton icon="close" label="Close comments" onPress={close}/></View>
+    <View style={[styles.closeRow,{flexDirection:'row',justifyContent:'space-between'}]}><IconButton icon="close" label="Close comments" onPress={close}/>{onMenu&&<IconButton icon="menu" label="Open menu" disabled={state.sending} onPress={()=>{Keyboard.dismiss();menuDraft.current=state.draft;onMenu();}}/>}</View>
     {!blocked&&<CommentOrderSelector count={state.summary?.count??null} order={state.order} disabled={state.sending} onSelect={store.sort}/>}
    </View>
    {blocked?<Message title={state.checking?'Checking access':snapshot.status==='unavailable'?'Cannot verify sign-in':'Comments unavailable'} message={state.error??undefined} busy={state.checking} onRetry={state.checking?undefined:retry}/>:

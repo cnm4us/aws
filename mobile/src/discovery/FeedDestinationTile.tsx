@@ -1,0 +1,8 @@
+import {Image,Pressable,StyleSheet,Text,View} from 'react-native';
+import {contextName,type AggregateKind} from '../feed/context';
+export function FeedDestinationTile({kind,baseUrl,width,onOpen,signedIn}:{kind:AggregateKind;baseUrl:string;width:number;onOpen:()=>void;signedIn:boolean}){
+ const title=contextName({kind});return <View style={[styles.card,{width}]}><Pressable accessibilityRole="button" accessibilityLabel={title} accessibilityHint="Opens this feed" onPress={onOpen} style={{gap:12}}>
+  <Image source={{uri:`${baseUrl}/images/discovery/${kind==='creations'?'personal':'channel'}-v1.jpg`}} accessible={false} resizeMode="cover" style={styles.artwork}/><Text style={styles.title}>{title}</Text>
+ </Pressable><View style={styles.footer}><Text style={styles.description}>{signedIn?(kind==='following'?'Creators you follow':'Your published videos'):'Sign in to view'}</Text><Pressable accessibilityRole="button" accessibilityLabel={`Open ${title}`} onPress={onOpen} style={styles.launch}><Image source={require('../../assets/icons/launch.png')} accessible={false} style={{width:24,height:24}}/></Pressable></View></View>;
+}
+const styles=StyleSheet.create({card:{backgroundColor:'#171c26',borderColor:'#343d4d',borderWidth:1,borderRadius:14,padding:14,gap:12,flexShrink:0},artwork:{width:'100%',aspectRatio:2,borderRadius:8},title:{color:'#fff',fontSize:20,fontWeight:'700'},description:{color:'#a6c7ff',fontSize:15,flexShrink:1},footer:{marginTop:'auto',flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:8},launch:{width:44,minHeight:44,alignItems:'center',justifyContent:'center'}});

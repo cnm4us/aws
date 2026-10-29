@@ -3,8 +3,10 @@ import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput
 import { useAuth } from './useAuth';
 import { Action } from '../ui/Message';
 import { accountPresentation } from './accountPresentation';
+import {ViewerHeader} from '../ui/ViewerHeader';
+import {SafeAreaView} from 'react-native-safe-area-context';
 
-export function AccountScreen({onDone}:{onDone:()=>void}) {
+export function AccountScreen({onDone,onMenu}:{onDone:()=>void;onMenu?:()=>void}) {
   const {store,snapshot}=useAuth();
   const [email,setEmail]=useState('');const [password,setPassword]=useState('');
   useEffect(()=>()=>store.cancelSignIn(),[store]);
@@ -16,9 +18,8 @@ export function AccountScreen({onDone}:{onDone:()=>void}) {
     const secret=password;setPassword('');await store.signIn(email.trim(),secret);
     if(store.getSnapshot().status==='authenticated')onDone();
   };
-  return <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS==='ios'?'padding':undefined}>
+  return <SafeAreaView style={styles.flex} edges={['top','bottom','left','right']}><ViewerHeader title="Account" onMenu={onMenu} onBack={onDone}/><KeyboardAvoidingView style={styles.flex} behavior={Platform.OS==='ios'?'padding':undefined}>
     <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-      <Text style={styles.title} accessibilityRole="header">Account</Text>
       {mode==='signedIn' ? <>
         <Text style={styles.text}>Signed in as {snapshot.viewer?.displayName || 'Viewer'}</Text>
       </> : mode==='savedSession' ? <>
@@ -43,7 +44,7 @@ export function AccountScreen({onDone}:{onDone:()=>void}) {
       {snapshot.message && <Text style={styles.error} accessibilityRole="alert">{snapshot.message}</Text>}
       <Action label={busy?'Cancel':'Done'} onPress={()=>{store.cancelSignIn();onDone();}} />
     </ScrollView>
-  </KeyboardAvoidingView>;
+  </KeyboardAvoidingView></SafeAreaView>;
 }
 const styles=StyleSheet.create({
   flex:{flex:1,backgroundColor:'#000'},content:{padding:24,gap:16},title:{color:'#fff',fontSize:26,fontWeight:'700'},

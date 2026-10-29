@@ -23,6 +23,7 @@ export class AccessManager {
  identityValid=()=>this.valid('identity');spaceValid=(id:number)=>this.identityValid()&&this.valid(`space:${id}`);
  canView=(item:FeedVideoItem)=>this.spaceValid(item.spaceId!)&&this.valid(itemKey(item));
  publicValid=(item:FeedVideoItem)=>this.valid(`public:${itemKey(item)}`);
+ aggregateValid=(kind:string,item:FeedVideoItem)=>this.identityValid()&&this.valid(`aggregate:${kind}:${itemKey(item)}`)&&(item.sourceContext?.kind==='global'?this.publicValid(item):this.canView(item));
  private put(key:string,until:number,p:RequestEvidence){if((this.leases.get(key)?.startedAt??-Infinity)>p.startedAt)return;
   const normalized=key.startsWith('public:')?key.slice(7):key;
   if(normalized.startsWith('[')){const tuple=JSON.parse(normalized);
@@ -43,13 +44,16 @@ export class AccessManager {
   this.trim();this.publish();return true;
  };
  seedPage=(page:FeedPage)=>{
+  for(const proof of page.sourceProofs??[])this.seedPage({items:page.items.filter(i=>proof.publicIds.includes(i.publicationId)||proof.publications.some(p=>p.item.publicationId===i.publicationId)),nextCursor:null,access:proof});
   if(!this.seed(page.access))return false;
   const p=page.access!;
   if(p.publicUntil!==undefined)for(const item of page.items)if(p.publicIds.includes(item.publicationId))this.put(`public:${itemKey(item)}`,p.publicUntil,p);
+  if(page.aggregateAccess)for(const item of page.aggregateAccess.publications)this.put(`aggregate:${page.aggregateAccess.kind}:${itemKey(item)}`,page.aggregateAccess.until,p);
   this.trim();this.publish();return true;
  };
  private trim(){if(this.leases.size<=128)return;const pinned=new Set(['identity',...Array.from(this.jobs.values()).flatMap(j=>[`space:${j.spaceId}`,...j.items.map(itemKey)])]);
   for(const key of this.leases.keys()){if(!pinned.has(key))this.leases.delete(key);if(this.leases.size<=128)break;}}
+ invalidateAggregate=(kind:string,spaceId:number,creatorId:number)=>{for(const key of this.leases.keys())if(key.startsWith(`aggregate:${kind}:`)){try{const tuple=JSON.parse(key.slice(`aggregate:${kind}:`.length));if(tuple[0]===spaceId&&tuple[4]===creatorId)this.leases.delete(key);}catch{}}this.publish();};
  invalidatePublic=(publicationId:number)=>{for(const key of this.leases.keys())if(key.startsWith('public:')){
   try{if(JSON.parse(key.slice(7))[1]===publicationId)this.leases.delete(key);}catch{}
  }this.publish();};
@@ -101,6 +105,10 @@ export class AccessManager {
  setActive=(active:boolean)=>{this.active=active;if(!active){for(const j of this.jobs.values()){j.request?.abort();j.pending=undefined;}}this.publish();};
  private schedule(){clearTimeout(this.timer);if(!this.active)return;
   let next=Infinity;const now=this.now();
+  // Mixed feeds have independent renewal owners; still publish at every source expiry.
+  if(Array.from(this.leases.keys()).some(key=>key.startsWith('aggregate:')))for(const lease of this.leases.values()){
+   const left=lease.until-lease.startedAt-Math.max(now-lease.startedAt,this.wall()-lease.wallStartedAt);if(left>0)next=Math.min(next,now+left);
+  }
   for(const j of this.jobs.values()){
    const leases=['identity',`space:${j.spaceId}`,...j.items.map(itemKey)].map(k=>this.leases.get(k)).filter((l):l is Lease=>!!l);
    for(const l of leases){const age=Math.max(now-l.startedAt,this.wall()-l.wallStartedAt);const expiry=l.until-l.startedAt-age;if(expiry>0)next=Math.min(next,now+expiry);}

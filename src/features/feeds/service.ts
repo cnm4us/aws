@@ -2,7 +2,7 @@ import { listGlobalFeedRows, getGlobalFeedPinnedRowByProductionUlid, getSpaceFee
 import { enhanceUploadRow } from '../../utils/enhance'
 import { type FeedResponse } from './types'
 import { listSpaceFeedRows, type FeedSelection } from './repo'
-type ViewerSelection = Pick<FeedSelection, 'publicationId' | 'newerThan' | 'ascending'>
+type ViewerSelection = Pick<FeedSelection, 'publicationId' | 'publicationIds' | 'newerThan' | 'ascending'>
 import { clampLimit, parseTsIdCursor, buildTsIdCursor } from '../../core/pagination'
 import { SpacePublicationStatus, SpacePublicationVisibility } from '../../db'
 import * as uploadsSvc from '../uploads/service'
@@ -36,7 +36,7 @@ export async function getGlobalFeed(opts: { userId?: number | null; limit?: numb
   const cursorPublishedAt = parsed?.ts ?? null
   const cursorId = parsed?.id ?? null
 
-  const rows = await listGlobalFeedRows({ cursorPublishedAt, cursorId, limit, userId: opts.userId, publicationId: opts.publicationId, newerThan: opts.newerThan, ascending: opts.ascending })
+  const rows = await listGlobalFeedRows({ cursorPublishedAt, cursorId, limit, userId: opts.userId, publicationId: opts.publicationId,publicationIds:opts.publicationIds, newerThan: opts.newerThan, ascending: opts.ascending })
   const items = await Promise.all(rows.map(async (row) => {
     let distribution: any = null
     if (row.distribution_flags) {
@@ -120,7 +120,7 @@ export async function getSpaceFeed(spaceId: number, opts: { userId: number; limi
   const cursorPublishedAt = parsed?.ts ?? null
   const cursorId = parsed?.id ?? null
 
-  const rows = await listSpaceFeedRows(spaceId, { cursorPublishedAt, cursorId, limit, userId: opts.userId, publicationId: opts.publicationId, newerThan: opts.newerThan, ascending: opts.ascending })
+  const rows = await listSpaceFeedRows(spaceId, { cursorPublishedAt, cursorId, limit, userId: opts.userId, publicationId: opts.publicationId,publicationIds:opts.publicationIds, newerThan: opts.newerThan, ascending: opts.ascending })
   const items = await Promise.all(rows.map(async (row) => {
     let distribution: any = null
     if (row.distribution_flags) {
