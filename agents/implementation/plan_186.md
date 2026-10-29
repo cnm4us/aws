@@ -206,4 +206,4 @@ This completes A–E for the build43 internal milestone. No new numerical playba
 
 ## Resume Here
 
-A–E complete for the accepted build43 internal milestone. Preserve verified source/artifacts, build42 comparison and prior Plan184 editorial/compatibility gates. The destination proposal was subsequently implemented and accepted in Plan187/build46. The user has now requested repository commit/publication of the combined accepted Plan186/187 work; preserve this build43 evidence.
+A–E complete for the accepted build43 internal milestone. Preserve verified source/artifacts, build42 comparison and prior Plan184 editorial/compatibility gates. The destination proposal was subsequently implemented and accepted in Plan187/build46. Combined accepted Plan186/187 implementation is committed/pushed as `3a3f32b`, with exact remote main verified. Preserve this build43 evidence and Plan187’s final build46 acceptance/delivery records.

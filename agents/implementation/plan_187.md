@@ -311,7 +311,15 @@ The user answers “Yes”/“yes” to all three build46 bundles: Your Creation
 
 These are qualitative observations on the registered iPhone. They do not establish numeric performance/position error, VoiceOver, other-device coverage, large-production load behavior, fresh report submissions or additional physical checks beyond the questions answered. Existing implementation bounds and deferred milestones remain unchanged. No product, backend, database or build change was needed to record acceptance; no commit/push requested.
 
+## Repository Delivery — 2026-10-29 (Pacific)
+
+- User-requested commit/publication is complete for the accepted Plan186/187 implementation: [`3a3f32b`](https://github.com/cnm4us/aws/commit/3a3f32b06492f54e303b1792bafe645c74ef7f62) (`feat: add unified viewer navigation and personalized feeds`). Remote `main` was checked against full implementation SHA `3a3f32b06492f54e303b1792bafe645c74ef7f62` after the successful push.
+- The committed public source still matches accepted build46 `e48138e0cf580d43436e55e3bb84bf26cbc3da0ef038cad076fb03077153e3ba`. No rebuild, product/backend/database mutation or new phone check was needed for publication. Existing typecheck/125 rendered and retained261 unit/20 service/66 SQL/API evidence remain unchanged.
+- Repository delivery records follow in a separate documentation commit. Private credentials, fixture files and ignored build artifacts are excluded. Existing16 documentation findings remain unchanged, with zero new; local links and whitespace pass.
+
 ## Change Log
+
+- 2026-10-29 (Pacific) — Accepted combined Plan186/187 implementation committed/pushed as `3a3f32b` and exact remote main verified; delivery records follow separately.
 
 - 2026-10-29 (Pacific) — User requests “Please commit and publish.” Preparing one implementation commit for accepted Plan186/187 and repository publication; no new product or build changes.
 
@@ -325,4 +333,4 @@ These are qualitative observations on the registered iPhone. They do not establi
 
 ## Resume Here
 
-Plan187 is Complete for the accepted build46 internal milestone. All three final phone bundles and the build45 menu/directory bundle pass; host/source/archive/downloaded signing and guarded promotion evidence are preserved. No required acceptance check remains. Retain recorded implementation/accessibility/performance limits and Plan184’s separate rollout gates. The user has now authorized committing and pushing the accepted Plan186/187 implementation. Record repository delivery and verify remote main after publication.
+Plan187 is Complete for the accepted build46 internal milestone. All three final phone bundles and the build45 menu/directory bundle pass; host/source/archive/downloaded signing and guarded promotion evidence are preserved. No required acceptance check remains. Retain recorded implementation/accessibility/performance limits and Plan184’s separate rollout gates. Accepted Plan186/187 implementation committed and pushed as `3a3f32b`; remote main verified. Delivery documentation follows separately; preserve the verified build46 source and recorded limits.
