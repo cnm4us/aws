@@ -41,7 +41,9 @@ export type FeedCommands={revalidate?:(id:number|undefined)=>void;requestRefresh
 export type FeedPlaybackHandle={checkpoint?:()=> (PlaybackCheckpoint&{uploadId:number|null;productionUlid:string|null;creatorId:number|null})|undefined;entryFailed?:()=>boolean;retainOrigin?:()=>void;retryFailed?:()=>boolean;selectedId?:()=>number|null;capture:()=>PlaybackCheckpoint;release:()=>void;handOff:()=>PlayerHandoff<NativePlayerPort>|undefined};
 
 
-export function FeedScreen({ context, preferences, sound, captionPreferences, captions, focused, onSpaces, onMenu, onGlobal, onCreator, registerPlayback, registerCommands, restore, entry, onBackProfile, onLaunch, onRetryEntry, onChooseLaunch, onComments, onReport, reportMemory, onPrepareLaunch, handoff, trace, blocked=false,onForgetCheckpoint }: {
+export function FeedScreen({ context, preferences, sound, captionPreferences, captions, focused,onPersist,entryReviewRequired,onHome,onSaved,onAbout,onSpaces, onMenu, onGlobal, onCreator, registerPlayback, registerCommands, restore, entry, onBackProfile, onLaunch, onRetryEntry, onChooseLaunch, onComments, onReport, reportMemory, onPrepareLaunch, handoff, trace, blocked=false,onForgetCheckpoint }: {
+  onPersist?:()=>void;entryReviewRequired?:boolean;
+  onHome?:()=>void;onSaved?:()=>void;onAbout?:()=>void;
   onForgetCheckpoint?:()=>void;
   onPrepareLaunch?:(item:FeedVideoItem)=>void;handoff?:PlayerHandoff<NativePlayerPort>;trace?:NavigationTrace;
   captionPreferences: CaptionPreferences; captions: ReturnType<CaptionPreferences['getSnapshot']>;
@@ -60,7 +62,7 @@ export function FeedScreen({ context, preferences, sound, captionPreferences, ca
   useEffect(()=>{if(snapshot.resume?.outcome==='unavailable')onForgetCheckpoint?.();},[snapshot.resume]);
   // Verified spaces stay eligible during bounded routine renewal. Entry/return,
   // failure and expiry still withhold authority through the access guard.
-  const eligible=!blocked && focused && !snapshot.errorStatus && access.authorized
+  const eligible=!entryReviewRequired&&!blocked && focused && !snapshot.errorStatus && access.authorized
     && (context.kind==='global' || auth.status==='authenticated' || auth.status==='unavailable'&&access.authorized);
   const [retrying,setRetrying]=useState(false),[retryError,setRetryError]=useState<string|null>(null);
   const retryEntry=async()=>{if(retrying||!onRetryEntry)return;setRetrying(true);setRetryError(null);try{await onRetryEntry();}catch(e){setRetryError(e instanceof Error?e.message:"Cannot open space. Try again.");}finally{setRetrying(false);}};
@@ -112,14 +114,14 @@ export function FeedScreen({ context, preferences, sound, captionPreferences, ca
   },[focused,store]);
   return <View style={styles.screen}>
     <View style={{flex:1}}>
-      {blocked ? <View style={{flex:1,paddingTop:headerHeight}}><Message title="Video no longer available"/></View> : snapshot.initialLoading ? <View style={{flex:1,paddingTop:headerHeight}}><FeedLoadingSplash feedName={context.kind==='global'?'Global':context.name}/></View> : snapshot.initialError ?
+      {entryReviewRequired?<View style={{flex:1,paddingTop:headerHeight}}><Message title="Review space rules" message="The space rules or access changed. Review before continuing."/>{onAbout&&<Action label="Review space rules" onPress={onAbout}/>}</View>:blocked ? <View style={{flex:1,paddingTop:headerHeight}}><Message title="Video no longer available"/></View> : snapshot.initialLoading ? <View style={{flex:1,paddingTop:headerHeight}}><FeedLoadingSplash feedName={context.kind==='global'?'Global':context.name}/></View> : snapshot.initialError ?
         <View style={{flex:1,paddingTop:headerHeight}}><Message title={['launch_target_unavailable','publication_not_found'].includes(snapshot.errorCode??'')?'Video unavailable in this space':snapshot.errorStatus===403 || snapshot.errorStatus===404?'Access unavailable':'Cannot load the feed'}
           message={retryError??snapshot.initialError} busy={retrying} busyLabel="Retrying feed" onRetry={retrying?undefined:entryPending && onRetryEntry?()=>{void retryEntry();}:()=>{void recover();}}/>
           {entryPending && onChooseLaunch && <Action label="Choose another space" onPress={onChooseLaunch}/>}
           <View style={styles.headerActions}><Action label="Spaces" onPress={onSpaces}/><Action label="Global" onPress={onGlobal}/></View>
         </View> : <FeedSession key={snapshot.sessionId} store={store} snapshot={snapshot} muted={sound.muted}
           onToggleMute={()=>{if(live.current.mounted&&live.current.focused)preferences.toggleMute();}} visible={focused} eligible={!!eligible} diagnosticContext={{feedContext:contextKey(context),authGeneration:auth.generation}}
-          headerHeight={headerHeight} onEntryPresented={markEntryPresented} restore={recoveryRestore??restore} entry={recoveryRestore?undefined:entry} handoff={handoff} trace={trace} onPrepareLaunch={onPrepareLaunch} onCreator={onCreator} onLaunch={onLaunch} onComments={onComments} onReport={onReport} reportMemory={reportMemory} onRecover={()=>{void recover();}} registerPlayback={registerMedia} client={client} context={context} captionPreferences={captionPreferences} captions={captions}/>}
+          headerHeight={headerHeight} onPersist={onPersist} onEntryPresented={markEntryPresented} restore={recoveryRestore??restore} entry={recoveryRestore?undefined:entry} handoff={handoff} trace={trace} onPrepareLaunch={onPrepareLaunch} onCreator={onCreator} onLaunch={onLaunch} onComments={onComments} onReport={onReport} reportMemory={reportMemory} onRecover={()=>{void recover();}} registerPlayback={registerMedia} client={client} context={context} captionPreferences={captionPreferences} captions={captions}/>}
       {((context.kind==='space'&&auth.status==='unavailable'&&!access.authorized) || (context.kind==='space' && access.checking && !access.authorized)) &&
         <View style={[StyleSheet.absoluteFill,{backgroundColor:'#000',padding:20,paddingTop:headerHeight+12,gap:12}]}>
           <Message title={auth.status==='unavailable'?'Cannot verify access':'Checking access'} busy={auth.status!=='unavailable'}
@@ -133,7 +135,9 @@ export function FeedScreen({ context, preferences, sound, captionPreferences, ca
           <Action label="Global" onPress={onGlobal}/><Action label="Spaces" onPress={onSpaces}/>
         </View>}
     </View>
-    <View testID="feed-navigation-reserve" style={{height:FEED_NAVIGATION_HEIGHT+insets.bottom,backgroundColor:'#000'}} accessible={false}/>
+    <View testID="feed-navigation-reserve" style={{height:onHome?undefined:FEED_NAVIGATION_HEIGHT+insets.bottom,minHeight:FEED_NAVIGATION_HEIGHT+insets.bottom,paddingBottom:onHome?insets.bottom:0,flexWrap:'wrap',backgroundColor:'#000',flexDirection:'row',justifyContent:'center',alignItems:'flex-start',paddingTop:8,gap:8}} accessible={false}>
+      {onHome&&<Action label="Home" onPress={onHome}/>} {onSaved&&<Action label="Your Spaces" onPress={onSaved}/>} {onAbout&&<Action label="About" onPress={onAbout}/>}
+    </View>
     <View testID="feed-floating-header" style={[styles.toolbar,{paddingTop:insets.top+8,paddingLeft:Math.max(16,insets.left),paddingRight:Math.max(16,insets.right)}]} onLayout={event=>setHeaderHeight(event.nativeEvent.layout.height)}>
       <FeedHeader context={context} onSpaces={onSpaces} onMenu={onMenu} onBackProfile={onBackProfile}/>
       {auth.status==='anonymous' && auth.message && <Text accessibilityRole="alert" style={{color:'#ffb4b4',fontSize:15}}>{auth.message}</Text>}
@@ -142,9 +146,9 @@ export function FeedScreen({ context, preferences, sound, captionPreferences, ca
   </View>;
 }
 
-function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosticContext, restore, entry, onCreator, onLaunch, onComments, onReport, reportMemory, registerPlayback, client, context, captionPreferences, captions, onPrepareLaunch, handoff, trace,visible,onRecover,onEntryPresented,headerHeight }: {
+function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosticContext, restore, entry, onCreator, onLaunch, onComments, onReport, reportMemory, registerPlayback, client, context, captionPreferences, captions, onPrepareLaunch, handoff, trace,visible,onRecover,onEntryPresented,headerHeight,onPersist }: {
   headerHeight:number;
-  onEntryPresented?:()=>void;
+  onEntryPresented?:()=>void;onPersist?:()=>void;
   onRecover:()=>void;onPrepareLaunch?:(item:FeedVideoItem)=>void;handoff?:PlayerHandoff<NativePlayerPort>;trace?:NavigationTrace;
   store: FeedStore; snapshot: FeedSnapshot;visible:boolean; muted: boolean; onToggleMute: () => void; eligible: boolean;
   diagnosticContext:{feedContext:string;authGeneration:number};
@@ -191,6 +195,9 @@ function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosti
   useLayoutEffect(()=>{if(entryState.phase==='ready'&&entryGate.present()){onEntryPresented?.();coordinator.presentEntry();}},[entryGate,entryState.phase,coordinator,onEntryPresented]);
   useEffect(()=>{if(entryState.phase==='failed')coordinator.failEntry();},[entryState.phase,coordinator]);
   useEffect(()=>()=>entryGate.dispose(),[entryGate]);
+  const persistLatest=useRef(onPersist);persistLatest.current=onPersist;
+  useEffect(()=>{if(!playback.entryPresented||!onPersist)return;const timer=setTimeout(()=>persistLatest.current?.(),0);return()=>clearTimeout(timer);},[playback.entryPresented,playback.userPaused,!!onPersist]);
+
   const textEligible = eligible && publicationAuthorized && playback.entryPresented && playback.appActive && playback.screenEligible && !playback.scrolling;
   const [storyExpanded, setStoryExpanded] = useState(false);
   const [storyInteracting, setStoryInteracting] = useState(false);
@@ -203,7 +210,7 @@ function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosti
   useLayoutEffect(()=>registerPlayback?.({capture:()=>{const saved=coordinator.capture();return entryGate.getSnapshot().phase==='presented'?saved:{...saved,...initialCheckpoint.current};},
     checkpoint:()=>{const item=items.current[index];if(!item||entryGate.getSnapshot().phase!=='presented'||coordinator.getSnapshot().failed||coordinator.getSnapshot().restoreError
       ||(sessionAuth.access&&(context.kind==='global'?!sessionAuth.access.publicValid(item):!sessionAuth.access.canView(item))))return;
-      return {...coordinator.capture(),uploadId:item.uploadId,productionUlid:item.productionUlid,creatorId:item.creator.id};},
+      return {...coordinator.checkpoint(),uploadId:item.uploadId,productionUlid:item.productionUlid,creatorId:item.creator.id};},
     release:()=>{entryGate.dispose();coordinator.dispose();},handOff:coordinator.handOff,entryFailed:()=>entryGate.getSnapshot().phase==='failed',
     retryFailed:()=>coordinator.recoverFailed(canLoad),selectedId:()=>coordinator.getSnapshot().publicationId,
     retainOrigin:()=>{if(context.kind==='global')sessionAuth?.globalFeed.save(snapshot.items,index,snapshot.nextCursor,sessionAuth.access);}}),[coordinator,entryGate,registerPlayback,index,snapshot.items,snapshot.nextCursor]);

@@ -1,3 +1,7 @@
+import {DiscoveryScreen} from '../discovery/DiscoveryScreen';
+import {EntryScreen} from '../discovery/EntryScreen';
+import {contextEntryKey,toContext,type SpaceCard,discoveryPrefix,getEntry} from '../discovery/api';
+import {ResumeWriter} from '../discovery/resumeWriter';
 import { ReportScreen } from '../reporting/ReportScreen';
 import { ReportMemory } from '../reporting/reportMemory';
 import type { ReportTarget } from '../reporting/api';
@@ -35,13 +39,20 @@ import { CommentsScreen } from '../engagement/CommentsScreen';
 import { IconButton } from '../ui/IconButton';
 import { ReadinessCheckScreen, ReadinessCheckCover, type NativeReadinessProbe } from '../playback/ReadinessCheckScreen';
 
-type Routes={Feed:undefined;Report:{target:ReportTarget;generation:number;feedKey:string;capturedSeconds:number};ReadinessCheck:undefined;ReadinessCover:undefined;Comments:{spaceId:number;publicationId:number;generation:number;feedKey:string};LaunchSpaces:{sourceId:number;productionUlid:string|null;creatorId:number|null;generation:number};Menu:{source:'feed'|'profile';feedKey?:string};Spaces:undefined;Account:undefined;Settings:undefined;CreatorProfile:{creatorId:number;journeyGeneration:number;followProof?:FollowProof}};
+type Routes={Home:undefined;YourSpaces:undefined;Recent:undefined;Genre:{slug:string;name:string};SpaceEntry:{entryKey:string;about?:boolean;launch?:{sourceId:number;productionUlid:string|null;creatorId:number|null;generation:number};creatorJourney?:{creatorId:number;generation:number}};Feed:undefined;Report:{target:ReportTarget;generation:number;feedKey:string;capturedSeconds:number};ReadinessCheck:undefined;ReadinessCover:undefined;Comments:{spaceId:number;publicationId:number;generation:number;feedKey:string};LaunchSpaces:{sourceId:number;productionUlid:string|null;creatorId:number|null;generation:number};Menu:{source:'feed'|'profile';feedKey?:string};Spaces:undefined;Account:undefined;Settings:undefined;CreatorProfile:{creatorId:number;journeyGeneration:number;followProof?:FollowProof}};
 const Stack=createNativeStackNavigator<Routes>();
 type FeedVisit={identityKey:string;generation:number;context:FeedContext;visitId:number;restore?:FeedCheckpoint;entry?:LaunchEntry;trace?:NavigationTrace};
 type Props={preferences:PlaybackPreferences;sound:PlaybackPreferencesSnapshot;captionPreferences:CaptionPreferences;captions:ReturnType<CaptionPreferences['getSnapshot']>};
 export function ViewerNavigator({preferences,sound,captionPreferences,captions}:Props) {
   const {store:auth,snapshot,baseUrl}=useAuth();
   const {client}=useViewerClient();
+  const [startup,setStartup]=useState<{client:typeof client;enabled:boolean}|null>(null);
+  const [feedMounted,setFeedMounted]=useState(true);
+  const [entryReviewRequired,setEntryReviewRequired]=useState(false);
+  useEffect(()=>{const controller=new AbortController();void client.getJson(`${discoveryPrefix}/config`,controller.signal).then((data:any)=>{if(!controller.signal.aborted)setStartup({client,enabled:data?.nativeHomeEnabled===true});}).catch(()=>{if(!controller.signal.aborted)setStartup({client,enabled:false});});return()=>controller.abort();},[client]);
+  const discoveryEnabled=startup?.client===client&&startup.enabled;
+  const durable=useMemo(()=>new ResumeWriter(client,()=>auth.getSnapshot().generation===snapshot.generation&&auth.getSnapshot().status==='authenticated'),[client,auth,snapshot.generation]);
+  useEffect(()=>()=>durable.dispose(),[durable]);
   const resources=useMemo(()=>({preparation:new LaunchPreparation(client,()=>{void auth.invalidate(snapshot.generation);},result=>{
     if(auth.getSnapshot().generation!==snapshot.generation||AppState.currentState!=='active'||!result.entry)return false;
     if(!auth.access.seedPage(result.entry))return false;const selected=result.entry.items.find(i=>i.publicationId===result.publicationId);
@@ -55,8 +66,8 @@ export function ViewerNavigator({preferences,sound,captionPreferences,captions}:
     return()=>{sub.remove();unsubscribe();clear();};
   },[resources,auth]);
   const prepareLaunch=useCallback((item:FeedVideoItem)=>{
-    if(auth.getSnapshot().generation===snapshot.generation && auth.getSnapshot().status==='authenticated' && AppState.currentState==='active')resources.preparation.prepare(item);
-  },[resources,auth,snapshot.generation]);
+    if(!discoveryEnabled&&auth.getSnapshot().generation===snapshot.generation && auth.getSnapshot().status==='authenticated' && AppState.currentState==='active')resources.preparation.prepare(item);
+  },[resources,auth,snapshot.generation,discoveryEnabled]);
   const reportMemory=useMemo(()=>new ReportMemory(),[auth,baseUrl,snapshot.generation]);
   useEffect(()=>{const sub=AppState.addEventListener('change',state=>{if(state!=='active')reportMemory.clearDrafts();});return()=>{sub.remove();reportMemory.clear();};},[reportMemory]);
   const checkpoints=useMemo(()=>new FeedCheckpoints(baseUrl,snapshot.generation),[auth,baseUrl,snapshot.generation]);
@@ -91,8 +102,41 @@ export function ViewerNavigator({preferences,sound,captionPreferences,captions}:
     handles.current.set(visitId,handle);if(activeVisit.current===visitId)playback.current=handle;
     return()=>{if(handles.current.get(visitId)===handle)handles.current.delete(visitId);if(playback.current===handle)playback.current=null;};
   },[]);
+  const persist=()=>{
+    if(!isCurrent())return;
+    const saved=playback.current?.checkpoint?.();
+    if(saved){checkpoints.save({...saved,context:current.context,apiOrigin:baseUrl,authGeneration:snapshot.generation,journeyGeneration:current.visitId});
+      if(discoveryEnabled&&saved.publicationId&&saved.productionUlid&&auth.getSnapshot().status==='authenticated')void durable.write(contextEntryKey(current.context),{publicationId:saved.publicationId,productionUlid:saved.productionUlid,positionSeconds:saved.positionSeconds,userPaused:saved.userPaused});}
+  };
+  const persistLive=useRef(persist);persistLive.current=persist;
+  useEffect(()=>{if(!discoveryEnabled)return;const timer=setInterval(()=>persistLive.current(),15000);const sub=AppState.addEventListener('change',state=>{if(state!=='active')persistLive.current();});return()=>{clearInterval(timer);sub.remove();};},[durable,discoveryEnabled]);
+  const leaveForHome=(navigation:any)=>{if(!isCurrent()||!navigation.isFocused())return;persist();resources.preparation.clear();playback.current?.release();setFeedMounted(false);journey.reset();launch.reset();navigation.popTo('Home');};
+  const enterDiscovery=async(space:SpaceCard,navigation:any,target?:Routes['SpaceEntry']['launch'],creatorJourney?:Routes['SpaceEntry']['creatorJourney'],fromStart=false)=>{
+    if(!isCurrent()||!navigation.isFocused())return;
+    if(target){
+      const result=await resolveLaunch(client,target.sourceId,target.productionUlid,space.id,undefined,target.creatorId,true);
+      if(!isCurrent()||!navigation.isFocused())return;
+      const next=launch.enter(result,target.generation);if(!next)throw Error('This launch has changed. Go back and select the space again.');
+      journey.reset();transition(next.context,undefined,next.entry);setFeedMounted(true);navigation.popTo('Feed');return;
+    }
+    const next=toContext(space),memory=checkpoints.take(next);
+    let restore:FeedCheckpoint|undefined=fromStart?undefined:memory;
+    if(fromStart)checkpoints.clear(next);
+    if(auth.getSnapshot().status==='authenticated') {
+      try{const state=await durable.read(contextEntryKey(next));if(!isCurrent()||!navigation.isFocused())return;
+        if(!fromStart&&!memory&&state.outcome==='unavailable')throw new ApiError('The saved video or position is no longer available. You can start with the current feed.',409,'resume_unavailable');
+        if(!fromStart&&!restore&&state.checkpoint)restore={...state.checkpoint,context:next,apiOrigin:baseUrl,authGeneration:snapshot.generation,journeyGeneration:serial.current+1};
+      }catch(error){if(error instanceof ApiError&&[401,403,404,409,428].includes(error.status??0))throw error;}
+    }
+    if(!isCurrent()||!navigation.isFocused())return;
+    if(creatorJourney){if(!journey.enter(creatorJourney.creatorId,creatorJourney.generation))throw Error('This creator visit has changed. Go back and try again.');}else journey.reset();
+    launch.reset();transition(next,restore);setFeedMounted(true);
+    navigation.popTo('Feed');
+  };
   const transition=(context:FeedContext,restore?:FeedCheckpoint,entry?:LaunchEntry,trace?:NavigationTrace)=>{
     if(!isCurrent())return;
+    persist();
+    setEntryReviewRequired(false);
     retryRequest.current?.abort();
     // Each actual feed change starts a fresh native pool. Scalar checkpoints
     // and authorized JSON may survive; no decoder survives another feed.
@@ -106,6 +150,7 @@ export function ViewerNavigator({preferences,sound,captionPreferences,captions}:
     const trace=playbackDiagnostics?.navigationStart(next.kind==='global'?'global_return':'space');trace?.mark('destination_resolved');
     journey.reset();launch.reset();transition(next,saved,undefined,trace);};
   const originName=visit.origin?.context.kind==='space'?visit.origin.context.name:'Global';
+  if(startup?.client!==client)return <Message title="Loading" busy/>;
   if(snapshot.status==='restoring')return <FeedLoadingSplash feedName="Global"/>;
   if(snapshot.status==='signingOut')return <Message title="Signing out" busy/>;
   return <NavigationContainer theme={DarkTheme} onStateChange={state=>{
@@ -118,12 +163,26 @@ export function ViewerNavigator({preferences,sound,captionPreferences,captions}:
     if(name==='Feed' && lastRoute.current==='CreatorProfile' && !journey.getSnapshot().destinationActive)journey.reset();
     lastRoute.current=name;
   }}>
-    <Stack.Navigator screenOptions={{contentStyle:{backgroundColor:'#000'}}}>
+    <Stack.Navigator initialRouteName={discoveryEnabled?'Home':'Feed'} screenOptions={{contentStyle:{backgroundColor:'#000'}}}>
       <Stack.Group navigationKey={viewerIdentityKey(baseUrl,snapshot.viewer?.id)}>
+      {discoveryEnabled&&<>
+      <Stack.Screen name="Home" options={{headerShown:false}}>{({navigation,route})=><DiscoveryScreen  onSelect={space=>navigation.navigate('SpaceEntry',{entryKey:contextEntryKey(toContext(space)),about:false,launch:undefined,creatorJourney:undefined})} onAbout={space=>navigation.navigate('SpaceEntry',{entryKey:contextEntryKey(toContext(space)),about:true,launch:undefined,creatorJourney:undefined})} onHome={()=>leaveForHome(navigation)} onSaved={()=>navigation.navigate('YourSpaces')} onRecent={()=>navigation.navigate('Recent')} onGenre={genre=>navigation.navigate('Genre',genre)} onAccount={()=>navigation.navigate('Account')}/>}</Stack.Screen>
+      <Stack.Screen name="YourSpaces" options={{headerShown:false}}>{({navigation,route})=><DiscoveryScreen mode="saved" onSelect={space=>navigation.navigate('SpaceEntry',{entryKey:contextEntryKey(toContext(space)),about:false,launch:undefined,creatorJourney:undefined})} onAbout={space=>navigation.navigate('SpaceEntry',{entryKey:contextEntryKey(toContext(space)),about:true,launch:undefined,creatorJourney:undefined})} onHome={()=>leaveForHome(navigation)} onSaved={()=>navigation.navigate('YourSpaces')} onRecent={()=>navigation.navigate('Recent')} onGenre={genre=>navigation.navigate('Genre',genre)} onAccount={()=>navigation.navigate('Account')} onClose={()=>navigation.goBack()}/>}</Stack.Screen>
+      <Stack.Screen name="Recent" options={{headerShown:false}}>{({navigation,route})=><DiscoveryScreen mode="recent" onSelect={space=>navigation.navigate('SpaceEntry',{entryKey:contextEntryKey(toContext(space)),about:false,launch:undefined,creatorJourney:undefined})} onAbout={space=>navigation.navigate('SpaceEntry',{entryKey:contextEntryKey(toContext(space)),about:true,launch:undefined,creatorJourney:undefined})} onHome={()=>leaveForHome(navigation)} onSaved={()=>navigation.navigate('YourSpaces')} onRecent={()=>navigation.navigate('Recent')} onGenre={genre=>navigation.navigate('Genre',genre)} onAccount={()=>navigation.navigate('Account')} onClose={()=>navigation.goBack()}/>}</Stack.Screen>
+      <Stack.Screen name="Genre" options={{headerShown:false}}>{({navigation,route})=><DiscoveryScreen mode="genre" genre={route.params} onSelect={space=>navigation.navigate('SpaceEntry',{entryKey:contextEntryKey(toContext(space)),about:false,launch:undefined,creatorJourney:undefined})} onAbout={space=>navigation.navigate('SpaceEntry',{entryKey:contextEntryKey(toContext(space)),about:true,launch:undefined,creatorJourney:undefined})} onHome={()=>leaveForHome(navigation)} onSaved={()=>navigation.navigate('YourSpaces')} onRecent={()=>navigation.navigate('Recent')} onGenre={genre=>navigation.navigate('Genre',genre)} onAccount={()=>navigation.navigate('Account')} onClose={()=>navigation.goBack()}/>}</Stack.Screen>
+      <Stack.Screen name="SpaceEntry" options={{headerShown:false,gestureEnabled:false}}>{({navigation,route})=><EntryScreen entryKey={route.params.entryKey} about={route.params.about} onEnter={(space,fromStart)=>enterDiscovery(space,navigation,route.params.launch,route.params.creatorJourney,fromStart)} onClose={()=>navigation.goBack()} onAccount={()=>navigation.navigate('Account')}/>}</Stack.Screen>
+      </>}
       <Stack.Screen name="Feed" options={{headerShown:false}}>
-        {props=><FeedRoute {...props} key={`${snapshot.generation}:${current.visitId}`} visitId={current.visitId} context={context} select={select} preferences={preferences} sound={sound} captionPreferences={captionPreferences} captions={captions}
+        {props=>!feedMounted&&discoveryEnabled?<View style={{flex:1,backgroundColor:'#000'}}/>:<FeedRoute {...props} key={`${snapshot.generation}:${current.visitId}`} visitId={current.visitId} context={context} select={select} preferences={preferences} sound={sound} captionPreferences={captionPreferences} captions={captions}
           onForgetCheckpoint={()=>{if(isCurrent()&&liveFeedKey.current===feedKey)checkpoints.clear(context);}} restore={current.restore} entry={current.entry} trace={current.trace} onPrepareLaunch={prepareLaunch} blocked={context.kind==='global' && launchVisit.sourceUnavailable} registerPlayback={registerPlayback} registerCommands={registerCommands} feedKey={feedKey}
           reportMemory={reportMemory}
+          onPersist={discoveryEnabled?()=>persistLive.current():undefined}
+          entryReviewRequired={entryReviewRequired}
+          onReviewRequired={discoveryEnabled?()=>{persist();setEntryReviewRequired(true);props.navigation.navigate('SpaceEntry',{entryKey:contextEntryKey(context),about:true});}:undefined}
+          onHome={discoveryEnabled?()=>leaveForHome(props.navigation):undefined}
+          onSaved={discoveryEnabled?()=>props.navigation.navigate('YourSpaces'):undefined}
+          onAbout={discoveryEnabled?()=>{persist();props.navigation.navigate('SpaceEntry',{entryKey:contextEntryKey(context),about:true});}:undefined}
+          onSelectEntry={discoveryEnabled?next=>props.navigation.navigate('SpaceEntry',{entryKey:contextEntryKey(next)}):undefined}
           onReport={publicationId=>{
             if(!isCurrent()||!props.navigation.isFocused())return;
             const saved=playback.current?.capture();if(!saved||saved.publicationId!==publicationId)return;
@@ -189,6 +248,7 @@ export function ViewerNavigator({preferences,sound,captionPreferences,captions}:
         {...route.params} onClose={()=>{if(navigation.isFocused())navigation.goBack();}}
         onDenied={error=>{if(isCurrent() && liveFeedKey.current===route.params.feedKey && error instanceof ApiError)commands.current?.denyAccess?.(error);}}/>}</Stack.Screen>
       <Stack.Screen name="LaunchSpaces" options={{headerShown:false,presentation:'transparentModal',animation:'fade',gestureEnabled:false,contentStyle:{backgroundColor:'transparent'}}}>{({navigation,route})=><LaunchSpacesScreen
+        onChoose={discoveryEnabled?destination=>{if(isCurrent()&&navigation.isFocused())navigation.navigate('SpaceEntry',{entryKey:String(destination.space.id),launch:{...route.params}});}:undefined}
         sourceId={route.params.sourceId} productionUlid={route.params.productionUlid} creatorId={route.params.creatorId}
         preparation={resources.preparation} trace={chooserTrace.current} onEntryTrace={trace=>{entryTrace.current=trace;}}
         onClose={()=>{if(navigation.isFocused())navigation.goBack();}}
@@ -207,15 +267,19 @@ export function ViewerNavigator({preferences,sound,captionPreferences,captions}:
           onEnter={destination=>{
             if(liveIdentity.current.auth!==auth || liveIdentity.current.baseUrl!==baseUrl || auth.getSnapshot().generation!==snapshot.generation
               || auth.getSnapshot().status!=='authenticated' || !navigation.isFocused())return;
+            if(discoveryEnabled){navigation.navigate('SpaceEntry',{entryKey:contextEntryKey(destination),creatorJourney:{creatorId:route.params.creatorId,generation:route.params.journeyGeneration}});return;}
             if(!journey.enter(route.params.creatorId,route.params.journeyGeneration))return;
             transition(destination);returnToFeed(navigation);
           }}/>}
       </Stack.Screen>
-      <Stack.Screen name="Spaces" options={{headerShown:false,presentation:'transparentModal',animation:'fade',gestureEnabled:false,contentStyle:{backgroundColor:'transparent'}}}>{({navigation})=><SpacesScreen selected={context}
+      <Stack.Screen name="Spaces" options={{headerShown:false,presentation:'transparentModal',animation:'fade',gestureEnabled:false,contentStyle:{backgroundColor:'transparent'}}}>{({navigation})=>discoveryEnabled?<DiscoveryScreen overlay mode="saved" onSelect={space=>navigation.navigate('SpaceEntry',{entryKey:contextEntryKey(toContext(space)),about:false,launch:undefined,creatorJourney:undefined})} onAbout={space=>navigation.navigate('SpaceEntry',{entryKey:contextEntryKey(toContext(space)),about:true,launch:undefined,creatorJourney:undefined})} onHome={()=>leaveForHome(navigation)} onSaved={()=>navigation.navigate('YourSpaces')} onRecent={()=>navigation.navigate('Recent')} onGenre={genre=>navigation.navigate('Genre',genre)} onAccount={()=>navigation.navigate('Account')} onClose={()=>navigation.goBack()}/>:<SpacesScreen selected={context}
         onClose={()=>{if(navigation.isFocused())navigation.goBack();}}
         onSelect={c=>{if(!navigation.isFocused() || !isCurrent())return;select(c);returnToFeed(navigation);}}
         onSignIn={()=>{if(navigation.isFocused()&&isCurrent())navigation.replace('Account');}}/>}</Stack.Screen>
       <Stack.Screen name="Menu" options={{title:'Menu'}}>{({navigation,route})=><ViewerMenu
+        onHome={discoveryEnabled?()=>leaveForHome(navigation):undefined}
+        onSaved={discoveryEnabled?()=>navigation.replace('YourSpaces'):undefined}
+        onAbout={discoveryEnabled?()=>{persist();navigation.replace('SpaceEntry',{entryKey:contextEntryKey(context),about:true});}:undefined}
         onReadiness={playbackDiagnostics && context.kind==='global' && route.params.source==='feed'?()=>{
           if(isCurrent() && navigation.isFocused() && route.params.feedKey===liveFeedKey.current)navigation.navigate('ReadinessCheck');
         }:undefined}
@@ -238,24 +302,34 @@ export function ViewerNavigator({preferences,sound,captionPreferences,captions}:
     </Stack.Navigator>
   </NavigationContainer>;
 }
-function FeedRoute({navigation,context,select,preferences,sound,captionPreferences,captions,restore,onCreator,onBackProfile,onLaunch,onComments,onReport,reportMemory,onRetryEntry,onChooseLaunch,entry,blocked,registerPlayback,registerCommands,feedKey,onPrepareLaunch,trace,visitId,onForgetCheckpoint}:NativeStackScreenProps<Routes,'Feed'> & Props & {
+function FeedRoute({navigation,context,select,preferences,sound,captionPreferences,captions,restore,onCreator,onBackProfile,onLaunch,onComments,onReport,reportMemory,onRetryEntry,onChooseLaunch,entry,blocked,registerPlayback,registerCommands,feedKey,onPrepareLaunch,trace,visitId,onForgetCheckpoint,onHome,onSaved,onAbout,onSelectEntry,onPersist,onReviewRequired,entryReviewRequired}:NativeStackScreenProps<Routes,'Feed'> & Props & {
+  onPersist?:()=>void;onReviewRequired?:()=>void;entryReviewRequired?:boolean;
+  onHome?:()=>void;onSaved?:()=>void;onAbout?:()=>void;onSelectEntry?:(next:FeedContext)=>void;
   visitId:number;onForgetCheckpoint:()=>void;
   onPrepareLaunch?:(item:FeedVideoItem)=>void;trace?:NavigationTrace;
   context:FeedContext;select:(c:FeedContext)=>void;restore?:FeedCheckpoint;entry?:LaunchEntry;blocked?:boolean;onLaunch:(item:FeedVideoItem)=>void;onComments:(publicationId:number)=>void;onReport:(publicationId:number)=>void;reportMemory:ReportMemory;onRetryEntry:()=>Promise<void>;onChooseLaunch:()=>void;onCreator:(id:number)=>void;onBackProfile?:()=>void;
   registerPlayback:(visitId:number,handle:FeedPlaybackHandle)=>()=>void;registerCommands:(visitId:number,handle:FeedCommands)=>()=>void;feedKey:string;
 }) {
   const focused=useIsFocused();const {store:auth,snapshot}=useAuth();
+  const {client}=useViewerClient();
   const registerMedia=useCallback((handle:FeedPlaybackHandle)=>registerPlayback(visitId,handle),[registerPlayback,visitId]);
   const registerActions=useCallback((handle:FeedCommands)=>registerCommands(visitId,handle),[registerCommands,visitId]);
   const liveRole=useRef(focused);liveRole.current=focused;
   useLayoutEffect(()=>()=>{liveRole.current=false;},[]);
   const guard=<T extends unknown[]>(fn:((...args:T)=>void)|undefined)=>(...args:T)=>{if(liveRole.current)fn?.(...args);};
-  const goGlobal=()=>{if(!liveRole.current)return;if(snapshot.status==='unavailable')auth.browseAnonymously();select({kind:'global'});};
+  useEffect(()=>navigation.addListener?.('beforeRemove',()=>onPersist?.()),[navigation,onPersist]);
+  const reviewLive=useRef(onReviewRequired);reviewLive.current=onReviewRequired;
+  useEffect(()=>{if(!focused||!onReviewRequired)return;const controller=new AbortController();
+    const verify=()=>{if(AppState.currentState!=='active')return;void getEntry(client,contextEntryKey(context),controller.signal).then(value=>{if(liveRole.current&&!controller.signal.aborted&&(value.requiresAcknowledgment||!value.canView))reviewLive.current?.();}).catch(error=>{if(liveRole.current&&!controller.signal.aborted&&error instanceof ApiError&&[401,403,404,428].includes(error.status??0))reviewLive.current?.();});};
+    const timer=setInterval(verify,60000),sub=AppState.addEventListener('change',state=>{if(state==='active')verify();});
+    return()=>{clearInterval(timer);sub.remove();controller.abort();};
+  },[focused,client,contextKey(context),!!onReviewRequired]);
+  const goGlobal=()=>{if(!liveRole.current)return;if(snapshot.status==='unavailable')auth.browseAnonymously();if(onSelectEntry)onSelectEntry({kind:'global'});else select({kind:'global'});};
   if(snapshot.status==='unavailable' && !snapshot.viewer)return <View style={{flex:1,padding:24,gap:12}}>
     <Message title="Cannot verify sign-in" message={snapshot.message??undefined} onRetry={()=>{void auth.retryValidation();}}/>
     <Action label="Browse Global" onPress={goGlobal}/><Action label="Account" onPress={()=>navigation.navigate('Account')}/>
   </View>;
-  return <View style={{position:'absolute',top:0,left:0,right:0,bottom:0}} pointerEvents={focused?'auto':'none'} accessibilityElementsHidden={!focused} importantForAccessibility={focused?'auto':'no-hide-descendants'}><FeedScreen context={context} preferences={preferences} sound={sound} captionPreferences={captionPreferences} captions={captions} focused={focused} restore={restore} entry={entry} trace={trace} onPrepareLaunch={onPrepareLaunch} blocked={blocked} onForgetCheckpoint={onForgetCheckpoint} onLaunch={guard(onLaunch)} onComments={guard(onComments)} onReport={guard(onReport)} reportMemory={reportMemory} onRetryEntry={onRetryEntry} onChooseLaunch={onChooseLaunch}
+  return <View style={{position:'absolute',top:0,left:0,right:0,bottom:0}} pointerEvents={focused?'auto':'none'} accessibilityElementsHidden={!focused} importantForAccessibility={focused?'auto':'no-hide-descendants'}><FeedScreen onPersist={onPersist} entryReviewRequired={entryReviewRequired} onHome={onHome} onSaved={onSaved} onAbout={onAbout} context={context} preferences={preferences} sound={sound} captionPreferences={captionPreferences} captions={captions} focused={focused} restore={restore} entry={entry} trace={trace} onPrepareLaunch={onPrepareLaunch} blocked={blocked} onForgetCheckpoint={onForgetCheckpoint} onLaunch={guard(onLaunch)} onComments={guard(onComments)} onReport={guard(onReport)} reportMemory={reportMemory} onRetryEntry={onRetryEntry} onChooseLaunch={onChooseLaunch}
     onCreator={guard(onCreator)} onBackProfile={onBackProfile?guard(onBackProfile):undefined} registerPlayback={registerMedia} registerCommands={registerActions}
     onSpaces={()=>{if(liveRole.current&&navigation.isFocused())navigation.navigate('Spaces');}} onMenu={()=>{if(liveRole.current&&navigation.isFocused())navigation.navigate('Menu',{source:'feed',feedKey});}} onGlobal={goGlobal}/></View>;
 }

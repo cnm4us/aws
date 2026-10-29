@@ -6,7 +6,7 @@ import { useAuth } from '../auth/useAuth';
 import { useViewerClient } from '../feed/useViewerFeed';
 import { Action, Message } from '../ui/Message';
 import { IconButton } from '../ui/IconButton';
-import { adaptLaunchCreator, type LaunchCreator, type LaunchResolved } from './launchApi';
+import { adaptLaunchCreator, type LaunchCreator, type LaunchResolved,type LaunchDestination } from './launchApi';
 import { LaunchStore } from './launchStore';
 import type { LaunchPreparation } from './launchPreparation';
 import type { NavigationTrace } from '../diagnostics/playbackDiagnostics';
@@ -24,7 +24,8 @@ function CreatorIntroduction({creator}:{creator:LaunchCreator}) {
     {!!creator.bio&&<Text style={styles.text}>{creator.bio}</Text>}
   </View>;
 }
-export function LaunchSpacesScreen({sourceId,productionUlid,creatorId,onEnter,onClose,onSignIn,onSourceUnavailable,preparation,trace,onEntryTrace}:{
+export function LaunchSpacesScreen({sourceId,productionUlid,creatorId,onEnter,onClose,onSignIn,onSourceUnavailable,preparation,trace,onEntryTrace,onChoose}:{
+  onChoose?:(destination:LaunchDestination)=>void;
   preparation?:LaunchPreparation;trace?:NavigationTrace;onEntryTrace?:(trace:NavigationTrace|undefined)=>void;
   sourceId:number;productionUlid:string|null;creatorId:number|null;onEnter:(entry:LaunchResolved)=>void;onClose:()=>void;onSignIn:()=>void;onSourceUnavailable:()=>void;
 }) {
@@ -42,7 +43,7 @@ export function LaunchSpacesScreen({sourceId,productionUlid,creatorId,onEnter,on
     if(!focused||!signedIn||!appActive)return;
     void store.ensureFresh();return()=>store.cancel();
   },[store,focused,signedIn,appActive]);
-  useEffect(()=>{if(focused&&signedIn&&appActive&&!state.loading)store.prepareEntries(state.items.slice(0,2).map(i=>i.space.id));},[store,focused,signedIn,appActive,state.items,state.loading]);
+  useEffect(()=>{if(!onChoose&&focused&&signedIn&&appActive&&!state.loading)store.prepareEntries(state.items.slice(0,2).map(i=>i.space.id));},[store,focused,signedIn,appActive,state.items,state.loading]);
   useEffect(()=>{if(state.sourceUnavailable)onSourceUnavailable();},[state.sourceUnavailable]);
   useEffect(()=>{if(focused&&!state.loading&&(state.creator||state.error)){trace?.mark('chooser_ready');trace?.finish(state.error?'failed':'ready');}},[focused,state.loading,state.creator,state.error,trace]);
   useEffect(()=>{
@@ -60,6 +61,7 @@ export function LaunchSpacesScreen({sourceId,productionUlid,creatorId,onEnter,on
   },[client,creatorId,sourceId,focused,signedIn,appActive,snapshot.status,revision]);
   const enter=async(id:number)=>{
     if(state.entering)return;
+    if(onChoose){const destination=state.items.find(item=>item.space.id===id);if(destination&&focused&&appActive)onChoose(destination);return;}
     setTargetName(state.items.find(item=>item.space.id===id)?.space.name??'feed');
     const timing=playbackDiagnostics?.navigationStart('space');onEntryTrace?.(timing);
     const result=await store.enter(id);

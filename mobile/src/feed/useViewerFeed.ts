@@ -1,3 +1,4 @@
+import { entryReceiptHeader } from '../discovery/receipts';
 import { accessScope } from '../auth/accessProof';
 import { useEffect, useMemo, useSyncExternalStore } from 'react';
 import { createApiClient, ApiError } from '../api/client';
@@ -22,7 +23,7 @@ export function useViewerClient() {
           auth.access.invalidate(Number(match[1]),['publication_not_found','creator_not_found'].includes(error.code??'')?Number(match[2])||undefined:undefined);
       }
     },
-    getHeaders:():Record<string,string>=>token?{Authorization:`Bearer ${token}`}:{}}),[baseUrl,generation,token]);
+    getHeaders:(path:string):Record<string,string>=>token?{Authorization:`Bearer ${token}`}:entryReceiptHeader(baseUrl,path)}),[baseUrl,generation,token]);
   const publicClient=useMemo(()=>createApiClient(baseUrl,{fetchImpl:nativeFetch,ticket:auth.access.ticket,onComplete:(path,httpStatus,durationMs,outcome)=>auth.recordDiagnostic({event:'http',scope:'public',httpStatus,durationMs,outcome})}),[baseUrl,generation]);
   return {client,publicClient,auth,generation};
 }

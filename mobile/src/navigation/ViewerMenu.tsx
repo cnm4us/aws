@@ -6,7 +6,8 @@ import { Action } from '../ui/Message';
 import { playbackDiagnostics } from '../diagnostics/development';
 import { sharePlaybackDiagnostics } from '../diagnostics/share';
 
-export function ViewerMenu({ onAccount, onSettings, onClose, onRefresh, onReadiness }: {
+export function ViewerMenu({ onAccount, onSettings, onClose, onRefresh, onReadiness,onHome,onSaved,onAbout }: {
+  onHome?:()=>void;onSaved?:()=>void;onAbout?:()=>void;
   onAccount: () => void; onSettings: () => void; onClose: () => void; onRefresh?: () => void; onReadiness?: () => void;
 }) {
   const { store, snapshot } = useAuth();
@@ -18,6 +19,9 @@ export function ViewerMenu({ onAccount, onSettings, onClose, onRefresh, onReadin
         disabled={busy} onPress={onAccount}/>
       {canSignOut && <Action label={mode === 'signedIn' ? 'Sign out' : 'Sign out on this phone'} disabled={busy}
         onPress={()=>{if(store.getSnapshot().generation===snapshot.generation && !accountPresentation(store.getSnapshot()).busy)void store.signOut();}}/>}
+      {onHome&&<Action label="Home" onPress={onHome}/>}
+      {onSaved&&<Action label="Your Spaces" onPress={onSaved}/>}
+      {onAbout&&<Action label="About / Rules" onPress={onAbout}/>}
       <Action label="Settings" onPress={onSettings}/>
       {onRefresh && <Action label="Refresh feed" disabled={busy} onPress={onRefresh}/>}
       {playbackDiagnostics && <Action label="Playback diagnostics" onPress={sharePlaybackDiagnostics}/>}

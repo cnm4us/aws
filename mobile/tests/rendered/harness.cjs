@@ -15,6 +15,8 @@ async function bundle(entries, preview = false, realFeed = false, realAccess = f
     define: { __DEV__: 'false', 'process.env.EXPO_PUBLIC_VIEWER_BUILD_KIND': JSON.stringify(preview ? 'internal-preview' : 'release'),
       'process.env.EXPO_PUBLIC_VIEWER_DIAGNOSTICS': JSON.stringify(preview ? '1' : '0') },
     plugins: [{ name: 'controlled-native-ports', setup(build) {
+      build.onResolve({filter:/^@react-native-async-storage\/async-storage$/},()=>({path:'storage',namespace:'controlled-storage'}));
+      build.onLoad({filter:/.*/,namespace:'controlled-storage'},()=>({contents:'module.exports={getItem:async()=>null,setItem:async()=>{},removeItem:async()=>{}}',loader:'js'}));
       build.onResolve({ filter: /^react(?:\/.*)?$/ }, args => ({ path: require.resolve(args.path), external: true }));
       build.onResolve({ filter: /^@react-navigation\/(native|native-stack)$/ }, () => ({path:'navigation',namespace:'controlled-nav'}));
       build.onLoad({filter:/.*/,namespace:'controlled-nav'},()=>({contents:fs.readFileSync(path.join(__dirname,'navigation.cjs'),'utf8'),loader:'js',resolveDir:path.resolve(__dirname,'../..')}));

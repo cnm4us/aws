@@ -208,6 +208,7 @@ export default function AdminSpaceDetailPage() {
   return (
     <div style={{ padding: 16, color: '#fff' }}>
       <h1 style={{ fontSize: 20, margin: '6px 0 12px 0' }}>{parsed?.kind === 'group' ? 'Group' : 'Channel'} #{detail?.id}</h1>
+      {parsed&&<p><a href={`/spaces/${parsed.id}/admin/discovery`}>Discovery and welcome</a></p>}
       {error ? <div style={{ color: '#ffb3b3', marginBottom: 12 }}>{error}</div> : null}
       {loading ? (
         <div>Loading…</div>

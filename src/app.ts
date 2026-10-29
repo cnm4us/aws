@@ -1,3 +1,4 @@
+import { discoveryContentGuard } from './features/discovery/guard';
 import { createViewerRouter } from './routes/viewer';
 import { createNativeSessionRouter } from './routes/native-session';
 import { verifyCredentials } from './security/credentials';
@@ -92,6 +93,7 @@ export function buildServer(): express.Application {
   app.use(requestLogger);
   app.use(sessionParse);
   app.use(csrfProtect);
+  app.use(discoveryContentGuard);
 
   app.get('/health', (_req, res) => {
     res.json({ ok: true });

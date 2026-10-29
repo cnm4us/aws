@@ -1,3 +1,4 @@
+import SavedSpacesPanel from '../discovery/SavedSpacesPanel'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import { contextualFollow } from './contextualFollow'
@@ -802,7 +803,8 @@ function flattenSpaces(list: MySpacesResponse | null): SpaceSummary[] {
   return merged
 }
 
-export default function Feed() {
+type DiscoveryCheckpoint={publicationId:number;productionUlid:string;positionSeconds:number;userPaused:boolean}
+export default function Feed({destination,restoreCheckpoint,onCheckpoint,onSelectDestination,onResumeUnavailable}: {destination?:{id:number;global:boolean};restoreCheckpoint?:DiscoveryCheckpoint|null;onCheckpoint?:(checkpoint:DiscoveryCheckpoint)=>void;onSelectDestination?:(path:string)=>void;onResumeUnavailable?:()=>void}={}) {
   const sequenceEngineV1Enabled = useMemo(() => {
     try {
       const raw = String((import.meta as any)?.env?.VITE_FEED_SEQUENCE_ENGINE_V1 ?? '').trim().toLowerCase()
@@ -827,7 +829,7 @@ export default function Feed() {
   const [spacesLoaded, setSpacesLoaded] = useState(false)
   const [spacesLoading, setSpacesLoading] = useState(false)
   const [spacesError, setSpacesError] = useState<string | null>(null)
-  const [feedMode, setFeedMode] = useState<FeedMode>({ kind: 'global' })
+  const [feedMode, setFeedMode] = useState<FeedMode>(destination&&!destination.global?{kind:'space',spaceId:destination.id,spaceUlid:null}:{kind:'global'})
   const railRef = useRef<HTMLDivElement>(null)
   const viewportRef = useRef<HTMLDivElement | null>(null)
   // Note: individual slide videos are rendered via FeedVideo/HLSVideo; no shared video element
@@ -1344,6 +1346,38 @@ export default function Feed() {
     fsIndex,
     commentsOpen,
   })
+
+  const manualPause=useRef(false)
+  const manualPublication=useRef<number|null>(null)
+  const appliedDiscoveryRestore=useRef(false)
+  const checkpointWriter=useRef(onCheckpoint);checkpointWriter.current=onCheckpoint
+  const checkpointRef=useRef<DiscoveryCheckpoint|null>(null)
+  useEffect(()=>{
+    const item=items[activeSequenceIndex],video=getVideoEl(activeSequenceIndex)
+    if(!item?.publicationId||!item.productionUlid||!video)return
+    let restored=false
+    const capture=()=>{
+      if(video.readyState<2||restoringRef.current)return
+      const checkpoint={publicationId:item.publicationId!,productionUlid:item.productionUlid!,positionSeconds:video.currentTime,userPaused:manualPause.current}
+      checkpointRef.current=checkpoint;checkpointWriter.current?.(checkpoint)
+    }
+    const apply=()=>{
+      if(restored)return;restored=true
+      if(!appliedDiscoveryRestore.current&&restoreCheckpoint&&restoreCheckpoint.publicationId===item.publicationId){
+        appliedDiscoveryRestore.current=true
+        video.currentTime=restoreCheckpoint.positionSeconds;manualPause.current=restoreCheckpoint.userPaused
+        if(manualPause.current){video.pause();setPlayingIndex(null);setStartedMap(prev=>({...prev,[activeSequenceIndex]:true}))}
+      }else if(manualPublication.current!==item.publicationId)manualPause.current=false
+      manualPublication.current=item.publicationId??null
+    }
+    const playing=()=>{apply();if(manualPause.current)video.pause();else capture()}
+    const leave=()=>{capture();video.pause()}
+    video.addEventListener('loadeddata',apply);video.addEventListener('playing',playing);video.addEventListener('pause',capture)
+    window.addEventListener('viewer:leaving',leave);window.addEventListener('pagehide',leave)
+    const interval=setInterval(capture,15000)
+    if(video.readyState>=2)apply()
+    return()=>{capture();clearInterval(interval);video.removeEventListener('loadeddata',apply);video.removeEventListener('playing',playing);video.removeEventListener('pause',capture);window.removeEventListener('viewer:leaving',leave);window.removeEventListener('pagehide',leave)}
+  },[items,activeSequenceIndex])
 
   // ------- Durable per‑feed last‑active state (localStorage only; no URL hash) -------
   type LastActive = {
@@ -2209,7 +2243,7 @@ export default function Feed() {
   // If the path is canonical (/groups/:slug or /channels/:slug), prefer it over localStorage restore.
   useEffect(() => {
     const target = canonicalTargetRef.current
-    if (!target) return
+    if (!target || destination) return
     if (!spaceList) return
     try {
       const pool = target.kind === 'group' ? (spaceList?.groups || []) : (spaceList?.channels || [])
@@ -2260,7 +2294,7 @@ export default function Feed() {
         try { debug.time('perf', perfLabel) } catch {}
         setInitialLoading(true)
         setLoadingMore(false)
-        const urlJump = urlJumpConsumedRef.current ? null : readFeedJumpFromUrl()
+        let urlJump = urlJumpConsumedRef.current ? null : readFeedJumpFromUrl() || (restoreCheckpoint?{pinProductionUlid:restoreCheckpoint.productionUlid,publicationId:restoreCheckpoint.publicationId,startSeconds:restoreCheckpoint.positionSeconds,endSeconds:null}:null)
         if (urlJump) urlJumpConsumedRef.current = true
         if (urlJump && urlJump.startSeconds != null) {
           urlJumpSeekSecondsRef.current = urlJump.startSeconds
@@ -2297,6 +2331,10 @@ export default function Feed() {
           nextCursor = cursorStr
         }
         if (canceled) return
+        if(urlJump&&(urlJump.publicationId!=null||urlJump.pinProductionUlid)){
+          const found=fetchedItems.some(item=>(urlJump!.publicationId==null||item.publicationId===urlJump!.publicationId)&&(!urlJump!.pinProductionUlid||item.productionUlid===urlJump!.pinProductionUlid));
+          if(!found){onResumeUnavailable?.();urlJump=null;urlJumpSeekSecondsRef.current=null;urlJumpSeekPublicationIdRef.current=null;urlJumpSeekAppliedRef.current=true;}
+        }
         // Seed per-user like/comment state from feed metadata when available.
         try {
           const likeSeeds: Record<number, boolean> = {}
@@ -4071,6 +4109,7 @@ export default function Feed() {
                       try {
                         debug.log('feed', 'click video toggle', { i, wasPaused: v.paused, ended: v.ended, currentSrc: (v as any).currentSrc, src: v.getAttribute('src'), slideId }, { id: slideId })
                         if (v.paused || v.ended) {
+                          manualPause.current=false
                           // Optimistically mark started so opacity flips immediately
                           setStartedMap((prev) => (prev[i] ? prev : { ...prev, [i]: true }))
                           setPlayingIndex(i)
@@ -4080,6 +4119,7 @@ export default function Feed() {
                             p.catch(() => { setPendingPlayIndex(i) })
                           }
                         } else {
+                          manualPause.current=true
                           v.pause()
                         }
                       } catch {}
@@ -4140,6 +4180,7 @@ export default function Feed() {
                       try {
                         debug.log('feed', 'touch video toggle', { i, wasPaused: v.paused, ended: v.ended, currentSrc: (v as any).currentSrc, src: v.getAttribute('src'), slideId }, { id: slideId })
                         if (v.paused || v.ended) {
+                          manualPause.current=false
                           setStartedMap((prev) => (prev[i] ? prev : { ...prev, [i]: true }))
                           setPlayingIndex(i)
                           v.muted = false
@@ -4148,6 +4189,7 @@ export default function Feed() {
                             p.catch(() => { setPendingPlayIndex(i) })
                           }
                         } else {
+                          manualPause.current=true
                           v.pause()
                         }
                       } catch {}
@@ -4715,6 +4757,7 @@ export default function Feed() {
     try { saveLastActiveFor(feedMode, index) } catch {}
     saveSnapshot()
     const match = flattenSpaces(spaceList).find((s) => s.id === spaceId)
+    if(onSelectDestination&&match){onSelectDestination(match.type==='personal'?'/personal':`/${match.type==='group'?'groups':'channels'}/${encodeURIComponent(match.slug)}`);return}
     const spaceUlid = match?.ulid ?? null
     // Update URL to canonical slug path when available, without leaving the Feed shell.
     try {
@@ -4752,6 +4795,7 @@ export default function Feed() {
   // Legacy feed removed
 
   const handleSelectGlobal = () => {
+    if(onSelectDestination){onSelectDestination('/global');return}
     // User explicitly chose Global; exit canonical deep-link mode and normalize URL.
     try { canonicalTargetRef.current = null } catch {}
     try { saveLastActiveFor(feedMode, index) } catch {}
@@ -4759,8 +4803,8 @@ export default function Feed() {
     const target: FeedMode = { kind: 'global' }
     try {
       const currentPath = window.location.pathname || '/'
-      if (currentPath !== '/' && currentPath !== '') {
-        window.history.pushState({}, '', '/')
+      if (currentPath !== '/global') {
+        window.history.pushState({}, '', '/global')
       }
     } catch {
       // If history manipulation fails, continue with in-place feed switch.
@@ -4840,6 +4884,7 @@ export default function Feed() {
   }
 
   const renderSpacesPanel = () => {
+    if(onSelectDestination)return <SavedSpacesPanel onSelect={onSelectDestination}/>
     if (!isAuthed) {
       return <div style={{ color: '#fff', fontSize: 15 }}>Login to switch spaces.</div>
     }

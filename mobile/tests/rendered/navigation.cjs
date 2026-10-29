@@ -6,8 +6,8 @@ exports.useIsFocused = () => R.useContext(Focus);
 exports.DarkTheme = {};
 exports.NavigationContainer = ({ children, onStateChange }) => { e.stateChanged = onStateChange; return children; };
 const Screen = () => null, Group = () => null;
-function Body({ screens }) {
-  const router = R.useMemo(() => StackRouter({ initialRouteName: 'Feed' }), []);
+function Body({ screens,initialRouteName }) {
+  const router = R.useMemo(() => StackRouter({ initialRouteName: initialRouteName || 'Feed' }), []);
   const options = { routeNames: screens.map(s => s.props.name), routeParamList: {}, routeGetIdList: {} };
   const [state, setState] = R.useState(() => router.getInitialState(options));
   const live = R.useRef(state); live.current = state;
@@ -33,7 +33,8 @@ function Body({ screens }) {
         resolved?.headerRight?.(), screen.props.children({ route, navigation })));
   });
 }
-exports.createNativeStackNavigator = () => ({ Screen, Group, Navigator: ({ children }) => {
+exports.createNativeStackNavigator = () => ({ Screen, Group, Navigator: ({ children,initialRouteName }) => {
   const group = R.Children.toArray(children)[0];
-  return R.createElement(Body, { key: group.props.navigationKey, screens: R.Children.toArray(group.props.children) });
+  const flatten=children=>R.Children.toArray(children).flatMap(child=>child.type===R.Fragment?flatten(child.props.children):[child]);
+  return R.createElement(Body, { key: group.props.navigationKey, initialRouteName,screens: flatten(group.props.children) });
 } });

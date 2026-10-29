@@ -1,3 +1,6 @@
+import { requireEntry } from '../features/discovery/service';
+import { entryReceipt } from '../features/discovery/router';
+import { createDiscoveryRouter } from '../features/discovery/router';
 import { createReportingRouter } from '../features/reports/viewer';
 import { accessMetadata, playbackIds } from '../features/native-sessions/access';
 import { createFollowRouter } from '../features/follows/router';
@@ -15,7 +18,7 @@ import { sendViewerError } from './native-session';
 import { viewerLaunch, launchId } from '../features/publications/viewerLaunch';
 import { viewerText, textId, type TextContext } from '../features/publications/viewerText';
 
-export function createViewerRouter(engagementDeps = { resolveViewer, engagement }) {
+export function createViewerRouter(engagementDeps = { resolveViewer, engagement }, entryDeps = { requireEntry }) {
   const router=Router();
   router.use((_req,res,next)=>{
     res.locals.accessStartedAt=Date.now();res.set('Cache-Control','no-store');
@@ -24,6 +27,7 @@ export function createViewerRouter(engagementDeps = { resolveViewer, engagement 
       ?{...body,access:accessMetadata(res.locals.accessStartedAt,res.locals.viewerPrincipal)}:body);
     next();
   });
+  router.use(createDiscoveryRouter());
   router.use(createReportingRouter());
   router.use(createFollowRouter());
   router.use(createGlobalRecognitionRouter());
@@ -59,6 +63,7 @@ export function createViewerRouter(engagementDeps = { resolveViewer, engagement 
       let entry;
       if(includeEntry) {
         const target=result as Awaited<ReturnType<typeof viewerLaunch.resolve>>;
+        await entryDeps.requireEntry(target.space.id,principal.viewer.id,entryReceipt(req));
         entry=await confirmedPage(target.space.id,principal,res.locals.accessStartedAt,{limit:20,cursor:undefined,anchorPublicationId:target.publicationId});
         const again=await viewerLaunch.resolve(publicationId,target.space.id,principal.viewer.id,controller.signal);
         const selected=entry.items.find(i=>i.publicationId===target.publicationId);

@@ -1,3 +1,4 @@
+import { canonicalViewerUrl } from '../../src/features/discovery/paths'
 import React, { Suspense, useEffect } from 'react'
 import './styles/variables.css'
 import './styles/base.css'
@@ -10,6 +11,8 @@ const PageView = React.lazy(loadPageView)
 const RuleView = React.lazy(loadRuleView)
 const RulesIndexPage = React.lazy(loadRulesIndex)
 const Feed = React.lazy(loadFeed)
+const Discovery = React.lazy(() => import('./discovery/Discovery'))
+const DiscoveryEditor = React.lazy(() => import('./discovery/DiscoveryEditor'))
 const UploadsPage = React.lazy(loadUploads)
 const UploadNewPage = React.lazy(loadUploadNew)
 const PublishPage = React.lazy(loadPublish)
@@ -44,10 +47,13 @@ try {
   try { void preloadHelpDocs() } catch {}
 } catch {}
 
+const canonical = canonicalViewerUrl(window.location.href)
+if (canonical) window.history.replaceState({}, '', canonical)
+
 const root = createRoot(document.getElementById('root')!)
 
 // App-open bootstrap: on first session open (new browsing context) in standalone/PWA,
-// default the menu context to Channel Changer and normalize to '/'.
+// default the menu context while preserving explicit routes.
 ;(() => {
   try {
     const isStandalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || (navigator as any).standalone === true
@@ -56,13 +62,8 @@ const root = createRoot(document.getElementById('root')!)
       sessionStorage.setItem('app:started', '1')
       if (isStandalone) {
         try { localStorage.setItem('menu:context', 'channel') } catch {}
-        const p = window.location.pathname || '/'
-        // Preserve canonical deep links for groups/channels; only normalize unknown non-root paths
-        const isCanonical = p.startsWith('/groups') || p.startsWith('/channels')
-        if (!isCanonical && p !== '/' && p !== '') {
-          // Ensure we land on the main feed for fresh app opens
-          window.location.replace('/')
-        }
+        // Manifest startup is Home; preserve every explicit incoming route, including help/admin/CMS.
+
       }
     }
   } catch {}
@@ -75,12 +76,10 @@ const FullscreenFallback = ({ label = 'Loading…' }: { label?: string }) => (
   <div style={{ height: '100dvh', background: '#000', color: '#fff', display: 'grid', placeItems: 'center' }}>{label}</div>
 )
 
-if (path === '/' || path === '') {
-  root.render(
-    <Suspense fallback={<FullscreenFallback label="Loading feed…" />}>
-      <Feed />
-    </Suspense>
-  )
+if (path==='/admin/discovery'||/^\/spaces\/\d+\/admin\/discovery\/?$/.test(path)) {
+  root.render(<Suspense fallback={<FullscreenFallback/>}><DiscoveryEditor/></Suspense>)
+} else if (/^\/(?:global(?:\/about)?|discover|your-spaces|recent|personal(?:\/about)?|genres\/[^/]+|(?:groups|channels)(?:\/[^/]+(?:\/about)?)?)?\/?$/.test(path)) {
+  root.render(<Suspense fallback={<FullscreenFallback label="Loading…" />}><Discovery Feed={Feed}/></Suspense>)
 } else if (path === '/pages' || path === '/pages/' || /^\/pages\/.+/.test(path)) {
   root.render(
     <Layout label="Page">
@@ -299,10 +298,10 @@ if (path === '/' || path === '') {
       </Layout>
     )
 	  } else {
-	  // Fallback: render Feed for unknown routes while preserving shell behavior.
+	  // Unknown routes must not silently open a feed.
 	  root.render(
 	    <Suspense fallback={<FullscreenFallback label="Loading…" />}> 
-	      <Feed />
+	      <Layout label="Page not found"><p>This page could not be found. <a href="/">Home</a></p></Layout>
 	    </Suspense>
 	  )
 	  }

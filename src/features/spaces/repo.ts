@@ -70,7 +70,7 @@ export async function findGlobalSpaceCandidate(conn?: DB): Promise<any | null> {
   const [globalSlugRows] = await db(conn).query(
     `SELECT id, ulid, name, slug, type, settings
        FROM spaces
-      WHERE slug IN ('global', 'global-feed')
+      WHERE type = 'channel' AND slug IN ('global', 'global-feed')
       ORDER BY slug = 'global' DESC
       LIMIT 1`
   )

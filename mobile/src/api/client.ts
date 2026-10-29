@@ -14,7 +14,7 @@ type ClientOptions = {
   onError?:(error:ApiError,path:string)=>void;
   onRequest?:(path:string)=>(()=>void);
   onComplete?:(path:string,status:number|undefined,elapsedMs:number,outcome:'ok'|'failed'|'cancelled')=>void;
-  getHeaders?: () => Record<string, string>;
+  getHeaders?: (path: string) => Record<string, string>;
 };
 
 export type ApiClient = ReturnType<typeof createApiClient>;
@@ -55,7 +55,7 @@ export function createApiClient(baseUrl: string, options: ClientOptions = {}) {
         throw new ApiError('API paths must be relative to the configured server.');
       }
       const ticket=options.ticket?.()??{startedAt:performance.now(),wallStartedAt:Date.now(),epoch:0};
-      const headers = { Accept: text ? 'text/vtt' : 'application/json', ...options.getHeaders?.() } as Record<string,string>;
+      const headers = { Accept: text ? 'text/vtt' : 'application/json', ...options.getHeaders?.(path) } as Record<string,string>;
       if (Object.keys(headers).some(k=>k.toLowerCase()==='authorization') && !/^\/api\/(native|viewer)\/v1\//.test(path)) {
         throw new ApiError('Credentials are only available to the viewing API.');
       }
@@ -85,8 +85,11 @@ export function createApiClient(baseUrl: string, options: ClientOptions = {}) {
         }
         if (!response.ok) {
           let code: string | undefined;
-          try { const data = path.includes('/report') ? JSON.parse(await readBoundedText(response, 65536, controller.signal)) : await response.json(); if (typeof data?.error === 'string') code = data.error; } catch {}
+          try { const data = (path.includes('/report')||path.includes('/discovery/')) ? JSON.parse(await readBoundedText(response, 65536, controller.signal)) : await response.json(); if (typeof data?.error === 'string') code = data.error; } catch {}
           const messages: Record<string,string> = {
+            space_acknowledgment_required:'Review the space rules before entering.',
+            space_entry_changed:'The space rules changed. Review the updated introduction.',
+            resume_conflict:'A newer saved position is available.',
             invalid_report: 'Check the reporting reason and try again.',
             already_reported: 'A report has already been sent for this video.',
             rule_not_allowed: 'This reason has changed. Refresh the reporting choices.',
@@ -127,10 +130,10 @@ export function createApiClient(baseUrl: string, options: ClientOptions = {}) {
           const value=await readBoundedText(response, 1024 * 1024, controller.signal);completed=true;return value;
         }
         try {
-          const value=path.includes('/report') ? JSON.parse(await readBoundedText(response, 1024 * 1024, controller.signal)) : await response.json();if(controller.signal.aborted)throw new Error('Cancelled');stampResponse(value,ticket);options.onResponse?.(value);completed=true;return value;
+          const value=(path.includes('/report')||path.includes('/discovery/')) ? JSON.parse(await readBoundedText(response, 1024 * 1024, controller.signal)) : await response.json();if(controller.signal.aborted)throw new Error('Cancelled');stampResponse(value,ticket);options.onResponse?.(value);completed=true;return value;
         } catch {
           if (controller.signal.aborted) throw new Error('Cancelled');
-          throw new ApiError(path.includes('/report') ? 'The server returned unreadable reporting information. Please try again.' : 'The server returned an unreadable feed. Please try again.');
+          throw new ApiError((path.includes('/report')||path.includes('/discovery/')) ? 'The server returned unreadable reporting information. Please try again.' : 'The server returned an unreadable feed. Please try again.');
         }
       } catch (error) {
         if (signal?.aborted) {

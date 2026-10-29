@@ -58,7 +58,7 @@
       });
     } else {
       panel.appendChild(h('div', { style:{ color:'#fff', fontSize:'15px', marginBottom:'10px' } }, ['Space switching is available on the Feed.']));
-      var link = h('a', { href:'/', style:{ color:'#9cf', textDecoration:'none', fontSize:'16px', padding:'10px 12px', borderRadius:'8px', border:'1px solid rgba(255,255,255,0.12)', background:'rgba(255,255,255,0.04)', display:'inline-block' } }, ['Go to Feed']);
+      var link = h('a', { href:'/global', style:{ color:'#9cf', textDecoration:'none', fontSize:'16px', padding:'10px 12px', borderRadius:'8px', border:'1px solid rgba(255,255,255,0.12)', background:'rgba(255,255,255,0.04)', display:'inline-block' } }, ['Go to Feed']);
       link.addEventListener('click', function(){ setOpen(false) });
       panel.appendChild(link);
     }

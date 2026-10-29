@@ -1,3 +1,4 @@
+import { canonicalViewerUrl } from '../features/discovery/paths';
 import { Router } from 'express';
 import path from 'path';
 import { BUILD_TAG } from '../utils/version';
@@ -607,7 +608,8 @@ pagesRouter.get('/api/rules', async (req: any, res: any) => {
 });
 
 pagesRouter.get('/', async (req: any, res: any) => {
-  // Phase 2: SPA owns '/', and fetches CMS home content via /api/pages/home.
+  const canonical = canonicalViewerUrl(req.originalUrl);
+  if (canonical) return res.redirect(302, canonical);
   serveHtml(res, path.join('app', 'index.html'));
 });
 
@@ -5744,6 +5746,7 @@ pagesRouter.get('/admin', async (_req: any, res: any) => {
     { title: 'Groups', href: '/admin/groups', desc: 'Manage group spaces (settings, cultures, review)' },
     { title: 'Channels', href: '/admin/channels', desc: 'Manage channel spaces (settings, cultures, review)' },
     { title: 'Moderation', href: MODERATION_ADMIN_ROUTES.hub, desc: 'Rules, cultures, user groups, signals, and the rest of the moderation subsystem' },
+    { title: 'Discovery and Home', href: '/admin/discovery', desc: 'Genres, space welcomes, public placement and Home rollout' },
     { title: 'Pages', href: '/admin/pages', desc: 'Edit CMS pages (Markdown)' },
     { title: 'Audio', href: '/admin/audio', desc: 'System audio library (curated, selectable by users)' },
     { title: 'Video Library', href: '/admin/video-library', desc: 'System video library (source videos for clipping)' },
@@ -7081,7 +7084,7 @@ pagesRouter.get(MODERATION_REPORT_ADMIN_PATHS.list, requireGlobalModerationPage,
       const spaceType = String(row?.space_type || '').trim().toLowerCase()
       const spaceSlug = String(row?.space_slug || '').trim()
       const isGlobalChannel = spaceType === 'channel' && (spaceSlug === 'global' || spaceSlug === 'global-feed')
-      let basePath = '/'
+      let basePath = '/global'
       if (spaceType === 'group' && spaceSlug) basePath = `/groups/${encodeURIComponent(spaceSlug)}`
       else if (spaceType === 'channel' && spaceSlug && !isGlobalChannel) basePath = `/channels/${encodeURIComponent(spaceSlug)}`
       const params = new URLSearchParams()
@@ -18360,6 +18363,17 @@ pagesRouter.get('/spaces/:id', requireSpaceAdminPage, (req: any, res) => {
   }
   res.redirect(`/spaces/${id}/admin/users/${currentUserId}`);
 });
+
+// Explicit viewer destinations precede slug/admin routes. Root cutover is separately gated.
+pagesRouter.get(['/global', '/global/', '/channels/global', '/channels/global/', '/channels/global-feed', '/channels/global-feed/'], (req, res) => {
+  const canonical = canonicalViewerUrl(req.originalUrl);
+  if (canonical) return res.redirect(302, canonical);
+  serveAppSpa(res);
+});
+pagesRouter.get(['/admin/discovery'], (_req,res)=>serveAppSpa(res));
+pagesRouter.get(/^\/spaces\/[1-9]\d*\/admin\/discovery\/?$/, (_req,res)=>serveAppSpa(res));
+pagesRouter.get(['/discover', '/your-spaces', '/recent', '/personal', '/personal/about', '/global/about'], (_req, res) => serveAppSpa(res));
+pagesRouter.get(/^\/(?:genres\/[^/]+|(?:groups|channels)\/[^/]+\/about)\/?$/, (_req, res) => serveAppSpa(res));
 
 // Canonical feed routes for groups/channels by slug (SPA shell, no redirect)
 pagesRouter.get('/groups', (_req, res) => {

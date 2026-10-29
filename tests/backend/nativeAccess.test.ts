@@ -35,7 +35,7 @@ async function mounted(run:(url:string,calls:string[])=>Promise<void>) {
  feeds.getGlobalFeed=async()=>({items:[raw],nextCursor:null});
  profiles.loadCreators=async()=>new Map([[2,{id:2,displayName:'Creator',avatarUrl:null}]]);
  launch.viewerLaunch.resolve=async()=>{calls.push('resolve');return {space:{id:7,name:'Group',type:'group',description:null},publicationId:11,sourcePublicationId:10,productionUlid:null,creator:{id:2,displayName:'Creator',avatarUrl:null,bio:null}};};
- const app=express();app.use(createViewerRouter());const server=app.listen(0,'127.0.0.1');await once(server,'listening');
+ const app=express();app.use(createViewerRouter(undefined,{requireEntry:async(id,userId)=>{calls.push(`entry:${id}`);assert.equal(id,7);assert.equal(userId,9);}}));const server=app.listen(0,'127.0.0.1');await once(server,'listening');
  try{await run(`http://127.0.0.1:${(server.address() as any).port}`,calls);}finally{
   server.close();server.closeAllConnections();
   [sessions.resolveViewer,spaces.confirmedSpaceView,feeds.getSpaceFeed,feeds.getGlobalFeed,profiles.loadCreators,launch.viewerLaunch.resolve]=originals;

@@ -67,7 +67,7 @@ test('readiness check through actual navigator holds a silent candidate behind t
   assert.equal(h.root.root.findAllByType('VideoView').find(n=>n.props.player===nativePlayer),view);assert.equal(nativePlayer.playing,true);assert.equal(nativePlayer.muted,false);assert.equal(original.playing,false);
   await h.press('Frame and playback correct');assert.equal(nativePlayer.released,true);await h.press('Share readiness report');
   const report=JSON.parse(h.e.shared.message);assert.equal(report.history.length,1);assert.equal(report.history[0].userConfirmed,true);assert.equal(report.history[0].native.kind,'target_decoded');
-  assert.equal(h.e.shared.message.includes('https://'),false);assert.equal(h.e.paths.filter(p=>!p.includes('/feed/')&&!p.includes('/creator-recognition')).length,0);
+  assert.equal(h.e.shared.message.includes('https://'),false);assert.equal(h.e.paths.filter(p=>!p.includes('/feed/')&&!p.includes('/creator-recognition')&&p!=='/api/viewer/v1/discovery/config').length,0);
   await h.press('Close readiness check');await h.press('Close menu');assert.equal(h.selected(),original);assert.equal(original.currentTime,3);assert.equal(original.playing,true);
  }finally{await h.close();}
 });

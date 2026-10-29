@@ -83,6 +83,7 @@ export default function SpaceSettingsPage() {
   return (
     <div style={{ padding: 16, color: '#fff' }}>
       <h1 style={{ fontSize: 20, margin: '6px 0 12px 0' }}>Space Settings (SPA){s?.name ? ` • ${s.name}` : ''}</h1>
+      {spaceId&&<p><a href={`/spaces/${spaceId}/admin/discovery`}>Discovery and welcome</a></p>}
       {error ? <div style={{ color: '#ffb3b3', marginBottom: 12 }}>{error}</div> : null}
       {loading || !s ? (
         <div>Loading…</div>

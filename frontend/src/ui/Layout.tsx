@@ -56,7 +56,7 @@ export default function Layout(props: { label: string; children: React.ReactNode
       <div style={{ color: '#fff', fontSize: 15 }}>
         Space switching is available on the Feed.
         <div style={{ marginTop: 10 }}>
-          <a href="/" style={{ color: '#9cf' }}>Go to Feed</a>
+          <a href="/global" style={{ color: '#9cf' }}>Go to Feed</a>
         </div>
       </div>
     )

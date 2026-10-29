@@ -209,12 +209,17 @@ export class PlaybackCoordinator<P extends PlayerPort> {
     }catch(error){finish(error);}
   }
 
-  capture = () => {
-    const userPaused=this.state.userPaused;
-    this.setScreenEligible(false);
+  // Persistence observes scalar state without changing decoder/audio eligibility.
+  checkpoint = () => {
     let seconds=0;
     try {seconds=this.current()?.player.currentTime?.()??0;}catch{}
-    return {publicationId:this.state.publicationId,positionSeconds:Number.isFinite(seconds)?Math.max(0,seconds):0,userPaused};
+    return {publicationId:this.state.publicationId,positionSeconds:Number.isFinite(seconds)?Math.max(0,seconds):0,userPaused:this.state.userPaused};
+  };
+  // Detours explicitly pause before handing ownership to another screen.
+  capture = () => {
+    const saved=this.checkpoint();
+    this.setScreenEligible(false);
+    return saved;
   };
 
   restoreAt = (items:FeedVideoItem[],index:number,restore:{positionSeconds:number;userPaused:boolean;journeyGeneration?:number},canLoad?:(item:FeedVideoItem)=>boolean) => {

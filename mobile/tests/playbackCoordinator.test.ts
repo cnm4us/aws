@@ -799,3 +799,12 @@ test('partially subscribed native player setup rolls back its listeners and shar
   coordinator.dispose();
   assert.equal(budget.count, 0);
 });
+
+test('periodic persistence reads time without pausing playback; explicit capture still pauses',()=>{
+  const {coordinator:c,players}=setup();c.select(item(1));players[0].ready();
+  (players[0] as any).currentTime=()=>7.125;
+  assert.equal(players[0].playing,true);const before=c.getSnapshot();
+  assert.deepEqual(c.checkpoint(),{publicationId:1,positionSeconds:7.125,userPaused:false});
+  assert.equal(c.getSnapshot(),before);assert.equal(players[0].playing,true);
+  assert.deepEqual(c.capture(),{publicationId:1,positionSeconds:7.125,userPaused:false});assert.equal(players[0].playing,false);c.dispose();
+});

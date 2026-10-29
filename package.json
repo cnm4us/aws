@@ -113,7 +113,11 @@
     "viewer:check:access": "ts-node scripts/check-native-access.ts",
     "viewer:fixtures:reporting": "ts-node scripts/native-reporting-fixtures.ts",
     "viewer:check:reporting": "ts-node scripts/check-native-reporting.ts",
-    "viewer:check:reporting:web": "ts-node scripts/check-native-reporting-web.ts"
+    "viewer:check:reporting:web": "ts-node scripts/check-native-reporting-web.ts",
+    "discovery:fixtures:preview": "ts-node scripts/discovery-preview-fixtures.ts",
+    "discovery:check": "ts-node scripts/check-discovery.ts",
+    "discovery:check:web": "ts-node scripts/check-discovery-web.ts",
+    "discovery:check:editor": "ts-node scripts/check-discovery-editor.ts"
   },
   "dependencies": {
     "@aws-sdk/client-mediaconvert": "^3.645.0",
