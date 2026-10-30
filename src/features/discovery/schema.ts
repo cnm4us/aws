@@ -36,6 +36,10 @@ export async function ensureDiscoverySchema(db: Queryable) {
   for (const definition of tables) await db.query(`CREATE TABLE IF NOT EXISTS ${definition} ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
   const [menuColumns]:any=await db.query("SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='discovery_state' AND COLUMN_NAME='native_destinations'");
   if(!menuColumns.length)try{await db.query('ALTER TABLE discovery_state ADD COLUMN native_destinations TINYINT NOT NULL DEFAULT 0');}catch(error){if((error as {code?:string}).code!=='ER_DUP_FIELDNAME')throw error;}
+  const [catalogColumn]:any=await db.query("SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='discovery_state' AND COLUMN_NAME='native_catalog'");
+  if(!catalogColumn.length)try{await db.query('ALTER TABLE discovery_state ADD COLUMN native_catalog TINYINT NOT NULL DEFAULT 0');}catch(e){if((e as any).code!=='ER_DUP_FIELDNAME')throw e;}
+  const [savedType]:any=await db.query("SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='viewer_saved_spaces' AND COLUMN_NAME='space_type'");
+  if(!savedType.length){try{await db.query("ALTER TABLE viewer_saved_spaces ADD COLUMN space_type ENUM('group','channel') NULL");}catch(e){if((e as any).code!=='ER_DUP_FIELDNAME')throw e;}await db.query("UPDATE viewer_saved_spaces v JOIN spaces s ON s.id=v.space_id SET v.space_type=s.type,v.updated_at=v.updated_at WHERE v.space_type IS NULL AND s.type IN ('group','channel')");}
   const [precision]:any=await db.query("SELECT DATETIME_PRECISION AS value FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='viewer_recent_spaces' AND COLUMN_NAME='visited_at'");
   if(Number(precision[0]?.value)!==3)await db.query('ALTER TABLE viewer_recent_spaces MODIFY visited_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)');
   await db.query('INSERT IGNORE INTO discovery_state (id,receipt_secret) VALUES (1,?)', [randomBytes(32)]);

@@ -1,6 +1,7 @@
 import type { FeedVideoItem } from '../feed/types';
 import type { NavigationTrace, PlaybackDiagnosticEvent } from '../diagnostics/playbackDiagnostics';
 import { playerErrorDetails } from './playerError';
+import {clampTime,validDuration} from './seekMath';
 import { PlayerBudgetError } from './playerBudget';
 import { PlayerHandoff } from './playerHandoff';
 import type { NativeReadinessEvidence } from './readinessEvidence';
@@ -17,6 +18,8 @@ export interface PlayerPort {
   currentTime?(): number;
   durationSeconds?(): number;
   seekTo?(seconds: number): Promise<void>;
+  seekInteractive?(seconds:number,attempt:string):Promise<number>;
+  cancelInteractiveSeek?(attempt:string):void|Promise<void>;
   release(): void;
   status(): PlaybackStatus;
   bufferedSeconds?(): number;
@@ -27,6 +30,8 @@ export interface PlayerPort {
 }
 
 export type PlaybackSnapshot<P> = {
+  seekPhase:'idle'|'dragging'|'seeking'|'error';
+  seekRevision:number;
   entryPresented:boolean;
   sourceLoaded:boolean;
   publicationId: number | null;
@@ -60,9 +65,11 @@ function sameSource(a:FeedVideoItem|undefined|null,b:FeedVideoItem|undefined|nul
     &&a.productionUlid===b.productionUlid&&a.creator.id===b.creator.id;
 }
 
+let seekOwnerSequence=0;
 export class PlaybackCoordinator<P extends PlayerPort> {
+  private readonly seekOwner=++seekOwnerSequence;
   private state: PlaybackSnapshot<P> = {
-    entryPresented:true,sourceLoaded:false,
+    seekPhase:'idle',seekRevision:0,entryPresented:true,sourceLoaded:false,
     publicationId: null, activation: 0, player: null, status: 'idle', hasFrame: false, playbackStarted: false,
     failed: false, userPaused: false, muted: true, appActive: false, scrolling: false,
     livePlayers: 0, prepared: false, screenEligible:true, restoring:false, restoreError:null,
@@ -76,6 +83,9 @@ export class PlaybackCoordinator<P extends PlayerPort> {
   private disposed = false;
   private startupTimer: { activation: number; timer: ReturnType<typeof setTimeout> } | null = null;
   private pendingRestore: { publicationId:number; seconds:number; userPaused:boolean; started:boolean; journeyGeneration?:number; timer?:ReturnType<typeof setTimeout> } | null = null;
+
+  private seek: {entry:Entry<P>;activation:number;origin:number;target:number;attempt:string;rollback:boolean;committed:boolean;timer?:ReturnType<typeof setTimeout>} | null = null;
+  private seekSequence=0;
 
   constructor(private readonly createPlayer: () => P,
     private readonly diagnostic: (event: PlaybackDiagnosticEvent) => void = () => {}, initialMuted = true, private handoff?:PlayerHandoff<P>,private trace?:NavigationTrace,requireEntryReadiness=false) {
@@ -100,7 +110,7 @@ export class PlaybackCoordinator<P extends PlayerPort> {
   }
   private eligible() {
     return this.state.entryPresented && this.state.appActive && this.state.screenEligible && !this.state.scrolling && !this.state.userPaused && !this.state.failed
-      && !this.state.restoring && !this.state.restoreError;
+      && !this.state.restoring && !this.state.restoreError && this.state.seekPhase==='idle';
   }
   private current() { return this.item ? this.entries.get(this.item.publicationId) : undefined; }
 
@@ -177,6 +187,7 @@ export class PlaybackCoordinator<P extends PlayerPort> {
       sourceLoaded:!!entry?.loadResolved,
     });
     this.applyRestore();
+    this.resumeInterruptedSeek();
     this.reconcile();
   }
 
@@ -209,10 +220,71 @@ export class PlaybackCoordinator<P extends PlayerPort> {
     }catch(error){finish(error);}
   }
 
+  private seekEligible() {
+    return !this.disposed&&this.state.entryPresented&&this.state.appActive&&this.state.screenEligible&&!this.state.scrolling
+      &&!this.state.failed&&!this.state.restoring&&!this.state.restoreError&&this.state.status!=='error';
+  }
+  beginSeek = () => {
+    const entry=this.current(),duration=entry?.player.durationSeconds?.();
+    if(this.seek||!this.seekEligible()||this.state.status!=='readyToPlay'||!entry||!validDuration(duration))return false;
+    const origin=entry.player.currentTime?.();if(origin===undefined||!Number.isFinite(origin))return false;
+    this.seek={entry,activation:this.state.activation,origin:Math.max(0,origin),target:Math.max(0,origin),attempt:'',rollback:false,committed:false};
+    this.publish({seekPhase:'dragging'});this.reconcile();return true;
+  };
+  private seekCurrent(operation:NonNullable<typeof this.seek>,attempt:string) {
+    return !this.disposed&&this.seek===operation&&operation.attempt===attempt&&this.state.activation===operation.activation&&this.isActive(operation.entry);
+  }
+  private stopSeekRequest(operation:NonNullable<typeof this.seek>) {
+    if(operation.timer)clearTimeout(operation.timer);operation.timer=undefined;
+    const attempt=operation.attempt;operation.attempt='';
+    try{return Promise.resolve(attempt?operation.entry.player.cancelInteractiveSeek?.(attempt):undefined).catch(()=>{});}catch{return Promise.resolve();}
+  }
+  private runSeek(operation:NonNullable<typeof this.seek>,target:number) {
+    const stopped=this.stopSeekRequest(operation),attempt=`scrub-${this.seekOwner}-${this.state.activation}-${++this.seekSequence}`;
+    operation.attempt=attempt;operation.committed=true;this.publish({seekPhase:'seeking'});this.reconcile();
+    const failed=()=>{if(!this.seekCurrent(operation,attempt))return;void this.stopSeekRequest(operation);this.publish({seekPhase:'error'});this.reconcile();};
+    operation.timer=setTimeout(failed,8500);
+    void stopped.then(async()=>{
+      if(!this.seekCurrent(operation,attempt)||!this.seekEligible())return;
+      const player=operation.entry.player;
+      if(player.seekInteractive)return player.seekInteractive(target,attempt);
+      if(!player.seekTo)throw Error('Seeking unavailable');
+      await player.seekTo(target);return player.currentTime?.();
+    }).then(actual=>{
+      if(!this.seekCurrent(operation,attempt))return;
+      if(!this.seekEligible()||actual===undefined||!Number.isFinite(actual)||Math.abs(actual-target)>1){failed();return;}
+      if(operation.timer)clearTimeout(operation.timer);this.seek=null;
+      this.publish({seekPhase:'idle',seekRevision:this.state.seekRevision+1});this.reconcile();
+    }).catch(failed);
+  }
+  commitSeek = (seconds:number) => {
+    const operation=this.seek,duration=operation?.entry.player.durationSeconds?.();
+    if(!operation||this.state.seekPhase!=='dragging'||!this.seekEligible()||!validDuration(duration)||!Number.isFinite(seconds))return false;
+    operation.target=clampTime(seconds,duration);this.runSeek(operation,operation.target);return true;
+  };
+  retrySeek = () => {const operation=this.seek;if(operation&&this.state.seekPhase==='error'&&this.seekEligible())this.runSeek(operation,operation.rollback?operation.origin:operation.target);};
+  cancelSeek = () => {
+    const operation=this.seek;if(!operation)return;
+    if(!operation.committed){this.abandonSeek();this.reconcile();return;}
+    void this.stopSeekRequest(operation);operation.rollback=true;this.publish({seekPhase:'seeking'});this.resumeInterruptedSeek();this.reconcile();
+  };
+  private resumeInterruptedSeek() {
+    const operation=this.seek;
+    if(operation?.rollback&&!operation.attempt&&this.seekEligible())this.runSeek(operation,operation.origin);
+  }
+  private interruptSeek() {
+    const operation=this.seek;if(!operation)return;
+    if(!operation.committed){this.abandonSeek();return;}
+    void this.stopSeekRequest(operation);operation.rollback=true;this.publish({seekPhase:'seeking'});
+  }
+  private abandonSeek() {
+    if(this.seek)void this.stopSeekRequest(this.seek);this.seek=null;this.publish({seekPhase:'idle'});
+  }
+
   // Persistence observes scalar state without changing decoder/audio eligibility.
   checkpoint = () => {
     let seconds=0;
-    try {seconds=this.current()?.player.currentTime?.()??0;}catch{}
+    try {seconds=this.seek?.origin??this.current()?.player.currentTime?.()??0;}catch{}
     return {publicationId:this.state.publicationId,positionSeconds:Number.isFinite(seconds)?Math.max(0,seconds):0,userPaused:this.state.userPaused};
   };
   // Detours explicitly pause before handing ownership to another screen.
@@ -367,6 +439,7 @@ export class PlaybackCoordinator<P extends PlayerPort> {
       this.fillWindow();
       return;
     }
+    this.abandonSeek();
     for (const entry of this.entries.values()) { this.requestPlayback(entry, false); entry.player.setMuted(true); }
     const existing = item ? this.entries.get(item.publicationId) : undefined;
     const reusable = sameSource(existing?.item,item) ? existing : undefined;
@@ -402,6 +475,7 @@ export class PlaybackCoordinator<P extends PlayerPort> {
   setAppActive = (appActive: boolean) => {
     if (this.disposed) return;
     this.publish({ appActive });
+    if(!appActive)this.interruptSeek();
     this.diagnostic({ type: 'lifecycle', activation: this.state.activation, active: appActive });
     this.fillWindow();
   };
@@ -409,6 +483,7 @@ export class PlaybackCoordinator<P extends PlayerPort> {
     if (this.disposed) return;
     if(this.state.screenEligible===screenEligible)return;
     this.publish({screenEligible});
+    if(!screenEligible)this.interruptSeek();
     this.diagnostic({type:'eligibility',activation:this.state.activation,screenEligible});
     this.fillWindow();
   };
@@ -416,10 +491,11 @@ export class PlaybackCoordinator<P extends PlayerPort> {
     if (this.disposed) return;
     if (this.state.scrolling === scrolling) return;
     this.publish({ scrolling });
+    if(scrolling)this.interruptSeek();
     this.reconcile();
   };
   togglePause = () => {
-    if (this.disposed) return;
+    if (this.disposed||this.state.seekPhase!=='idle') return;
     this.publish({ userPaused: !this.state.userPaused });
     this.reconcile();
   };
@@ -475,6 +551,7 @@ export class PlaybackCoordinator<P extends PlayerPort> {
     this.disposed = true;this.trace?.finish('interrupted');
     this.clearStartupTimer();
     this.clearRestore();
+    this.abandonSeek();
     this.handoff?.dispose();this.handoff=undefined;
     for (const entry of [...this.entries.values()]) this.drop(entry);
     this.item = null;

@@ -8,7 +8,7 @@ import { PlayerBudget } from './playerBudget';
 import type { NavigationTrace } from '../diagnostics/playbackDiagnostics';
 import type { PlayerHandoff } from './playerHandoff';
 import { createCaptionClock } from './captionClock';
-import { prepareReadinessEvidence,cancelReadinessEvidence,readPresentationSize } from './readinessEvidence';
+import { prepareReadinessEvidence,cancelReadinessEvidence,readPresentationSize,seekNativeTimeline,cancelNativeSeek } from './readinessEvidence';
 
 export interface NativePlayerPort extends PlayerPort { native: VideoPlayer; presentationSize():ReturnType<typeof readPresentationSize>;subscribeClock(listener: (seconds: number) => void): () => void }
 const playerBudget=new PlayerBudget(3);
@@ -25,7 +25,7 @@ export function createNativePlayer(): NativePlayerPort {
   const diagnosticInterval = viewerBuildPolicy.diagnostics ? .25 : 0;
   native.timeUpdateEventInterval = diagnosticInterval;
   const clock = createCaptionClock(native, diagnosticInterval);
-  let entryAttempt:string|undefined;
+  let entryAttempt:string|undefined,seekAttempt:string|undefined;
   return {
     native,
     presentationSize:()=>readPresentationSize(native),
@@ -39,6 +39,8 @@ export function createNativePlayer(): NativePlayerPort {
     currentTime: () => native.currentTime,
     durationSeconds: () => native.duration,
     subscribeClock: clock.subscribe,
+    seekInteractive:async(seconds,attempt)=>{seekAttempt=attempt;try{return await seekNativeTimeline(native,attempt,seconds);}finally{if(seekAttempt===attempt)seekAttempt=undefined;}},
+    cancelInteractiveSeek:attempt=>cancelNativeSeek(attempt),
     seekTo: async seconds => {
       native.currentTime=seconds;
       // The setter starts the native seek. Confirm the timeline reached its
@@ -64,7 +66,7 @@ export function createNativePlayer(): NativePlayerPort {
       const subscription = native.addListener('timeUpdate', ({ currentTime }) => listener(currentTime));
       return () => subscription.remove();
     } : undefined,
-    release: () => {if(entryAttempt)cancelReadinessEvidence(entryAttempt);entryAttempt=undefined;clock.dispose();lease.release();},
+    release: () => {if(seekAttempt)void cancelNativeSeek(seekAttempt).catch(()=>{});seekAttempt=undefined;if(entryAttempt)cancelReadinessEvidence(entryAttempt);entryAttempt=undefined;clock.dispose();lease.release();},
   };
   } catch(error) {lease.release();throw error;}
 }

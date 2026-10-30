@@ -26,7 +26,7 @@ export function VideoSurface({ coordinator, snapshot, posterUrl, onNext,onRetry,
   }, [snapshot.activation, snapshot.hasFrame, snapshot.playbackStarted, snapshot.failed, snapshot.restoring, snapshot.restoreError, eligible]);
 
   return (
-    <View style={[StyleSheet.absoluteFill,{overflow:'hidden'}]} pointerEvents="box-none">
+    <View style={[StyleSheet.absoluteFill,{overflow:'hidden'},geometry?{height:geometry.visibleHeight,bottom:undefined}:null]} pointerEvents="box-none">
       {snapshot.player && <VideoView
         key={snapshot.activation}
         style={geometry?.knownSize?{position:'absolute',left:0,top:geometry.mediaTop,width:geometry.width,height:geometry.mediaHeight}:StyleSheet.absoluteFill}
@@ -37,7 +37,7 @@ export function VideoSurface({ coordinator, snapshot, posterUrl, onNext,onRetry,
         onFirstFrameRender={() => coordinator.firstFrame(snapshot.activation)}
       />}
       {!snapshot.hasFrame && posterUrl && <Image source={{ uri: posterUrl }} resizeMode="contain" style={geometry?.knownSize?{position:'absolute',left:0,top:geometry.mediaTop,width:geometry.width,height:geometry.mediaHeight}:StyleSheet.absoluteFill} />}
-      <Pressable style={StyleSheet.absoluteFill} onPress={()=>{const live=coordinator.getSnapshot();if(live.screenEligible&&live.appActive&&!live.scrolling)coordinator.togglePause();}}
+      <Pressable style={StyleSheet.absoluteFill} onPress={()=>{const live=coordinator.getSnapshot();if(live.screenEligible&&live.appActive&&!live.scrolling&&live.seekPhase==='idle')coordinator.togglePause();}}
         accessibilityRole="button" accessibilityLabel={snapshot.userPaused ? 'Play video' : 'Pause video'} />
       {snapshot.restoreError ? <ScrollView style={[styles.feedback,{top:headerHeight}]} contentContainerStyle={styles.feedbackContent}>
         <Text style={styles.text}>{snapshot.restoreError}</Text>

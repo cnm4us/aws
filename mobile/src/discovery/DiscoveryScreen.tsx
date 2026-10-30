@@ -1,7 +1,7 @@
 import {FeedDestinationTile} from './FeedDestinationTile';
 import type {AggregateKind} from '../feed/context';
 import {useEffect,useRef,useState} from 'react';
-import {AccessibilityInfo,AppState,findNodeHandle,ScrollView,StyleSheet,Text,useWindowDimensions,View} from 'react-native';
+import {AccessibilityInfo,AppState,Keyboard,findNodeHandle,ScrollView,StyleSheet,Text,TextInput,useWindowDimensions,View} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useIsFocused} from '@react-navigation/native';
 import {useAuth} from '../auth/useAuth';
@@ -12,7 +12,8 @@ import {SpaceCard} from './SpaceCard';
 import {ViewerHeader} from '../ui/ViewerHeader';
 import {cardLayout,CARD_GAP,PAGE_PADDING} from './cardLayout';
 
-export function DiscoveryScreen({mode='home',genre,overlay=false,onSelect,onAbout,onMenu,onRecent,onGenre,onAccount,onClose,onAggregate}:{mode?:'home'|'saved'|'groups'|'channels'|'chooser'|'recent'|'genre';onAggregate?:(kind:AggregateKind)=>void;overlay?:boolean;genre?:{slug:string;name:string};onSelect:(space:Card)=>void;onAbout:(space:Card)=>void;onMenu?:()=>void;onRecent:()=>void;onGenre:(genre:{slug:string;name:string})=>void;onAccount:()=>void;onClose?:()=>void}) {
+export function DiscoveryScreen({mode='home',genre,overlay=false,onSelect,onAbout,onMenu,onRecent,onGenre,onAccount,onClose,onAggregate,enhanced=false,onBrowse,browseType}:{enhanced?:boolean;onBrowse?:(type?:'group'|'channel')=>void;browseType?:'group'|'channel';mode?:'home'|'saved'|'groups'|'channels'|'chooser'|'recent'|'genre'|'browse';onAggregate?:(kind:AggregateKind)=>void;overlay?:boolean;genre?:{slug:string;name:string};onSelect:(space:Card)=>void;onAbout:(space:Card)=>void;onMenu?:()=>void;onRecent:()=>void;onGenre:(genre:{slug:string;name:string})=>void;onAccount:()=>void;onClose?:()=>void}) {
+  const [search,setSearch]=useState(''),[query,setQuery]=useState(''),[payment,setPayment]=useState<'all'|'free'|'paid'>('all');
   const [chooserType,setChooserType]=useState<'groups'|'channels'>('groups');
   const savedType=mode==='groups'||mode==='channels'?mode:mode==='chooser'?chooserType:null;
   const savedMode=mode==='saved'||!!savedType;
@@ -32,7 +33,7 @@ export function DiscoveryScreen({mode='home',genre,overlay=false,onSelect,onAbou
   const current=()=>live.current.focused&&AppState.currentState==='active'&&auth.getSnapshot().generation===generation;
   const read=async(signal:AbortSignal)=>{
     if(mode==='home') {
-      const raw=await client.getJson(`${discoveryPrefix}/home`,signal) as any;
+      const raw=await client.getJson(`${discoveryPrefix}/${enhanced?'home-v2':'home'}`,signal) as any;
       if(!raw||!Array.isArray(raw.genres)||raw.genres.length>6||!Array.isArray(raw.recent))throw Error('Unexpected discovery information.');
       return {recentFeeds:Array.isArray(raw.recentFeeds)?raw.recentFeeds.filter((r:any)=>['following','creations'].includes(r.kind)):[],global:adaptCard(raw.global),recent:raw.recent.map(adaptCard),genres:raw.genres.map((g:any)=>{
         if(typeof g.slug!=='string'||!/^[a-z0-9-]{1,80}$/.test(g.slug)||typeof g.name!=='string'||g.name.length>100||!Array.isArray(g.items)||g.items.length>12)throw Error('Unexpected genres.');
@@ -40,11 +41,12 @@ export function DiscoveryScreen({mode='home',genre,overlay=false,onSelect,onAbou
       })};
     }
     if(savedMode) {
-      const raw=await client.getJson(`${discoveryPrefix}/saved${savedType?'?type='+ (savedType==='groups'?'group':'channel'):''}`,signal) as any;
+      const raw=await client.getJson(`${discoveryPrefix}/${enhanced?'collections':'saved'}${savedType?'?type='+ (savedType==='groups'?'group':'channel'):enhanced?'?type=all':''}`,signal) as any;
       return {...adaptDirectory(raw),global:raw.global?adaptCard(raw.global):null,personal:raw.personal?adaptCard(raw.personal):null};
     }
-    if(mode==='recent'){const raw=await client.getJson(`${discoveryPrefix}/recent`,signal) as any;return {...adaptDirectory(raw),recentFeeds:Array.isArray(raw.recentFeeds)?raw.recentFeeds.filter((r:any)=>['following','creations'].includes(r.kind)):[]};}
-    return adaptDirectory(await client.getJson(`${discoveryPrefix}/directory?genre=${encodeURIComponent(genre!.slug)}`,signal));
+    if(mode==='recent'){const raw=await client.getJson(`${discoveryPrefix}/${enhanced?'recent-v2':'recent'}`,signal) as any;return {...adaptDirectory(raw),recentFeeds:Array.isArray(raw.recentFeeds)?raw.recentFeeds.filter((r:any)=>['following','creations'].includes(r.kind)):[]};}
+    if(mode==='browse')return adaptDirectory(await client.getJson(pagePath(),signal));
+    return adaptDirectory(await client.getJson(`${discoveryPrefix}/${enhanced?'catalog':'directory'}?genre=${encodeURIComponent(genre!.slug)}`,signal));
   };
   useEffect(()=>{const sub=AppState.addEventListener('change',s=>setActive(s==='active'));return()=>sub.remove();},[]);
   useEffect(()=>{const controller=new AbortController();++pageGeneration.current;pagination.current?.abort();pagination.current=null;setBusy(false);if(!focused||!active)return;
@@ -53,7 +55,7 @@ export function DiscoveryScreen({mode='home',genre,overlay=false,onSelect,onAbou
     if(dataClient.current!==client)setData(null);
     setSaving(new Set(pending.current));setError('');void read(controller.signal).then(value=>{if(current()&&!controller.signal.aborted){dataClient.current=client;setData(value)}}).catch(e=>{if(current()&&!controller.signal.aborted)setError(e instanceof Error?e.message:'Cannot load spaces.');});
     return()=>{controller.abort();++pageGeneration.current;pagination.current?.abort();pagination.current=null;};
-  },[client,focused,active,mode,genre?.slug,savedType,version,snapshot.status]);
+  },[client,focused,active,mode,genre?.slug,savedType,version,snapshot.status,enhanced,browseType,query,payment]);
   useEffect(()=>{if(!focused||!active||!data||returnFocus.current===null)return;
     const id=returnFocus.current;const timer=setTimeout(()=>{const node=aboutRefs.current.get(id);const target=node?findNodeHandle(node):null;if(target){AccessibilityInfo.setAccessibilityFocus(target);returnFocus.current=null;}},0);
     return()=>clearTimeout(timer);
@@ -62,7 +64,7 @@ export function DiscoveryScreen({mode='home',genre,overlay=false,onSelect,onAbou
     if(!current()||pending.current.has(space.id))return;if(snapshot.status!=='authenticated'){onAccount();return;}
     const operations=pending.current;operations.add(space.id);setSaving(new Set(operations));setSaveErrors(e=>({...e,[space.id]:''}));
     try {
-      await client.postJson(`${discoveryPrefix}/spaces/${space.id}/save`,{saved:!space.saved});
+      await client.postJson(enhanced?`${discoveryPrefix}/save-v2/${space.id}`:`${discoveryPrefix}/spaces/${space.id}/save`,{saved:!space.saved});
       if(!current()||pending.current!==operations)return;
       const update=(s:Card)=>s.id===space.id?{...s,saved:!space.saved}:s;
       setData((previous:any)=>previous?{...previous,items:previous.items?.filter((s:Card)=>!(savedMode&&space.saved&&s.id===space.id)).map(update),recent:previous.recent?.map(update),genres:previous.genres?.map((g:any)=>({...g,items:g.items.map(update)}))}:previous);
@@ -73,19 +75,23 @@ export function DiscoveryScreen({mode='home',genre,overlay=false,onSelect,onAbou
     } finally {operations.delete(space.id);if(current()&&pending.current===operations)setSaving(new Set(operations));}
   };
   const tile=(space:Card,cardWidth:number,scope='list')=><SpaceCard key={space.id} space={space} baseUrl={baseUrl} width={cardWidth} largeText={largeText}
-    collectionLabels={!!onAggregate} saving={saving.has(space.id)} error={saveErrors[space.id]} onOpen={()=>{if(current())onSelect(space);}} aboutRef={node=>{if(node)aboutRefs.current.set(`${scope}:${space.id}`,node);else aboutRefs.current.delete(`${scope}:${space.id}`);}} onAbout={()=>{if(current()){returnFocus.current=`${scope}:${space.id}`;onAbout(space);}}} onSave={()=>void mutate(space)}/>;
+    collectionLabels={!!onAggregate} saving={saving.has(space.id)} error={saveErrors[space.id]} onOpen={()=>{if(current()&&!space.unavailable)onSelect(space);}} aboutRef={node=>{if(node)aboutRefs.current.set(`${scope}:${space.id}`,node);else aboutRefs.current.delete(`${scope}:${space.id}`);}} onAbout={()=>{if(current()&&!space.unavailable){returnFocus.current=`${scope}:${space.id}`;onAbout(space);}}} onSave={()=>void mutate(space)}/>;
   const feedRow=(id:string,kinds:AggregateKind[])=><ScrollView key={id} horizontal testID={`feed-row-${id}`} style={{flexGrow:0}} contentContainerStyle={styles.tiles} contentOffset={{x:offsets.current[id]||0,y:0}} onScroll={event=>{offsets.current[id]=event.nativeEvent.contentOffset.x;}} scrollEventThrottle={100}>{kinds.map(kind=><FeedDestinationTile key={kind} kind={kind} baseUrl={baseUrl} width={layout.carouselWidth} signedIn={snapshot.status==='authenticated'} onOpen={()=>{if(current())onAggregate?.(kind);}}/>)}</ScrollView>;
   const carousel=(id:string,items:Card[])=><ScrollView key={id} horizontal style={{flexGrow:0}} testID={`space-row-${id}`} contentContainerStyle={styles.tiles}
     contentOffset={{x:offsets.current[id]||0,y:0}} onScroll={event=>{offsets.current[id]=event.nativeEvent.contentOffset.x;}} scrollEventThrottle={100}>
     {items.map(space=>tile(space,layout.carouselWidth,id))}</ScrollView>;
-  const pagePath=(cursor?:string)=>savedType?`${discoveryPrefix}/saved?type=${savedType==='groups'?'group':'channel'}${cursor?'&cursor='+encodeURIComponent(cursor):''}`:`${discoveryPrefix}/directory?genre=${encodeURIComponent(genre!.slug)}${cursor?'&cursor='+encodeURIComponent(cursor):''}`;
+  const submitSearch=()=>{Keyboard.dismiss();setData(null);setQuery(search.trim());setVersion(v=>v+1);};
+  const pagePath=(cursor?:string)=>mode==='browse'?`${discoveryPrefix}/catalog?${browseType?'type='+browseType+'&':''}q=${encodeURIComponent(query)}${payment==='all'?'':'&payment='+payment}${cursor?'&cursor='+encodeURIComponent(cursor):''}`:savedMode?`${discoveryPrefix}/${enhanced?'collections':'saved'}?type=${savedType==='groups'?'group':savedType==='channels'?'channel':'all'}${cursor?'&cursor='+encodeURIComponent(cursor):''}`:`${discoveryPrefix}/${enhanced?'catalog':'directory'}?genre=${encodeURIComponent(genre!.slug)}${cursor?'&cursor='+encodeURIComponent(cursor):''}`;
   return <SafeAreaView style={[styles.screen,overlay&&{backgroundColor:'rgba(0,0,0,0.8)'}]} edges={['top','bottom','left','right']}>
-    <ViewerHeader titleRef={heading} title={savedMode?savedLabel:mode==='recent'?'Continue':mode==='genre'?genre?.name||'Spaces':'Home'} onMenu={onMenu} onBack={onClose?()=>{if(current())onClose();}:undefined}/>
+    <ViewerHeader titleRef={heading} title={savedMode?savedLabel:mode==='recent'?'Continue':mode==='genre'?genre?.name||'Spaces':mode==='browse'?browseType==='group'?'Browse Groups':browseType==='channel'?'Browse Channels':'Find spaces':'Home'} onMenu={onMenu} onBack={onClose?()=>{if(current())onClose();}:undefined}/>
     {mode==='chooser'&&<View style={styles.navigation}><Action label={`${chooserType==='groups'?'✓ ':''}Groups`} onPress={()=>setChooserType('groups')}/><Action label={`${chooserType==='channels'?'✓ ':''}Channels`} onPress={()=>setChooserType('channels')}/></View>}
+    {mode==='browse'&&<View style={{padding:20,gap:10}}><TextInput accessibilityLabel="Search spaces" maxLength={80} value={search} onChangeText={setSearch} onSubmitEditing={submitSearch} returnKeyType="search" placeholder="Search name or description" placeholderTextColor="#a1a1aa" style={{color:'#fff',fontSize:17,borderWidth:1,borderColor:'#62626b',borderRadius:12,padding:12,minHeight:48}}/><Action label="Search" onPress={submitSearch}/>{browseType!=='group'&&<View style={{flexDirection:'row',flexWrap:'wrap',gap:8}}>{(['all','free','paid'] as const).map(value=><Action key={value} label={`${payment===value?'✓ ':''}${value==='all'?(browseType==='channel'?'All channels':'All spaces'):value==='free'?'Free subscriptions':'Paid channels'}`} onPress={()=>{Keyboard.dismiss();setData(null);setPayment(value);}}/>)}</View>}</View>}
     <View style={{flex:1}} onLayout={event=>setSafeWidth(event.nativeEvent.layout.width)}>
-    {!focused||!active||snapshot.status==='signingOut'?<View style={{flex:1,backgroundColor:'#000'}}/>:snapshot.status==='unavailable'?<Message title="Cannot verify sign-in" message={snapshot.message??undefined} onRetry={()=>{void auth.retryValidation();}}/>:dataClient.current!==client&&data?<Message title="Loading spaces" busy/>:<ScrollView testID="space-page" contentOffset={{x:0,y:offsets.current.page||0}} onScroll={event=>{offsets.current.page=event.nativeEvent.contentOffset.y;}} scrollEventThrottle={100} contentContainerStyle={styles.content}>
+    {!focused||!active||snapshot.status==='signingOut'?<View style={{flex:1,backgroundColor:'#000'}}/>:snapshot.status==='unavailable'?<Message title="Cannot verify sign-in" message={snapshot.message??undefined} onRetry={()=>{void auth.retryValidation();}}/>:dataClient.current!==client&&data?<Message title="Loading spaces" busy/>:<ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" testID="space-page" contentOffset={{x:0,y:offsets.current.page||0}} onScroll={event=>{offsets.current.page=event.nativeEvent.contentOffset.y;}} scrollEventThrottle={100} contentContainerStyle={styles.content}>
       {error&&<Message scrollable={false} title="Cannot load spaces" message={error} onRetry={()=>setVersion(v=>v+1)}/>}
       {(savedMode||mode==='recent')&&snapshot.status!=='authenticated'?<><Text style={styles.text}>Sign in to use {savedMode?savedLabel:'Continue'}.</Text><Action label="Sign in" onPress={onAccount}/></>:!data&&!error?<Message scrollable={false} title="Loading spaces" busy/>:data?<>
+        {mode==='home'&&onBrowse&&<View style={{gap:10}}><Action label="Browse Groups" onPress={()=>onBrowse('group')}/><Action label="Browse Channels" onPress={()=>onBrowse('channel')}/><Action label="Search all spaces" onPress={()=>onBrowse()}/></View>}
+        {savedType&&onBrowse&&<Action label={savedType==='groups'?'Browse Groups':'Browse Channels'} onPress={()=>onBrowse(savedType==='groups'?'group':'channel')}/>}
         {mode==='home'&&onAggregate&&<View style={{gap:12}}><Text style={styles.heading}>Your feeds</Text>{feedRow('destinations',['following','creations'])}</View>}
         {(mode==='home'||mode==='recent')&&onAggregate&&!!data.recentFeeds?.length&&<View style={{gap:12}}><Text style={styles.heading}>Continue your feeds</Text>{feedRow('recent-feeds',data.recentFeeds.map((r:any)=>r.kind))}</View>}
         {!savedType&&data.global&&<><Text style={styles.heading} accessibilityRole="header">Watch Global</Text>{tile(data.global,width)}</>}

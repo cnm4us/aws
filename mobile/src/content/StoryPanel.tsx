@@ -15,15 +15,13 @@ export function PublicationPanel({ item, resources, active, onCreator, onExpande
   const live = useRef({active, id:item.publicationId, creatorId:item.creator.id, onCreator});
   live.current = {active, id:item.publicationId, creatorId:item.creator.id, onCreator};
   const name = <Text style={styles.creator}>{item.creator.displayName}</Text>;
-  const metadata = <>
-    {item.creator.id && onCreator ? <Pressable style={styles.creatorButton} disabled={!active}
-      accessibilityRole="button" accessibilityLabel={`View ${item.creator.displayName}'s profile`}
-      accessibilityState={{ disabled: !active }} onPress={event => { event?.stopPropagation();
-        if (live.current.active && live.current.id === item.publicationId && live.current.creatorId === item.creator.id)
-          live.current.onCreator?.(item.creator.id!); }}>{name}</Pressable> :
-      <View style={styles.creatorButton}>{name}</View>}
-    <Text style={styles.date}>{formatPublicationTime(item.publishedAt)}</Text>
-  </>;
+  const date = <Text style={styles.date}>{formatPublicationTime(item.publishedAt)}</Text>;
+  const metadata = item.creator.id && onCreator ? <Pressable style={styles.creatorButton} disabled={!active}
+    accessibilityRole="button" accessibilityLabel={`View ${item.creator.displayName}'s profile`}
+    accessibilityValue={{text:formatPublicationTime(item.publishedAt)}}
+    accessibilityState={{disabled:!active}} onPress={event=>{event?.stopPropagation();
+      if(live.current.active&&live.current.id===item.publicationId&&live.current.creatorId===item.creator.id)live.current.onCreator?.(item.creator.id!);
+    }}>{name}{date}</Pressable> : <View style={styles.creatorButton}>{name}{date}</View>;
   return item.hasStory && resources && onExpanded ?
     <StoryPanel {...bounds} publicationId={item.publicationId} revision={item} resources={resources} active={active} onExpanded={onExpanded} metadata={metadata}/> :
     <PanelFrame {...bounds} active={active} metadata={metadata}/>;
@@ -74,7 +72,7 @@ export function StoryPanel({ publicationId, revision, resources, active, onExpan
 function PanelFrame({ metadata, height, headerHeight = 0, active, expandable = false, expanded = false, onToggle, onInteracting, children }: PanelProps & {
   expandable?: boolean; expanded?: boolean; onToggle?: () => void; children?: ReactNode;
 }) {
-  const [metadataHeight, setMetadataHeight] = useState(65);
+  const [metadataHeight, setMetadataHeight] = useState(44);
   const maxHeight = Math.max(0, height - headerHeight - 36);
   const bodyHeight = Math.max(0, Math.min(height * .45, maxHeight - metadataHeight - 24));
   const scrollTogether = bodyHeight < 44;
@@ -99,13 +97,13 @@ function PanelFrame({ metadata, height, headerHeight = 0, active, expandable = f
 }
 
 const styles = StyleSheet.create({
-  panel: { gap: 4, backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 12, padding: 10, paddingBottom: 8, overflow: 'hidden' },
+  panel: { gap: 4, backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 12, paddingHorizontal: 12, paddingTop: 4, paddingBottom: 6, overflow: 'hidden' },
   metadataScroll: { flexGrow: 0, flexShrink: 1 },
-  metadata: { paddingRight: 48, minHeight: 65 },
+  metadata: { paddingRight: 48, minHeight: 44 },
   creatorButton: { minHeight: 44, justifyContent: 'center' },
   creator: { color: '#fff', fontSize: 18, lineHeight: 24, fontWeight: '700' },
   date: { color: '#fff', fontSize: 14, lineHeight: 20 },
-  toggle: { position: 'absolute', top: 8, right: 8, width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  toggle: { position: 'absolute', top: 4, right: 8, width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   chevron: { width: 24, height: 24 },
   action: { color: '#fff', fontSize: 16, fontWeight: '700' },
   text: { color: '#fff', fontSize: 16, lineHeight: 23 },

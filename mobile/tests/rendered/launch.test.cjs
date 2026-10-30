@@ -170,7 +170,7 @@ test('actual five-action Global rail stays bounded and scrollable with short vid
    h.e.dimensions={width,height:480,fontScale};await h.rerender();await h.layout(140);
    const feed=h.root.root.findAllByType('Screen').find(n=>n.props.focused);
    const rail=feed.findAllByType('ScrollView').find(n=>flatten(n.props.style).position==='absolute');assert.ok(rail);
-   const style=flatten(rail.props.style);assert.equal(style.height,44);assert.equal(style.width,44);assert.equal(style.bottom,24);
+   const style=flatten(rail.props.style);assert.equal(style.height,44);assert.equal(style.width,44);assert.ok(style.bottom>=24);assert.ok(style.bottom>=140-flatten(feed.findAllByType('View').find(n=>n.props.testID==='playback-progress'&&visible(n)).props.style).top);
    const controls=rail.findAllByType('Pressable').filter(visible);assert.equal(controls.length,5);
    assert.deepEqual(controls.map(n=>n.props.accessibilityLabel),["View Creator's profile",'Open spaces for this video','Show captions','Report video','Mute']);
    for(const control of controls){const target=flatten(typeof control.props.style==='function'?control.props.style({pressed:false}):control.props.style);assert.equal(target.height??target.minHeight,control.props.accessibilityLabel==='Report video'?64:44);assert.equal(target.width,44);}
@@ -437,7 +437,7 @@ test('full-width native presentation uses symmetric short-phone crop and the sam
   h.e.insets={top:0,bottom:0,left:0,right:0};await h.rerender();await h.layout(603);
   const screen=()=>h.root.root.findAllByType('Screen').find(n=>n.props.focused);
   const rect=()=>flatten(screen().findByType('VideoView').props.style);
-  const global=rect();assert.equal(global.width,375);assert.ok(Math.abs(global.height-666.666667)<.001);assert.ok(Math.abs(global.top+31.833333)<.001);
+  const global=rect();assert.equal(global.width,375);assert.ok(Math.abs(global.height-666.666667)<.001);const progress=screen().findAllByType('View').find(n=>n.props.testID==='playback-progress'&&visible(n));const controlHeight=flatten(progress.props.style).height;assert.ok(Math.abs(global.top+(global.height-(603-controlHeight))/2)<.001);assert.equal(flatten(progress.props.style).top,603-controlHeight);
   assert.equal(flatten(screen().findAllByType('View').find(n=>n.props.testID==='feed-navigation-reserve').props.style).height,64);
   const header=screen().findAllByType('View').find(n=>n.props.testID==='feed-floating-header');assert.equal(flatten(header.props.style).position,'absolute');assert.equal(flatten(header.props.style).paddingTop,8);
   const player=h.selected();player.currentTime=4;await h.press('Pause video');const loads=player.loads;
@@ -500,4 +500,66 @@ test('explicit Refresh keeps the full-stage surface while a fresh view prepares'
   await Test.act(async()=>complete());assert.equal(entryCover(h),undefined);assert.equal(candidate.playing,true);assert.equal(candidate.currentTime,0);
   assert.equal(h.root.root.findAllByType('VideoView').find(n=>n.props.player===candidate),view);
  }finally{await h.close();}
+});
+
+test('real release navigator scrubs without captions/diagnostics and preserves pause/time through Menu',async()=>{
+ const h=await setup({preview:false,realAccess:true,soundOn:true});
+ try{
+  await h.layout();const feedScreen=h.root.root.findAllByType('Screen').find(n=>n.props.name==='Feed'&&n.props.focused);assert.equal(feedScreen.props.options.gestureEnabled,false);assert.equal(feedScreen.props.options.fullScreenGestureEnabled,false);const player=h.selected();const track=()=>h.root.root.findAllByType('View').find(n=>n.props.testID==='playback-seek-track'&&visible(n));
+  await Test.act(async()=>track().props.onLayout({nativeEvent:{layout:{width:200}}}));
+  const event=x=>({nativeEvent:{locationX:x}});
+  await Test.act(async()=>track().props.onResponderGrant(event(50)));assert.equal(player.playing,false);assert.equal(player.muted,true);
+  assert.equal(h.root.root.findAllByType('FlatList').find(visible).props.scrollEnabled,false);
+  await Test.act(async()=>track().props.onResponderRelease(event(140)));assert.equal(player.currentTime,7);assert.equal(player.playing,true);
+  await h.press('Open menu');assert.equal(player.playing,false);await h.press('Close menu');assert.equal(h.selected(),player);assert.equal(player.currentTime,7);assert.equal(player.playing,true);
+  await h.press('Pause video');await Test.act(async()=>{track().props.onResponderGrant(event(80));});await Test.act(async()=>track().props.onResponderRelease(event(80)));assert.equal(player.currentTime,4);assert.equal(player.playing,false);assert.ok(h.labels().includes('Play video'));
+  assert.equal(h.root.root.findAllByType('FlatList').find(visible).props.scrollEnabled,true);
+ }finally{await h.close();}
+});
+test('navigation cancels pending seek and restores confirmed origin before playing return',async()=>{
+ const h=await setup({realAccess:true,soundOn:true});
+ try{
+  await h.layout();const player=h.selected();player.currentTime=3;let finish;
+  h.e.seek=(player,attempt,seconds)=>new Promise(resolve=>{finish=resolve;});
+  const track=()=>h.root.root.findAllByType('View').find(n=>n.props.testID==='playback-seek-track'&&visible(n));
+  await Test.act(async()=>track().props.onLayout({nativeEvent:{layout:{width:200}}}));
+  await Test.act(async()=>track().props.onResponderGrant({nativeEvent:{locationX:140}}));await Test.act(async()=>track().props.onResponderRelease({nativeEvent:{locationX:140}}));
+  assert.equal(player.playing,false);await h.press('Open menu');assert.equal(player.playing,false);assert.ok(h.e.cancelledSeeks.length>0);
+  h.e.seek=async(p,attempt,seconds)=>{p.currentTime=seconds;return seconds;};await h.press('Close menu');assert.equal(player.currentTime,3);assert.equal(player.playing,true);
+  await Test.act(async()=>finish(7));assert.equal(player.currentTime,3);assert.equal(player.playing,true);
+ }finally{await h.close();}
+});
+
+test('timeline band claims at touch-down and retains ownership for every movement direction',async()=>{
+ const h=await setup({realAccess:true,soundOn:true});
+ try{
+  await h.layout();const stage=()=>h.root.root.findAllByType('View').find(n=>n.props.testID==='feed-stage'&&visible(n));
+  const progress=()=>h.root.root.findAllByType('View').find(n=>n.props.testID==='playback-progress'&&visible(n));
+  const track=()=>h.root.root.findAllByType('View').find(n=>n.props.testID==='playback-seek-track'&&visible(n));
+  await Test.act(async()=>track().props.onLayout({nativeEvent:{layout:{width:343}}}));const top=flatten(progress().props.style).top;
+  const ev=(x,y)=>({nativeEvent:{pageX:x,pageY:y}});let claim;
+  await Test.act(async()=>{claim=stage().props.onStartShouldSetResponderCapture(ev(110,top-12));});assert.equal(claim,true);
+  assert.equal(stage().props.onMoveShouldSetResponderCapture(ev(113,top-11)),true);
+  assert.equal(stage().props.onMoveShouldSetResponderCapture(ev(112,top+12)),true);
+  // A pre-existing story lock must not strand the reserved timeline responder.
+  const panel=h.root.root.findAllByType('View').find(n=>n.props.testID==='publication-panel'&&visible(n));
+  await Test.act(async()=>panel.findAllByType('ScrollView')[0].props.onTouchStart({stopPropagation(){}}));
+  assert.equal(stage().props.onMoveShouldSetResponderCapture(ev(135,top-11)),true);
+  const player=h.selected();let blockNative;await Test.act(async()=>{blockNative=stage().props.onResponderGrant(ev(135,top-11));});assert.equal(blockNative,true);assert.equal(player.playing,false);assert.equal(stage().props.onResponderTerminationRequest(),false);
+  const list=h.root.root.findAllByType('FlatList').find(visible);assert.equal(list.props.scrollEnabled,false);
+  await Test.act(async()=>list.props.onScrollBeginDrag()); // late native paging callback must not steal the seek
+  await Test.act(async()=>stage().props.onResponderMove(ev(135,top-60)));
+  assert.equal(stage().props.onResponderTerminationRequest(),false); // moving outside the band cannot hand off to paging
+  await Test.act(async()=>stage().props.onResponderMove(ev(200,top-10)));
+  await Test.act(async()=>stage().props.onResponderRelease(ev(200,top-10)));
+  assert.ok(Math.abs(player.currentTime-(200-16)/343*10)<.001);assert.equal(player.playing,true);assert.equal(h.selected(),player);
+  assert.equal(h.root.root.findAllByType('FlatList').find(visible).props.scrollEnabled,true);
+  await Test.act(async()=>stage().props.onStartShouldSetResponderCapture(ev(110,top-12)));assert.equal(stage().props.onMoveShouldSetResponderCapture(ev(111,top+20)),true);
+  await Test.act(async()=>{claim=stage().props.onStartShouldSetResponderCapture(ev(110,top+40));});assert.equal(claim,true);
+  await Test.act(async()=>{claim=stage().props.onStartShouldSetResponderCapture(ev(5,top));});assert.equal(claim,false);
+  await Test.act(async()=>stage().props.onStartShouldSetResponderCapture(ev(110,top-40)));assert.equal(stage().props.onMoveShouldSetResponderCapture(ev(150,top-40)),false);
+ }finally{await h.close();}
+});
+test('above-line scrub termination restores playback without seeking',async()=>{
+ const h=await setup({realAccess:true,soundOn:true});try{await h.layout();const stage=()=>h.root.root.findAllByType('View').find(n=>n.props.testID==='feed-stage'&&visible(n));const progress=h.root.root.findAllByType('View').find(n=>n.props.testID==='playback-progress'&&visible(n));const top=flatten(progress.props.style).top;const track=h.root.root.findAllByType('View').find(n=>n.props.testID==='playback-seek-track'&&visible(n));await Test.act(async()=>track.props.onLayout({nativeEvent:{layout:{width:343}}}));const ev=(x,y)=>({nativeEvent:{pageX:x,pageY:y}});await Test.act(async()=>stage().props.onStartShouldSetResponderCapture(ev(100,top-8)));assert.equal(stage().props.onMoveShouldSetResponderCapture(ev(130,top-8)),true);await Test.act(async()=>stage().props.onResponderGrant(ev(130,top-8)));assert.equal(h.selected().playing,false);await Test.act(async()=>stage().props.onResponderTerminate());assert.equal(h.selected().playing,true);assert.equal(h.e.seekCalls,undefined);}finally{await h.close();}
 });

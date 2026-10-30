@@ -101,3 +101,14 @@ for(const kind of ['global','space'])test(`periodic captions (${kind}): paused/p
  }finally{if(root)await Test.act(async()=>root.unmount());resources.clear();t.mock.timers.reset();}
  assert.equal(subscriptions,0);
 });
+
+test('paused seek resamples captions immediately without a clock tick or resource refetch',async t=>{
+ const {CaptionLayer,TextResources}=await bundle("export {CaptionLayer} from './src/content/CaptionLayer';export {TextResources} from './src/content/resources';");
+ let reads=0,time=1,root;
+ const resources=new TextResources({getText:async()=>{reads++;return 'WEBVTT\n\n00:00.000 --> 00:02.000\nFirst caption contains several words\n\n00:04.000 --> 00:08.000\nSecond caption contains several words';}},{kind:'global'},()=>{});
+ const player={subscribeClock:fn=>{fn(time);return()=>{};}};
+ let props={resources,publicationId:1,duration:10,player,visible:true,bottom:40,paused:true,seekRevision:0,seeking:false};
+ const render=async patch=>{props={...props,...patch};await Test.act(async()=>root?root.update(R.createElement(CaptionLayer,props)):root=Test.create(R.createElement(CaptionLayer,props)));};
+ const texts=()=>root.root.findAllByType('Text').map(n=>n.props.children);
+ try{await render({});assert.ok(texts().includes('First caption contains several words'));await render({seeking:true});assert.equal(texts().includes('First caption contains several words'),false);time=5;await render({seeking:false,seekRevision:1});assert.ok(texts().includes('Second caption contains several words'));assert.equal(reads,1);}finally{await Test.act(async()=>root?.unmount());resources.clear();}
+});

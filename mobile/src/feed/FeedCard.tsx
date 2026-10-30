@@ -13,12 +13,13 @@ export const FeedCard = memo(function FeedCard({ item, height, headerHeight, chi
   resources?: TextResources; active?: boolean; onStoryExpanded?: (expanded: boolean) => void; onTextHeight?: (height: number) => void;
 }) {
   const [noticeHeight, setNoticeHeight] = useState(0);
+  const pictureBottom=geometry?.visibleHeight??height;
   return (
     <View style={[styles.card, { height }]}>
-      {item.posterUrl && <Image source={{ uri: item.posterUrl }} resizeMode="contain" style={geometry?.knownSize?{position:'absolute',left:0,top:geometry.mediaTop,width:geometry.width,height:geometry.mediaHeight}:StyleSheet.absoluteFill} />}
+      {item.posterUrl && <View pointerEvents="none" style={{position:'absolute',left:0,right:0,top:0,height:pictureBottom,overflow:'hidden'}}><Image source={{ uri: item.posterUrl }} resizeMode="contain" style={geometry?.knownSize?{position:'absolute',left:0,top:geometry.mediaTop,width:geometry.width,height:geometry.mediaHeight}:StyleSheet.absoluteFill}/></View>}
       {children}
-      <View style={styles.caption} pointerEvents="box-none" onLayout={event => onTextHeight?.(event.nativeEvent.layout.height)}>
-        <PublicationPanel item={item} resources={resources} active={active} height={height} headerHeight={(headerHeight??0)+(!item.playbackUrl?noticeHeight:0)}
+      <View testID="publication-position" style={[styles.caption,{bottom:height-pictureBottom+20}]} pointerEvents="box-none" onLayout={event => onTextHeight?.(event.nativeEvent.layout.height)}>
+        <PublicationPanel item={item} resources={resources} active={active} height={pictureBottom} headerHeight={(headerHeight??0)+(!item.playbackUrl?noticeHeight:0)}
           onCreator={onCreator} onExpanded={onStoryExpanded} onInteracting={onStoryInteracting}/>
         {!item.playbackUrl && <Text style={styles.description} onLayout={event=>setNoticeHeight(event.nativeEvent.layout.height+8)}>This video is unavailable. Swipe to continue.</Text>}
       </View>
@@ -28,6 +29,6 @@ export const FeedCard = memo(function FeedCard({ item, height, headerHeight, chi
 
 const styles = StyleSheet.create({
   card: { backgroundColor: '#000000', overflow: 'hidden' },
-  caption: { position: 'absolute', left: 20, right: CONTROL_LANE.textRight, bottom: 28 },
+  caption: { position: 'absolute', left: 20, right: CONTROL_LANE.textRight },
   description: { color: '#ffffff', fontSize: 15, lineHeight: 21, marginTop: 8, textShadowColor: '#000000', textShadowRadius: 8 },
 });

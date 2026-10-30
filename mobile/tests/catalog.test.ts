@@ -1,0 +1,9 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {adaptCard,adaptAvailability,priceLabel} from '../src/discovery/api';
+const availability={canView:false,label:'Subscription required',action:'purchase_deferred',mode:'paid_channel',price:{amountCents:500,currency:'USD',interval:'month'}};
+const card={id:7,name:'Paid channel',slug:'paid',path:'/channels/paid',type:'channel',global:false,description:null,artworkUrl:null,saved:true,requiresSignIn:false,availability};
+test('a saved locked teaser preserves shortcut placement independently of access',()=>{const value=adaptCard(card);assert.equal(value.saved,true);assert.equal(value.availability?.canView,false);assert.equal(value.availability?.action,'purchase_deferred');assert.equal(priceLabel(value.availability!.price!),'USD 5.00 / month');});
+test('malformed capability, authority or price data cannot enter the card contract',()=>{for(const patch of [{canView:1},{action:'buy_now'},{mode:'grant_access'},{price:{...availability.price,amountCents:-1}},{price:{...availability.price,amountCents:1.2}},{price:{...availability.price,currency:'US'}},{price:{...availability.price,interval:'forever'}}])assert.throws(()=>adaptAvailability({...availability,...patch}));});
+test('a redacted unavailable shortcut remains removable without a usable space identity',()=>{const value=adaptCard({...card,name:'Unavailable space',slug:'unavailable',path:'/channels/unavailable',artworkUrl:null,unavailable:true,availability:undefined});assert.equal(value.saved,true);assert.equal(value.unavailable,true);assert.equal(value.availability,undefined);});
+test('legacy card contracts remain valid without new capability data',()=>{const value=adaptCard({...card,availability:undefined});assert.equal(value.saved,true);assert.equal(value.availability,undefined);});

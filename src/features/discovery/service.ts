@@ -14,10 +14,10 @@ const rows=async(db:Db,sql:string,args:any[]=[])=>{const [value]=await db.query(
 export const positiveId=(v:unknown)=>{const n=Number(v);if(!/^[1-9]\d*$/.test(String(v))||!Number.isSafeInteger(n))throw new ViewerApiError(400,'invalid_query');return n;};
 const parse=(v:any)=>{try{return typeof v==='string'?JSON.parse(v):v||{};}catch{return {};}};
 export async function config(db:Db=getPool()) {
-  const [state]=await rows(db,'SELECT root_home,native_home,native_destinations FROM discovery_state WHERE id=1');
-  return {schemaVersion:1,homeEnabled:!!state?.root_home,nativeHomeEnabled:!!state?.native_home,nativeDestinationsEnabled:!!state?.native_destinations};
+  const [state]=await rows(db,'SELECT root_home,native_home,native_destinations,native_catalog FROM discovery_state WHERE id=1');
+  return {schemaVersion:1,homeEnabled:!!state?.root_home,nativeHomeEnabled:!!state?.native_home,nativeDestinationsEnabled:!!state?.native_destinations,nativeCatalogEnabled:!!state?.native_catalog};
 }
-export async function resolveSpace(key:string,userId:number|null,db:Db=getPool()) {
+export async function resolveSpace(key:string,userId:number|null,db:Db=getPool(),allowInvitation=false) {
   let value:any;
   if(key==='global')value=await spaceRepo.findGlobalSpaceCandidate(db);
   else if(key==='personal'&&userId)value=await spaceRepo.personalSpaceByOwner(userId,db);
@@ -34,11 +34,11 @@ export async function resolveSpace(key:string,userId:number|null,db:Db=getPool()
     || parse(globalCandidate.settings).global===true||parse(globalCandidate.settings).isGlobal===true||parse(globalCandidate.settings).feed==='global');
   if(key==='global'&&!global)throw new ViewerApiError(503,'global_unavailable');
   const view=userId ? global ? !await spaceRepo.isBannedFromSpace(space.id,userId,db) : await spaces.canViewSpaceFeed(space,userId,db) : global;
-  if(!global&&!listing?.listed&&!view)throw new ViewerApiError(404,'space_not_found');
+  if(!global&&!listing?.listed&&!view){const invited=allowInvitation&&userId&&!await spaceRepo.isBannedFromSpace(space.id,userId,db)&&(await rows(db,"SELECT 1 FROM space_invitations WHERE space_id=? AND invitee_user_id=? AND status='pending'",[space.id,userId])).length;if(!invited)throw new ViewerApiError(404,'space_not_found');}
   return {space:{...value,...space},listing:listing||{},global,canView:view,requiresSignIn:!userId&&!global};
 }
 export type SpaceCard={id:number;name:string;slug:string;type:'group'|'channel'|'personal';global:boolean;path:string;description:string|null;artworkUrl:string|null;saved:boolean;requiresSignIn:boolean};
-function card(row:any,userId:number|null,global=false):SpaceCard {
+export function card(row:any,userId:number|null,global=false):SpaceCard {
   const settings=parse(row.settings);
   return {id:Number(row.id),name:global?'Global':String(row.name),slug:String(row.slug),type:row.type,global,path:spacePath(row,global),
     description:typeof settings.discoveryDescription==='string'?readerText(settings.discoveryDescription).slice(0,500)||null:null,
@@ -77,8 +77,8 @@ export async function home(userId:number|null,db:Db=getPool()) {
   return {...await config(db),global:card({...global.space,...global.listing},userId,true),genres:sections,
     recent:userId?await recent(userId,db):[],recentFeeds:userId?await recentFeeds(userId,db):[],signedIn:!!userId};
 }
-export async function publicPolicy(key:string,userId:number|null,db:Db=getPool()) {
-  const resolved=await resolveSpace(key,userId,db),id=resolved.space.id;
+export async function publicPolicy(key:string,userId:number|null,db:Db=getPool(),allowInvitation=false) {
+  const resolved=await resolveSpace(key,userId,db,allowInvitation),id=resolved.space.id;
   const cultures=await rows(db,`SELECT c.id,c.name,c.description,c.definition_json FROM cultures c
     JOIN space_cultures sc ON sc.culture_id=c.id WHERE sc.space_id=? ORDER BY c.id`,[id]);
   // Actual assigned category policy plus site safety; deliberately excludes Show all/reporting groups.
@@ -98,8 +98,8 @@ export async function publicPolicy(key:string,userId:number|null,db:Db=getPool()
   const revision=readerRevision(document);
   return {...resolved,document,manifest,revision};
 }
-export async function entry(key:string,userId:number|null,receipt?:string,db:Db=getPool()) {
-  const policy=await publicPolicy(key,userId,db);
+export async function entry(key:string,userId:number|null,receipt?:string,db:Db=getPool(),allowInvitation=false) {
+  const policy=await publicPolicy(key,userId,db,allowInvitation);
   let accepted=false;
   if(userId)accepted=!!(await rows(db,'SELECT 1 FROM viewer_space_acknowledgments WHERE user_id=? AND space_id=? AND revision=?',[userId,policy.space.id,policy.revision])).length;
   else if(policy.global) {
@@ -253,10 +253,11 @@ export async function editor(key:string,userId:number) {
   const genres=await rows(getPool(),'SELECT id,slug,name,published,sort_order FROM discovery_genres ORDER BY sort_order,id');
   const placements=await rows(getPool(),'SELECT genre_id FROM discovery_placements WHERE space_id=?',[resolved.space.id]);
   return {config:await config(),space:{id:resolved.space.id,name:resolved.space.name},draft:resolved.listing.draft||'',welcome:resolved.listing.welcome||'',listed:!!resolved.listing.listed,
-    artworkUrl:resolved.listing.artwork_url||'',entryEnabled:!!resolved.listing.entry_enabled,genres,genreIds:placements.map(p=>Number(p.genre_id)),curator:await can(userId,PERM.VIDEO_DELETE_ANY),policy:await entry(String(resolved.space.id),userId)};
+    viewerEntry:parse(resolved.space.settings).viewerEntry||{mode:'existing',price:null},artworkUrl:resolved.listing.artwork_url||'',entryEnabled:!!resolved.listing.entry_enabled,genres,genreIds:placements.map(p=>Number(p.genre_id)),curator:await can(userId,PERM.VIDEO_DELETE_ANY),policy:await entry(String(resolved.space.id),userId)};
 }
 export async function updateEditor(key:string,userId:number,body:any) {
   const {space}=await resolveSpace(key,userId);await assertEditor(userId,space.id);
+  if(body?.action==='entry_options'){await (await import('./catalog')).updateOptions(key,userId,body);return editor(key,userId);}
   if(!body||!['draft','publish','placement'].includes(body.action))throw new ViewerApiError(400,'invalid_body');
   if(body.action==='placement') {
     await assertEditor(userId,space.id,true);

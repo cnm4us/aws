@@ -1,10 +1,11 @@
+import {PlaybackProgress,type ProgressGesturePort} from '../playback/PlaybackProgress';
 import {contextName,isAggregate,type SourceContext} from './context';
 import { ReportButton } from '../reporting/ReportButton';
 import type { ReportMemory } from '../reporting/reportMemory';
 import { itemKey } from '../auth/accessProof';
 import { RecoveryCoordinator } from './recoveryCoordinator';
 import { useCallback,useEffect, useLayoutEffect, useMemo, useRef, useState,useSyncExternalStore } from 'react';
-import { AppState,FlatList, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { AppState,FlatList, ScrollView, StyleSheet, Text, View,useWindowDimensions } from 'react-native';
 import { Action, Message } from '../ui/Message';
 import { FeedCard } from './FeedCard';
 import { useViewerFeed } from './useViewerFeed';
@@ -174,7 +175,8 @@ function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosti
   const selectedItem=snapshot.items[index];
   const sourceKey=selectedItem?itemKey(selectedItem):'empty';
   const videoSize=useVideoSize(playback.player,sourceKey,selectedItem?.width&&selectedItem.height?{width:selectedItem.width,height:selectedItem.height}:null,playback.hasFrame,playback.status);
-  const geometry=feedGeometry(width,height,videoSize);
+  const dimensions=useWindowDimensions(),scrubberHeight=Math.max(56,Math.ceil(26*dimensions.fontScale+24));
+  const geometry=feedGeometry(width,height,videoSize,scrubberHeight);
   const initialCheckpoint=useRef(entry&&snapshot.resume?.restoredPublicationId===entry.publicationId?entry:
     restore&&snapshot.resume?.restoredPublicationId===selectedItem?.publicationId?restore:{positionSeconds:0,userPaused:false});
   const liveEntry=useRef({item:selectedItem,enabled:false});
@@ -190,7 +192,7 @@ function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosti
   const playbackRef=useRef<NativePlayerPort|null>(null);playbackRef.current=playback.player;
   const entryState=useSyncExternalStore(entryGate.subscribe,entryGate.getSnapshot);
   const covered=entryState.phase!=='ready'&&entryState.phase!=='presented';
-  const canInteract=useRef(false);canInteract.current=visible&&eligible&&!covered&&playback.entryPresented;
+  const canInteract=useRef(false);canInteract.current=visible&&eligible&&!covered&&playback.entryPresented&&playback.seekPhase==='idle';
   useLayoutEffect(()=>{
     entryGate.update({key:`${playback.activation}:${selectedItem?itemKey(selectedItem):'empty'}`,player:playback.player,
       seconds:initialCheckpoint.current.positionSeconds,duration:playback.player?.durationSeconds?.()??0,
@@ -201,7 +203,7 @@ function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosti
   useEffect(()=>{if(entryState.phase==='failed')coordinator.failEntry();},[entryState.phase,coordinator]);
   useEffect(()=>()=>entryGate.dispose(),[entryGate]);
   const persistLatest=useRef(onPersist);persistLatest.current=onPersist;
-  useEffect(()=>{if(!playback.entryPresented||!onPersist)return;const timer=setTimeout(()=>persistLatest.current?.(),0);return()=>clearTimeout(timer);},[playback.entryPresented,playback.userPaused,!!onPersist]);
+  useEffect(()=>{if(!playback.entryPresented||!onPersist)return;const timer=setTimeout(()=>persistLatest.current?.(),0);return()=>clearTimeout(timer);},[playback.entryPresented,playback.userPaused,playback.seekRevision,!!onPersist]);
 
   const textEligible = eligible && publicationAuthorized && playback.entryPresented && playback.appActive && playback.screenEligible && !playback.scrolling;
   const [storyExpanded, setStoryExpanded] = useState(false);
@@ -220,9 +222,9 @@ function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosti
     retryFailed:()=>coordinator.recoverFailed(canLoad),selectedId:()=>coordinator.getSnapshot().publicationId,
     retainOrigin:()=>{if(destination.kind==='global')sessionAuth?.globalFeed.save(snapshot.items,index,snapshot.nextCursor,sessionAuth.access);}}),[coordinator,entryGate,registerPlayback,index,snapshot.items,snapshot.nextCursor]);
   const paging = useMemo(() => new PagingController(
-    () => {if(canInteract.current)coordinator.setScrolling(true);},
+    () => {if(canInteract.current&&coordinator.getSnapshot().seekPhase==='idle')coordinator.setScrolling(true);},
     selected => {
-      if(!canInteract.current)return;
+      if(!canInteract.current||coordinator.getSnapshot().seekPhase!=='idle')return;
       // Replace selection while still paused; never briefly resume the previous video.
       const next=items.current[selected];
       if(next&&!canLoad(next))coordinator.setScreenEligible(false);
@@ -280,9 +282,24 @@ function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosti
   const showFollow=context.kind==='space' && ['group','channel'].includes(context.type) && followAuth.status==='authenticated' && !!followItem?.creator.id && !!onCreator;
   const showRecognition=context.kind==='global' && followAuth.status==='authenticated' && !!followItem?.creator.id && !!onCreator;
   const controlCount=(snapshot.items[index]?.creator.id && onCreator?1:0)+(context.kind==='global' && onLaunch?1:0)+(context.kind==='space' && onComments?2:0)+(snapshot.items[index]?.hasCaptions?1:0)+(onReport&&reportMemory?1:0)+1;
-  const controlHeight=Math.min(controlCount*52-8+(context.kind==='space' && onComments?40:0)+(showFollow?44:0)+(onReport&&reportMemory?20:0),Math.max(44,height-headerHeight-48));
+  // Reserve the timeline band at touch-down, before the native pager can
+  // recognize a competing horizontal gesture. Ownership lasts until release.
+  const stageView=useRef<View|null>(null),stageOrigin=useRef({x:0,y:0}),scrubPort=useRef<ProgressGesturePort|null>(null);
+  const scrubTouch=useRef<{x:number;y:number;activation:number}|null>(null),parentScrubbing=useRef(false);
+  useLayoutEffect(()=>{scrubTouch.current=null;parentScrubbing.current=false;},[playback.activation,geometry.visibleHeight,width,visible,eligible]);
+  const registerScrub=useCallback((port:ProgressGesturePort|null)=>{scrubPort.current=port;},[]);
+  const scrubX=(event:any)=>event.nativeEvent.pageX-stageOrigin.current.x-16;
+  const controlHeight=Math.min(controlCount*52-8+(context.kind==='space' && onComments?40:0)+(showFollow?44:0)+(onReport&&reportMemory?20:0),Math.max(44,geometry.visibleHeight-headerHeight-48));
   return (
-    <View testID="feed-stage" style={styles.screen} onLayout={event => setLayout(event.nativeEvent.layout)}>
+    <View ref={stageView} testID="feed-stage" style={styles.screen} onLayout={event=>{setLayout(event.nativeEvent.layout);stageView.current?.measureInWindow?.((x,y)=>{stageOrigin.current={x,y};});}}
+      onStartShouldSetResponderCapture={event=>{const {pageX,pageY}=event.nativeEvent,y=pageY-stageOrigin.current.y;
+        scrubTouch.current=y>=geometry.visibleHeight-20&&y<=geometry.visibleHeight+geometry.controlHeight&&pageX>=stageOrigin.current.x+16&&pageX<=stageOrigin.current.x+width-16?{x:pageX,y:pageY,activation:playback.activation}:null;return !!scrubTouch.current&&!!scrubPort.current?.ready();}}
+      onMoveShouldSetResponderCapture={event=>{const touch=scrubTouch.current;return !!touch&&touch.activation===playback.activation&&!!scrubPort.current?.ready();}}
+      onResponderGrant={event=>{parentScrubbing.current=scrubPort.current?.begin(scrubX(event))??false;if(parentScrubbing.current)setStoryInteracting(false);return parentScrubbing.current;}}
+      onResponderMove={event=>{if(parentScrubbing.current)scrubPort.current?.move(scrubX(event));}}
+      onResponderRelease={event=>{if(parentScrubbing.current)scrubPort.current?.end(scrubX(event));parentScrubbing.current=false;scrubTouch.current=null;}}
+      onResponderTerminationRequest={()=>!parentScrubbing.current}
+      onResponderTerminate={()=>{if(parentScrubbing.current)scrubPort.current?.cancel();parentScrubbing.current=false;scrubTouch.current=null;}}>
       <View style={{flex:1}} pointerEvents={covered?'none':'auto'} accessibilityElementsHidden={covered} importantForAccessibility={covered?'no-hide-descendants':'auto'}>
       {height > 0 && <FlatList
         ref={list}
@@ -290,7 +307,8 @@ function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosti
         extraData={{ index, playback, height, textEligible }}
         keyExtractor={item => String(item.publicationId)}
         pagingEnabled
-        scrollEnabled={!covered && !storyInteracting}
+        directionalLockEnabled
+        scrollEnabled={!covered && !storyInteracting && playback.seekPhase==='idle'}
         initialNumToRender={2}
         initialScrollIndex={index}
         maxToRenderPerBatch={3}
@@ -299,7 +317,7 @@ function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosti
         showsVerticalScrollIndicator={false}
         getItemLayout={(_data, itemIndex) => ({ length: height, offset: height * itemIndex, index: itemIndex })}
         renderItem={({ item, index: rowIndex }) => (
-          <FeedCard item={item} height={height} headerHeight={headerHeight} geometry={rowIndex===index?geometry:feedGeometry(width,height,item.width&&item.height?{width:item.width,height:item.height}:null)} onCreator={rowIndex===index?onCreator:undefined}
+          <FeedCard item={item} height={height} headerHeight={headerHeight} geometry={rowIndex===index?geometry:feedGeometry(width,height,item.width&&item.height?{width:item.width,height:item.height}:null,scrubberHeight)} onCreator={rowIndex===index?onCreator:undefined}
             resources={resources} active={rowIndex===index && textEligible} onStoryExpanded={rowIndex===index?setStoryExpanded:undefined}
             onStoryInteracting={rowIndex===index?setStoryInteracting:undefined}
             onTextHeight={rowIndex===index?setTextHeight:undefined}>
@@ -324,10 +342,10 @@ function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosti
         key={`${playback.activation}:${snapshot.items[index].publicationId}`} resources={resources}
         publicationId={snapshot.items[index].publicationId}
         duration={playback.player?.durationSeconds?.() || null}
-        player={playback.player} paused={playback.userPaused} bottom={Math.min(textHeight + 40, height * .65)}
+        player={playback.player} paused={playback.userPaused} bottom={Math.max(0,height-geometry.visibleHeight+textHeight+32)} seekRevision={playback.seekRevision} seeking={playback.seekPhase!=='idle'}
         visible={captions.ready && captions.enabled && textEligible && !storyExpanded && !playback.failed && !playback.restoring && !playback.restoreError}/>}
       {snapshot.items[index]?.playbackUrl && (
-        <ScrollView style={[styles.mute,{height:controlHeight}]} contentContainerStyle={{gap:8}} showsVerticalScrollIndicator={false}>
+        <ScrollView style={[styles.mute,{height:controlHeight,bottom:Math.max(24,height-geometry.visibleHeight+24)}]} contentContainerStyle={{gap:8}} showsVerticalScrollIndicator={false}>
           {!showFollow && !showRecognition && snapshot.items[index]?.creator.id && onCreator && <CreatorButton key={snapshot.items[index].publicationId} name={snapshot.items[index].creator.displayName}
             avatarUrl={snapshot.items[index].creator.avatarUrl} disabled={!textEligible} onPress={()=>onCreator(snapshot.items[index].creator.id!)}/>}
           {showRecognition && onCreator && <GlobalCreatorRecognition key={`recognition:${followItem.publicationId}:${followItem.creator.id}`}
@@ -351,6 +369,9 @@ function FeedSession({ store, snapshot, muted, onToggleMute, eligible, diagnosti
             selected={!muted} onPress={onToggleMute} />
         </ScrollView>
       )}
+      {selectedItem?.playbackUrl&&playback.publicationId===selectedItem.publicationId&&<PlaybackProgress key={`${playback.activation}:${sourceKey}`} coordinator={coordinator} snapshot={playback}
+        visible={textEligible&&!covered} enabled={textEligible&&!covered&&playback.status==='readyToPlay'&&!playback.failed&&!playback.restoring&&!playback.restoreError}
+        registerGesture={registerScrub} top={geometry.visibleHeight} height={geometry.controlHeight} left={16} right={16}/>}
       </View>
       {covered&&<View style={[StyleSheet.absoluteFill,{backgroundColor:'#000',paddingTop:headerHeight}]}><FeedLoadingSplash feedName={contextName(context)} error={entryState.error} onRetry={onRecover}/></View>}
       {(isAggregate(destination)||context.kind==='space')&&!publicationAuthorized&&<View testID="feed-publication-mask" style={[StyleSheet.absoluteFill,{backgroundColor:'#000',paddingTop:headerHeight}]}>

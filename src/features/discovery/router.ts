@@ -3,6 +3,7 @@ import { resolveViewer, ViewerApiError } from '../native-sessions/service';
 import { sendViewerError } from '../../routes/native-session';
 import { parseCookies } from '../../utils/cookies';
 import * as discovery from './service';
+import * as catalog from './catalog';
 
 const cookie='viewer_global_entry';
 export function entryReceipt(req:Request):string|undefined {
@@ -25,6 +26,15 @@ export function createDiscoveryRouter() {
       res.json(result);
     }catch(e){sendViewerError(res,e);}
   });
+  read('/discovery/catalog',false,(req,id)=>catalog.catalog(id,req.query));
+  read('/discovery/home-v2',false,(_req,id)=>catalog.home(id));
+  read('/discovery/collections',true,(req,id)=>catalog.collections(id!,req.query));
+  read('/discovery/recent-v2',true,async(_req,id)=>({items:await catalog.enrich(await discovery.recent(id!),id),recentFeeds:await discovery.recentFeeds(id!)}));
+  read('/discovery/entry-v2/:key',false,(req,id)=>catalog.entry(req.params.key,id,entryReceipt(req)));
+  write('/discovery/save-v2/:key',true,(req,id)=>{if(typeof req.body?.saved!=='boolean')throw new ViewerApiError(400,'invalid_body');return catalog.save(req.params.key,id!,req.body.saved);});
+  write('/discovery/enroll/:key',true,(req,id)=>catalog.enroll(req.params.key,id!,req.body));
+  read('/discovery/subscriptions',true,(req,id)=>{if(Object.keys(req.query).some(k=>k!=='cursor')||req.query.cursor!==undefined&&typeof req.query.cursor!=='string')throw new ViewerApiError(400,'invalid_query');return catalog.subscriptions(id!,req.query.cursor as string|undefined);});
+  write('/discovery/subscriptions/:id/cancel',true,(req,id)=>catalog.cancelSubscription(id!,req.params.id));
   read('/discovery/config',false,()=>discovery.config());
   write('/discovery/config',true,(_req,id)=>discovery.updateConfig(id!,_req.body));
   read('/discovery/home',false,(_req,id)=>discovery.home(id));

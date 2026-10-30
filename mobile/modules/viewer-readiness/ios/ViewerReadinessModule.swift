@@ -8,6 +8,7 @@ import UIKit
 // full-height presentation qualification is recorded separately.
 public final class ViewerReadinessModule: Module {
   private var request: ReadinessRequest?
+  private var seeks: [String: TimelineSeekRequest] = [:]
 
   public func definition() -> ModuleDefinition {
     Name("ViewerReadiness")
@@ -18,6 +19,27 @@ public final class ViewerReadinessModule: Module {
       let size = player.ref.currentItem?.presentationSize ?? .zero
       return ["width": size.width.isFinite ? Double(size.width) : 0,
               "height": size.height.isFinite ? Double(size.height) : 0]
+    }.runOnQueue(.main)
+
+    // Interactive seeks are independent of the decoded-frame entry probe.
+    AsyncFunction("seekAsync") { (player: SharedRef<AVPlayer>, attempt: String, seconds: Double, promise: Promise) in
+      guard seconds.isFinite, seconds >= 0, !attempt.isEmpty, attempt.count <= 80,
+        UIApplication.shared.applicationState == .active,
+        let item = player.ref.currentItem, item.status == .readyToPlay,
+        player.ref.rate == 0, player.ref.isMuted else {
+        promise.reject("ERR_SEEK_PRECONDITION", "A ready, paused and muted player is required.")
+        return
+      }
+      for operation in Array(self.seeks.values) where operation.player === player.ref { operation.cancel("superseded") }
+      let operation = TimelineSeekRequest(player: player.ref, item: item, attempt: attempt, seconds: seconds, promise: promise) { [weak self] ended in
+        if self?.seeks[ended.attempt] === ended { self?.seeks.removeValue(forKey: ended.attempt) }
+      }
+      self.seeks[attempt] = operation
+      operation.start()
+    }.runOnQueue(.main)
+
+    AsyncFunction("cancelSeekAsync") { (attempt: String) in
+      self.seeks[attempt]?.cancel("cancelled")
     }.runOnQueue(.main)
 
     // ExpoVideo's internal VideoPlayer inherits this public cross-module type.
@@ -52,6 +74,7 @@ public final class ViewerReadinessModule: Module {
   }
 
   private func cancelCurrent(_ reason: String) {
+    for operation in Array(seeks.values) { operation.cancel(reason) }
     request?.cancel(reason)
     request = nil
   }
@@ -142,4 +165,48 @@ private final class ReadinessRequest {
     promise = nil
     onEnd(self)
   }
+}
+
+// Completion comes from AVPlayer, not from the JS currentTime setter. No frame
+// output is attached; displayed pixels still require physical qualification.
+private final class TimelineSeekRequest {
+  let player: AVPlayer
+  let attempt: String
+  private let item: AVPlayerItem
+  private let seconds: Double
+  private var promise: Promise?
+  private var timer: Timer?
+  private let onEnd: (TimelineSeekRequest) -> Void
+  private let started = ProcessInfo.processInfo.systemUptime
+
+  init(player: AVPlayer, item: AVPlayerItem, attempt: String, seconds: Double, promise: Promise, onEnd: @escaping (TimelineSeekRequest) -> Void) {
+    self.player = player; self.item = item; self.attempt = attempt; self.seconds = seconds; self.promise = promise; self.onEnd = onEnd
+  }
+  func start() {
+    timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+      guard let self, self.promise != nil else { return }
+      if ProcessInfo.processInfo.systemUptime - self.started >= 8 || self.player.currentItem !== self.item ||
+        UIApplication.shared.applicationState != .active || self.item.status == .failed || !self.player.isMuted || self.player.rate != 0 {
+        self.cancel("interrupted")
+      }
+    }
+    player.seek(to: CMTime(seconds: seconds, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] finished in
+      DispatchQueue.main.async {
+        guard let self, self.promise != nil else { return }
+        let actual = self.player.currentTime().seconds
+        guard finished, self.player.currentItem === self.item, self.item.status == .readyToPlay, actual.isFinite, abs(actual - self.seconds) <= 0.1,
+          UIApplication.shared.applicationState == .active, self.player.isMuted, self.player.rate == 0 else { self.cancel("interrupted"); return }
+        let completion = self.promise
+        self.cleanup()
+        completion?.resolve(actual)
+      }
+    }
+  }
+  func cancel(_ reason: String) {
+    guard let completion = promise else { return }
+    cleanup()
+    item.cancelPendingSeeks()
+    completion.reject("ERR_SEEK_\(reason.uppercased())", "Video seek ended: \(reason).")
+  }
+  private func cleanup() { timer?.invalidate(); timer = nil; promise = nil; onEnd(self) }
 }

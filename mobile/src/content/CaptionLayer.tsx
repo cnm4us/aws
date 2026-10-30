@@ -9,9 +9,9 @@ export interface CaptionPlayer {
   currentTime?(): number;
   subscribeClock(listener: (seconds: number) => void): () => void;
 }
-export function CaptionLayer({ resources, publicationId, duration, player, visible, bottom, paused }: {
+export function CaptionLayer({ resources, publicationId, duration, player, visible, bottom, paused,seekRevision=0,seeking=false }: {
   resources: TextResources; publicationId: number; duration: number | null; player: CaptionPlayer | null;
-  visible: boolean; bottom: number; paused: boolean;
+  visible: boolean; bottom: number; paused: boolean;seekRevision?:number;seeking?:boolean;
 }) {
   const [attempt, setAttempt] = useState(0);
   const renewal = useMemo(() => new VerifiedRefresh((signal, force) => resources.verifiedCaptions(publicationId, duration, signal, force),
@@ -38,12 +38,12 @@ export function CaptionLayer({ resources, publicationId, duration, player, visib
   useLayoutEffect(() => {
     setText(null);
     setClockError(false);
-    if (!visible || !player || !state.cues?.length) return;
+    if (!visible || seeking || !player || !state.cues?.length) return;
     // Subscribe samples immediately and runs in release; pause/seek causes an immediate resample.
     const cues = state.cues;
     try { return player.subscribeClock(seconds => setText(cueAt(cues, seconds))); }
     catch { setClockError(true); }
-  }, [visible, player, state.cues, paused]);
+  }, [visible, player, state.cues, paused,seekRevision,seeking]);
   if (!visible) return null;
   return <View style={[styles.position, { bottom }]} pointerEvents="box-none">
     {state.loading ? (loadingNotice ? <View style={styles.pill} pointerEvents="none"><Text style={styles.text}>Loading captions</Text></View> : null) :

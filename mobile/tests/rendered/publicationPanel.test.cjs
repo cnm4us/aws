@@ -79,3 +79,5 @@ test('short stage and very tall metadata keep the whole panel scrollable with co
  assert.ok(scroll.findAllByType('Text').some(n=>n.props.children==='Story remains reachable'));
  assert.ok(f.button('Collapse story'));assert.equal(flatten(f.button('Collapse story').props.style).position,'absolute');
 });
+
+test('compact metadata restores side inset and keeps name/date in one profile target',async t=>{const f=await fixture(t);const button=f.button("View Creator name's profile");assert.equal(button.findAllByType('Text').length,2);assert.ok(flatten(button.props.style).minHeight>=44);const panel=f.root.root.findAllByType('View').find(n=>n.props.testID==='publication-panel');const style=flatten(panel.props.style);assert.equal(style.paddingHorizontal,12);assert.equal(style.paddingTop,4);assert.equal(style.paddingBottom,6);assert.ok(button.props.accessibilityValue.text.includes('2026'));});

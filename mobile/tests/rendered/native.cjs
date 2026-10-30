@@ -44,6 +44,8 @@ exports.VideoView = ({ player, ...props }) => {
 };
 const defaultReadiness={prepareAsync:async(player,attempt,seconds)=>{player.currentTime=seconds;return {attempt,kind:'target_decoded',targetSeconds:seconds,timelineSeconds:seconds,decodedFrameSeconds:seconds,seekCompletedMs:1,decodedFrameMs:2,width:720,height:1280,muted:player.muted,rate:player.playing?1:0};},cancelAsync:async()=>{}};
 exports.requireOptionalNativeModule = name => name==='ViewerReadiness'?{
+ seekAsync:async(player,attempt,seconds)=>{(e.seekCalls??=[]).push({player,attempt,seconds});if(e.seek)return e.seek(player,attempt,seconds);player.currentTime=seconds;return seconds;},
+ cancelSeekAsync:async attempt=>{(e.cancelledSeeks??=[]).push(attempt);},
  presentationSizeAsync:player=>e.presentationSize?e.presentationSize(player):Promise.resolve(player.displaySize??{width:720,height:1280}),
  prepareAsync:(player,attempt,seconds)=>(attempt.startsWith('feed-entry-')?e.entryReadiness??defaultReadiness:e.readiness??defaultReadiness).prepareAsync(player,attempt,seconds),
  cancelAsync:attempt=>(attempt.startsWith('feed-entry-')?e.entryReadiness??defaultReadiness:e.readiness??defaultReadiness).cancelAsync(attempt)

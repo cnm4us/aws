@@ -6,7 +6,7 @@ import { accountPresentation } from './accountPresentation';
 import {ViewerHeader} from '../ui/ViewerHeader';
 import {SafeAreaView} from 'react-native-safe-area-context';
 
-export function AccountScreen({onDone,onMenu}:{onDone:()=>void;onMenu?:()=>void}) {
+export function AccountScreen({onDone,onMenu,onSubscriptions}:{onSubscriptions?:()=>void;onDone:()=>void;onMenu?:()=>void}) {
   const {store,snapshot}=useAuth();
   const [email,setEmail]=useState('');const [password,setPassword]=useState('');
   useEffect(()=>()=>store.cancelSignIn(),[store]);
@@ -22,6 +22,7 @@ export function AccountScreen({onDone,onMenu}:{onDone:()=>void;onMenu?:()=>void}
     <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
       {mode==='signedIn' ? <>
         <Text style={styles.text}>Signed in as {snapshot.viewer?.displayName || 'Viewer'}</Text>
+        {onSubscriptions&&<Action label="Subscriptions" onPress={onSubscriptions}/>}
       </> : mode==='savedSession' ? <>
         <Text style={styles.text}>Your saved sign-in needs to be verified.</Text>
         {snapshot.viewer && <Text style={styles.text}>Saved account: {snapshot.viewer.displayName || 'Viewer'}</Text>}

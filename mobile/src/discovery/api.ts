@@ -2,7 +2,8 @@ import type {ApiClient} from '../api/client';
 import {ApiError} from '../api/client';
 import type {FeedContext} from '../feed/context';
 export const discoveryPrefix='/api/viewer/v1/discovery';
-export type SpaceCard={id:number;name:string;slug:string;type:'group'|'channel'|'personal';global:boolean;path:string;description:string|null;artworkUrl:string|null;saved:boolean;requiresSignIn:boolean};
+export type Availability={canView:boolean;label:string;action:'enter'|'join'|'subscribe_free'|'sign_in'|'invitation'|'accept_invitation'|'unavailable'|'purchase_deferred';mode:'existing'|'open_group'|'free_channel'|'paid_channel'|'invitation';price:{amountCents:number;currency:string;interval:'month'|'year'}|null};
+export type SpaceCard={id:number;name:string;slug:string;type:'group'|'channel'|'personal';global:boolean;path:string;description:string|null;artworkUrl:string|null;saved:boolean;requiresSignIn:boolean;availability?:Availability;unavailable?:boolean};
 export type PolicyDocument={name:string;welcome:string;purpose:string|null;cultures:{id:number;name:string;summary:string|null;expectations:string[];boundaries:string[];configured:boolean}[];rules:{id:number;slug:string;title:string;description:string;body:string;allowed:string;disallowed:string}[]};
 export type Entry={schemaVersion:1;space:SpaceCard;document:PolicyDocument;revision:string;canView:boolean;requiresSignIn:boolean;requiresAcknowledgment:boolean;acknowledgmentEnabled:boolean;accepted:boolean};
 const fail=()=>{throw new ApiError('The server returned unexpected discovery information.');};
@@ -14,8 +15,14 @@ export function adaptCard(raw:unknown):SpaceCard {
   const v=raw as SpaceCard;if(!v||!['group','channel','personal'].includes(v.type))return fail();
   const path=text(v.path,300);if(!/^\/(?:global|personal|(?:groups|channels)\/[^/?#]+)$/.test(path))return fail();
   const artwork=v.artworkUrl===null?null:text(v.artworkUrl,1024);if(artwork&&!/^\/(?:images|assets)\/[a-zA-Z0-9/_\-.]+$/.test(artwork))return fail();
-  return {id:id(v.id),name:text(v.name,255),slug:text(v.slug,255),type:v.type,global:flag(v.global),path,description:v.description===null?null:text(v.description,500),artworkUrl:artwork,saved:flag(v.saved),requiresSignIn:flag(v.requiresSignIn)};
+  return {id:id(v.id),name:text(v.name,255),slug:text(v.slug,255),type:v.type,global:flag(v.global),path,description:v.description===null?null:text(v.description,500),artworkUrl:artwork,saved:flag(v.saved),requiresSignIn:flag(v.requiresSignIn),...(v.unavailable!==undefined?{unavailable:flag(v.unavailable)}:{}),...(v.availability?{availability:adaptAvailability(v.availability)}:{})};
 }
+export function adaptAvailability(v:any):Availability {
+ if(!v||!['enter','join','subscribe_free','sign_in','invitation','accept_invitation','unavailable','purchase_deferred'].includes(v.action)||!['existing','open_group','free_channel','paid_channel','invitation'].includes(v.mode))return fail();
+ const p=v.price;if(p!==null&&(!p||!Number.isSafeInteger(p.amountCents)||p.amountCents<=0||p.amountCents>100000000||typeof p.currency!=='string'||!/^[A-Z]{3}$/.test(p.currency)||!['month','year'].includes(p.interval)))return fail();
+ return {canView:flag(v.canView),label:text(v.label,100),action:v.action,mode:v.mode,price:p?{amountCents:p.amountCents,currency:p.currency,interval:p.interval}:null};
+}
+export function priceLabel(p:NonNullable<Availability['price']>):string {return `${p.currency} ${(p.amountCents/100).toFixed(2)} / ${p.interval}`;}
 export function adaptEntry(raw:unknown):Entry {
   const v=raw as Entry;if(!v||v.schemaVersion!==1||!v.document||!/^[a-f0-9]{64}$/.test(v.revision))return fail();
   const d=v.document;
@@ -30,7 +37,7 @@ export function adaptDirectory(raw:unknown):Directory {
 }
 export function toContext(space:SpaceCard):FeedContext{return space.global?{kind:'global'}:{kind:'space',spaceId:space.id,name:space.name,type:space.type};}
 export function contextEntryKey(context:FeedContext):string {return context.kind==='space'?String(context.spaceId):context.kind;}
-export async function getEntry(client:Pick<ApiClient,'getJson'>,key:string,signal?:AbortSignal){return adaptEntry(await client.getJson(`${discoveryPrefix}/spaces/${encodeURIComponent(key)}/entry`,signal));}
+export async function getEntry(client:Pick<ApiClient,'getJson'>,key:string,signal?:AbortSignal,enhanced=false){return adaptEntry(await client.getJson(enhanced?`${discoveryPrefix}/entry-v2/${encodeURIComponent(key)}`:`${discoveryPrefix}/spaces/${encodeURIComponent(key)}/entry`,signal));}
 export type ResumeState={revision:number;outcome:'new'|'restored'|'unavailable';checkpoint:{publicationId:number;productionUlid:string;positionSeconds:number;userPaused:boolean;spaceId?:number}|null};
 export function adaptResume(raw:unknown):ResumeState {
   const v=raw as ResumeState;if(!v||!Number.isSafeInteger(v.revision)||v.revision<0||!['new','restored','unavailable'].includes(v.outcome))return fail();

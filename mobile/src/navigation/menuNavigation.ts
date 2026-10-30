@@ -1,6 +1,6 @@
 export type MenuOrigin={name:string;key:string;generation:number;feedKey?:string;entryKey?:string;destination?:string};
 export const menuCurrent=(origin:MenuOrigin)=>origin.destination??(origin.name==='Spaces'?'YourSpaces':origin.name);
-const transient=new Set(['Menu','Report','Comments','LaunchSpaces','Spaces','SpaceEntry','ReadinessCheck','ReadinessCover','AggregateEntry','CreationSources']);
+const transient=new Set(['Menu','Report','Comments','LaunchSpaces','Spaces','SpaceEntry','ReadinessCheck','ReadinessCover','AggregateEntry','CreationSources','Browse','Subscriptions']);
 
 /** Keep real source route keys on Close; destinations discard only workflows being left. */
 export function menuDestinationRoutes(routes:readonly {name:string;key?:string;params?:object}[],destination:string,params?:object) {

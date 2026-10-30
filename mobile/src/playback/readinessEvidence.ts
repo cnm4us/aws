@@ -7,6 +7,8 @@ export type NativeReadinessEvidence = {
   width: number; height: number; muted: boolean; rate: number;
 };
 type Adapter = {
+  seekAsync?(player:VideoPlayer,attempt:string,seconds:number):Promise<number>;
+  cancelSeekAsync?(attempt:string):Promise<void>;
   presentationSizeAsync?(player:VideoPlayer):Promise<{width:number;height:number}>;
   prepareAsync(player: VideoPlayer, attempt: string, seconds: number): Promise<NativeReadinessEvidence>;
   cancelAsync(attempt: string): Promise<void>;
@@ -19,3 +21,6 @@ export const prepareReadinessEvidence = (player: VideoPlayer, attempt: string, s
   return adapter.prepareAsync(player, attempt, seconds);
 };
 export const cancelReadinessEvidence = (attempt: string) => { try{void adapter?.cancelAsync(attempt).catch(() => {});}catch{} };
+
+export const seekNativeTimeline=(player:VideoPlayer,attempt:string,seconds:number)=>adapter?.seekAsync?.(player,attempt,seconds)??Promise.reject(Error('Native seek completion unavailable'));
+export const cancelNativeSeek=(attempt:string)=>adapter?.cancelSeekAsync?.(attempt)??Promise.resolve();

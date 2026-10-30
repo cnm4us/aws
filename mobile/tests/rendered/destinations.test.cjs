@@ -1,10 +1,11 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const {bundle,React:R,Test,flatten}=require('./harness.cjs');
-async function setup(t){
+async function setup(t,enhanced=false){
  const {ViewerNavigator,AuthStore,PlaybackPreferences,CaptionPreferences,e}=await bundle(`export {ViewerNavigator} from './src/navigation/ViewerNavigator';export {AuthStore} from './src/auth/authStore';export {PlaybackPreferences} from './src/preferences/playbackPreferences';export {CaptionPreferences} from './src/preferences/captionPreferences';`,true,true,true);
- const session={token:'test',expiresAt:'2030-01-01',viewer:{id:1,displayName:'Viewer'}};e.auth=new AuthStore('https://api.test',{login:async()=>session,validate:async()=>session,revoke:async()=>{}},{load:async()=>null,save:async()=>{},clear:async()=>{}});await e.auth.restore();await e.auth.signIn('a@example.invalid','fixture');e.paths=[];e.checkpoints=new Map();e.posts=0;
+ const session={token:'test',expiresAt:'2030-01-01',viewer:{id:1,displayName:'Viewer'}};e.auth=new AuthStore('https://api.test',{login:async()=>session,validate:async()=>session,revoke:async()=>{}},{load:async()=>null,save:async()=>{},clear:async()=>{}});await e.auth.restore();await e.auth.signIn('a@example.invalid','fixture');e.paths=[];e.checkpoints=new Map();e.posts=0;e.saved=new Set([12,13,16]);e.subscribed=false;e.supportPending=false;
  const card=(id,name,type)=>({id,name,type,slug:`s-${id}`,global:id===90,path:id===90?'/global':type==='personal'?'/personal':`/${type}s/s-${id}`,description:null,artworkUrl:null,saved:true,requiresSignIn:false});
- const global=card(90,'Global','channel'),group=card(12,'Community','group'),channel=card(13,'Broadcast','channel'),personal=card(9,'My Space','personal');const cards=[global,group,channel,personal];
+ const global=card(90,'Global','channel'),group=card(12,'Community','group'),channel=card(13,'Broadcast','channel'),personal=card(9,'My Space','personal');const paid=card(14,'Paywall channel','channel'),free=card(15,'Free channel','channel'),privateChannel=card(16,'Private member channel','channel');const cards=[global,group,channel,personal,paid,free,privateChannel];
+ const rich=c=>({...c,saved:e.saved.has(c.id),availability:{canView:c.id!==14&&(c.id!==15||e.subscribed),label:c.id===14?'Subscription required':c.id===15&&!e.subscribed?'Free subscription':'Member access',action:c.id===14?'purchase_deferred':c.id===15&&!e.subscribed?'subscribe_free':'enter',mode:c.id===14?'paid_channel':c.id===15?'free_channel':'existing',price:c.id===14?{amountCents:500,currency:'USD',interval:'month'}:null}});
  const source=id=>id===90?{kind:'global'}:{kind:'space',spaceId:id,name:cards.find(c=>c.id===id).name,type:cards.find(c=>c.id===id).type};
  const video=(publicationId,spaceId,creatorId=2,production=publicationId)=>({publicationId,spaceId,creator:{id:creatorId,displayName:creatorId===1?'Viewer':'Creator',avatarUrl:null},uploadId:publicationId,productionUlid:production===1?'01ARZ3NDEKTSV4RRFFQ69G5FAV':'01ARZ3NDEKTSV4RRFFQ69G5FAW',publishedAt:'2026-10-29T00:00:00Z',playbackUrl:`https://media.test/${publicationId}`,posterUrl:null,width:720,height:1280,durationSeconds:20,hasStory:false,hasCaptions:false,reportedByMe:false,sourceContext:source(spaceId)});
  const following=[video(201,12),video(202,13,3),video(203,12)],creations=[video(301,9,1,1),video(303,90,1)],globals=[video(100,90),video(302,90,1,1),video(101,90)];
@@ -12,7 +13,15 @@ async function setup(t){
  const normal=(ctx,items)=>({context:ctx.kind==='global'?{kind:'global'}:{kind:'space',space:{id:ctx.spaceId,name:ctx.name,type:ctx.type}},items,nextCursor:null,access:ctx.kind==='global'?{...access(items),publicView:{remainingMs:60000,publicationIds:items.map(i=>i.publicationId)}}:{...access(items),spaceView:{spaceId:ctx.spaceId,remainingMs:60000},publicationViews:items.map(i=>({publicationId:i.publicationId,spaceId:i.spaceId,uploadId:i.uploadId,productionUlid:i.productionUlid,creatorId:i.creator.id,remainingMs:60000}))}});
  const aggregate=(kind,items)=>({context:{kind},items,nextCursor:null,access:access(items),aggregateAccess:{version:1,kind,viewerId:1,remainingMs:60000,publicationIds:items.map(i=>i.publicationId)},sourcePages:[...new Set(items.map(i=>i.spaceId))].map(id=>normal(source(id),items.filter(i=>i.spaceId===id))),reviewRequired:[]});
  e.fetch=async(url,options={})=>{const u=new URL(url),p=u.pathname;e.paths.push({path:p+u.search,method:options.method||'GET'});let data,status=200;
-  if(p.endsWith('/config'))data={nativeHomeEnabled:true,nativeDestinationsEnabled:true};
+  if(p.endsWith('/config'))data={nativeHomeEnabled:true,nativeDestinationsEnabled:true,nativeCatalogEnabled:enhanced};
+  else if(p.endsWith('/discovery/catalog')){const term=(u.searchParams.get('q')||'').toLowerCase();data={items:[group,channel,paid,free,privateChannel].filter(c=>(!u.searchParams.get('type')||c.type===u.searchParams.get('type'))&&c.name.toLowerCase().includes(term)).map(rich),nextCursor:null,genre:null};}
+  else if(p.endsWith('/discovery/collections'))data={items:[group,channel,paid,free,privateChannel].filter(c=>e.saved.has(c.id)&&c.type===u.searchParams.get('type')).map(rich),nextCursor:null,genre:null};
+  else if(p.includes('/discovery/save-v2/')){const id=Number(p.split('/').at(-1));const saved=JSON.parse(options.body).saved;saved?e.saved.add(id):e.saved.delete(id);data={ok:true,saved};}
+  else if(p.includes('/discovery/enroll/')){e.subscribed=true;data={ok:true};}
+  else if(p.endsWith('/discovery/subscriptions'))data={items:e.subscribed?[{id:15,name:free.name,status:'active',kind:'Free subscription',validUntil:null,space:rich(free)}]:[],support:[{id:7,provider:'paypal',status:'active',amountCents:500,currency:'USD',pendingAction:e.supportPending?'cancel':null,canCancel:!e.supportPending}],nextCursor:null,purchasesAvailable:false};
+  else if(p.endsWith('/discovery/subscriptions/7/cancel')){e.supportPending=true;data={queued:true};}
+  else if(p.includes('/discovery/entry-v2/')){const key=p.split('/').at(-1),space=key==='global'?global:cards.find(c=>c.id===Number(key)),state=rich(space);data={schemaVersion:1,space:state,document:{name:space.name,welcome:`Rules for ${space.name}`,purpose:null,cultures:[],rules:[]},revision:'a'.repeat(64),canView:state.availability.canView,requiresSignIn:false,requiresAcknowledgment:space.id===15&&!e.subscribed,acknowledgmentEnabled:space.id===15,accepted:space.id!==15||e.subscribed};}
+  else if(p.endsWith('/discovery/home-v2'))data={global,recent:[rich(privateChannel)],recentFeeds:[],genres:[{slug:'travel',name:'Travel',items:[rich(group),rich(channel)]}]};
   else if(p.endsWith('/discovery/home'))data={global,recent:[],recentFeeds:[],genres:[{slug:'travel',name:'Travel',items:[group,channel]}]};
   else if(p.endsWith('/discovery/saved'))data={items:u.searchParams.get('type')==='group'?(u.searchParams.has('cursor')?[card(14,'Another community','group')]:[group]):[channel],nextCursor:e.paginate&&!u.searchParams.has('cursor')?'group:'+ 'a'.repeat(80):null,genre:null};
   else if(p.endsWith('/save'))data={ok:true,saved:JSON.parse(options.body).saved};
@@ -23,6 +32,7 @@ async function setup(t){
   else if(p.endsWith('/contexts'))data={publicationId:301,items:[video(301,9,1,1),video(302,90,1,1),video(304,12,1,1)].map(i=>({publicationId:i.publicationId,spaceId:i.spaceId,productionUlid:i.productionUlid,sourceContext:i.sourceContext}))};
   else if(p.endsWith('/feed/following')||p.endsWith('/feed/creations')){const kind=p.split('/').at(-1);let items=kind==='following'?(e.unfollowed?[]:following):creations;const ids=u.searchParams.get('publicationIds')?.split(',').map(Number);if(ids)items=items.filter(i=>ids.includes(i.publicationId));data=aggregate(kind,items);}
   else if(p.endsWith('/feed/global'))data=normal({kind:'global'},globals);
+  else if(p.endsWith('/spaces/15/feed'))data=normal(source(15),[video(305,15)]);
   else if(p.endsWith('/spaces/12/feed'))data=normal(source(12),[video(304,12,1,1)]);
   else if(p.endsWith('/reporting/options')){const publicationId=Number(/publications\/(\d+)/.exec(p)[1]);data={context:{kind:'space',spaceId:13},publicationId,spaceId:13,reportedByMe:false,myReport:null,groups:[],initialGroupIds:[],durationSeconds:20};}
   else if(p.endsWith('/engagement')){const publicationId=Number(/publications\/(\d+)/.exec(p)[1]);data={spaceId:13,publicationId,likes:{count:0,likedByMe:false},comments:{count:0,hasCommentedByMe:false,canComment:true,disabledReason:null}};}
@@ -100,4 +110,23 @@ test('Published in offers each actual space rules without entering a feed and pr
  await h.press('About & Rules: Global');await h.press('Enter space');await h.layout();assert.equal(h.screen().props.name,'Feed');assert.ok(h.labels().includes('Choose space. Current space: Global'));
  const list=h.screen().findAllByType('FlatList')[0];assert.equal(list.props.data[list.props.initialScrollIndex].publicationId,302);assert.equal(player.released,true);
  await h.press('Open menu');await h.press('Your Creations');await h.layout();assert.equal(h.selected().currentTime,7);assert.equal(h.selected().playing,true);assert.ok(!h.labels().some(l=>l?.startsWith('Source:')));
+});
+
+
+test('catalog recovers an unchecked private relationship and saves an unpaid channel without starting playback',async t=>{
+ const h=await setup(t,true);await h.press('Browse Channels');assert.equal(h.screen().props.name,'Browse');await h.press('Save Private member channel to Your Channels');assert.equal(h.e.saved.has(16),false);
+ const input=h.screen().findAllByType('TextInput').find(n=>n.props.accessibilityLabel==='Search spaces');await Test.act(async()=>input.props.onChangeText('Private'));await h.press('Search');assert.ok(h.labels().includes('Private member channel'));await h.press('Save Private member channel to Your Channels');assert.equal(h.e.saved.has(16),true);assert.equal(h.e.subscribed,false);
+ await Test.act(async()=>input.props.onChangeText('Paywall'));await h.press('Search');await h.press('Save Paywall channel to Your Channels');assert.equal(h.e.saved.has(14),true);assert.equal(h.e.subscribed,false);await h.press('Paywall channel');assert.equal(h.screen().props.name,'SpaceEntry');assert.ok(!h.labels().includes('Enter space'));assert.ok(!h.labels().some(l=>/buy|purchase|checkout/i.test(l)));assert.ok(h.screen().findAllByType('Text').some(n=>n.props.children==='Purchases are not available in this app yet.'));assert.equal(h.e.players.length,0);
+ await h.press('Open menu');await h.press('Your Channels');assert.ok(h.labels().includes('Paywall channel'));await h.press('Paywall channel');assert.equal(h.e.players.length,0);
+});
+
+test('free enrollment requires its rules and never saves a shortcut; subscriptions can save it independently',async t=>{
+ const h=await setup(t,true);await h.press('Browse Channels');await h.press('Free channel');const button=h.screen().findAllByType('Pressable').find(n=>n.props.accessibilityLabel==='Subscribe free');assert.equal(button.props.disabled,true);await h.press('I’ve read the space rules');await h.press('Subscribe free');await h.layout();assert.equal(h.screen().props.name,'Feed');assert.ok(h.selected()?.playing);assert.equal(h.e.saved.has(15),false);
+ await h.press('Open menu');await h.press('Your Channels');assert.ok(!h.labels().includes('Free channel'));await h.press('Open menu');await h.press('Account');await h.press('Subscriptions');assert.equal(h.screen().props.name,'Subscriptions');assert.ok(h.labels().includes('Free channel'));await h.press('Open menu');await h.press('Close menu');assert.equal(h.screen().props.name,'Subscriptions');await h.press('Save Free channel to Your Channels');assert.equal(h.e.saved.has(15),true);
+ await h.press('Open menu');await h.press('Your Channels');assert.ok(h.labels().includes('Free channel'));await h.press('Save Free channel to Your Channels');assert.equal(h.e.subscribed,true);
+});
+
+test('subscription cancellation needs explicit confirmation and stays pending without changing shortcuts',async t=>{
+ const h=await setup(t,true);await h.press('Open menu');await h.press('Account');await h.press('Subscriptions');const saved=[...h.e.saved];await h.press('Cancel support subscription 7');assert.ok(h.e.alert);assert.equal(h.e.supportPending,false);assert.ok(!h.e.paths.some(p=>p.method==='POST'&&p.path.endsWith('/cancel')));
+ await Test.act(async()=>h.e.alert[2].find(b=>b.style==='destructive').onPress());assert.equal(h.e.supportPending,true);assert.deepEqual([...h.e.saved],saved);assert.ok(!h.labels().includes('Cancel support subscription 7'));assert.ok(h.screen().findAllByType('Text').some(n=>String(n.props.children).includes('pending')));
 });

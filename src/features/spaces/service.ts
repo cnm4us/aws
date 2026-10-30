@@ -17,8 +17,9 @@ function parseSettings(space: SpaceRow | null): any {
   try { return JSON.parse(String(space.settings)) } catch { return {} }
 }
 
-function settingsAllowPublicView(settings: any): boolean {
+export function settingsAllowPublicView(settings: any): boolean {
   if (!settings || typeof settings !== 'object') return false
+  if (['open_group','free_channel','paid_channel','invitation'].includes(settings.viewerEntry?.mode)) return false
   const visibility = typeof settings.visibility === 'string' ? settings.visibility.toLowerCase() : ''
   if (visibility === 'public' || visibility === 'global') return true
   if (settings.allowAnonymousAccess === true) return true
