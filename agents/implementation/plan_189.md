@@ -267,3 +267,7 @@ Build52 focused gesture/playback phone checks pass: direct horizontal scrubbing 
 - User confirms direct horizontal scrubbing on the knob/line, just above/below and near the left end stays in scrubbing without exposing Home.
 - User confirms vertical video swipes outside the zone, Menu → Home, correct selected time and paused/playing intent, silent seeking and clear playback audio.
 - This closes the reported navigation-versus-scrubber defect. Prior spacing/thumb acceptance remains; do not infer caption/VoiceOver/large-text/other-device coverage from these replies. No product changes, new build, commit or push in this acceptance turn.
+
+## Commit delivery
+
+- Implementation committed as `2652677` after explicit user request to commit and push. Includes accepted Plan188 discovery/independent shortcuts/subscription gates and Plan189 scrubber through build52. No new purchase support. Push verification follows; broader physical coverage limits remain as recorded.

@@ -284,3 +284,7 @@ The detailed checklists below retain the full original design/test envelope. Unc
 ## Resume Here
 
 All three focused build48 phone bundles passed; the revised non-purchase milestone is complete. Preserve Phase F as deferred and retain broader device/load/payment limits. No commit/push until requested. The user has begun discussion of a progress indicator/scrubber and moving the creator/date panel fully inside the video; no implementation of that next feature is authorized yet.
+
+## Commit delivery
+
+- Implementation committed as `2652677` after explicit user request to commit and push. Includes accepted Plan188 discovery/independent shortcuts/subscription gates and Plan189 scrubber through build52. No new purchase support. Push verification follows; broader physical coverage limits remain as recorded.
